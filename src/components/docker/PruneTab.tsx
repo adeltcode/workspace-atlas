@@ -1,31 +1,34 @@
 import { useState, useEffect, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { Shield, Layers, Zap, Eye, Play, X } from 'lucide-react'
+import { Shield, Layers, Zap, Eye, Play, RotateCcw, AlertTriangle, Loader2 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../../store/appStore'
 import type { DockerImage, PrunePreview, LogEntry } from '../../types/docker'
 
 const LEVELS = [
   {
-    level: 1,
+    level: 1 as const,
     icon: Shield,
-    label: 'Level 1 — Safe',
-    desc: 'Removes only dangling (untagged) images. Zero risk to running containers.',
+    label: 'Safe',
+    sublabel: 'Dangling images only',
+    desc: 'Removes untagged images with no containers. Zero risk.',
     color: 'success',
   },
   {
-    level: 2,
+    level: 2 as const,
     icon: Layers,
-    label: 'Level 2 — Deep',
-    desc: 'Removes all unused images not referenced by any container, respecting your keep-list.',
+    label: 'Deep',
+    sublabel: 'All unused images',
+    desc: 'Removes every unused image not in your keep-list.',
     color: 'warning',
   },
   {
-    level: 3,
+    level: 3 as const,
     icon: Zap,
-    label: 'Level 3 — Nuclear',
-    desc: 'Removes stopped containers, unused images (keep-list respected), volumes, and build cache.',
+    label: 'Nuclear',
+    sublabel: 'Full system cleanup',
+    desc: 'Containers, images, volumes, build cache — keep-list respected.',
     color: 'danger',
   },
 ] as const
@@ -42,14 +45,13 @@ export default function PruneTab({
   const { dockerKeepList, addDockerLog } = useAppStore()
 
   const [selectedLevel, setSelectedLevel] = useState<1 | 2 | 3>(1)
-  const [pruneState, setPruneState] = useState<PruneState>('idle')
-  const [preview, setPreview] = useState<PrunePreview | null>(null)
-  const [previewError, setPreviewError] = useState<string | null>(null)
-  const [confirmText, setConfirmText] = useState('')
-  const [logLines, setLogLines] = useState<string[]>([])
+  const [pruneState, setPruneState]       = useState<PruneState>('idle')
+  const [preview, setPreview]             = useState<PrunePreview | null>(null)
+  const [previewError, setPreviewError]   = useState<string | null>(null)
+  const [confirmText, setConfirmText]     = useState('')
+  const [logLines, setLogLines]           = useState<string[]>([])
   const logRef = useRef<HTMLDivElement>(null)
 
-  // Auto-scroll log
   useEffect(() => {
     if (logRef.current) {
       logRef.current.scrollTop = logRef.current.scrollHeight
@@ -89,7 +91,6 @@ export default function PruneTab({
     const lines: string[] = []
     const startTime = Date.now()
 
-    // Listen for streamed log lines
     const unlistenLog = await listen<string>('docker-log', (e) => {
       lines.push(e.payload)
       setLogLines((prev) => [...prev, e.payload])
@@ -103,22 +104,21 @@ export default function PruneTab({
       })
       success = true
     } catch (e) {
-      lines.push(`[error] ${String(e)}`)
-      setLogLines((prev) => [...prev, `[error] ${String(e)}`])
+      const msg = `[error] ${String(e)}`
+      lines.push(msg)
+      setLogLines((prev) => [...prev, msg])
     } finally {
       unlistenLog()
     }
 
-    // Save to run history
-    const entry: LogEntry = {
+    addDockerLog({
       id: `${startTime}`,
       timestamp: startTime,
       level: selectedLevel,
       dry_run: false,
       lines,
       success,
-    }
-    addDockerLog(entry)
+    } satisfies LogEntry)
 
     setPruneState('done')
     setConfirmText('')
@@ -133,41 +133,59 @@ export default function PruneTab({
     setConfirmText('')
   }
 
-  const running = pruneState === 'running'
-  const canExecute = preview !== null && pruneState === 'idle'
+  const running    = pruneState === 'running'
+  const canExecute = preview !== null && pruneState === 'idle' && preview.image_ids.length > 0
 
   return (
     <div className="prune-tab">
+
       {/* Level selector */}
-      <p className="section-label">Prune Level</p>
+      <p className="section-label">Select prune level</p>
       <div className="prune-levels">
-        {LEVELS.map(({ level, icon: Icon, label, desc, color }) => (
+        {LEVELS.map(({ level, icon: Icon, label, sublabel, desc, color }) => (
           <button
             key={level}
-            className={clsx('prune-level-card', `prune-level--${color}`, selectedLevel === level && 'selected')}
-            onClick={() => { setSelectedLevel(level); setPreview(null); setPreviewError(null) }}
+            className={clsx(
+              'prune-level-card',
+              `prune-level--${color}`,
+              selectedLevel === level && 'selected',
+            )}
+            onClick={() => {
+              setSelectedLevel(level)
+              setPreview(null)
+              setPreviewError(null)
+            }}
             disabled={running}
           >
-            <div className={clsx('prune-level-icon', `prune-icon--${color}`)}>
-              <Icon size={18} />
+            <div className={clsx('prune-level-badge', `prune-badge--${color}`, selectedLevel === level && 'active')}>
+              <Icon size={14} />
+              <span>{level}</span>
             </div>
-            <div>
-              <p className="prune-level-label">{label}</p>
+            <div className="prune-level-text">
+              <p className="prune-level-label">
+                {label}
+                <span className="prune-level-sublabel"> — {sublabel}</span>
+              </p>
               <p className="prune-level-desc">{desc}</p>
             </div>
+            {selectedLevel === level && (
+              <div className={clsx('prune-selected-pip', `prune-pip--${color}`)} />
+            )}
           </button>
         ))}
       </div>
 
-      {/* Keep-list summary */}
+      {/* Keep-list notice */}
       {dockerKeepList.length > 0 && (
         <div className="prune-keeplist">
-          <Shield size={13} />
-          <span>{dockerKeepList.length} pinned image{dockerKeepList.length !== 1 ? 's' : ''} protected from pruning</span>
+          <Shield size={12} />
+          <span>
+            {dockerKeepList.length} pinned image{dockerKeepList.length !== 1 ? 's' : ''} protected from pruning
+          </span>
         </div>
       )}
 
-      {/* Action row */}
+      {/* Actions */}
       <div className="prune-actions">
         <button
           className="btn-preview"
@@ -175,7 +193,7 @@ export default function PruneTab({
           disabled={pruneState === 'previewing' || running}
         >
           <Eye size={14} />
-          {pruneState === 'previewing' ? 'Calculating…' : 'Preview'}
+          {pruneState === 'previewing' ? 'Calculating…' : 'Preview changes'}
         </button>
 
         {canExecute && (
@@ -183,14 +201,14 @@ export default function PruneTab({
             className={clsx('btn-execute', `btn-execute--${LEVELS[selectedLevel - 1].color}`)}
             onClick={handleExecute}
           >
-            <Play size={14} />
+            <Play size={13} />
             Execute Level {selectedLevel}
           </button>
         )}
 
         {(preview || previewError || logLines.length > 0) && (
           <button className="btn-reset" onClick={reset} disabled={running}>
-            <X size={13} />
+            <RotateCcw size={12} />
             Reset
           </button>
         )}
@@ -209,22 +227,20 @@ export default function PruneTab({
         <div className="prune-preview">
           <div className="prune-preview-header">
             <span className="prune-preview-title">Dry-run Preview</span>
-            <span className="prune-reclaim">
-              ~{preview.reclaim_size} reclaimable
-            </span>
+            {preview.reclaim_bytes > 0
+              ? <span className="prune-reclaim">~{preview.reclaim_size} reclaimable</span>
+              : <span className="prune-reclaim-zero">Nothing to remove</span>}
           </div>
 
-          {/* Exact command */}
           <div className="prune-command">
-            <span className="prune-command-label">Command</span>
+            <span className="prune-command-label">Exact command</span>
             <code className="prune-command-code">{preview.command}</code>
           </div>
 
-          {/* What gets removed */}
           {preview.image_names.length > 0 ? (
             <div className="prune-image-list">
               <p className="prune-image-list-heading">
-                {preview.image_names.length} image{preview.image_names.length !== 1 ? 's' : ''} to remove:
+                {preview.image_names.length} image{preview.image_names.length !== 1 ? 's' : ''} to remove
               </p>
               <ul>
                 {preview.image_names.map((name) => (
@@ -233,11 +249,12 @@ export default function PruneTab({
               </ul>
             </div>
           ) : (
-            <p className="prune-nothing">Nothing to remove at this level.</p>
+            <p className="prune-nothing">No images match this level — nothing to remove.</p>
           )}
 
           {preview.level === 3 && (preview.container_count > 0 || preview.volume_count > 0) && (
             <div className="prune-extras">
+              <AlertTriangle size={11} className="prune-extras-icon" />
               {preview.container_count > 0 && (
                 <span className="prune-extra-badge">
                   {preview.container_count} stopped container{preview.container_count !== 1 ? 's' : ''}
@@ -259,12 +276,15 @@ export default function PruneTab({
         <div className="modal-overlay">
           <div className="modal">
             <div className="modal-header">
-              <Zap size={18} className="modal-icon danger" />
+              <div className="modal-icon-wrap danger">
+                <Zap size={16} />
+              </div>
               <h2 className="modal-title">Nuclear Prune — Confirm</h2>
             </div>
             <p className="modal-body">
-              This will remove all stopped containers, unused images (keep-list excluded),
-              all unused volumes, and all build cache. Type <strong>I understand</strong> to proceed.
+              This removes stopped containers, all unused images outside your keep-list,
+              all unused volumes, and all build cache.
+              Type <strong>I understand</strong> to proceed.
             </p>
             <input
               className="modal-input"
@@ -293,19 +313,21 @@ export default function PruneTab({
         </div>
       )}
 
-      {/* Live log panel */}
+      {/* Live log */}
       {(running || pruneState === 'done') && logLines.length > 0 && (
         <div className="prune-log-panel">
-          <p className="prune-log-heading">
-            {running ? 'Running…' : pruneState === 'done' ? 'Done' : ''}
-          </p>
+          <div className="prune-log-heading">
+            {running
+              ? <><Loader2 size={11} className="spin" style={{ display: 'inline' }} /> Running…</>
+              : 'Completed'}
+          </div>
           <div className="prune-log-output" ref={logRef}>
             {logLines.map((line, i) => (
               <div
                 key={i}
                 className={clsx(
                   'log-line',
-                  line.startsWith('$') && 'log-cmd',
+                  line.startsWith('$')     && 'log-cmd',
                   line.startsWith('[err]') && 'log-err',
                 )}
               >
