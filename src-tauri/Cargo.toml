@@ -1,8 +1,11 @@
 [package]
 name = "workspace-atlas"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "A Windows developer utility for managing Docker, WSL2, and packages."
+authors = ["Patrick James Garcia"]
+license = "MIT"
+homepage = "https://github.com/adeltcode/workspace-atlas"
+repository = "https://github.com/adeltcode/workspace-atlas"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

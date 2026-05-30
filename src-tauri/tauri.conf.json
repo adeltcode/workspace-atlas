@@ -1,20 +1,25 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "workspace-atlas",
+  "productName": "Workspace Atlas",
   "version": "0.1.0",
   "identifier": "com.workspaceatlas.app",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "corepack pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "corepack pnpm build",
     "frontendDist": "../dist"
   },
   "app": {
     "windows": [
       {
-        "title": "workspace-atlas",
-        "width": 800,
-        "height": 600
+        "title": "Workspace Atlas",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "decorations": false,
+        "resizable": true,
+        "center": true
       }
     ],
     "security": {
@@ -24,6 +29,8 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "Patrick James Garcia",
+    "copyright": "© 2026 Patrick James Garcia. MIT License.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
