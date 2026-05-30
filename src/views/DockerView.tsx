@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { Box, RefreshCw, CheckCircle2, Loader2, Terminal, ChevronDown } from 'lucide-react'
+import { Box, RefreshCw } from 'lucide-react'
 import clsx from 'clsx'
+import { useAppStore } from '../store/appStore'
 import type { DockerStatus, DockerSystemDf, DockerImage } from '../types/docker'
 import OverviewTab from '../components/docker/OverviewTab'
 import ImagesTab   from '../components/docker/ImagesTab'
@@ -17,75 +18,56 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'log',      label: 'Log'      },
 ]
 
-interface TraceEntry {
-  cmd: string
-  done: boolean
-  error: boolean
-}
-
 export default function DockerView() {
+  const addTerminalLine = useAppStore(s => s.addTerminalLine)
+
   const [tab, setTab]         = useState<Tab>('overview')
   const [status, setStatus]   = useState<DockerStatus | null>(null)
   const [df, setDf]           = useState<DockerSystemDf | null>(null)
   const [images, setImages]   = useState<DockerImage[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState<string | null>(null)
-  const [trace, setTrace]     = useState<TraceEntry[]>([])
-  const [traceOpen, setTraceOpen] = useState(true)
-
-  const traceRef = useRef<TraceEntry[]>([])
-
-  const addCmd = (cmd: string) => {
-    traceRef.current = [...traceRef.current, { cmd, done: false, error: false }]
-    setTrace([...traceRef.current])
-  }
-  const doneCmd = (cmd: string, error = false) => {
-    traceRef.current = traceRef.current.map(t =>
-      t.cmd === cmd ? { ...t, done: true, error } : t
-    )
-    setTrace([...traceRef.current])
-  }
 
   const refresh = useCallback(async () => {
     setLoading(true)
     setError(null)
-    traceRef.current = []
-    setTrace([])
-    setTraceOpen(true)
 
-    const CHECK = 'docker version --format "{{.Server.Version}}"'
-    const DF    = 'docker system df'
-    const IMGS  = 'docker images --format "{{json .}}"'
+    const CMD_CHECK = 'docker version --format "{{.Server.Version}}"'
+    const CMD_DF    = 'docker system df'
+    const CMD_IMGS  = 'docker images --format "{{json .}}"'
 
     try {
-      addCmd(CHECK)
+      addTerminalLine(`$ ${CMD_CHECK}`, 'cmd')
       const s = await invoke<DockerStatus>('docker_check')
-      doneCmd(CHECK, !s.available)
       setStatus(s)
 
       if (s.available) {
-        addCmd(DF)
-        addCmd(IMGS)
+        addTerminalLine(`  → Docker v${s.version ?? 'unknown'}`, 'info')
+        addTerminalLine(`$ ${CMD_DF}`, 'cmd')
+        addTerminalLine(`$ ${CMD_IMGS}`, 'cmd')
+
         const [dfData, imgData] = await Promise.all([
           invoke<DockerSystemDf>('docker_system_df')
-            .then(d => { doneCmd(DF); return d })
-            .catch(e => { doneCmd(DF, true); throw e }),
+            .then(d => { addTerminalLine(`  ✓ system df complete`, 'success'); return d })
+            .catch(e => { addTerminalLine(`  ✗ ${String(e)}`, 'error'); throw e }),
           invoke<DockerImage[]>('docker_images')
-            .then(d => { doneCmd(IMGS); return d })
-            .catch(e => { doneCmd(IMGS, true); throw e }),
+            .then(d => { addTerminalLine(`  ✓ ${d.length} image(s) loaded`, 'success'); return d })
+            .catch(e => { addTerminalLine(`  ✗ ${String(e)}`, 'error'); throw e }),
         ])
         setDf(dfData)
         setImages(imgData)
       } else {
+        addTerminalLine(`  ✗ Docker not running: ${s.error ?? 'unknown error'}`, 'error')
         setDf(null)
         setImages([])
       }
     } catch (e) {
       setError(String(e))
+      addTerminalLine(`  ✗ ${String(e)}`, 'error')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [addTerminalLine])
 
   useEffect(() => { refresh() }, [refresh])
 
@@ -93,11 +75,10 @@ export default function DockerView() {
 
   return (
     <div className="view-container">
-
       {/* Header */}
       <div className="view-header">
         <div className="view-header-icon">
-          <Box size={20} />
+          <Box size={18} />
         </div>
         <div>
           <h1 className="view-title">Docker & Containers</h1>
@@ -121,55 +102,16 @@ export default function DockerView() {
             </>
           ) : null}
         </div>
-        <div className="status-bar-right">
-          {trace.length > 0 && (
-            <button
-              className="btn-trace-toggle"
-              onClick={() => setTraceOpen(o => !o)}
-              title="Toggle command trace"
-            >
-              <Terminal size={12} />
-              <span>{trace.filter(t => t.done).length}/{trace.length}</span>
-              <ChevronDown size={11} className={clsx('trace-chevron', traceOpen && 'open')} />
-            </button>
-          )}
-          <button
-            className="btn-refresh"
-            onClick={refresh}
-            disabled={loading}
-            title="Refresh data"
-          >
-            <RefreshCw size={13} className={loading ? 'spin' : ''} />
-            Refresh
-          </button>
-        </div>
+        <button
+          className="btn-refresh"
+          onClick={refresh}
+          disabled={loading}
+          title="Refresh data"
+        >
+          <RefreshCw size={13} className={loading ? 'spin' : ''} />
+          Refresh
+        </button>
       </div>
-
-      {/* Command trace panel */}
-      {trace.length > 0 && (
-        <div className={clsx('trace-panel', traceOpen && 'open')}>
-          <div className="trace-panel-inner">
-            {trace.map((entry) => (
-              <div
-                key={entry.cmd}
-                className={clsx(
-                  'trace-row',
-                  entry.done && (entry.error ? 'trace-err' : 'trace-done'),
-                )}
-              >
-                <span className="trace-icon">
-                  {!entry.done
-                    ? <Loader2 size={11} className="spin" />
-                    : entry.error
-                    ? <span className="trace-x">✕</span>
-                    : <CheckCircle2 size={11} />}
-                </span>
-                <code className="trace-cmd">$ {entry.cmd}</code>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Error banner */}
       {error && (
@@ -188,7 +130,7 @@ export default function DockerView() {
         </div>
       )}
 
-      {/* Tabs — key forces content remount on tab switch for fade-in */}
+      {/* Tabs */}
       {(online || loading) && (
         <>
           <div className="docker-tabs">

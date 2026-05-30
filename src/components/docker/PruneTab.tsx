@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { Shield, Layers, Zap, Eye, Play, RotateCcw, AlertTriangle, Loader2 } from 'lucide-react'
+import { Shield, Layers, Zap, Eye, Play, RotateCcw, AlertTriangle } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../../store/appStore'
 import type { DockerImage, PrunePreview, LogEntry } from '../../types/docker'
@@ -42,35 +42,34 @@ export default function PruneTab({
   images: DockerImage[]
   onDone: () => void
 }) {
-  const { dockerKeepList, addDockerLog } = useAppStore()
+  const { dockerKeepList, addDockerLog, addTerminalLine } = useAppStore()
 
   const [selectedLevel, setSelectedLevel] = useState<1 | 2 | 3>(1)
   const [pruneState, setPruneState]       = useState<PruneState>('idle')
   const [preview, setPreview]             = useState<PrunePreview | null>(null)
   const [previewError, setPreviewError]   = useState<string | null>(null)
   const [confirmText, setConfirmText]     = useState('')
-  const [logLines, setLogLines]           = useState<string[]>([])
-  const logRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (logRef.current) {
-      logRef.current.scrollTop = logRef.current.scrollHeight
-    }
-  }, [logLines])
+  const confirmRef = useRef<HTMLInputElement>(null)
 
   const handlePreview = async () => {
     setPruneState('previewing')
     setPreview(null)
     setPreviewError(null)
+    addTerminalLine(`$ docker prune --dry-run --level ${selectedLevel}`, 'cmd')
     try {
       const p = await invoke<PrunePreview>('docker_prune_preview', {
         level: selectedLevel,
         keepList: dockerKeepList,
       })
       setPreview(p)
+      addTerminalLine(
+        `  ✓ preview: ${p.image_names.length} image(s) · ~${p.reclaim_size} reclaimable`,
+        'success',
+      )
       setPruneState('idle')
     } catch (e) {
       setPreviewError(String(e))
+      addTerminalLine(`  ✗ ${String(e)}`, 'error')
       setPruneState('idle')
     }
   }
@@ -78,6 +77,7 @@ export default function PruneTab({
   const handleExecute = () => {
     if (selectedLevel === 3) {
       setPruneState('confirming')
+      setTimeout(() => confirmRef.current?.focus(), 50)
     } else {
       runPrune()
     }
@@ -86,14 +86,20 @@ export default function PruneTab({
   const runPrune = async () => {
     if (!preview) return
     setPruneState('running')
-    setLogLines([])
 
     const lines: string[] = []
     const startTime = Date.now()
 
+    addTerminalLine(`─── Prune Level ${selectedLevel} — executing ───`, 'info')
+
     const unlistenLog = await listen<string>('docker-log', (e) => {
       lines.push(e.payload)
-      setLogLines((prev) => [...prev, e.payload])
+      const type = e.payload.startsWith('$')
+        ? 'cmd'
+        : e.payload.startsWith('[err]')
+        ? 'stderr'
+        : 'stdout'
+      addTerminalLine(e.payload, type)
     })
 
     let success = false
@@ -103,10 +109,9 @@ export default function PruneTab({
         imageIds: preview.image_ids,
       })
       success = true
+      addTerminalLine(`─── Done ───`, 'success')
     } catch (e) {
-      const msg = `[error] ${String(e)}`
-      lines.push(msg)
-      setLogLines((prev) => [...prev, msg])
+      addTerminalLine(`  ✗ ${String(e)}`, 'error')
     } finally {
       unlistenLog()
     }
@@ -129,7 +134,6 @@ export default function PruneTab({
     setPruneState('idle')
     setPreview(null)
     setPreviewError(null)
-    setLogLines([])
     setConfirmText('')
   }
 
@@ -206,11 +210,15 @@ export default function PruneTab({
           </button>
         )}
 
-        {(preview || previewError || logLines.length > 0) && (
+        {(preview || previewError) && (
           <button className="btn-reset" onClick={reset} disabled={running}>
             <RotateCcw size={12} />
             Reset
           </button>
+        )}
+
+        {running && (
+          <span className="prune-running-notice">Running — see Terminal panel below</span>
         )}
       </div>
 
@@ -287,12 +295,12 @@ export default function PruneTab({
               Type <strong>I understand</strong> to proceed.
             </p>
             <input
+              ref={confirmRef}
               className="modal-input"
               type="text"
               placeholder='Type "I understand"'
               value={confirmText}
               onChange={(e) => setConfirmText(e.target.value)}
-              autoFocus
             />
             <div className="modal-actions">
               <button
@@ -309,32 +317,6 @@ export default function PruneTab({
                 Execute Nuclear Prune
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Live log */}
-      {(running || pruneState === 'done') && logLines.length > 0 && (
-        <div className="prune-log-panel">
-          <div className="prune-log-heading">
-            {running
-              ? <><Loader2 size={11} className="spin" style={{ display: 'inline' }} /> Running…</>
-              : 'Completed'}
-          </div>
-          <div className="prune-log-output" ref={logRef}>
-            {logLines.map((line, i) => (
-              <div
-                key={i}
-                className={clsx(
-                  'log-line',
-                  line.startsWith('$')     && 'log-cmd',
-                  line.startsWith('[err]') && 'log-err',
-                )}
-              >
-                {line}
-              </div>
-            ))}
-            {running && <div className="log-cursor" />}
           </div>
         </div>
       )}
