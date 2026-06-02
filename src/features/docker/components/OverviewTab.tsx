@@ -1,5 +1,11 @@
 import clsx from 'clsx'
-import type { DockerSystemDf, DiskUsageRow } from '../types'
+import type { DockerSystemDf, DockerContainer, DiskUsageRow } from '../types'
+
+/**
+ * Containers stopped for fewer than STALE_DAYS days are considered "active"
+ * and excluded from the freeable estimate — they're likely still in use.
+ */
+const STALE_DAYS = 7
 
 const CARDS: { key: keyof DockerSystemDf; label: string; color: string }[] = [
   { key: 'images',      label: 'Images',      color: 'accent'  },
@@ -76,6 +82,34 @@ function BarCard({
   )
 }
 
+/**
+ * Overrides the containers row so that "reclaimable" only reflects containers
+ * stopped for ≥ STALE_DAYS days, not every stopped container.
+ *
+ * We don't call `docker ps --size` (it scans every container's filesystem and
+ * can take 10+ s). Instead we estimate proportionally:
+ *   stale_reclaimable ≈ df_reclaimable × (stale_count / total_stopped_count)
+ */
+function buildContainersRow(
+  dfRow: DiskUsageRow,
+  containers: DockerContainer[],
+): DiskUsageRow {
+  const stopped = containers.filter(c => c.stopped_days >= 0)
+  const stale   = containers.filter(c => c.stopped_days >= STALE_DAYS)
+
+  if (stopped.length === 0 || stale.length === 0) {
+    // Nothing stale — report zero freeable regardless of what docker system df says
+    return { ...dfRow, reclaimable: `0B (0%)` }
+  }
+
+  const dfReclaimBytes = parseSizeBytes(parseReclaimSize(dfRow.reclaimable))
+  const estimated      = Math.round(dfReclaimBytes * (stale.length / stopped.length))
+  const totalBytes     = parseSizeBytes(dfRow.size)
+  const pct            = totalBytes > 0 ? Math.round(estimated / totalBytes * 100) : 0
+
+  return { ...dfRow, reclaimable: `${bytesToHuman(estimated)} (${pct}%)` }
+}
+
 /** Derives a synthetic "Total" row by summing all 4 categories */
 function buildTotalRow(df: DockerSystemDf): DiskUsageRow {
   const rows = [df.images, df.containers, df.volumes, df.build_cache]
@@ -107,14 +141,29 @@ function BarSkeleton() {
   )
 }
 
-export default function OverviewTab({ df, loading }: { df: DockerSystemDf | null; loading: boolean }) {
-  const totalRow = df ? buildTotalRow(df) : null
+export default function OverviewTab({
+  df,
+  containers,
+  loading,
+}: {
+  df: DockerSystemDf | null
+  containers: DockerContainer[]
+  loading: boolean
+}) {
+  // Patch the containers row so freeable = stale-only estimate
+  const patchedDf = df
+    ? { ...df, containers: buildContainersRow(df.containers, containers) }
+    : null
+
+  const totalRow = patchedDf ? buildTotalRow(patchedDf) : null
 
   return (
     <div className="overview-tab">
       <div className="overview-header">
         <p className="section-label" style={{ margin: 0 }}>Disk Usage</p>
-        <p className="overview-sub">Solid fill = freeable · hatched = in use</p>
+        <p className="overview-sub">
+          Solid fill = freeable · hatched = in use · containers: stale ≥ {STALE_DAYS}d
+        </p>
       </div>
 
       {loading && (
@@ -123,10 +172,10 @@ export default function OverviewTab({ df, loading }: { df: DockerSystemDf | null
         </div>
       )}
 
-      {!loading && df && totalRow && (
+      {!loading && patchedDf && totalRow && (
         <div className="bar-grid">
           {CARDS.map(({ key, label, color }) => (
-            <BarCard key={key} row={df[key]} label={label} color={color} />
+            <BarCard key={key} row={patchedDf[key]} label={label} color={color} />
           ))}
           <BarCard row={totalRow} label="Total" color="total" totalLabel />
         </div>

@@ -288,12 +288,14 @@ ul, ol { list-style: none; }
    Sidebar
    ============================================================= */
 .sidebar {
-  width: var(--sidebar-w, 200px);
-  min-width: var(--sidebar-w, 200px);
+  /* When --sidebar-w is set by the user's drag, use it; otherwise shrink to content */
+  width: var(--sidebar-w, fit-content);
+  min-width: var(--sidebar-w, fit-content);
   background: var(--color-sidebar-bg);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  white-space: nowrap; /* prevent items from wrapping and expanding the sidebar */
 }
 
 /* Nav group */
@@ -2581,3 +2583,937 @@ button:focus-visible {
 }
 .btn-prune-unused:hover:not(:disabled) { filter: brightness(1.12); }
 .btn-prune-unused:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* =============================================================
+   Docker — Compose Tab
+   ============================================================= */
+.compose-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.compose-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.compose-header-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Main layout: sidebar | viewer ─────────────────────────── */
+.compose-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden; /* clips children to border-radius */
+}
+
+/* ── Project sidebar ────────────────────────────────────────── */
+.compose-sidebar {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+  /* no overflow constraint — let window scroll handle it */
+}
+
+.compose-empty {
+  padding: 20px 14px;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  line-height: 1.6;
+  text-align: center;
+}
+.compose-empty code {
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 11px;
+  background: var(--color-bg-tertiary);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--color-text-secondary);
+}
+
+.compose-project-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.compose-project-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  border-left: 2px solid transparent;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+.compose-project-row:last-child { border-bottom: none; }
+.compose-project-row:hover { background: var(--color-bg-hover); }
+.compose-project-row.active {
+  background: var(--color-accent-subtle);
+  border-left-color: var(--color-accent);
+}
+
+.compose-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+.compose-status-dot.running {
+  background: var(--color-success);
+  box-shadow: 0 0 0 2px var(--color-success-subtle);
+}
+.compose-status-dot.stopped { background: var(--color-text-tertiary); }
+
+.compose-project-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.compose-project-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.compose-project-row.active .compose-project-name { color: var(--color-accent); }
+
+.compose-project-status {
+  font-size: 10.5px;
+  color: var(--color-text-tertiary);
+}
+
+.compose-project-files {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.compose-file-chip {
+  font-size: 10px;
+  padding: 1px 6px;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  color: var(--color-text-tertiary);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.compose-chevron {
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+  margin-top: 3px;
+  transition: transform var(--transition-fast), color var(--transition-fast);
+}
+.compose-chevron.active { transform: rotate(90deg); color: var(--color-accent); }
+
+/* ── Resize handle ──────────────────────────────────────────── */
+.compose-resize-handle {
+  cursor: col-resize;
+  background: var(--color-border);
+  position: relative;
+  transition: background 0.15s;
+  user-select: none;
+  flex-shrink: 0;
+}
+/* Expand the hit target without changing the visual width */
+.compose-resize-handle::before {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  left: -4px; right: -4px;
+  cursor: col-resize;
+}
+.compose-resize-handle:hover { background: var(--color-accent); }
+
+/* ── Viewer area ────────────────────────────────────────────── */
+.compose-viewer {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-primary);
+  /* no overflow hidden — content grows to its natural height */
+}
+
+.compose-viewer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.compose-file-tabs {
+  display: flex;
+  gap: 2px;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.compose-file-tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+  color: var(--color-text-secondary);
+  transition: background var(--transition-fast), color var(--transition-fast);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  cursor: pointer;
+}
+.compose-file-tab:hover  { background: var(--color-bg-hover); color: var(--color-text-primary); }
+.compose-file-tab.active { background: var(--color-accent-subtle); color: var(--color-accent); }
+
+.compose-viewer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.compose-backup-msg {
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.compose-backup-msg.ok    { color: var(--color-success); }
+.compose-backup-msg.error { color: var(--color-danger);  }
+
+.compose-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+  flex-shrink: 0;
+}
+
+.compose-breadcrumb-icon { color: var(--color-text-tertiary); flex-shrink: 0; }
+
+.compose-breadcrumb-path {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.compose-viewer-body {
+  /* grows to natural height — window provides vertical scroll */
+  overflow-x: auto; /* horizontal scroll only for wide lines */
+}
+
+.compose-viewer-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 20px 16px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+.compose-viewer-error { color: var(--color-danger); }
+
+/* Placeholder when no project selected */
+.compose-viewer-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 60px 20px;
+  background: var(--color-bg-primary);
+}
+
+.compose-placeholder-icon { color: var(--color-text-tertiary); opacity: 0.4; }
+
+.compose-placeholder-text {
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Syntax-highlighted YAML code view ──────────────────────── */
+.compose-code-wrap {
+  display: flex;
+  font-family: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  background: var(--color-bg-primary);
+  user-select: text;
+}
+
+.compose-line-nums {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  padding: 14px 10px 14px 14px;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  line-height: 1.7;
+  user-select: none;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+  min-width: 44px;
+  flex-shrink: 0;
+}
+.compose-line-nums span { display: block; }
+
+.compose-code-body {
+  padding: 14px 16px;
+  flex: 1;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.yaml-line { display: block; white-space: pre; }
+
+/* ── Backup history panel ───────────────────────────────────── */
+.compose-history {
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+}
+
+.compose-history-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 14px 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.compose-history-icon { color: var(--color-text-tertiary); flex-shrink: 0; }
+
+.compose-history-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  flex: 1;
+}
+
+.compose-history-count {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.compose-history-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.compose-history-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--color-border);
+  transition: background var(--transition-fast);
+}
+.compose-history-item:last-child { border-bottom: none; }
+.compose-history-item:hover { background: var(--color-bg-hover); }
+
+.compose-history-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.compose-history-date {
+  font-size: 11.5px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.compose-history-size {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.compose-history-file {
+  flex: 1;
+  font-size: 10.5px;
+  color: var(--color-text-tertiary);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* YAML token colors */
+.yaml-comment  { color: #6b737e; font-style: italic; }
+.yaml-key-root { color: #7dd3fc; font-weight: 600; }  /* top-level key — light blue */
+.yaml-key      { color: #a5d6ff; }                     /* nested key — softer blue */
+.yaml-colon    { color: var(--color-text-tertiary); }
+.yaml-value    { color: var(--color-text-primary); }
+.yaml-string   { color: #fbbf24; }                     /* quoted string — amber */
+.yaml-bool     { color: #c084fc; }                     /* true/false/null — purple */
+.yaml-number   { color: #34d399; }                     /* numeric — green */
+.yaml-dash     { color: var(--color-text-tertiary); }
+.yaml-env      { color: #fb923c; font-style: italic; } /* ${VAR} — orange */
+
+[data-theme="light"] .yaml-comment  { color: #6b7280; }
+[data-theme="light"] .yaml-key-root { color: #1d4ed8; }
+[data-theme="light"] .yaml-key      { color: #2563eb; }
+[data-theme="light"] .yaml-string   { color: #b45309; }
+[data-theme="light"] .yaml-bool     { color: #7c3aed; }
+[data-theme="light"] .yaml-number   { color: #059669; }
+[data-theme="light"] .yaml-env      { color: #c2410c; }
+
+/* =============================================================
+   Docker — Backup Tab
+   ============================================================= */
+.backup-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── Config card ─────────────────────────────────────────────── */
+.backup-config-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.backup-config-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.backup-config-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.backup-config-hint {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+.backup-config-hint code {
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 10.5px;
+  color: var(--color-text-secondary);
+}
+
+.backup-dir-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.15s;
+}
+.backup-dir-row:focus-within { border-color: var(--color-accent); }
+
+.backup-dir-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--color-text-primary);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 12px;
+  user-select: text;
+  min-width: 0;
+}
+.backup-dir-input::placeholder { color: var(--color-text-tertiary); }
+
+.backup-dir-pick-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 11px;
+  height: 26px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.backup-dir-pick-btn:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+/* ── Notices ─────────────────────────────────────────────────── */
+.backup-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  animation: tab-fade-in 0.15s ease both;
+  font-size: 12.5px;
+}
+.backup-notice--success {
+  background: var(--color-success-subtle);
+  border-color: rgba(54,200,90,0.3);
+  color: var(--color-success);
+}
+.backup-notice--error {
+  background: var(--color-danger-subtle);
+  border-color: rgba(255,80,80,0.3);
+  color: var(--color-danger);
+}
+.backup-notice--info {
+  background: var(--color-accent-subtle);
+  border-color: rgba(108,113,255,0.25);
+  color: var(--color-text-secondary);
+}
+.backup-notice-icon { flex-shrink: 0; }
+.backup-notice-msg  { flex: 1; line-height: 1.4; }
+.backup-notice-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.15s, background 0.15s;
+}
+.backup-notice-close:hover { opacity: 1; background: rgba(255,255,255,0.08); }
+
+/* ── Transfer card ───────────────────────────────────────────── */
+.backup-transfer-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--color-accent-subtle);
+  border: 1px solid rgba(108,113,255,0.3);
+  border-radius: var(--radius-md);
+  animation: tab-fade-in 0.15s ease both;
+}
+
+.backup-transfer-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.backup-transfer-icon { color: var(--color-accent); flex-shrink: 0; margin-top: 2px; }
+
+.backup-transfer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.backup-transfer-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.backup-transfer-sub {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+.backup-transfer-sub code {
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 11px;
+  color: var(--color-accent);
+  background: rgba(0,0,0,0.15);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.backup-transfer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 27px;
+}
+
+/* ── Two-column layout ───────────────────────────────────────── */
+.backup-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 900px) { .backup-columns { grid-template-columns: 1fr; } }
+
+/* ── Panels ──────────────────────────────────────────────────── */
+.backup-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.backup-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.backup-panel-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.backup-panel-meta {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.backup-panel-footer {
+  padding: 10px 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.backup-empty {
+  padding: 24px 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Volume list ─────────────────────────────────────────────── */
+.backup-volume-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.backup-volume-entry {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--color-border);
+}
+.backup-volume-entry:last-child { border-bottom: none; }
+
+.backup-volume-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  user-select: none;
+}
+.backup-volume-item:hover   { background: var(--color-bg-hover); }
+.backup-volume-item.checked { background: var(--color-accent-subtle); }
+.backup-volume-item input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--color-accent);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.backup-volume-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.backup-volume-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.backup-volume-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.backup-volume-badges {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.backup-inuse-warn {
+  color: var(--color-warning);
+  display: flex;
+  align-items: center;
+}
+
+.backup-volume-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.backup-vol-tag {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.backup-vol-tag--containers {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  font-family: "Cascadia Code", "Consolas", monospace;
+}
+.backup-vol-tag--compose {
+  background: rgba(108,113,255,0.12);
+  color: var(--color-accent);
+  font-weight: 500;
+}
+
+/* ── Archive list ────────────────────────────────────────────── */
+.backup-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.backup-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--color-border);
+  transition: background var(--transition-fast);
+}
+.backup-list-item:last-child { border-bottom: none; }
+.backup-list-item:hover { background: var(--color-bg-hover); }
+.backup-list-item.confirming { background: var(--color-bg-tertiary); }
+
+.backup-list-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.backup-list-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.backup-list-volume {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.backup-list-size {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.backup-list-date {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.backup-list-filename {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backup-list-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding-top: 1px;
+}
+
+/* Inline confirm strip */
+.backup-inline-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px 12px;
+  background: var(--color-bg-tertiary);
+  border-top: 1px solid var(--color-border);
+}
+
+.backup-confirm-text {
+  font-size: 11.5px;
+  color: var(--color-text-secondary);
+}
+.backup-confirm-text--danger { color: var(--color-danger); }
+
+.backup-confirm-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* Small button variant */
+.btn-sm {
+  font-size: 11.5px !important;
+  padding: 0 10px !important;
+  height: 26px !important;
+  gap: 4px !important;
+}
+
+.btn-execute--danger {
+  background: var(--color-danger) !important;
+  color: #fff !important;
+}
+.btn-execute--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-danger) 80%, white) !important;
+}
+
+/* =============================================================
+   Backup — per-volume progress bar
+   ============================================================= */
+.backup-volume-entry.has-progress .backup-volume-item {
+  border-bottom: none;
+}
+
+.vol-progress-wrap {
+  padding: 4px 12px 6px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-top: none;
+  border-bottom-left-radius: var(--radius-sm);
+  border-bottom-right-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vol-progress-track {
+  height: 4px;
+  background: var(--color-bg-tertiary);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.vol-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.35s ease;
+  background: var(--color-accent);
+  width: 0%;
+}
+
+/* Animated stripe while running */
+.vol-progress-fill.running {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--color-accent)          0,
+    var(--color-accent)          8px,
+    var(--color-accent-hover)    8px,
+    var(--color-accent-hover)    16px
+  );
+  background-size: 22px 22px;
+  animation: vol-stripe 0.6s linear infinite;
+}
+@keyframes vol-stripe {
+  from { background-position: 0 0; }
+  to   { background-position: 22px 0; }
+}
+
+.vol-progress-fill.queued { background: var(--color-text-tertiary); }
+.vol-progress-fill.done   { background: var(--color-success); }
+.vol-progress-fill.error  { background: var(--color-danger); }
+
+.vol-progress-label {
+  font-size: 10.5px;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vol-progress-label.ok  { color: var(--color-success); }
+.vol-progress-label.err { color: var(--color-danger); }

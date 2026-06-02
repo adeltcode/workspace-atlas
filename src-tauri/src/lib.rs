@@ -16,6 +16,18 @@ pub fn run() {
             docker::docker_container_action,
             docker::docker_volume_remove,
             docker::docker_volumes_prune,
+            docker::docker_compose_ls,
+            docker::read_file_content,
+            docker::get_default_backup_dir,
+            docker::docker_list_backups,
+            docker::docker_volume_backup,
+            docker::docker_volume_restore,
+            docker::docker_backup_compose,
+            docker::docker_list_compose_backups,
+            docker::docker_delete_compose_backup,
+            docker::docker_delete_backup,
+            docker::transfer_backups,
+            docker::pick_backup_folder,
             shell::shell_run,
         ])
         .run(tauri::generate_context!())

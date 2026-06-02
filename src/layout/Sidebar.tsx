@@ -15,6 +15,8 @@ const DOCKER_CHILDREN: { tab: DockerTab; label: string }[] = [
   { tab: 'images',      label: 'Images'      },
   { tab: 'containers',  label: 'Containers'  },
   { tab: 'volumes',     label: 'Volumes'     },
+  { tab: 'compose',     label: 'Compose'     },
+  { tab: 'backup',      label: 'Backup'      },
   { tab: 'prune',       label: 'Prune'       },
   { tab: 'log',         label: 'Log'         },
 ]

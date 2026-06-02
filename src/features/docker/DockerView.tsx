@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Box, RefreshCw } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../../store/appStore'
@@ -6,12 +7,15 @@ import OverviewTab    from './components/OverviewTab'
 import ImagesTab      from './components/ImagesTab'
 import ContainersTab  from './components/ContainersTab'
 import VolumesTab     from './components/VolumesTab'
+import ComposeTab     from './components/ComposeTab'
+import BackupTab      from './components/BackupTab'
 import PruneTab       from './components/PruneTab'
 import LogTab         from './components/LogTab'
 
 export default function DockerView() {
   const dockerTab = useAppStore(s => s.dockerTab)
   const { status, df, images, containers, volumes, loading, error, refresh } = useDockerData()
+  const [composeTick, setComposeTick] = useState(0)
 
   const online = status?.available ?? false
 
@@ -36,7 +40,12 @@ export default function DockerView() {
           </div>
           <p className="view-subtitle">Manage images, containers, and reclaim disk space</p>
         </div>
-        <button className="btn-refresh" onClick={refresh} disabled={loading} title="Refresh data">
+        <button
+          className="btn-refresh"
+          onClick={() => { refresh(); setComposeTick(t => t + 1) }}
+          disabled={loading}
+          title="Refresh data"
+        >
           <RefreshCw size={13} className={loading ? 'spin' : ''} />
           Refresh
         </button>
@@ -59,10 +68,12 @@ export default function DockerView() {
 
       {(online || loading) && (
         <div className="docker-tab-content">
-          {dockerTab === 'overview'    && <OverviewTab df={df} loading={loading} />}
+          {dockerTab === 'overview'    && <OverviewTab df={df} containers={containers} loading={loading} />}
           {dockerTab === 'images'      && <ImagesTab images={images} loading={loading} />}
           {dockerTab === 'containers'  && <ContainersTab containers={containers} loading={loading} onRefresh={refresh} />}
           {dockerTab === 'volumes'     && <VolumesTab volumes={volumes} loading={loading} onRefresh={refresh} />}
+          {dockerTab === 'compose'     && <ComposeTab refreshTick={composeTick} />}
+          {dockerTab === 'backup'      && <BackupTab volumes={volumes} />}
           {dockerTab === 'prune'       && <PruneTab images={images} onDone={refresh} />}
           {dockerTab === 'log'         && <LogTab />}
         </div>

@@ -40,6 +40,8 @@ export interface DockerContainer {
   status: string
   ports: string
   created_since: string
+  /** Days since the container was stopped; -1 if currently running */
+  stopped_days: number
 }
 
 export interface DockerVolume {
@@ -48,6 +50,10 @@ export interface DockerVolume {
   mountpoint: string
   /** false = dangling / unused */
   in_use: boolean
+  /** Container names currently using this volume */
+  containers: string[]
+  /** Docker Compose project that created this volume, if any */
+  compose_project: string | null
 }
 
 export interface PrunePreview {
@@ -59,6 +65,48 @@ export interface PrunePreview {
   reclaim_size: string
   container_count: number
   volume_count: number
+}
+
+export interface ComposeProject {
+  name: string
+  status: string
+  config_files: string[]
+}
+
+export interface VolumeBackupEntry {
+  filename: string
+  volume: string
+  path: string
+  size_bytes: number
+  /** Unix timestamp (seconds) */
+  created_at: number
+}
+
+export interface ComposeBackupEntry {
+  filename: string
+  project: string
+  original_path: string
+  path: string
+  size_bytes: number
+  created_at: number
+}
+
+export interface TransferResult {
+  moved: number
+  old_dir_removed: boolean
+}
+
+export interface BackupProgress {
+  /** Which volume this event belongs to. */
+  volume: string | null
+  step: string
+  /** 0-100 completion estimate for this volume. */
+  progress: number
+  done: boolean
+  error: string | null
+  filename: string | null
+  /** Raw Docker command being executed — display in terminal. */
+  cmd: string | null
 }
 
 export interface LogEntry {

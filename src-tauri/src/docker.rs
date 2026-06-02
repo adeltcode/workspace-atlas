@@ -54,6 +54,9 @@ pub struct DockerContainer {
     pub status: String,
     pub ports: String,
     pub created_since: String,
+    /// Days since the container was stopped. -1 means it is currently running.
+    /// Parsed from the human-readable Status field ("Exited (0) 3 weeks ago").
+    pub stopped_days: i64,
 }
 
 #[derive(serde::Serialize, Clone, Debug)]
@@ -62,6 +65,97 @@ pub struct DockerVolume {
     pub driver: String,
     pub mountpoint: String,
     pub in_use: bool,
+    /// Container names currently using this volume.
+    pub containers: Vec<String>,
+    /// Docker Compose project that created this volume, if any.
+    pub compose_project: Option<String>,
+}
+
+// ── Compose / Backup types ────────────────────────────────────────────────────
+
+#[derive(serde::Serialize, Clone)]
+pub struct ComposeProject {
+    pub name: String,
+    pub status: String,
+    /// Absolute paths to each config file (comma-separated in docker output).
+    pub config_files: Vec<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct VolumeBackupEntry {
+    pub filename: String,
+    pub volume: String,
+    pub path: String,
+    pub size_bytes: u64,
+    /// Unix timestamp (seconds) when this backup was created.
+    pub created_at: i64,
+}
+
+/// Persisted to `{backup_dir}/backup_manifest.json`.
+#[derive(serde::Serialize, serde::Deserialize, Default)]
+struct BackupManifest {
+    backups: Vec<VolumeBackupEntry>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct ComposeBackupEntry {
+    pub filename: String,
+    pub project: String,
+    /// Original source path of the config file.
+    pub original_path: String,
+    /// Full path to the saved backup file.
+    pub path: String,
+    pub size_bytes: u64,
+    pub created_at: i64,
+}
+
+/// Persisted to `{root}/docker/compose/manifest.json`.
+#[derive(serde::Serialize, serde::Deserialize, Default)]
+struct ComposeBackupManifest {
+    backups: Vec<ComposeBackupEntry>,
+}
+
+#[derive(serde::Serialize, Clone)]
+struct BackupProgress {
+    /// Which volume this event belongs to (None for general messages).
+    volume: Option<String>,
+    step: String,
+    /// 0-100 completion estimate for this volume.
+    progress: u8,
+    done: bool,
+    error: Option<String>,
+    filename: Option<String>,
+    /// The raw Docker command being executed, if applicable. Shown in terminal.
+    cmd: Option<String>,
+}
+
+/// Emit a backup-progress event for a specific volume.
+fn emit_bp(
+    app: &tauri::AppHandle,
+    volume: &str,
+    step: &str,
+    progress: u8,
+    done: bool,
+    error: Option<String>,
+    filename: Option<String>,
+    cmd: Option<String>,
+) {
+    use tauri::Emitter;
+    app.emit("backup-progress", BackupProgress {
+        volume:   Some(volume.to_string()),
+        step:     step.to_string(),
+        progress,
+        done,
+        error,
+        filename,
+        cmd,
+    }).ok();
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct TransferResult {
+    pub moved: u32,
+    pub old_dir_removed: bool,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -77,8 +171,116 @@ pub struct PrunePreview {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Helpers — path routing (Windows / WSL mount / pure WSL)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// True for paths like `C:\...` or `C:/...`
+fn is_windows_absolute(path: &str) -> bool {
+    path.len() >= 2
+        && path.chars().next().map(|c| c.is_ascii_alphabetic()).unwrap_or(false)
+        && path.chars().nth(1) == Some(':')
+}
+
+/// Converts `/mnt/c/Users/foo` → `C:\Users\foo`. Returns `None` for other paths.
+fn wsl_mount_to_windows(path: &str) -> Option<String> {
+    let rest = path.strip_prefix("/mnt/")?;
+    let mut chars = rest.chars();
+    let drive = chars.next()?;
+    let after = chars.as_str();
+    // Must be end of string or start with '/'
+    if !after.is_empty() && !after.starts_with('/') {
+        return None;
+    }
+    let win_rest = after.trim_start_matches('/').replace('/', "\\");
+    Some(format!("{}:\\{}", drive.to_ascii_uppercase(), win_rest))
+}
+
+/// Read a file that lives inside WSL via `wsl cat`. Capped at `max_bytes`.
+fn read_via_wsl(path: &str, max_bytes: usize) -> Result<Vec<u8>, String> {
+    let output = Command::new("wsl")
+        .args(["cat", path])
+        .output()
+        .map_err(|e| format!(
+            "WSL is not available — cannot read '{}': {}",
+            path, e
+        ))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "Cannot read WSL file '{}': {}",
+            path,
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+
+    if output.stdout.len() > max_bytes {
+        return Err(format!(
+            "File too large ({} KB) — only files under {} KB are shown inline",
+            output.stdout.len() / 1024,
+            max_bytes / 1024
+        ));
+    }
+
+    Ok(output.stdout)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers — backup / pause
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Returns IDs of containers that are currently **running** and have `volume_name`
+/// mounted. Uses `docker ps` (running-only by default, no `-a` flag).
+fn get_running_containers_for_volume(volume_name: &str) -> Vec<String> {
+    Command::new("docker")
+        .args([
+            "ps",
+            "--filter", &format!("volume={}", volume_name),
+            "--format", "{{.ID}}",
+        ])
+        .output()
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Helpers — parsing
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Returns the number of days since a container stopped, based on its Status
+/// string (e.g. "Exited (0) 3 weeks ago", "Exited (1) About a minute ago").
+/// Returns -1 for running/paused/created containers.
+fn parse_stopped_days(state: &str, status: &str) -> i64 {
+    if state != "exited" && state != "dead" {
+        return -1;
+    }
+    if state == "dead" {
+        return 999; // definitely stale
+    }
+    // Walk backwards from the word "ago" to find "N unit"
+    let lower = status.to_lowercase();
+    let words: Vec<&str> = lower.split_whitespace().collect();
+    if let Some(ago_pos) = words.iter().position(|&w| w == "ago") {
+        if ago_pos >= 2 {
+            let n = words[ago_pos - 2].parse::<i64>().unwrap_or(1);
+            let unit = words[ago_pos - 1];
+            return match unit {
+                u if u.starts_with("second") || u.starts_with("minute") || u.starts_with("hour") => 0,
+                u if u.starts_with("day")   => n,
+                u if u.starts_with("week")  => n * 7,
+                u if u.starts_with("month") => n * 30,
+                u if u.starts_with("year")  => n * 365,
+                _ => 0,
+            };
+        }
+    }
+    0
+}
 
 /// Split a `docker system df` row on 2+ consecutive spaces so multi-word
 /// type names ("Local Volumes", "Build Cache") and "1.23GB (72%)" stay intact.
@@ -602,14 +804,19 @@ fn get_containers_sync() -> Result<Vec<DockerContainer>, String> {
             .trim_start_matches('/')
             .to_string();
 
+        let state  = v["State"].as_str().unwrap_or("").to_string();
+        let status = v["Status"].as_str().unwrap_or("").to_string();
+        let stopped_days = parse_stopped_days(&state, &status);
+
         containers.push(DockerContainer {
             id: v["ID"].as_str().unwrap_or("").to_string(),
             name,
             image: v["Image"].as_str().unwrap_or("").to_string(),
-            state: v["State"].as_str().unwrap_or("").to_string(),
-            status: v["Status"].as_str().unwrap_or("").to_string(),
+            state,
+            status,
             ports: v["Ports"].as_str().unwrap_or("").to_string(),
             created_since: v["RunningFor"].as_str().unwrap_or("").to_string(),
+            stopped_days,
         });
     }
 
@@ -626,7 +833,6 @@ fn get_volumes_sync() -> Result<Vec<DockerVolume>, String> {
         return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
     }
 
-    // Volumes that are dangling (not referenced by any container) are "unused"
     let dangling: HashSet<String> = Command::new("docker")
         .args(["volume", "ls", "-qf", "dangling=true"])
         .output()
@@ -653,11 +859,41 @@ fn get_volumes_sync() -> Result<Vec<DockerVolume>, String> {
         let name = v["Name"].as_str().unwrap_or("").to_string();
         let in_use = !dangling.contains(&name);
 
+        // Extract compose project from volume labels ("key=val,key2=val2" format).
+        let label_str = v["Labels"].as_str().unwrap_or("");
+        let compose_project = label_str.split(',').find_map(|kv| {
+            let (k, val) = kv.split_once('=')?;
+            if k.trim() == "com.docker.compose.project" { Some(val.trim().to_string()) } else { None }
+        });
+
+        // Query which containers reference this volume (only when in use).
+        let containers: Vec<String> = if in_use {
+            Command::new("docker")
+                .args([
+                    "ps", "-a",
+                    "--filter", &format!("volume={}", name),
+                    "--format", "{{.Names}}",
+                ])
+                .output()
+                .map(|o| {
+                    String::from_utf8_lossy(&o.stdout)
+                        .lines()
+                        .map(|s| s.trim().trim_start_matches('/').to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
         volumes.push(DockerVolume {
             in_use,
             name,
             driver: v["Driver"].as_str().unwrap_or("local").to_string(),
             mountpoint: v["Mountpoint"].as_str().unwrap_or("").to_string(),
+            containers,
+            compose_project,
         });
     }
 
@@ -721,4 +957,632 @@ pub async fn docker_volumes_prune() -> Result<(), String> {
     } else {
         Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tauri commands — Phase 4: Compose viewer & Volume backup
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Manifest helpers ──────────────────────────────────────────────────────────
+//
+// Directory layout (root = user-chosen backup root, e.g. ~/atlas-backups):
+//   {root}/docker/volumes/{volume}_{ts}.tar.gz
+//   {root}/docker/compose/{compose-stem}_{ts}.yml
+//   {root}/docker/manifest.json
+//
+// The old flat layout ({root}/backup_manifest.json + archives at root) is
+// still readable for migration; writes always use the new layout.
+
+fn docker_volumes_dir(root: &str) -> String { format!("{}/docker/volumes", root) }
+fn docker_compose_dir(root: &str) -> String { format!("{}/docker/compose", root) }
+
+fn read_manifest(root: &str) -> BackupManifest {
+    // Try new path first, fall back to legacy flat path for migration.
+    let new_path = format!("{}/docker/manifest.json", root);
+    if let Ok(s) = std::fs::read_to_string(&new_path) {
+        if let Ok(m) = serde_json::from_str(&s) {
+            return m;
+        }
+    }
+    let old_path = format!("{}/backup_manifest.json", root);
+    std::fs::read_to_string(&old_path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn write_manifest(root: &str, manifest: &BackupManifest) -> Result<(), String> {
+    let dir = format!("{}/docker", root);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = format!("{}/manifest.json", dir);
+    let json = serde_json::to_string_pretty(manifest).map_err(|e| e.to_string())?;
+    std::fs::write(path, json).map_err(|e| e.to_string())
+}
+
+fn read_compose_manifest(root: &str) -> ComposeBackupManifest {
+    let path = format!("{}/docker/compose/manifest.json", root);
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn write_compose_manifest(root: &str, manifest: &ComposeBackupManifest) -> Result<(), String> {
+    let dir = format!("{}/docker/compose", root);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = format!("{}/manifest.json", dir);
+    let json = serde_json::to_string_pretty(manifest).map_err(|e| e.to_string())?;
+    std::fs::write(path, json).map_err(|e| e.to_string())
+}
+
+/// Read a source file as a UTF-8 string, handling Windows / WSL-mount / pure-WSL paths.
+fn read_source_as_string(src: &str) -> Result<String, String> {
+    if is_windows_absolute(src) {
+        std::fs::read_to_string(src)
+            .map_err(|e| format!("Cannot read '{}': {}", src, e))
+    } else if let Some(win) = wsl_mount_to_windows(src) {
+        std::fs::read_to_string(&win)
+            .map_err(|e| format!("Cannot read '{}': {}", win, e))
+    } else {
+        read_via_wsl(src, 512_000).and_then(|bytes| {
+            String::from_utf8(bytes)
+                .map_err(|_| "File contains non-UTF-8 characters".to_string())
+        })
+    }
+}
+
+// ── Commands ──────────────────────────────────────────────────────────────────
+
+/// List Docker Compose projects via `docker compose ls --all --format json`.
+#[tauri::command]
+pub async fn docker_compose_ls() -> Result<Vec<ComposeProject>, String> {
+    let output = Command::new("docker")
+        .args(["compose", "ls", "--all", "--format", "json"])
+        .output()
+        .map_err(|e| format!("Failed to run docker compose: {}", e))?;
+
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let trimmed = stdout.trim();
+    if trimmed.is_empty() || trimmed == "null" || trimmed == "[]" {
+        return Ok(Vec::new());
+    }
+
+    let raw: Vec<serde_json::Value> = serde_json::from_str(trimmed)
+        .map_err(|e| format!("JSON parse error: {}", e))?;
+
+    Ok(raw
+        .iter()
+        .map(|v| {
+            let config_str = v["ConfigFiles"].as_str().unwrap_or("");
+            let config_files: Vec<String> = config_str
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            ComposeProject {
+                name: v["Name"].as_str().unwrap_or("").to_string(),
+                status: v["Status"].as_str().unwrap_or("").to_string(),
+                config_files,
+            }
+        })
+        .collect())
+}
+
+/// Read a text file from the filesystem. Handles three path types:
+///   - Windows absolute (`C:\...`)    → direct `fs::read`
+///   - WSL mount (`/mnt/c/...`)       → convert to Windows path, then `fs::read`
+///   - Pure WSL (`/home/...` etc.)    → `wsl cat <path>`
+/// All variants are capped at 512 KB.
+#[tauri::command]
+pub async fn read_file_content(path: String) -> Result<String, String> {
+    const MAX_BYTES: usize = 512_000;
+
+    let bytes: Vec<u8> = if is_windows_absolute(&path) {
+        // ── Native Windows path ──────────────────────────────────────────
+        let meta = std::fs::metadata(&path)
+            .map_err(|e| format!("Cannot access '{}': {}", path, e))?;
+        if meta.len() > MAX_BYTES as u64 {
+            return Err(format!(
+                "File too large ({} KB) — only files under 512 KB are shown inline",
+                meta.len() / 1024
+            ));
+        }
+        std::fs::read(&path).map_err(|e| format!("Read error: {}", e))?
+
+    } else if let Some(win_path) = wsl_mount_to_windows(&path) {
+        // ── /mnt/c/ → C:\ ───────────────────────────────────────────────
+        let meta = std::fs::metadata(&win_path)
+            .map_err(|e| format!("Cannot access '{}': {}", win_path, e))?;
+        if meta.len() > MAX_BYTES as u64 {
+            return Err(format!(
+                "File too large ({} KB) — only files under 512 KB are shown inline",
+                meta.len() / 1024
+            ));
+        }
+        std::fs::read(&win_path).map_err(|e| format!("Read error: {}", e))?
+
+    } else {
+        // ── Pure WSL path (/home/…, /root/…, etc.) ──────────────────────
+        read_via_wsl(&path, MAX_BYTES)?
+    };
+
+    String::from_utf8(bytes)
+        .map_err(|_| "File contains non-UTF-8 characters and cannot be displayed".to_string())
+}
+
+/// Returns the OS-appropriate default backup root directory.
+/// Subcategories are created automatically inside it (e.g. docker/volumes/).
+#[tauri::command]
+pub async fn get_default_backup_dir() -> String {
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .unwrap_or_else(|_| ".".to_string());
+    format!("{}/Atlas Backup", home.replace('\\', "/"))
+}
+
+/// List all volume backups tracked in the manifest under `{root}/docker/manifest.json`.
+/// Entries whose archive files no longer exist on disk are silently filtered out.
+#[tauri::command]
+pub async fn docker_list_backups(backup_dir: String) -> Result<Vec<VolumeBackupEntry>, String> {
+    let manifest = read_manifest(&backup_dir);
+    Ok(manifest
+        .backups
+        .into_iter()
+        .filter(|e| std::path::Path::new(&e.path).exists())
+        .collect())
+}
+
+/// Backup a named volume to `{root}/docker/volumes/{volume}_{ts}.tar.gz`.
+/// Progress is emitted as `backup-progress` Tauri events.
+#[tauri::command]
+pub async fn docker_volume_backup(
+    app: tauri::AppHandle,
+    volume_name: String,
+    backup_dir: String,
+) -> Result<String, String> {
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let volumes_dir = docker_volumes_dir(&backup_dir);
+    fs::create_dir_all(&volumes_dir)
+        .map_err(|e| format!("Cannot create backup directory: {}", e))?;
+
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let filename       = format!("{}_{}.tar.gz", volume_name, ts);
+    let backup_path    = format!("{}/{}", volumes_dir, filename);
+    let docker_vol_dir = volumes_dir.replace('\\', "/");
+
+    let vol = &volume_name;
+
+    emit_bp(&app, vol, "Checking alpine image…", 5, false, None, None,
+        Some("docker image inspect alpine --format {{.Id}}".to_string()));
+
+    let alpine_ok = Command::new("docker")
+        .args(["image", "inspect", "alpine", "--format", "{{.Id}}"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    if !alpine_ok {
+        emit_bp(&app, vol, "Pulling alpine image (one-time setup)…", 10, false, None, None,
+            Some("docker pull alpine".to_string()));
+        let pull = Command::new("docker")
+            .args(["pull", "alpine"])
+            .output()
+            .map_err(|e| format!("Failed to pull alpine: {}", e))?;
+        if !pull.status.success() {
+            let err = String::from_utf8_lossy(&pull.stderr).trim().to_string();
+            emit_bp(&app, vol, "Failed to pull alpine", 10, true, Some(err.clone()), None, None);
+            return Err(err);
+        }
+    }
+
+    // ── Pause running containers that use this volume ────────────────────────
+    let running = get_running_containers_for_volume(vol);
+    let mut paused: Vec<String> = Vec::new();
+
+    if !running.is_empty() {
+        let pause_cmd = format!("docker pause {}", running.join(" "));
+        emit_bp(&app, vol,
+            &format!("Pausing {} container(s) for consistent snapshot…", running.len()),
+            30, false, None, None, Some(pause_cmd));
+
+        for id in &running {
+            let ok = Command::new("docker")
+                .args(["pause", id])
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            if ok { paused.push(id.clone()); }
+        }
+        let skipped = running.len() - paused.len();
+        if skipped > 0 {
+            emit_bp(&app, vol,
+                &format!("{} container(s) could not be paused — backup continues", skipped),
+                35, false, None, None, None);
+        }
+    }
+
+    // ── Run the archive ──────────────────────────────────────────────────────
+    let archive_cmd = format!(
+        "docker run --rm --volume {}:/source:ro --volume {}:/backup alpine tar czf /backup/{} -C /source .",
+        vol, docker_vol_dir, filename
+    );
+    emit_bp(&app, vol, &format!("Creating archive…"), 50, false, None, None, Some(archive_cmd));
+
+    let archive_result = Command::new("docker")
+        .args([
+            "run", "--rm",
+            "--volume", &format!("{}:/source:ro", vol),
+            "--volume", &format!("{}:/backup", docker_vol_dir),
+            "alpine",
+            "tar", "czf", &format!("/backup/{}", filename),
+            "-C", "/source", ".",
+        ])
+        .output()
+        .map_err(|e| format!("Failed to run docker: {}", e));
+
+    // ── Always unpause, even on failure ─────────────────────────────────────
+    if !paused.is_empty() {
+        let unpause_cmd = format!("docker unpause {}", paused.join(" "));
+        emit_bp(&app, vol, "Resuming containers…", 88, false, None, None, Some(unpause_cmd));
+        for id in &paused {
+            Command::new("docker").args(["unpause", id]).output().ok();
+        }
+    }
+
+    let output = archive_result?;
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        emit_bp(&app, vol, "Backup failed", 50, true, Some(err.clone()), None, None);
+        return Err(err);
+    }
+
+    let size_bytes = fs::metadata(&backup_path).map(|m| m.len()).unwrap_or(0);
+
+    emit_bp(&app, vol, "Saving backup record…", 95, false, None, None, None);
+    let mut manifest = read_manifest(&backup_dir);
+    manifest.backups.push(VolumeBackupEntry {
+        filename: filename.clone(),
+        volume: volume_name.clone(),
+        path: backup_path,
+        size_bytes,
+        created_at: ts as i64,
+    });
+    write_manifest(&backup_dir, &manifest).ok();
+
+    emit_bp(&app, vol, &format!("Done — saved as '{}'", filename), 100, true, None, Some(filename.clone()), None);
+    Ok(filename)
+}
+
+/// Restore a volume from a previously created `.tar.gz` archive.
+/// Clears existing volume data before extracting.
+#[tauri::command]
+pub async fn docker_volume_restore(
+    app: tauri::AppHandle,
+    volume_name: String,
+    backup_file: String,
+) -> Result<(), String> {
+    let vol = &volume_name;
+
+    let src_path = std::path::Path::new(&backup_file);
+    if !src_path.exists() {
+        return Err(format!("Backup file not found: {}", backup_file));
+    }
+
+    let backup_dir = src_path
+        .parent()
+        .and_then(|p| p.to_str())
+        .unwrap_or(".")
+        .replace('\\', "/");
+
+    let filename = src_path
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or("")
+        .to_string();
+
+    emit_bp(&app, vol, &format!("Restoring '{}' from '{}'…", vol, filename), 10, false, None, None, None);
+
+    // Ensure the target volume exists
+    emit_bp(&app, vol, "Preparing volume…", 20, false, None, None,
+        Some(format!("docker volume create {}", vol)));
+    let create = Command::new("docker")
+        .args(["volume", "create", vol])
+        .output()
+        .map_err(|e| format!("Cannot create volume: {}", e))?;
+    if !create.status.success() {
+        let err = String::from_utf8_lossy(&create.stderr).trim().to_string();
+        emit_bp(&app, vol, "Failed to prepare volume", 20, true, Some(err.clone()), None, None);
+        return Err(err);
+    }
+
+    // `find -mindepth 1 -delete` removes all content without removing the
+    // directory itself, handling hidden files and nested dirs correctly.
+    let restore_cmd = format!(
+        "find /target -mindepth 1 -delete && tar xzf /backup/{} -C /target",
+        filename
+    );
+    let docker_cmd = format!(
+        "docker run --rm --volume {}:/target --volume {}:/backup:ro alpine sh -c \"{}\"",
+        vol, backup_dir, restore_cmd
+    );
+    emit_bp(&app, vol, "Restoring data…", 40, false, None, None, Some(docker_cmd));
+
+    let output = Command::new("docker")
+        .args([
+            "run", "--rm",
+            "--volume", &format!("{}:/target", vol),
+            "--volume", &format!("{}:/backup:ro", backup_dir),
+            "alpine",
+            "sh", "-c", &restore_cmd,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to run docker: {}", e))?;
+
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        emit_bp(&app, vol, "Restore failed", 40, true, Some(err.clone()), None, None);
+        return Err(err);
+    }
+
+    emit_bp(&app, vol, &format!("Restore complete — '{}' is ready", vol), 100, true, None, None, None);
+    Ok(())
+}
+
+/// Backup compose config files for a project.
+/// - Skips files whose content is unchanged since the last backup (deduplication).
+/// - Keeps at most 10 backups per (project, original_path), pruning the oldest.
+/// - Tracks everything in `{root}/docker/compose/manifest.json`.
+/// Returns only the entries that were actually saved (empty = no changes).
+#[tauri::command]
+pub async fn docker_backup_compose(
+    project: String,
+    config_files: Vec<String>,
+    backup_dir: String,
+) -> Result<Vec<ComposeBackupEntry>, String> {
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let compose_dir = docker_compose_dir(&backup_dir);
+    fs::create_dir_all(&compose_dir)
+        .map_err(|e| format!("Cannot create compose backup dir: {}", e))?;
+
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let mut manifest = read_compose_manifest(&backup_dir);
+    let mut saved: Vec<ComposeBackupEntry> = Vec::new();
+
+    for src_str in &config_files {
+        // Read the current file content
+        let content = match read_source_as_string(src_str) {
+            Ok(c)  => c,
+            Err(e) => { eprintln!("Warning: cannot read '{}': {}", src_str, e); continue; }
+        };
+
+        // Deduplication: skip if content is identical to the most recent backup
+        let last = manifest.backups.iter()
+            .filter(|e| e.project == project && e.original_path == *src_str)
+            .max_by_key(|e| e.created_at);
+
+        if let Some(prev) = last {
+            if std::path::Path::new(&prev.path).exists() {
+                if fs::read_to_string(&prev.path).ok().as_deref() == Some(&content) {
+                    continue; // unchanged — skip
+                }
+            }
+        }
+
+        let src_path = std::path::Path::new(src_str);
+        let stem = src_path.file_stem().and_then(|s| s.to_str()).unwrap_or("compose");
+        let ext  = src_path.extension().and_then(|e| e.to_str()).unwrap_or("yml");
+        let filename  = format!("{}_{}_{}.{}", project, stem, ts, ext);
+        let dest_path = format!("{}/{}", compose_dir.replace('\\', "/"), filename);
+
+        fs::write(&dest_path, &content)
+            .map_err(|e| format!("Failed to write '{}': {}", dest_path, e))?;
+
+        let size_bytes = fs::metadata(&dest_path).map(|m| m.len()).unwrap_or(0);
+
+        let entry = ComposeBackupEntry {
+            filename,
+            project: project.clone(),
+            original_path: src_str.clone(),
+            path: dest_path,
+            size_bytes,
+            created_at: ts as i64,
+        };
+        manifest.backups.push(entry.clone());
+        saved.push(entry);
+
+        // Prune: keep only the 10 most recent backups for this (project, file)
+        let mut for_file: Vec<_> = manifest.backups.iter()
+            .filter(|e| e.project == project && e.original_path == *src_str)
+            .cloned()
+            .collect();
+        for_file.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+
+        if for_file.len() > 10 {
+            let stale_names: std::collections::HashSet<_> = for_file[10..]
+                .iter().map(|e| e.filename.clone()).collect();
+            for old in &for_file[10..] { fs::remove_file(&old.path).ok(); }
+            manifest.backups.retain(|e| !stale_names.contains(&e.filename));
+        }
+    }
+
+    write_compose_manifest(&backup_dir, &manifest)?;
+    Ok(saved)
+}
+
+/// List all compose backups for a given project, most-recent first.
+/// Entries whose archive files no longer exist are filtered out.
+#[tauri::command]
+pub async fn docker_list_compose_backups(
+    backup_dir: String,
+    project: String,
+) -> Result<Vec<ComposeBackupEntry>, String> {
+    let mut entries: Vec<_> = read_compose_manifest(&backup_dir)
+        .backups
+        .into_iter()
+        .filter(|e| e.project == project && std::path::Path::new(&e.path).exists())
+        .collect();
+    entries.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    Ok(entries)
+}
+
+/// Delete a single compose backup archive and remove it from the manifest.
+#[tauri::command]
+pub async fn docker_delete_compose_backup(
+    backup_dir: String,
+    filename: String,
+) -> Result<(), String> {
+    let mut manifest = read_compose_manifest(&backup_dir);
+
+    let path = manifest.backups.iter()
+        .find(|e| e.filename == filename)
+        .map(|e| e.path.clone())
+        .unwrap_or_else(|| format!("{}/docker/compose/{}", backup_dir, filename));
+
+    if std::path::Path::new(&path).exists() {
+        std::fs::remove_file(&path)
+            .map_err(|e| format!("Failed to delete '{}': {}", path, e))?;
+    }
+    manifest.backups.retain(|e| e.filename != filename);
+    write_compose_manifest(&backup_dir, &manifest)
+}
+
+/// Returns true if `path` contains no files anywhere in its tree.
+fn is_effectively_empty(path: &std::path::Path) -> bool {
+    match std::fs::read_dir(path) {
+        Ok(entries) => entries.flatten().all(|e| {
+            let p = e.path();
+            p.is_dir() && is_effectively_empty(&p)
+        }),
+        Err(_) => false,
+    }
+}
+
+/// Move all volume backups (and compose files) from `from_root` to `to_root`.
+/// Tries atomic rename first; falls back to copy+delete for cross-filesystem moves.
+/// After transfer, removes the old directory tree if it is entirely empty.
+#[tauri::command]
+pub async fn transfer_backups(from_dir: String, to_dir: String) -> Result<TransferResult, String> {
+    use std::fs;
+
+    if from_dir == to_dir {
+        return Ok(TransferResult { moved: 0, old_dir_removed: false });
+    }
+
+    let dest_vols = docker_volumes_dir(&to_dir);
+    fs::create_dir_all(&dest_vols)
+        .map_err(|e| format!("Cannot create '{}': {}", dest_vols, e))?;
+
+    let mut manifest = read_manifest(&from_dir);
+    let mut transferred = 0u32;
+
+    for entry in &mut manifest.backups {
+        let src = std::path::Path::new(&entry.path);
+        if !src.exists() {
+            continue;
+        }
+        let fname = src
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or(&entry.filename)
+            .to_string();
+        let dest = format!("{}/{}", dest_vols.replace('\\', "/"), fname);
+
+        let ok = fs::rename(&entry.path, &dest).is_ok()
+            || fs::copy(&entry.path, &dest).map(|_| { fs::remove_file(&entry.path).ok(); }).is_ok();
+
+        if ok {
+            entry.path = dest;
+            transferred += 1;
+        }
+    }
+
+    // Write updated manifest to new root, remove old manifests
+    write_manifest(&to_dir, &manifest)?;
+    fs::remove_file(format!("{}/backup_manifest.json", from_dir)).ok();
+    fs::remove_file(format!("{}/docker/manifest.json", from_dir)).ok();
+
+    // Transfer compose subdirectory (old flat or new docker/compose/)
+    for src_compose in [
+        format!("{}/docker/compose", from_dir.replace('\\', "/")),
+        format!("{}/compose",        from_dir.replace('\\', "/")),
+    ] {
+        if !std::path::Path::new(&src_compose).exists() {
+            continue;
+        }
+        let dst_compose = docker_compose_dir(&to_dir);
+        if fs::create_dir_all(&dst_compose).is_ok() {
+            if let Ok(entries) = fs::read_dir(&src_compose) {
+                for dir_entry in entries.flatten() {
+                    let sf = dir_entry.path();
+                    if let Some(name) = sf.file_name().and_then(|n| n.to_str()) {
+                        let df = format!("{}/{}", dst_compose, name);
+                        if fs::rename(&sf, &df).is_err() {
+                            if fs::copy(&sf, &df).is_ok() {
+                                fs::remove_file(&sf).ok();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        break; // only migrate one source compose dir
+    }
+
+    // Remove the old root if nothing remains in it.
+    let old_dir_removed = is_effectively_empty(std::path::Path::new(&from_dir))
+        && std::fs::remove_dir_all(&from_dir).is_ok();
+
+    Ok(TransferResult { moved: transferred, old_dir_removed })
+}
+
+/// Delete a backup archive and remove its entry from the manifest.
+#[tauri::command]
+pub async fn docker_delete_backup(backup_dir: String, filename: String) -> Result<(), String> {
+    let mut manifest = read_manifest(&backup_dir);
+
+    // Find the stored path from the manifest so we delete the right file.
+    let path = manifest
+        .backups
+        .iter()
+        .find(|e| e.filename == filename)
+        .map(|e| e.path.clone())
+        .unwrap_or_else(|| format!("{}/docker/volumes/{}", backup_dir, filename));
+
+    if std::path::Path::new(&path).exists() {
+        std::fs::remove_file(&path)
+            .map_err(|e| format!("Failed to delete '{}': {}", path, e))?;
+    }
+
+    manifest.backups.retain(|e| e.filename != filename);
+    write_manifest(&backup_dir, &manifest)
+}
+
+/// Open a native folder-picker dialog and return the selected path.
+/// Returns `null` if the user cancels.
+#[tauri::command]
+pub async fn pick_backup_folder() -> Option<String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        rfd::FileDialog::new()
+            .pick_folder()
+            .and_then(|p| p.to_str().map(|s| s.replace('\\', "/")))
+    })
+    .await
+    .ok()
+    .flatten()
 }

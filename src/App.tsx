@@ -22,10 +22,12 @@ export default function App() {
   // ── Sidebar resize — direct DOM write during drag, store only on release ──
   const onSidebarResize = (e: React.MouseEvent) => {
     e.preventDefault()
-    const startX = e.clientX
-    const startW = useAppStore.getState().sidebarWidth
-    const body   = e.currentTarget.parentElement as HTMLElement   // .app-body
-    let current  = startW
+    const startX    = e.clientX
+    const body      = e.currentTarget.parentElement as HTMLElement   // .app-body
+    // Capture the actual rendered width (works even when sidebar is fit-content)
+    const sidebarEl = body.querySelector<HTMLElement>('.sidebar')
+    const startW    = sidebarEl?.offsetWidth ?? (useAppStore.getState().sidebarWidth || 200)
+    let current     = startW
 
     const onMove = (mv: MouseEvent) => {
       current = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, startW + mv.clientX - startX))
@@ -72,7 +74,9 @@ export default function App() {
       <Titlebar />
       <div
         className="app-body"
-        style={{ '--sidebar-w': `${sidebarWidth}px` } as React.CSSProperties}
+        style={sidebarWidth > 0
+          ? { '--sidebar-w': `${sidebarWidth}px` } as React.CSSProperties
+          : {}}
       >
         <Sidebar />
         <div className="sidebar-resize-handle" onMouseDown={onSidebarResize} />

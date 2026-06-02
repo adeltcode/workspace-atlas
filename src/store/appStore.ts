@@ -5,7 +5,7 @@ import type { TerminalLine } from '../types/terminal'
 
 export type View      = 'dashboard' | 'docker' | 'wsl' | 'packages' | 'automation'
 export type Theme     = 'dark' | 'light'
-export type DockerTab = 'overview' | 'images' | 'containers' | 'volumes' | 'prune' | 'log'
+export type DockerTab = 'overview' | 'images' | 'containers' | 'volumes' | 'compose' | 'backup' | 'prune' | 'log'
 
 const MAX_DOCKER_LOGS    = 10
 const MAX_TERMINAL_LINES = 500
@@ -34,6 +34,10 @@ interface AppState {
   terminalHeight: number
   setSidebarWidth: (w: number) => void
   setTerminalHeight: (h: number) => void
+
+  // ── Backup directory (persisted)
+  backupDir: string
+  setBackupDir: (dir: string) => void
 
   // ── Docker keep-list (persisted)
   dockerKeepList: string[]
@@ -81,11 +85,15 @@ export const useAppStore = create<AppState>()(
       setActiveView: (view) => set({ activeView: view }),
       setDockerTab:  (dockerTab) => set({ dockerTab }),
 
-      // ── Layout sizes
-      sidebarWidth:  200,
+      // ── Layout sizes (sidebarWidth 0 = auto/fit-content)
+      sidebarWidth:  0,
       terminalHeight: 260,
       setSidebarWidth:   (sidebarWidth)   => set({ sidebarWidth }),
       setTerminalHeight: (terminalHeight) => set({ terminalHeight }),
+
+      // ── Backup directory
+      backupDir: '',
+      setBackupDir: (backupDir) => set({ backupDir }),
 
       // ── Docker keep-list
       dockerKeepList: [],
@@ -113,7 +121,7 @@ export const useAppStore = create<AppState>()(
       terminalOpen: false,
       addTerminalLine: (text, type) =>
         set((s) => ({
-          terminalOpen: true,
+          // Do NOT force-open the terminal — user controls visibility explicitly
           terminalLines: [
             ...s.terminalLines,
             { id: `${++_lineId}`, text, type, ts: Date.now() },
@@ -131,6 +139,7 @@ export const useAppStore = create<AppState>()(
         dockerTab:      s.dockerTab,
         sidebarWidth:   s.sidebarWidth,
         terminalHeight: s.terminalHeight,
+        backupDir:      s.backupDir,
         dockerKeepList: s.dockerKeepList,
         dockerLogs:     s.dockerLogs,
       }),
