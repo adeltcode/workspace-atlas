@@ -1,23 +1,41 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { LogEntry } from '../types/docker'
+import type { LogEntry, DockerStatus, DockerSystemDf, DockerImage, DockerContainer, DockerVolume } from '../features/docker/types'
 import type { TerminalLine } from '../types/terminal'
 
-export type View = 'dashboard' | 'docker' | 'wsl' | 'packages'
-export type Theme = 'dark' | 'light'
+export type View      = 'dashboard' | 'docker' | 'wsl' | 'packages' | 'automation'
+export type Theme     = 'dark' | 'light'
+export type DockerTab = 'overview' | 'images' | 'containers' | 'volumes' | 'prune' | 'log'
 
 const MAX_DOCKER_LOGS    = 10
 const MAX_TERMINAL_LINES = 500
+
+export interface DockerCache {
+  status: DockerStatus
+  df: DockerSystemDf
+  images: DockerImage[]
+  containers: DockerContainer[]
+  volumes: DockerVolume[]
+  fetchedAt: number
+}
 
 interface AppState {
   // ── App
   theme: Theme
   activeView: View
+  dockerTab: DockerTab
   setTheme: (theme: Theme) => void
   toggleTheme: () => void
   setActiveView: (view: View) => void
+  setDockerTab: (tab: DockerTab) => void
 
-  // ── Docker keep-list
+  // ── Layout sizes (persisted)
+  sidebarWidth: number
+  terminalHeight: number
+  setSidebarWidth: (w: number) => void
+  setTerminalHeight: (h: number) => void
+
+  // ── Docker keep-list (persisted)
   dockerKeepList: string[]
   addToKeepList: (id: string) => void
   removeFromKeepList: (id: string) => void
@@ -27,7 +45,12 @@ interface AppState {
   addDockerLog: (entry: LogEntry) => void
   clearDockerLogs: () => void
 
-  // ── Global terminal (ephemeral — not persisted)
+  // ── Docker data cache (ephemeral)
+  dockerCache: DockerCache | null
+  setDockerCache: (cache: DockerCache) => void
+  clearDockerCache: () => void
+
+  // ── Global terminal (ephemeral)
   terminalLines: TerminalLine[]
   terminalOpen: boolean
   addTerminalLine: (text: string, type: TerminalLine['type']) => void
@@ -52,14 +75,17 @@ export const useAppStore = create<AppState>()(
       // ── App
       theme: getSystemTheme(),
       activeView: 'dashboard',
-
-      setTheme: (theme) => { applyTheme(theme); set({ theme }) },
-      toggleTheme: () => {
-        const next = get().theme === 'dark' ? 'light' : 'dark'
-        applyTheme(next)
-        set({ theme: next })
-      },
+      dockerTab: 'overview',
+      setTheme:      (theme) => { applyTheme(theme); set({ theme }) },
+      toggleTheme:   () => { const next = get().theme === 'dark' ? 'light' : 'dark'; applyTheme(next); set({ theme: next }) },
       setActiveView: (view) => set({ activeView: view }),
+      setDockerTab:  (dockerTab) => set({ dockerTab }),
+
+      // ── Layout sizes
+      sidebarWidth:  200,
+      terminalHeight: 260,
+      setSidebarWidth:   (sidebarWidth)   => set({ sidebarWidth }),
+      setTerminalHeight: (terminalHeight) => set({ terminalHeight }),
 
       // ── Docker keep-list
       dockerKeepList: [],
@@ -74,11 +100,13 @@ export const useAppStore = create<AppState>()(
 
       // ── Docker logs
       dockerLogs: [],
-      addDockerLog: (entry) =>
-        set((s) => ({
-          dockerLogs: [entry, ...s.dockerLogs].slice(0, MAX_DOCKER_LOGS),
-        })),
+      addDockerLog:  (entry) => set((s) => ({ dockerLogs: [entry, ...s.dockerLogs].slice(0, MAX_DOCKER_LOGS) })),
       clearDockerLogs: () => set({ dockerLogs: [] }),
+
+      // ── Docker cache
+      dockerCache: null,
+      setDockerCache:   (cache) => set({ dockerCache: cache }),
+      clearDockerCache: () => set({ dockerCache: null }),
 
       // ── Terminal
       terminalLines: [],
@@ -100,6 +128,9 @@ export const useAppStore = create<AppState>()(
       partialize: (s) => ({
         theme:          s.theme,
         activeView:     s.activeView,
+        dockerTab:      s.dockerTab,
+        sidebarWidth:   s.sidebarWidth,
+        terminalHeight: s.terminalHeight,
         dockerKeepList: s.dockerKeepList,
         dockerLogs:     s.dockerLogs,
       }),

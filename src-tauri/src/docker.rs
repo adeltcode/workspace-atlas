@@ -45,6 +45,25 @@ pub struct DockerImage {
     pub in_use: bool,
 }
 
+#[derive(serde::Serialize, Clone, Debug)]
+pub struct DockerContainer {
+    pub id: String,
+    pub name: String,
+    pub image: String,
+    pub state: String,
+    pub status: String,
+    pub ports: String,
+    pub created_since: String,
+}
+
+#[derive(serde::Serialize, Clone, Debug)]
+pub struct DockerVolume {
+    pub name: String,
+    pub driver: String,
+    pub mountpoint: String,
+    pub in_use: bool,
+}
+
 #[derive(serde::Serialize, Clone)]
 pub struct PrunePreview {
     pub level: u8,
@@ -547,4 +566,159 @@ pub async fn docker_prune_run(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tauri commands — Phase 3: Containers & Volumes
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn get_containers_sync() -> Result<Vec<DockerContainer>, String> {
+    let output = Command::new("docker")
+        .args(["ps", "-a", "--format", "{{json .}}"])
+        .output()
+        .map_err(|e| format!("Failed to run docker: {}", e))?;
+
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut containers = Vec::new();
+
+    for line in stdout.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let v: serde_json::Value =
+            serde_json::from_str(line).map_err(|e| format!("JSON parse error: {}", e))?;
+
+        // Names can be comma-separated; take the first and strip any leading slash
+        let raw_name = v["Names"].as_str().unwrap_or("").to_string();
+        let name = raw_name
+            .split(',')
+            .next()
+            .unwrap_or("")
+            .trim_start_matches('/')
+            .to_string();
+
+        containers.push(DockerContainer {
+            id: v["ID"].as_str().unwrap_or("").to_string(),
+            name,
+            image: v["Image"].as_str().unwrap_or("").to_string(),
+            state: v["State"].as_str().unwrap_or("").to_string(),
+            status: v["Status"].as_str().unwrap_or("").to_string(),
+            ports: v["Ports"].as_str().unwrap_or("").to_string(),
+            created_since: v["RunningFor"].as_str().unwrap_or("").to_string(),
+        });
+    }
+
+    Ok(containers)
+}
+
+fn get_volumes_sync() -> Result<Vec<DockerVolume>, String> {
+    let output = Command::new("docker")
+        .args(["volume", "ls", "--format", "{{json .}}"])
+        .output()
+        .map_err(|e| format!("Failed to run docker: {}", e))?;
+
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+
+    // Volumes that are dangling (not referenced by any container) are "unused"
+    let dangling: HashSet<String> = Command::new("docker")
+        .args(["volume", "ls", "-qf", "dangling=true"])
+        .output()
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut volumes = Vec::new();
+
+    for line in stdout.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let v: serde_json::Value =
+            serde_json::from_str(line).map_err(|e| format!("JSON parse error: {}", e))?;
+
+        let name = v["Name"].as_str().unwrap_or("").to_string();
+        let in_use = !dangling.contains(&name);
+
+        volumes.push(DockerVolume {
+            in_use,
+            name,
+            driver: v["Driver"].as_str().unwrap_or("local").to_string(),
+            mountpoint: v["Mountpoint"].as_str().unwrap_or("").to_string(),
+        });
+    }
+
+    Ok(volumes)
+}
+
+#[tauri::command]
+pub async fn docker_containers() -> Result<Vec<DockerContainer>, String> {
+    tauri::async_runtime::spawn_blocking(get_containers_sync)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn docker_volumes() -> Result<Vec<DockerVolume>, String> {
+    tauri::async_runtime::spawn_blocking(get_volumes_sync)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn docker_container_action(id: String, action: String) -> Result<(), String> {
+    let sub = match action.as_str() {
+        "start"  => "start",
+        "stop"   => "stop",
+        "remove" => "rm",
+        _ => return Err(format!("Unknown action: {}", action)),
+    };
+    let output = Command::new("docker")
+        .args([sub, &id])
+        .output()
+        .map_err(|e| format!("Failed to run docker: {}", e))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn docker_volume_remove(name: String) -> Result<(), String> {
+    let output = Command::new("docker")
+        .args(["volume", "rm", &name])
+        .output()
+        .map_err(|e| format!("Failed to run docker: {}", e))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn docker_volumes_prune() -> Result<(), String> {
+    let output = Command::new("docker")
+        .args(["volume", "prune", "-f"])
+        .output()
+        .map_err(|e| format!("Failed to run docker: {}", e))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
 }

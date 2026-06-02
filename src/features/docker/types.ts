@@ -30,6 +30,26 @@ export interface DockerImage {
   in_use: boolean
 }
 
+export interface DockerContainer {
+  id: string
+  name: string
+  image: string
+  /** 'running' | 'exited' | 'paused' | 'created' | 'restarting' | 'dead' */
+  state: string
+  /** Human-readable e.g. "Up 2 days", "Exited (0) 3 hours ago" */
+  status: string
+  ports: string
+  created_since: string
+}
+
+export interface DockerVolume {
+  name: string
+  driver: string
+  mountpoint: string
+  /** false = dangling / unused */
+  in_use: boolean
+}
+
 export interface PrunePreview {
   level: number
   command: string

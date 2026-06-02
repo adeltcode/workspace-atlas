@@ -11,6 +11,11 @@ pub fn run() {
             docker::docker_images,
             docker::docker_prune_preview,
             docker::docker_prune_run,
+            docker::docker_containers,
+            docker::docker_volumes,
+            docker::docker_container_action,
+            docker::docker_volume_remove,
+            docker::docker_volumes_prune,
             shell::shell_run,
         ])
         .run(tauri::generate_context!())
