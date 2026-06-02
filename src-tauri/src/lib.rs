@@ -1,4 +1,5 @@
 mod docker;
+mod shell;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -10,6 +11,7 @@ pub fn run() {
             docker::docker_images,
             docker::docker_prune_preview,
             docker::docker_prune_run,
+            shell::shell_run,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
