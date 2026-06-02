@@ -54,6 +54,19 @@ export interface DockerVolume {
   containers: string[]
   /** Docker Compose project that created this volume, if any */
   compose_project: string | null
+  /** Disk space used (0 = unknown / still loading) */
+  size_bytes: number
+}
+
+export interface DockerNetwork {
+  id: string
+  name: string
+  driver: string
+  scope: string
+  internal: boolean
+  ipv6: boolean
+  /** "YYYY-MM-DD HH:mm" */
+  created: string
 }
 
 export interface PrunePreview {

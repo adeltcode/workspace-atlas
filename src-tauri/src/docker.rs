@@ -69,6 +69,20 @@ pub struct DockerVolume {
     pub containers: Vec<String>,
     /// Docker Compose project that created this volume, if any.
     pub compose_project: Option<String>,
+    /// Disk space used by this volume's data (0 = unknown).
+    pub size_bytes: u64,
+}
+
+#[derive(serde::Serialize, Clone, Debug)]
+pub struct DockerNetwork {
+    pub id: String,
+    pub name: String,
+    pub driver: String,
+    pub scope: String,
+    pub internal: bool,
+    pub ipv6: bool,
+    /// Shortened creation timestamp e.g. "2024-01-15 10:30".
+    pub created: String,
 }
 
 // ── Compose / Backup types ────────────────────────────────────────────────────
@@ -378,6 +392,43 @@ fn bytes_to_human(bytes: u64) -> String {
     }
 }
 
+fn is_leap_year(y: u32) -> bool {
+    (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
+}
+
+/// Format a Unix timestamp (seconds) as "YYYY-MM-DD_HH-mm" (UTC).
+/// Used for backup filenames so they sort and read cleanly.
+fn ts_to_datetime_str(ts: u64) -> String {
+    let min_total  = ts / 60;
+    let hour_total = min_total / 60;
+    let day_total  = hour_total / 24;
+
+    let hh = (hour_total % 24) as u32;
+    let mm = (min_total  % 60) as u32;
+
+    // Days since 1970-01-01
+    let mut y = 1970u32;
+    let mut d = day_total as u32;
+    loop {
+        let dy = if is_leap_year(y) { 366 } else { 365 };
+        if d < dy { break; }
+        d -= dy;
+        y += 1;
+    }
+    let mo_days: [u32; 12] = if is_leap_year(y) {
+        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    } else {
+        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    };
+    let mut mo = 0u32;
+    for &days_in_mo in &mo_days {
+        if d < days_in_mo { break; }
+        d -= days_in_mo;
+        mo += 1;
+    }
+    format!("{:04}-{:02}-{:02}_{:02}-{:02}", y, mo + 1, d + 1, hh, mm)
+}
+
 /// Approximate days from Docker's human-readable "CreatedSince" field
 /// e.g. "3 weeks ago" → 21, "2 months ago" → 60.
 fn parse_age_days(created_since: &str) -> i64 {
@@ -487,6 +538,109 @@ fn count_unused_volumes_sync() -> u32 {
                 .count() as u32
         })
         .unwrap_or(0)
+}
+
+/// Run `docker system df -v` and return a map of volume name → size in bytes.
+/// Returns an empty map on any error so it degrades gracefully.
+fn get_volume_sizes_sync() -> std::collections::HashMap<String, u64> {
+    let output = match Command::new("docker")
+        .args(["system", "df", "-v", "--format", "{{json .}}"])
+        .output()
+    {
+        // Some older Docker versions don't support --format with -v; fall back to plain text
+        Ok(o) if o.status.success() => o,
+        _ => {
+            // Fallback: plain text
+            match Command::new("docker").args(["system", "df", "-v"]).output() {
+                Ok(o) if o.status.success() => return parse_volume_sizes_text(&String::from_utf8_lossy(&o.stdout)),
+                _ => return std::collections::HashMap::new(),
+            }
+        }
+    };
+
+    // Try to parse as NDJSON (each line is a JSON object from the Go template)
+    // If the output is plain text instead, fall back to the text parser
+    let text = String::from_utf8_lossy(&output.stdout);
+    if text.trim_start().starts_with('{') {
+        // Each line is {"Name":..., "Size":...} — not the standard output format
+        // Docker doesn't support --format with -v in all versions; use text parser
+    }
+    parse_volume_sizes_text(&text)
+}
+
+fn parse_volume_sizes_text(text: &str) -> std::collections::HashMap<String, u64> {
+    let mut in_volumes = false;
+    let mut past_header = false;
+    let mut sizes = std::collections::HashMap::new();
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.contains("Local Volumes space usage") {
+            in_volumes = true;
+            past_header = false;
+            continue;
+        }
+        if !in_volumes { continue; }
+        if trimmed.is_empty() { continue; }
+        if trimmed.starts_with("VOLUME NAME") {
+            past_header = true;
+            continue;
+        }
+        if past_header {
+            if trimmed.starts_with("Build cache") || trimmed.starts_with("CACHE") {
+                break;
+            }
+            // Split on 2+ consecutive spaces: NAME  LINKS  SIZE
+            let cols = split_df_line(trimmed);
+            if cols.len() >= 3 {
+                sizes.insert(cols[0].clone(), parse_size_bytes(&cols[2]));
+            }
+        }
+    }
+
+    sizes
+}
+
+fn get_networks_sync() -> Result<Vec<DockerNetwork>, String> {
+    let output = Command::new("docker")
+        .args(["network", "ls", "--format", "{{json .}}"])
+        .output()
+        .map_err(|e| format!("Failed to run docker network ls: {}", e))?;
+
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut networks = Vec::new();
+
+    for line in stdout.lines() {
+        let line = line.trim();
+        if line.is_empty() { continue; }
+        let v: serde_json::Value = serde_json::from_str(line)
+            .map_err(|e| format!("JSON parse error: {}", e))?;
+
+        let internal = v["Internal"].as_str().unwrap_or("false")
+            .eq_ignore_ascii_case("true");
+        let ipv6 = v["IPv6"].as_str().unwrap_or("false")
+            .eq_ignore_ascii_case("true");
+
+        // "2024-01-15 10:30:00.123 +0000 UTC" → "2024-01-15 10:30"
+        let created_raw = v["CreatedAt"].as_str().unwrap_or("").to_string();
+        let created = created_raw.get(..16).unwrap_or(&created_raw).to_string();
+
+        networks.push(DockerNetwork {
+            id:       v["ID"].as_str().unwrap_or("").to_string(),
+            name:     v["Name"].as_str().unwrap_or("").to_string(),
+            driver:   v["Driver"].as_str().unwrap_or("").to_string(),
+            scope:    v["Scope"].as_str().unwrap_or("").to_string(),
+            internal,
+            ipv6,
+            created,
+        });
+    }
+
+    Ok(networks)
 }
 
 /// Run a command and stream each stdout/stderr line as a "docker-log" event.
@@ -894,6 +1048,7 @@ fn get_volumes_sync() -> Result<Vec<DockerVolume>, String> {
             mountpoint: v["Mountpoint"].as_str().unwrap_or("").to_string(),
             containers,
             compose_project,
+            size_bytes: 0, // filled in by docker_volumes() in parallel
         });
     }
 
@@ -909,9 +1064,19 @@ pub async fn docker_containers() -> Result<Vec<DockerContainer>, String> {
 
 #[tauri::command]
 pub async fn docker_volumes() -> Result<Vec<DockerVolume>, String> {
-    tauri::async_runtime::spawn_blocking(get_volumes_sync)
-        .await
-        .map_err(|e| e.to_string())?
+    // Fetch volume list and disk sizes concurrently so the tab stays fast.
+    let vols_task  = tauri::async_runtime::spawn_blocking(get_volumes_sync);
+    let sizes_task = tauri::async_runtime::spawn_blocking(get_volume_sizes_sync);
+
+    let mut volumes = vols_task.await.map_err(|e| e.to_string())??;
+    let sizes       = sizes_task.await.map_err(|e| e.to_string())?;
+
+    for vol in &mut volumes {
+        if let Some(&sz) = sizes.get(&vol.name) {
+            vol.size_bytes = sz;
+        }
+    }
+    Ok(volumes)
 }
 
 #[tauri::command]
@@ -952,6 +1117,55 @@ pub async fn docker_volumes_prune() -> Result<(), String> {
         .args(["volume", "prune", "-f"])
         .output()
         .map_err(|e| format!("Failed to run docker: {}", e))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
+}
+
+/// Stream the last `tail` log lines from a container.
+/// `--timestamps` adds RFC3339 prefixes so both stdout+stderr sort correctly.
+#[tauri::command]
+pub async fn docker_container_logs(id: String, tail: u32) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let tail_str = tail.to_string();
+        let output = Command::new("docker")
+            .args(["logs", "--tail", &tail_str, "--timestamps", &id])
+            .output()
+            .map_err(|e| format!("Failed to run docker logs: {}", e))?;
+
+        let stdout_str = String::from_utf8_lossy(&output.stdout);
+        let stderr_str = String::from_utf8_lossy(&output.stderr);
+
+        let mut all: Vec<String> = stdout_str.lines()
+            .chain(stderr_str.lines())
+            .filter(|l| !l.is_empty())
+            .map(|l| l.to_string())
+            .collect();
+
+        // Timestamps are RFC3339 so lexicographic sort = chronological order,
+        // correctly interleaving container stdout and stderr.
+        all.sort_unstable();
+        Ok(all)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn docker_networks() -> Result<Vec<DockerNetwork>, String> {
+    tauri::async_runtime::spawn_blocking(get_networks_sync)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn docker_network_remove(id: String) -> Result<(), String> {
+    let output = Command::new("docker")
+        .args(["network", "rm", &id])
+        .output()
+        .map_err(|e| format!("Failed to run docker network rm: {}", e))?;
     if output.status.success() {
         Ok(())
     } else {
@@ -1387,7 +1601,7 @@ pub async fn docker_backup_compose(
         let src_path = std::path::Path::new(src_str);
         let stem = src_path.file_stem().and_then(|s| s.to_str()).unwrap_or("compose");
         let ext  = src_path.extension().and_then(|e| e.to_str()).unwrap_or("yml");
-        let filename  = format!("{}_{}_{}.{}", project, stem, ts, ext);
+        let filename  = format!("{}_{}__{}.{}", project, stem, ts_to_datetime_str(ts), ext);
         let dest_path = format!("{}/{}", compose_dir.replace('\\', "/"), filename);
 
         fs::write(&dest_path, &content)

@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react'
-import { Play, Square, Trash2, ChevronUp, ChevronDown } from 'lucide-react'
+import React, { useState, useMemo, useRef, useEffect } from 'react'
+import { Play, Square, Trash2, ChevronUp, ChevronDown, FileText, RefreshCw, X } from 'lucide-react'
 import clsx from 'clsx'
 import * as api from '../api'
 import type { DockerContainer } from '../types'
@@ -7,6 +7,148 @@ import type { DockerContainer } from '../types'
 type SortKey = 'name' | 'image' | 'state' | 'created_since'
 type SortDir = 'asc' | 'desc'
 type StateFilter = 'all' | 'running' | 'stopped'
+
+// ── Port chip parser ──────────────────────────────────────────────────────────
+// Input: "0.0.0.0:8080->80/tcp, 0.0.0.0:443->443/tcp, :::9000->9000/tcp"
+// Output: [{ host: '8080', container: '80', proto: 'tcp' }, ...]
+
+interface PortMapping { host: string; container: string; proto: string }
+
+function parsePorts(raw: string): PortMapping[] {
+  if (!raw) return []
+  const seen = new Set<string>()
+  return raw.split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+    .flatMap(part => {
+      // e.g. "0.0.0.0:8080->80/tcp" or ":::8080->80/tcp"
+      const m = part.match(/(?:[\d.:]+:)?(\d+)->(\d+)\/(tcp|udp|sctp)/i)
+      if (!m) return []
+      return [{ host: m[1], container: m[2], proto: m[3].toLowerCase() }]
+    })
+    .filter(p => {
+      const key = `${p.host}:${p.container}/${p.proto}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+}
+
+function PortChips({ raw }: { raw: string }) {
+  const ports = parsePorts(raw)
+  if (!ports.length) return <span className="img-colon">—</span>
+  return (
+    <div className="ctr-port-chips">
+      {ports.map((p, i) => (
+        <span key={i} className={clsx('ctr-port-chip', p.proto === 'udp' && 'ctr-port-chip--udp')}>
+          {p.host === p.container ? p.host : `${p.host}→${p.container}`}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+// ── Log viewer ────────────────────────────────────────────────────────────────
+
+function LogViewer({ id, name, onClose }: { id: string; name: string; onClose: () => void }) {
+  const [lines, setLines]       = useState<string[]>([])
+  const [loading, setLoading]   = useState(false)
+  const [error, setError]       = useState<string | null>(null)
+  const [tail, setTail]         = useState(150)
+  const bodyRef = useRef<HTMLDivElement>(null)
+
+  const load = async (t = tail) => {
+    setLoading(true); setError(null)
+    try {
+      const result = await api.dockerContainerLogs(id, t)
+      setLines(result)
+      // Auto-scroll to bottom after load
+      requestAnimationFrame(() => {
+        if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight
+      })
+    } catch (e) {
+      setError(String(e))
+    } finally { setLoading(false) }
+  }
+
+  useEffect(() => { load() }, []) // eslint-disable-line
+
+  const changeTail = (t: number) => { setTail(t); load(t) }
+
+  // Strip the RFC3339 timestamp prefix and return the rest + the timestamp separately
+  const parseLine = (line: string): { ts: string; msg: string } => {
+    const m = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+(.*)$/)
+    if (m) return { ts: m[1].slice(11, 23), msg: m[2] }   // keep "HH:mm:ss.mmm"
+    return { ts: '', msg: line }
+  }
+
+  const isStderr = (msg: string) => {
+    const lower = msg.toLowerCase()
+    return lower.includes('[error') || lower.includes(' error') ||
+           lower.includes('[err]') || lower.includes('exception') ||
+           lower.includes('fatal') || lower.includes('panic')
+  }
+
+  return (
+    <div className="log-viewer">
+      <div className="log-viewer-header">
+        <div className="log-viewer-title">
+          <FileText size={12} />
+          <span>{name}</span>
+          <span className="log-viewer-count">{lines.length} lines</span>
+        </div>
+        <div className="log-viewer-controls">
+          <div className="log-tail-select">
+            {([50, 150, 500] as const).map(t => (
+              <button
+                key={t}
+                className={clsx('log-tail-btn', tail === t && 'active')}
+                onClick={() => changeTail(t)}
+                disabled={loading}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+          <button
+            className="ctr-action-btn"
+            onClick={() => load()}
+            disabled={loading}
+            title="Refresh logs"
+          >
+            <RefreshCw size={11} className={loading ? 'spin' : ''} />
+          </button>
+          <button
+            className="ctr-action-btn"
+            onClick={onClose}
+            title="Close log viewer"
+          >
+            <X size={11} />
+          </button>
+        </div>
+      </div>
+      <div className="log-viewer-body" ref={bodyRef}>
+        {loading && <div className="log-viewer-empty">Loading logs…</div>}
+        {error   && <div className="log-viewer-empty log-viewer-error">{error}</div>}
+        {!loading && !error && lines.length === 0 && (
+          <div className="log-viewer-empty">No log output in last {tail} lines.</div>
+        )}
+        {!loading && lines.map((line, i) => {
+          const { ts, msg } = parseLine(line)
+          const isErr = isStderr(msg)
+          return (
+            <div key={i} className={clsx('log-line', isErr && 'log-line--error')}>
+              {ts && <span className="log-ts">{ts}</span>}
+              <span className="log-msg">{msg}</span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ── Sort header ───────────────────────────────────────────────────────────────
 
 function SortHeader({ label, col, sortKey, sortDir, onSort }: {
   label: string
@@ -36,6 +178,8 @@ function StateBadge({ state }: { state: string }) {
   return <span className="badge badge-idle">{state || 'unknown'}</span>
 }
 
+// ── Main component ────────────────────────────────────────────────────────────
+
 export default function ContainersTab({
   containers,
   loading,
@@ -52,6 +196,7 @@ export default function ContainersTab({
   const [confirmId, setConfirmId]       = useState<string | null>(null)
   const [busy, setBusy]                 = useState<string | null>(null)
   const [actionError, setActionError]   = useState<string | null>(null)
+  const [logsId, setLogsId]             = useState<string | null>(null)
 
   const handleSort = (key: SortKey) => {
     if (key === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -148,58 +293,80 @@ export default function ContainersTab({
               const isRunning    = c.state === 'running'
               const isBusy       = busy === c.id
               const isConfirming = confirmId === c.id
+              const showLogs     = logsId === c.id
+
               return (
-                <tr key={c.id} className="img-row">
-                  <td className="img-td">
-                    <span className="img-repo">{c.name || <em className="img-colon">unnamed</em>}</span>
-                  </td>
-                  <td className="img-td img-age">{c.image}</td>
-                  <td className="img-td"><StateBadge state={c.state} /></td>
-                  <td className="img-td img-age">{c.status}</td>
-                  <td className="img-td ctr-ports">{c.ports || <span className="img-colon">—</span>}</td>
-                  <td className="img-td img-age">{c.created_since}</td>
-                  <td className="img-td ctr-td-actions">
-                    {isRunning ? (
+                <React.Fragment key={c.id}>
+                  <tr className={clsx('img-row', showLogs && 'row-logs-open')}>
+                    <td className="img-td">
+                      <span className="img-repo">{c.name || <em className="img-colon">unnamed</em>}</span>
+                    </td>
+                    <td className="img-td img-age">{c.image}</td>
+                    <td className="img-td"><StateBadge state={c.state} /></td>
+                    <td className="img-td img-age">{c.status}</td>
+                    <td className="img-td"><PortChips raw={c.ports} /></td>
+                    <td className="img-td img-age">{c.created_since}</td>
+                    <td className="img-td ctr-td-actions">
                       <button
-                        className="ctr-action-btn ctr-action-stop"
-                        onClick={() => doAction(c.id, 'stop')}
-                        disabled={isBusy}
-                        title="Stop container"
+                        className={clsx('ctr-action-btn', showLogs && 'active')}
+                        onClick={() => setLogsId(showLogs ? null : c.id)}
+                        title={showLogs ? 'Close logs' : 'View logs'}
                       >
-                        <Square size={12} />
+                        <FileText size={12} />
                       </button>
-                    ) : (
-                      <button
-                        className="ctr-action-btn ctr-action-start"
-                        onClick={() => doAction(c.id, 'start')}
-                        disabled={isBusy}
-                        title="Start container"
-                      >
-                        <Play size={12} />
-                      </button>
-                    )}
-                    {isConfirming ? (
-                      <button
-                        className="ctr-action-btn ctr-action-confirm"
-                        onClick={() => doAction(c.id, 'remove')}
-                        disabled={isBusy}
-                        title="Confirm removal"
-                      >
-                        <Trash2 size={12} />
-                        <span>?</span>
-                      </button>
-                    ) : (
-                      <button
-                        className="ctr-action-btn ctr-action-remove"
-                        onClick={() => { setConfirmId(c.id); setActionError(null) }}
-                        disabled={isBusy || isRunning}
-                        title={isRunning ? 'Stop first to remove' : 'Remove container'}
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    )}
-                  </td>
-                </tr>
+                      {isRunning ? (
+                        <button
+                          className="ctr-action-btn ctr-action-stop"
+                          onClick={() => doAction(c.id, 'stop')}
+                          disabled={isBusy}
+                          title="Stop container"
+                        >
+                          <Square size={12} />
+                        </button>
+                      ) : (
+                        <button
+                          className="ctr-action-btn ctr-action-start"
+                          onClick={() => doAction(c.id, 'start')}
+                          disabled={isBusy}
+                          title="Start container"
+                        >
+                          <Play size={12} />
+                        </button>
+                      )}
+                      {isConfirming ? (
+                        <button
+                          className="ctr-action-btn ctr-action-confirm"
+                          onClick={() => doAction(c.id, 'remove')}
+                          disabled={isBusy}
+                          title="Confirm removal"
+                        >
+                          <Trash2 size={12} />
+                          <span>?</span>
+                        </button>
+                      ) : (
+                        <button
+                          className="ctr-action-btn ctr-action-remove"
+                          onClick={() => { setConfirmId(c.id); setActionError(null) }}
+                          disabled={isBusy || isRunning}
+                          title={isRunning ? 'Stop first to remove' : 'Remove container'}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                  {showLogs && (
+                    <tr className="log-viewer-row">
+                      <td colSpan={7} className="log-viewer-cell">
+                        <LogViewer
+                          id={c.id}
+                          name={c.name || c.id.slice(0, 12)}
+                          onClose={() => setLogsId(null)}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
               )
             })}
           </tbody>

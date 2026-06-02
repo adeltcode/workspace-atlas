@@ -7,6 +7,7 @@ import OverviewTab    from './components/OverviewTab'
 import ImagesTab      from './components/ImagesTab'
 import ContainersTab  from './components/ContainersTab'
 import VolumesTab     from './components/VolumesTab'
+import NetworksTab    from './components/NetworksTab'
 import ComposeTab     from './components/ComposeTab'
 import BackupTab      from './components/BackupTab'
 import PruneTab       from './components/PruneTab'
@@ -72,6 +73,7 @@ export default function DockerView() {
           {dockerTab === 'images'      && <ImagesTab images={images} loading={loading} />}
           {dockerTab === 'containers'  && <ContainersTab containers={containers} loading={loading} onRefresh={refresh} />}
           {dockerTab === 'volumes'     && <VolumesTab volumes={volumes} loading={loading} onRefresh={refresh} />}
+          {dockerTab === 'networks'    && <NetworksTab />}
           {dockerTab === 'compose'     && <ComposeTab refreshTick={composeTick} />}
           {dockerTab === 'backup'      && <BackupTab volumes={volumes} />}
           {dockerTab === 'prune'       && <PruneTab images={images} onDone={refresh} />}

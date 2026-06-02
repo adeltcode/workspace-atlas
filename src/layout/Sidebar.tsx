@@ -15,14 +15,41 @@ const DOCKER_CHILDREN: { tab: DockerTab; label: string }[] = [
   { tab: 'images',      label: 'Images'      },
   { tab: 'containers',  label: 'Containers'  },
   { tab: 'volumes',     label: 'Volumes'     },
+  { tab: 'networks',    label: 'Networks'    },
   { tab: 'compose',     label: 'Compose'     },
   { tab: 'backup',      label: 'Backup'      },
   { tab: 'prune',       label: 'Prune'       },
   { tab: 'log',         label: 'Log'         },
 ]
 
+function TabBadge({ children }: { children: React.ReactNode }) {
+  return <span className="sidebar-tab-badge">{children}</span>
+}
+
 export default function Sidebar() {
   const { activeView, setActiveView, dockerTab, setDockerTab } = useAppStore()
+  const cache = useAppStore(s => s.dockerCache)
+
+  // Compute badge labels from cache
+  const badges: Partial<Record<DockerTab, string>> = {}
+  if (cache) {
+    const { images, containers, volumes } = cache
+
+    if (images.length)
+      badges['images'] = String(images.length)
+
+    const running = containers.filter(c => c.state === 'running').length
+    if (containers.length)
+      badges['containers'] = running > 0
+        ? `${running}/${containers.length}`
+        : String(containers.length)
+
+    const unused = volumes.filter(v => !v.in_use).length
+    if (volumes.length)
+      badges['volumes'] = unused > 0
+        ? `${volumes.length} · ${unused} unused`
+        : String(volumes.length)
+  }
 
   return (
     <nav className="sidebar">
@@ -49,7 +76,8 @@ export default function Sidebar() {
                         className={clsx('sidebar-child-item', dockerTab === tab && 'active')}
                         onClick={() => setDockerTab(tab)}
                       >
-                        {childLabel}
+                        <span className="sidebar-child-label">{childLabel}</span>
+                        {badges[tab] && <TabBadge>{badges[tab]}</TabBadge>}
                       </button>
                     </li>
                   ))}

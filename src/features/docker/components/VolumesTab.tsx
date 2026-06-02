@@ -6,6 +6,14 @@ import type { DockerVolume } from '../types'
 
 type UsageFilter = 'all' | 'in-use' | 'unused'
 
+function bytesToHuman(b: number): string {
+  if (!b) return '—'
+  if (b >= 1e9) return `${(b / 1e9).toFixed(2)} GB`
+  if (b >= 1e6) return `${(b / 1e6).toFixed(1)} MB`
+  if (b >= 1e3) return `${Math.round(b / 1e3)} kB`
+  return `${b} B`
+}
+
 export default function VolumesTab({
   volumes,
   loading,
@@ -115,7 +123,7 @@ export default function VolumesTab({
             <tr>
               <th className="img-th">Name</th>
               <th className="img-th">Driver</th>
-              <th className="img-th">Mountpoint</th>
+              <th className="img-th">Size</th>
               <th className="img-th">Status</th>
               <th className="img-th ctr-th-actions">Action</th>
             </tr>
@@ -130,9 +138,7 @@ export default function VolumesTab({
                     <span className="img-repo">{v.name}</span>
                   </td>
                   <td className="img-td img-age">{v.driver}</td>
-                  <td className="img-td vol-mountpoint">
-                    {v.mountpoint || <span className="img-colon">—</span>}
-                  </td>
+                  <td className="img-td img-age">{bytesToHuman(v.size_bytes)}</td>
                   <td className="img-td">
                     {v.in_use
                       ? <span className="badge badge-active">In use</span>

@@ -5,7 +5,7 @@ import type { TerminalLine } from '../types/terminal'
 
 export type View      = 'dashboard' | 'docker' | 'wsl' | 'packages' | 'automation'
 export type Theme     = 'dark' | 'light'
-export type DockerTab = 'overview' | 'images' | 'containers' | 'volumes' | 'compose' | 'backup' | 'prune' | 'log'
+export type DockerTab = 'overview' | 'images' | 'containers' | 'volumes' | 'networks' | 'compose' | 'backup' | 'prune' | 'log'
 
 const MAX_DOCKER_LOGS    = 10
 const MAX_TERMINAL_LINES = 500
