@@ -26,6 +26,7 @@ pub fn run() {
             docker::docker_volume_backup,
             docker::docker_volume_restore,
             docker::docker_backup_compose,
+            docker::docker_list_all_compose_backups,
             docker::docker_list_compose_backups,
             docker::docker_delete_compose_backup,
             docker::docker_delete_backup,

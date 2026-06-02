@@ -10,16 +10,23 @@ const NAV_ITEMS: { view: View; label: string; icon: React.ElementType }[] = [
   { view: 'automation', label: 'Automation',       icon: Bot             },
 ]
 
-const DOCKER_CHILDREN: { tab: DockerTab; label: string }[] = [
-  { tab: 'overview',    label: 'Overview'    },
-  { tab: 'images',      label: 'Images'      },
-  { tab: 'containers',  label: 'Containers'  },
-  { tab: 'volumes',     label: 'Volumes'     },
-  { tab: 'networks',    label: 'Networks'    },
-  { tab: 'compose',     label: 'Compose'     },
-  { tab: 'backup',      label: 'Backup'      },
-  { tab: 'prune',       label: 'Prune'       },
-  { tab: 'log',         label: 'Log'         },
+interface ChildItem {
+  tab: DockerTab
+  label: string
+  grandchildren?: { tab: DockerTab; label: string }[]
+}
+
+const DOCKER_CHILDREN: ChildItem[] = [
+  { tab: 'overview',    label: 'Overview'   },
+  { tab: 'images',      label: 'Images'     },
+  { tab: 'containers',  label: 'Containers' },
+  { tab: 'volumes',     label: 'Volumes',
+    grandchildren: [{ tab: 'backup-volumes', label: 'Backup' }] },
+  { tab: 'networks',    label: 'Networks'   },
+  { tab: 'compose',     label: 'Compose',
+    grandchildren: [{ tab: 'backup-compose', label: 'Backup' }] },
+  { tab: 'prune',       label: 'Prune'      },
+  { tab: 'log',         label: 'Log'        },
 ]
 
 function TabBadge({ children }: { children: React.ReactNode }) {
@@ -30,7 +37,6 @@ export default function Sidebar() {
   const { activeView, setActiveView, dockerTab, setDockerTab } = useAppStore()
   const cache = useAppStore(s => s.dockerCache)
 
-  // Compute badge labels from cache
   const badges: Partial<Record<DockerTab, string>> = {}
   if (cache) {
     const { images, containers, volumes } = cache
@@ -67,20 +73,42 @@ export default function Sidebar() {
                 <span className="sidebar-item-label">{label}</span>
               </button>
 
-              {/* Docker child navigation — visible when Docker is active */}
               {view === 'docker' && activeView === 'docker' && (
                 <ul className="sidebar-children">
-                  {DOCKER_CHILDREN.map(({ tab, label: childLabel }) => (
-                    <li key={tab}>
-                      <button
-                        className={clsx('sidebar-child-item', dockerTab === tab && 'active')}
-                        onClick={() => setDockerTab(tab)}
-                      >
-                        <span className="sidebar-child-label">{childLabel}</span>
-                        {badges[tab] && <TabBadge>{badges[tab]}</TabBadge>}
-                      </button>
-                    </li>
-                  ))}
+                  {DOCKER_CHILDREN.map(({ tab, label: childLabel, grandchildren }) => {
+                    // Show grandchildren when this child is active OR when an active
+                    // grandchild belongs to this child — mirrors how Docker shows its
+                    // children only when Docker itself is the active view.
+                    const gcActive = grandchildren?.some(gc => gc.tab === dockerTab) ?? false
+                    const showGc   = grandchildren && (dockerTab === tab || gcActive)
+
+                    return (
+                      <li key={tab}>
+                        <button
+                          className={clsx('sidebar-child-item', (dockerTab === tab || gcActive) && 'active')}
+                          onClick={() => setDockerTab(tab)}
+                        >
+                          <span className="sidebar-child-label">{childLabel}</span>
+                          {badges[tab] && <TabBadge>{badges[tab]}</TabBadge>}
+                        </button>
+
+                        {showGc && (
+                          <ul className="sidebar-grandchildren">
+                            {grandchildren!.map(({ tab: gcTab, label: gcLabel }) => (
+                              <li key={gcTab}>
+                                <button
+                                  className={clsx('sidebar-grandchild-item', dockerTab === gcTab && 'active')}
+                                  onClick={() => setDockerTab(gcTab)}
+                                >
+                                  {gcLabel}
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </li>
+                    )
+                  })}
                 </ul>
               )}
             </li>

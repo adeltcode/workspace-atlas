@@ -34,8 +34,9 @@ export const getDefaultBackupDir     = () => invoke<string>('get_default_backup_
 export const dockerListBackups       = (backupDir: string) => invoke<VolumeBackupEntry[]>('docker_list_backups', { backupDir })
 export const dockerVolumeBackup      = (volumeName: string, backupDir: string) => invoke<string>('docker_volume_backup', { volumeName, backupDir })
 export const dockerVolumeRestore     = (volumeName: string, backupFile: string) => invoke<void>('docker_volume_restore', { volumeName, backupFile })
-export const dockerBackupCompose        = (project: string, configFiles: string[], backupDir: string) => invoke<ComposeBackupEntry[]>('docker_backup_compose', { project, configFiles, backupDir })
-export const dockerListComposeBackups   = (backupDir: string, project: string) => invoke<ComposeBackupEntry[]>('docker_list_compose_backups', { backupDir, project })
+export const dockerBackupCompose          = (project: string, configFiles: string[], backupDir: string) => invoke<ComposeBackupEntry[]>('docker_backup_compose', { project, configFiles, backupDir })
+export const dockerListAllComposeBackups  = (backupDir: string) => invoke<ComposeBackupEntry[]>('docker_list_all_compose_backups', { backupDir })
+export const dockerListComposeBackups     = (backupDir: string, project: string) => invoke<ComposeBackupEntry[]>('docker_list_compose_backups', { backupDir, project })
 export const dockerDeleteComposeBackup  = (backupDir: string, filename: string) => invoke<void>('docker_delete_compose_backup', { backupDir, filename })
 
 export const dockerDeleteBackup = (backupDir: string, filename: string) =>

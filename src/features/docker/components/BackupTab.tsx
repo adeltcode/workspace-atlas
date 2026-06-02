@@ -1,13 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import {
-  Folder, HardDriveDownload, RotateCcw, RefreshCw,
+  Folder, HardDriveDownload, RotateCcw, RefreshCw, Download,
   AlertTriangle, MoveRight, Trash2, X, CheckCircle2, AlertCircle, Info,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { listen } from '@tauri-apps/api/event'
 import * as api from '../api'
 import { useAppStore } from '../../../store/appStore'
-import type { DockerVolume, VolumeBackupEntry, BackupProgress } from '../types'
+import type { DockerVolume, VolumeBackupEntry, ComposeBackupEntry, ComposeProject, BackupProgress } from '../types'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -37,8 +37,8 @@ function bytesToHuman(b: number): string {
 }
 
 function formatDate(ts: number): string {
-  const d   = new Date(ts * 1000)
-  const now = new Date()
+  const d    = new Date(ts * 1000)
+  const now  = new Date()
   const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   if (d.toDateString() === now.toDateString()) return `Today, ${time}`
   const yest = new Date(now); yest.setDate(now.getDate() - 1)
@@ -46,19 +46,32 @@ function formatDate(ts: number): string {
   return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+/** Truncate long volume/project names with an ellipsis. */
+function truncName(name: string, max = 30): string {
+  return name.length <= max ? name : name.slice(0, max - 1) + '…'
+}
+
+/** Return a dot class for compose status strings like "running(2), exited(1)". */
+function composeDot(status: string): 'running' | 'partial' | 'stopped' {
+  const parts = status.split(',').map(s => {
+    const m = s.trim().match(/^(\w+)\((\d+)\)$/)
+    return m ? { state: m[1], count: parseInt(m[2]) } : { state: s.trim(), count: 1 }
+  })
+  const total   = parts.reduce((s, p) => s + p.count, 0)
+  const running = parts.find(p => p.state === 'running')?.count ?? 0
+  return running === 0 ? 'stopped' : running === total ? 'running' : 'partial'
+}
+
 // ── Progress bar ──────────────────────────────────────────────────────────────
 
-function VolumeProgressBar({ p }: { p: VolumeProgress }) {
+function ProgressBar({ p }: { p: VolumeProgress }) {
   return (
     <div className="vol-progress-wrap">
       <div className="vol-progress-track">
         <div
-          className={clsx(
-            'vol-progress-fill',
-            p.status === 'running' && 'running',
-            p.status === 'done'    && 'done',
-            p.status === 'error'   && 'error',
-            p.status === 'queued'  && 'queued',
+          className={clsx('vol-progress-fill',
+            p.status === 'running' && 'running', p.status === 'done' && 'done',
+            p.status === 'error' && 'error',     p.status === 'queued' && 'queued',
           )}
           style={{ width: `${p.status === 'queued' ? 0 : p.progress}%` }}
         />
@@ -81,18 +94,23 @@ function NoticeBanner({ n, onDismiss }: { n: Notice; onDismiss: () => void }) {
     <div className={`backup-notice backup-notice--${n.type}`}>
       <Icon size={14} className="backup-notice-icon" />
       <span className="backup-notice-msg">{n.message}</span>
-      <button className="backup-notice-close" onClick={onDismiss} title="Dismiss">
-        <X size={13} />
-      </button>
+      <button className="backup-notice-close" onClick={onDismiss} title="Dismiss"><X size={13} /></button>
     </div>
   )
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function BackupTab({ volumes }: { volumes: DockerVolume[] }) {
-  const { backupDir, setBackupDir } = useAppStore()
+export default function BackupTab({
+  volumes,
+  section = 'volumes',
+}: {
+  volumes: DockerVolume[]
+  section?: 'volumes' | 'compose'
+}) {
+  const { backupDir, setBackupDir, backupPreselect, setBackupPreselect } = useAppStore()
 
+  // Volume backup state
   const [dirInput, setDirInput]             = useState(backupDir)
   const [backups, setBackups]               = useState<VolumeBackupEntry[]>([])
   const [backupsLoading, setBackupsLoading] = useState(false)
@@ -102,41 +120,56 @@ export default function BackupTab({ volumes }: { volumes: DockerVolume[] }) {
   const [confirmRestore, setConfirmRestore] = useState<VolumeBackupEntry | null>(null)
   const [confirmDelete, setConfirmDelete]   = useState<VolumeBackupEntry | null>(null)
   const [isDeleting, setIsDeleting]         = useState(false)
-  const [notices, setNotices]               = useState<Notice[]>([])
 
-  const [pendingDir, setPendingDir]         = useState<string | null>(null)
-  const [existingCount, setExistingCount]   = useState(0)
-  const [transferring, setTransferring]     = useState(false)
+  // Compose backup state
+  const [composeProjects, setComposeProjects]   = useState<ComposeProject[]>([])
+  const [composeBackups, setComposeBackups]     = useState<ComposeBackupEntry[]>([])
+  const [backingUpCompose, setBackingUpCompose] = useState<Set<string>>(new Set())
+  const [deletingCompose, setDeletingCompose]   = useState<string | null>(null)
 
-  const prevVolumesRef = useRef<DockerVolume[]>(volumes)
-  let noticeId = useRef(0)
+  // Directory change state
+  const [pendingDir, setPendingDir]   = useState<string | null>(null)
+  const [existingCount, setExistingCount] = useState(0)
+  const [transferring, setTransferring]   = useState(false)
 
+  // Notices
+  const [notices, setNotices] = useState<Notice[]>([])
+  const noticeId = useRef(0)
   const addNotice = (type: Notice['type'], message: string) =>
     setNotices(prev => [...prev, { id: String(++noticeId.current), type, message }])
+  const dismissNotice = (id: string) => setNotices(prev => prev.filter(n => n.id !== id))
 
-  const dismissNotice = (id: string) =>
-    setNotices(prev => prev.filter(n => n.id !== id))
+  const prevVolumesRef = useRef<DockerVolume[]>(volumes)
 
-  // ── Bootstrap ─────────────────────────────────────────────────────────────
+  // ── Bootstrap ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (!backupDir) {
-      api.getDefaultBackupDir().then(dir => { setBackupDir(dir); setDirInput(dir) })
-    }
+    if (!backupDir) api.getDefaultBackupDir().then(dir => { setBackupDir(dir); setDirInput(dir) })
+    api.dockerComposeLs().then(setComposeProjects).catch(() => setComposeProjects([]))
   }, []) // eslint-disable-line
 
   useEffect(() => {
-    if (backupDir) loadBackups(backupDir)
-  }, [backupDir])
+    if (backupDir) { loadBackups(backupDir); loadComposeBackups(backupDir) }
+  }, [backupDir]) // eslint-disable-line
 
   useEffect(() => {
     if (prevVolumesRef.current !== volumes) {
       prevVolumesRef.current = volumes
-      if (backupDir) loadBackups(backupDir)
+      if (backupDir) { loadBackups(backupDir); loadComposeBackups(backupDir) }
     }
   }, [volumes]) // eslint-disable-line
 
   useEffect(() => { setDirInput(backupDir) }, [backupDir])
+
+  // Pre-select a volume arriving from another tab
+  useEffect(() => {
+    if (backupPreselect) {
+      setSelected(prev => new Set([...prev, backupPreselect]))
+      setBackupPreselect(null)
+    }
+  }, [backupPreselect]) // eslint-disable-line
+
+  // ── Data loaders ───────────────────────────────────────────────────────────
 
   const loadBackups = async (dir: string) => {
     setBackupsLoading(true)
@@ -145,21 +178,58 @@ export default function BackupTab({ volumes }: { volumes: DockerVolume[] }) {
     finally { setBackupsLoading(false) }
   }
 
-  // ── Directory change ──────────────────────────────────────────────────────
+  const loadComposeBackups = async (dir: string) => {
+    try { setComposeBackups(await api.dockerListAllComposeBackups(dir)) }
+    catch { setComposeBackups([]) }
+  }
 
-  const appendAtlasBackup = (dir: string): string => {
+  // ── Derived data ───────────────────────────────────────────────────────────
+
+  const sortedBackups = useMemo(() =>
+    backups.slice().sort((a, b) => b.created_at - a.created_at), [backups])
+
+  const backupsByVolume = useMemo(() => {
+    const map: Record<string, VolumeBackupEntry[]> = {}
+    for (const e of sortedBackups) {
+      if (!map[e.volume]) map[e.volume] = []
+      map[e.volume].push(e)
+    }
+    return map
+  }, [sortedBackups])
+
+  const knownVolumeNames = useMemo(() => new Set(volumes.map(v => v.name)), [volumes])
+  const orphanedBackups  = useMemo(() =>
+    sortedBackups.filter(e => !knownVolumeNames.has(e.volume)), [sortedBackups, knownVolumeNames])
+
+  /** Merged list: running projects + projects that only exist in backup history. */
+  const allComposeItems = useMemo(() => {
+    const map = new Map<string, { project: ComposeProject | null; backups: ComposeBackupEntry[] }>()
+    for (const p of composeProjects)
+      map.set(p.name, { project: p, backups: [] })
+    for (const b of composeBackups) {
+      if (!map.has(b.project)) map.set(b.project, { project: null, backups: [] })
+      map.get(b.project)!.backups.push(b)
+    }
+    return Array.from(map.entries()).map(([name, d]) => ({
+      name,
+      project: d.project,
+      backups: d.backups.sort((a, b) => b.created_at - a.created_at),
+    }))
+  }, [composeProjects, composeBackups])
+
+  // ── Directory change ───────────────────────────────────────────────────────
+
+  const appendAtlasBackup = (dir: string) => {
     const norm = dir.replace(/\\/g, '/').replace(/\/+$/, '')
-    if (/\/atlas backup$/i.test(norm)) return norm
-    return `${norm}/Atlas Backup`
+    return /\/atlas backup$/i.test(norm) ? norm : `${norm}/Atlas Backup`
   }
 
   const handlePickFolder = async () => {
     const dir = await api.pickBackupFolder()
     if (!dir) return
-    const finalDir = appendAtlasBackup(dir)
-    setDirInput(finalDir)
-    setPendingDir(null)
-    if (finalDir !== backupDir) applyDirChange(finalDir)
+    const final = appendAtlasBackup(dir)
+    setDirInput(final); setPendingDir(null)
+    if (final !== backupDir) applyDirChange(final)
   }
 
   const applyDirChange = async (newDir: string) => {
@@ -167,70 +237,52 @@ export default function BackupTab({ volumes }: { volumes: DockerVolume[] }) {
     if (backupDir) {
       try {
         const existing = await api.dockerListBackups(backupDir)
-        if (existing.length > 0) {
-          setExistingCount(existing.length)
-          setPendingDir(newDir)
-          return
-        }
-      } catch { /* no existing backups */ }
+        if (existing.length > 0) { setExistingCount(existing.length); setPendingDir(newDir); return }
+      } catch { /* no existing */ }
     }
     commitDirChange(newDir)
     addNotice('success', `Backup directory updated to ${newDir}`)
   }
 
-  const handleApplyDir = async () => {
-    const newDir = dirInput.trim()
-    if (!newDir || newDir === backupDir) return
-    await applyDirChange(newDir)
+  const commitDirChange = (newDir: string) => {
+    setBackupDir(newDir); setDirInput(newDir); setPendingDir(null); loadBackups(newDir)
   }
 
-  const commitDirChange = (newDir: string) => {
-    setBackupDir(newDir)
-    setDirInput(newDir)
-    setPendingDir(null)
-    loadBackups(newDir)
+  const handleApplyDir = async () => {
+    const d = dirInput.trim(); if (!d || d === backupDir) return; await applyDirChange(d)
   }
 
   const handleTransfer = async (shouldTransfer: boolean) => {
     if (!pendingDir) return
     if (!shouldTransfer) {
       commitDirChange(pendingDir)
-      addNotice('info', `Directory changed to ${pendingDir}. Existing backups were not moved.`)
+      addNotice('info', `Directory changed. Existing backups were not moved.`)
       return
     }
     setTransferring(true)
     try {
       const result = await api.transferBackups(backupDir, pendingDir)
       commitDirChange(pendingDir)
-      const parts = [`${result.moved} backup${result.moved !== 1 ? 's' : ''} moved to ${pendingDir}.`]
-      if (result.old_dir_removed) parts.push('Previous folder was removed.')
-      else parts.push('Previous folder was kept (not empty).')
-      addNotice('success', parts.join(' '))
+      const msg = `${result.moved} backup${result.moved !== 1 ? 's' : ''} moved.`
+        + (result.old_dir_removed ? ' Previous folder removed.' : ' Previous folder kept.')
+      addNotice('success', msg)
     } catch (e) {
-      addNotice('error', `Transfer failed: ${String(e)}`)
-      setPendingDir(null)
-    } finally {
-      setTransferring(false)
-    }
+      addNotice('error', `Transfer failed: ${String(e)}`); setPendingDir(null)
+    } finally { setTransferring(false) }
   }
 
-  // ── Volume selection ──────────────────────────────────────────────────────
+  // ── Volume backup ──────────────────────────────────────────────────────────
 
   const toggleVolume = (name: string) =>
     setSelected(prev => { const s = new Set(prev); s.has(name) ? s.delete(name) : s.add(name); return s })
-
-  // ── Backup ────────────────────────────────────────────────────────────────
 
   const runBackup = async () => {
     if (!backupDir || selected.size === 0 || isBacking) return
     const initial: Record<string, VolumeProgress> = {}
     for (const v of selected) initial[v] = { status: 'queued', progress: 0, message: 'Queued…' }
-    setVolProgress(initial)
-    setIsBacking(true)
-
+    setVolProgress(initial); setIsBacking(true)
     const { addTerminalLine } = useAppStore.getState()
-    addTerminalLine(`─── Docker volume backup (${selected.size} volume${selected.size !== 1 ? 's' : ''})`, 'cmd')
-
+    addTerminalLine(`─── Volume backup (${selected.size} volume${selected.size !== 1 ? 's' : ''})`, 'cmd')
     const unlisten = await listen<BackupProgress>('backup-progress', e => {
       const { volume, step, progress, done, error, filename, cmd } = e.payload
       const key = volume ?? ''
@@ -241,13 +293,12 @@ export default function BackupTab({ volumes }: { volumes: DockerVolume[] }) {
       if (key) setVolProgress(prev => ({
         ...prev,
         [key]: {
-          status: done ? (error ? 'error' : 'done') : 'running',
+          status:   done ? (error ? 'error' : 'done') : 'running',
           progress: done ? (error ? (prev[key]?.progress ?? 0) : 100) : progress,
           message: step, filename: filename ?? undefined, error: error ?? undefined,
         },
       }))
     })
-
     try {
       for (const vol of selected) {
         addTerminalLine(`─── ${vol}`, 'cmd')
@@ -258,20 +309,16 @@ export default function BackupTab({ volumes }: { volumes: DockerVolume[] }) {
     } catch (e) {
       addTerminalLine(`  ✗ ${String(e)}`, 'error')
     } finally {
-      unlisten()
-      setIsBacking(false)
+      unlisten(); setIsBacking(false)
       setTimeout(() => setVolProgress({}), 3000)
     }
   }
 
-  // ── Restore ───────────────────────────────────────────────────────────────
-
   const runRestore = async (entry: VolumeBackupEntry) => {
     setConfirmRestore(null)
     const { addTerminalLine } = useAppStore.getState()
-    addTerminalLine(`─── Docker volume restore: ${entry.volume}`, 'cmd')
+    addTerminalLine(`─── Restore: ${entry.volume}`, 'cmd')
     setVolProgress(prev => ({ ...prev, [entry.volume]: { status: 'running', progress: 10, message: 'Starting restore…' } }))
-
     const unlisten = await listen<BackupProgress>('backup-progress', e => {
       const { volume, step, progress, done, error, cmd } = e.payload
       const key = volume ?? entry.volume
@@ -282,91 +329,103 @@ export default function BackupTab({ volumes }: { volumes: DockerVolume[] }) {
       setVolProgress(prev => ({
         ...prev,
         [key]: {
-          status: done ? (error ? 'error' : 'done') : 'running',
+          status:   done ? (error ? 'error' : 'done') : 'running',
           progress: done ? (error ? (prev[key]?.progress ?? 0) : 100) : progress,
           message: step, error: error ?? undefined,
         },
       }))
     })
-
-    try {
-      await api.dockerVolumeRestore(entry.volume, entry.path)
-    } catch (e) {
-      addTerminalLine(`  ✗ ${String(e)}`, 'error')
-    } finally {
+    try { await api.dockerVolumeRestore(entry.volume, entry.path) }
+    catch (e) { useAppStore.getState().addTerminalLine(`  ✗ ${String(e)}`, 'error') }
+    finally {
       unlisten()
       setTimeout(() => setVolProgress(prev => { const n = { ...prev }; delete n[entry.volume]; return n }), 3000)
     }
   }
 
-  // ── Delete backup ─────────────────────────────────────────────────────────
-
-  const runDelete = async (entry: VolumeBackupEntry) => {
-    setConfirmDelete(null)
-    setIsDeleting(true)
+  const runDeleteVolBackup = async (entry: VolumeBackupEntry) => {
+    setConfirmDelete(null); setIsDeleting(true)
     try {
       await api.dockerDeleteBackup(backupDir, entry.filename)
       setBackups(prev => prev.filter(b => b.filename !== entry.filename))
+    } catch (e) { addNotice('error', `Delete failed: ${String(e)}`) }
+    finally { setIsDeleting(false) }
+  }
+
+  // ── Compose backup ─────────────────────────────────────────────────────────
+
+  const handleBackupCompose = async (project: ComposeProject) => {
+    if (!backupDir) { addNotice('error', 'Set a backup directory first'); return }
+    setBackingUpCompose(prev => new Set([...prev, project.name]))
+    try {
+      const saved = await api.dockerBackupCompose(project.name, project.config_files, backupDir)
+      if (saved.length === 0) {
+        addNotice('info', `${project.name}: No changes — already up to date`)
+      } else {
+        addNotice('success', `${project.name}: ${saved.length} file${saved.length !== 1 ? 's' : ''} backed up`)
+        await loadComposeBackups(backupDir)
+      }
     } catch (e) {
-      addNotice('error', `Delete failed: ${String(e)}`)
+      addNotice('error', `${project.name}: backup failed — ${String(e)}`)
     } finally {
-      setIsDeleting(false)
+      setBackingUpCompose(prev => { const s = new Set(prev); s.delete(project.name); return s })
     }
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  const deleteComposeBackup = async (entry: ComposeBackupEntry) => {
+    setDeletingCompose(entry.filename)
+    try {
+      await api.dockerDeleteComposeBackup(backupDir, entry.filename)
+      setComposeBackups(prev => prev.filter(b => b.filename !== entry.filename))
+    } catch (e) { addNotice('error', `Delete failed: ${String(e)}`) }
+    finally { setDeletingCompose(null) }
+  }
+
+  // ── Computed ───────────────────────────────────────────────────────────────
 
   const anyRunning = isBacking || Object.values(volProgress).some(p => p.status === 'running')
-  const sortedBackups = backups.slice().sort((a, b) => b.created_at - a.created_at)
+
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="backup-tab">
 
-      {/* ── Config card ──────────────────────────────────────────── */}
-      <div className="backup-config-card">
-        <div className="backup-config-header">
-          <span className="backup-config-title">Backup Directory</span>
-          {backupDir && (
-            <span className="backup-config-hint">
-              Stored in <code>docker/volumes/</code> and <code>docker/compose/</code>
-            </span>
-          )}
-        </div>
-        <div className="backup-dir-row">
+      {/* ── Directory bar ─────────────────────────────────────────── */}
+      <div className="backup-bar">
+        <div className="backup-bar-inner">
+          <Folder size={13} className="backup-bar-icon" />
           <input
-            className="backup-dir-input"
+            className="backup-bar-input"
             value={dirInput}
             onChange={e => { setDirInput(e.target.value); setPendingDir(null) }}
             onBlur={handleApplyDir}
             onKeyDown={e => e.key === 'Enter' && handleApplyDir()}
-            placeholder="Enter or select a backup root directory…"
+            placeholder="Select a backup root directory…"
             spellCheck={false}
           />
-          <button
-            className="backup-dir-pick-btn"
-            onClick={handlePickFolder}
-            title="Opens a folder picker — 'Atlas Backup' is appended automatically"
-          >
-            <Folder size={13} />
+          <button className="backup-bar-btn" onClick={handlePickFolder} title="Pick folder">
             Select Folder
           </button>
           <button
             className="ctr-action-btn"
             onClick={() => backupDir && loadBackups(backupDir)}
             disabled={!backupDir || backupsLoading}
-            title="Refresh backup list"
+            title="Refresh"
           >
-            <RefreshCw size={13} className={backupsLoading ? 'spin' : ''} />
+            <RefreshCw size={12} className={backupsLoading ? 'spin' : ''} />
           </button>
         </div>
+        {backupDir && (
+          <span className="backup-bar-hint">
+            <code>docker/volumes/</code> and <code>docker/compose/</code>
+          </span>
+        )}
       </div>
 
-      {/* ── Notices ──────────────────────────────────────────────── */}
-      {notices.map(n => (
-        <NoticeBanner key={n.id} n={n} onDismiss={() => dismissNotice(n.id)} />
-      ))}
+      {/* ── Notices ───────────────────────────────────────────────── */}
+      {notices.map(n => <NoticeBanner key={n.id} n={n} onDismiss={() => dismissNotice(n.id)} />)}
 
-      {/* ── Transfer prompt ──────────────────────────────────────── */}
+      {/* ── Transfer prompt ───────────────────────────────────────── */}
       {pendingDir && (
         <div className="backup-transfer-card">
           <div className="backup-transfer-header">
@@ -381,199 +440,277 @@ export default function BackupTab({ volumes }: { volumes: DockerVolume[] }) {
             </div>
           </div>
           <div className="backup-transfer-actions">
-            <button
-              className="btn-execute btn-execute--success"
-              onClick={() => handleTransfer(true)}
-              disabled={transferring}
-            >
-              <MoveRight size={12} />
-              {transferring ? 'Moving…' : 'Transfer & Switch'}
+            <button className="btn-execute btn-execute--success" onClick={() => handleTransfer(true)} disabled={transferring}>
+              <MoveRight size={12} />{transferring ? 'Moving…' : 'Transfer & Switch'}
             </button>
-            <button className="btn-reset" onClick={() => handleTransfer(false)} disabled={transferring}>
-              Switch without moving
-            </button>
-            <button className="btn-reset" onClick={() => { setPendingDir(null); setDirInput(backupDir) }} disabled={transferring}>
-              Cancel
-            </button>
+            <button className="btn-reset" onClick={() => handleTransfer(false)} disabled={transferring}>Switch without moving</button>
+            <button className="btn-reset" onClick={() => { setPendingDir(null); setDirInput(backupDir) }} disabled={transferring}>Cancel</button>
           </div>
         </div>
       )}
 
-      {/* ── Two-column layout ─────────────────────────────────────── */}
-      <div className="backup-columns">
-
-        {/* ── Left: volumes ─────────────────────────────────────── */}
-        <div className="backup-panel">
-          <div className="backup-panel-header">
-            <span className="backup-panel-title">Volumes</span>
-            <span className="backup-panel-meta">
-              {selected.size > 0
-                ? `${selected.size} of ${volumes.length} selected`
-                : `${volumes.length} volume${volumes.length !== 1 ? 's' : ''}`}
-            </span>
-          </div>
-
-          {volumes.length === 0
-            ? <p className="backup-empty">No Docker volumes found.</p>
-            : (
-              <ul className="backup-volume-list">
-                {volumes.map(v => {
-                  const checked = selected.has(v.name)
-                  const vp = volProgress[v.name]
-                  const showBar = vp && vp.status !== 'idle'
-                  return (
-                    <li key={v.name} className={clsx('backup-volume-entry', showBar && 'has-progress')}>
-                      <label className={clsx('backup-volume-item', checked && 'checked')}>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleVolume(v.name)}
-                          disabled={anyRunning}
-                        />
-                        <div className="backup-volume-info">
-                          <div className="backup-volume-name-row">
-                            <span className="backup-volume-name" title={v.name}>{v.name}</span>
-                            <div className="backup-volume-badges">
-                              <span className={clsx('badge',
-                                v.containers.length > 0 ? 'badge-active'
-                                : v.in_use             ? 'badge-paused'
-                                :                        'badge-idle'
-                              )}>
-                                {v.containers.length > 0 ? 'running'
-                                 : v.in_use             ? 'stopped ref'
-                                 :                        'unused'}
-                              </span>
-                              {v.containers.length > 0 && (
-                                <span className="backup-inuse-warn" title="Running containers will be paused during backup">
-                                  <AlertTriangle size={11} />
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          {(v.containers.length > 0 || v.compose_project) && (
-                            <div className="backup-volume-tags">
-                              {v.containers.length > 0 && (
-                                <span className="backup-vol-tag backup-vol-tag--containers" title={v.containers.join(', ')}>
-                                  {v.containers.join(', ')}
-                                </span>
-                              )}
-                              {v.compose_project && (
-                                <span className="backup-vol-tag backup-vol-tag--compose">
-                                  {v.compose_project}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </label>
-                      {showBar && <VolumeProgressBar p={vp} />}
-                    </li>
-                  )
-                })}
-              </ul>
-            )
-          }
-
-          <div className="backup-panel-footer">
-            <button
-              className="btn-execute btn-execute--success"
-              onClick={runBackup}
-              disabled={anyRunning || selected.size === 0 || !backupDir}
-              title={!backupDir ? 'Set a backup directory first' : ''}
-              style={{ width: '100%', justifyContent: 'center' }}
-            >
-              <HardDriveDownload size={13} />
-              {isBacking
-                ? 'Backing up…'
-                : selected.size > 0
-                  ? `Backup ${selected.size} selected`
-                  : 'Select volumes to back up'}
-            </button>
-          </div>
-        </div>
-
-        {/* ── Right: backup archives ─────────────────────────────── */}
-        <div className="backup-panel">
-          <div className="backup-panel-header">
-            <span className="backup-panel-title">Archives</span>
-            <span className="backup-panel-meta">
-              {backupsLoading ? 'Loading…' : `${backups.length} archive${backups.length !== 1 ? 's' : ''}`}
-            </span>
-          </div>
-
-          {!backupDir
-            ? <p className="backup-empty">Set a backup directory to get started.</p>
-            : backupsLoading
-              ? <p className="backup-empty">Loading…</p>
-              : sortedBackups.length === 0
-                ? <p className="backup-empty">No backups yet. Select volumes and click Backup.</p>
-                : (
-                  <ul className="backup-list">
-                    {sortedBackups.map(entry => {
-                      const rp = volProgress[entry.volume]
-                      const showBar = rp && (rp.status === 'running' || rp.status === 'queued')
-                      const isConfirmRestore = confirmRestore?.filename === entry.filename
-                      const isConfirmDelete  = confirmDelete?.filename  === entry.filename
-                      return (
-                        <li key={entry.filename} className={clsx('backup-list-item', (isConfirmRestore || isConfirmDelete) && 'confirming')}>
-                          <div className="backup-list-item-info">
-                            <div className="backup-list-top">
-                              <span className="backup-list-volume" title={entry.volume}>{entry.volume}</span>
-                              <span className="backup-list-size">{bytesToHuman(entry.size_bytes)}</span>
-                            </div>
-                            <span className="backup-list-date">{formatDate(entry.created_at)}</span>
-                            <span className="backup-list-filename" title={entry.filename}>{entry.filename}</span>
-                            {showBar && <VolumeProgressBar p={rp} />}
-                          </div>
-
-                          {isConfirmRestore ? (
-                            <div className="backup-inline-confirm">
-                              <span className="backup-confirm-text">Restore will overwrite existing data.</span>
-                              <div className="backup-confirm-actions">
-                                <button className="btn-execute btn-execute--success btn-sm" onClick={() => runRestore(entry)} disabled={anyRunning}>
-                                  <RotateCcw size={11} /> Confirm
-                                </button>
-                                <button className="btn-reset btn-sm" onClick={() => setConfirmRestore(null)}>Cancel</button>
-                              </div>
-                            </div>
-                          ) : isConfirmDelete ? (
-                            <div className="backup-inline-confirm">
-                              <span className="backup-confirm-text backup-confirm-text--danger">This will permanently delete the archive.</span>
-                              <div className="backup-confirm-actions">
-                                <button className="btn-execute btn-execute--danger btn-sm" onClick={() => runDelete(entry)} disabled={isDeleting}>
-                                  <Trash2 size={11} /> Delete
-                                </button>
-                                <button className="btn-reset btn-sm" onClick={() => setConfirmDelete(null)}>Cancel</button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="backup-list-actions">
-                              <button
-                                className="ctr-action-btn ctr-action-start"
-                                onClick={() => { setConfirmRestore(entry); setConfirmDelete(null) }}
-                                disabled={anyRunning || isDeleting}
-                                title="Restore volume from this backup"
-                              >
-                                <RotateCcw size={13} />
-                              </button>
-                              <button
-                                className="ctr-action-btn ctr-action-stop"
-                                onClick={() => { setConfirmDelete(entry); setConfirmRestore(null) }}
-                                disabled={anyRunning || isDeleting}
-                                title="Delete this backup"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          )}
-                        </li>
-                      )
-                    })}
-                  </ul>
-                )
-          }
-        </div>
+      {/* ════════════════════════════════════════════════════════════
+          VOLUMES  (only rendered when section === 'volumes')
+          ════════════════════════════════════════════════════════════ */}
+      {section === 'volumes' && (<>
+      <div className="backup-section-hd">
+        <span className="backup-section-title">Volumes</span>
+        <span className="backup-section-meta">
+          {backupsLoading ? 'Loading…'
+            : `${volumes.length} volume${volumes.length !== 1 ? 's' : ''}` +
+              (sortedBackups.length - orphanedBackups.length > 0
+                ? ` · ${sortedBackups.length - orphanedBackups.length} archive${sortedBackups.length - orphanedBackups.length !== 1 ? 's' : ''}` : '')}
+        </span>
       </div>
+
+      {volumes.length === 0
+        ? <p className="backup-empty-state">No Docker volumes found.</p>
+        : (
+          <ul className="backup-item-list">
+            {volumes.map(v => {
+              const checked     = selected.has(v.name)
+              const vp          = volProgress[v.name]
+              const showBar     = vp && vp.status !== 'idle'
+              const volArchives = backupsByVolume[v.name] ?? []
+              const statusCls   = v.containers.length > 0 ? 'badge-active' : v.in_use ? 'badge-paused' : 'badge-idle'
+              const statusTxt   = v.containers.length > 0 ? 'running' : v.in_use ? 'stopped ref' : 'unused'
+
+              return (
+                <li key={v.name} className="backup-item">
+                  {/* ── Volume header row ────── */}
+                  <label className={clsx('backup-item-row', checked && 'selected')}>
+                    <input
+                      type="checkbox"
+                      className="backup-item-check"
+                      checked={checked}
+                      onChange={() => toggleVolume(v.name)}
+                      disabled={anyRunning}
+                    />
+                    <span className="backup-item-name" title={v.name}>{truncName(v.name)}</span>
+                    <div className="backup-item-tags">
+                      <span className={clsx('badge', statusCls)}>{statusTxt}</span>
+                      {v.containers.length > 0 && (
+                        <span className="backup-warn-icon" title="Running containers will be paused">
+                          <AlertTriangle size={11} />
+                        </span>
+                      )}
+                      {v.containers.length > 0 && (
+                        <span className="backup-vol-tag backup-vol-tag--containers" title={v.containers.join(', ')}>
+                          {v.containers.join(', ')}
+                        </span>
+                      )}
+                      {v.compose_project && (
+                        <span className="backup-vol-tag backup-vol-tag--compose">{v.compose_project}</span>
+                      )}
+                    </div>
+                  </label>
+
+                  {/* Progress bar */}
+                  {showBar && <ProgressBar p={vp} />}
+
+                  {/* Archive tree */}
+                  {volArchives.length > 0 && (
+                    <ul className="backup-tree">
+                      {volArchives.map((entry, idx) => {
+                        const rp          = volProgress[entry.volume]
+                        // Only show progress on the archive row during RESTORE.
+                        // During backup the progress bar lives on the volume row itself.
+                        const showRBar    = !isBacking && rp && (rp.status === 'running' || rp.status === 'queued')
+                        const isConfirmR  = confirmRestore?.filename === entry.filename
+                        const isConfirmD  = confirmDelete?.filename  === entry.filename
+                        const isLast      = idx === volArchives.length - 1
+
+                        return (
+                          <li key={entry.filename}
+                            className={clsx('backup-tree-item', isLast && 'last', (isConfirmR || isConfirmD) && 'confirming')}>
+                            <div className="backup-tree-content">
+                              <div className="backup-tree-info">
+                                <span className="backup-tree-date">{formatDate(entry.created_at)}</span>
+                                <span className="backup-tree-size">{bytesToHuman(entry.size_bytes)}</span>
+                                <span className="backup-tree-file" title={entry.filename}>{entry.filename}</span>
+                              </div>
+                              {isConfirmR ? (
+                                <div className="backup-inline-confirm">
+                                  <span className="backup-confirm-text">Restore will overwrite existing data.</span>
+                                  <div className="backup-confirm-actions">
+                                    <button className="btn-execute btn-execute--success btn-sm" onClick={() => runRestore(entry)} disabled={anyRunning}>
+                                      <RotateCcw size={11} /> Confirm
+                                    </button>
+                                    <button className="btn-reset btn-sm" onClick={() => setConfirmRestore(null)}>Cancel</button>
+                                  </div>
+                                </div>
+                              ) : isConfirmD ? (
+                                <div className="backup-inline-confirm">
+                                  <span className="backup-confirm-text backup-confirm-text--danger">Permanently delete archive?</span>
+                                  <div className="backup-confirm-actions">
+                                    <button className="btn-execute btn-execute--danger btn-sm" onClick={() => runDeleteVolBackup(entry)} disabled={isDeleting}>
+                                      <Trash2 size={11} /> Delete
+                                    </button>
+                                    <button className="btn-reset btn-sm" onClick={() => setConfirmDelete(null)}>Cancel</button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="backup-tree-actions">
+                                  <button className="ctr-action-btn ctr-action-start"
+                                    onClick={() => { setConfirmRestore(entry); setConfirmDelete(null) }}
+                                    disabled={anyRunning || isDeleting} title="Restore from this backup">
+                                    <RotateCcw size={12} />
+                                  </button>
+                                  <button className="ctr-action-btn ctr-action-stop"
+                                    onClick={() => { setConfirmDelete(entry); setConfirmRestore(null) }}
+                                    disabled={anyRunning || isDeleting} title="Delete this backup">
+                                    <Trash2 size={12} />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                            {showRBar && <ProgressBar p={rp} />}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
+                </li>
+              )
+            })}
+
+            {/* Orphaned archives */}
+            {orphanedBackups.length > 0 && (
+              <li className="backup-item backup-item--orphan">
+                <div className="backup-orphaned-label">
+                  <span>Orphaned archives</span>
+                  <span className="backup-section-meta">{orphanedBackups.length} from deleted volumes</span>
+                </div>
+                <ul className="backup-tree">
+                  {orphanedBackups.map((entry, idx) => (
+                    <li key={entry.filename}
+                      className={clsx('backup-tree-item', idx === orphanedBackups.length - 1 && 'last')}>
+                      <div className="backup-tree-content">
+                        <div className="backup-tree-info">
+                          <span className="backup-tree-vol">{entry.volume}</span>
+                          <span className="backup-tree-date">{formatDate(entry.created_at)}</span>
+                          <span className="backup-tree-size">{bytesToHuman(entry.size_bytes)}</span>
+                          <span className="backup-tree-file" title={entry.filename}>{entry.filename}</span>
+                        </div>
+                        <div className="backup-tree-actions">
+                          <button className="ctr-action-btn ctr-action-stop"
+                            onClick={() => { setConfirmDelete(entry); setConfirmRestore(null) }}
+                            disabled={anyRunning || isDeleting} title="Delete this backup">
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            )}
+          </ul>
+        )
+      }
+
+      {/* Volume backup action */}
+      <div className="backup-action-row">
+        <button
+          className="btn-execute btn-execute--success"
+          onClick={runBackup}
+          disabled={anyRunning || selected.size === 0 || !backupDir}
+          title={!backupDir ? 'Set a backup directory first' : ''}
+        >
+          <HardDriveDownload size={13} />
+          {isBacking ? 'Backing up…'
+            : selected.size > 0 ? `Backup ${selected.size} selected`
+            : 'Select volumes to back up'}
+        </button>
+      </div>
+      </>)}
+
+      {/* ════════════════════════════════════════════════════════════
+          COMPOSE  (only rendered when section === 'compose')
+          ════════════════════════════════════════════════════════════ */}
+      {section === 'compose' && (<>
+      <div className="backup-section-hd">
+        <span className="backup-section-title">Compose</span>
+        <span className="backup-section-meta">
+          {allComposeItems.length} project{allComposeItems.length !== 1 ? 's' : ''}
+          {composeBackups.length > 0 && ` · ${composeBackups.length} archive${composeBackups.length !== 1 ? 's' : ''}`}
+        </span>
+      </div>
+
+      {allComposeItems.length === 0
+        ? <p className="backup-empty-state">No compose projects found.</p>
+        : (
+          <ul className="backup-item-list">
+            {allComposeItems.map(item => {
+              const isBacking  = backingUpCompose.has(item.name)
+              const dot        = item.project ? composeDot(item.project.status) : 'stopped'
+
+              return (
+                <li key={item.name} className="backup-item">
+                  {/* ── Project header row ────── */}
+                  <div className="backup-item-row backup-item-row--compose">
+                    <span className={clsx('compose-status-dot', dot)} />
+                    <span className="backup-item-name" title={item.name}>{truncName(item.name)}</span>
+                    <div className="backup-item-tags">
+                      {!item.project && <span className="badge badge-idle">archived only</span>}
+                      {item.project && (
+                        <span className="backup-vol-tag" title={item.project.config_files.join(', ')}>
+                          {item.project.config_files.length} file{item.project.config_files.length !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </div>
+                    {item.project && (
+                      <button
+                        className={clsx('btn-execute btn-execute--success btn-sm backup-compose-backup-btn', isBacking && 'loading')}
+                        onClick={() => handleBackupCompose(item.project!)}
+                        disabled={isBacking || !backupDir}
+                        title={!backupDir ? 'Set a backup directory first' : `Back up compose files for '${item.name}'`}
+                      >
+                        <Download size={11} className={isBacking ? 'spin' : ''} />
+                        {isBacking ? 'Backing up…' : 'Backup'}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Compose archive tree */}
+                  {item.backups.length > 0 && (
+                    <ul className="backup-tree">
+                      {item.backups.map((entry, idx) => {
+                        const origFile = entry.original_path.split(/[\\/]/).pop() ?? entry.original_path
+                        return (
+                          <li key={entry.filename}
+                            className={clsx('backup-tree-item', idx === item.backups.length - 1 && 'last')}>
+                            <div className="backup-tree-content">
+                              <div className="backup-tree-info">
+                                <span className="backup-tree-vol">{origFile}</span>
+                                <span className="backup-tree-date">{formatDate(entry.created_at)}</span>
+                                <span className="backup-tree-size">{bytesToHuman(entry.size_bytes)}</span>
+                                <span className="backup-tree-file" title={entry.filename}>{entry.filename}</span>
+                              </div>
+                              <div className="backup-tree-actions">
+                                <button
+                                  className="ctr-action-btn ctr-action-stop"
+                                  onClick={() => deleteComposeBackup(entry)}
+                                  disabled={deletingCompose === entry.filename}
+                                  title="Delete this backup"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            </div>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        )
+      }
+      </>)}
+
     </div>
   )
 }

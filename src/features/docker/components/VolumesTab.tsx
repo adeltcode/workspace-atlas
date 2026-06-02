@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react'
-import { Trash2 } from 'lucide-react'
+import { Trash2, HardDriveDownload } from 'lucide-react'
 import clsx from 'clsx'
 import * as api from '../api'
+import { useAppStore } from '../../../store/appStore'
 import type { DockerVolume } from '../types'
 
 type UsageFilter = 'all' | 'in-use' | 'unused'
@@ -29,6 +30,13 @@ export default function VolumesTab({
   const [busy, setBusy]               = useState<string | null>(null)
   const [pruningAll, setPruningAll]   = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+
+  const { setDockerTab, setBackupPreselect } = useAppStore()
+
+  const goBackup = (name: string) => {
+    setBackupPreselect(name)
+    setDockerTab('backup-volumes')
+  }
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
@@ -125,7 +133,7 @@ export default function VolumesTab({
               <th className="img-th">Driver</th>
               <th className="img-th">Size</th>
               <th className="img-th">Status</th>
-              <th className="img-th ctr-th-actions">Action</th>
+              <th className="img-th ctr-th-actions">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -145,6 +153,13 @@ export default function VolumesTab({
                       : <span className="badge badge-idle">Unused</span>}
                   </td>
                   <td className="img-td ctr-td-actions">
+                    <button
+                      className="ctr-action-btn ctr-action-start"
+                      onClick={() => goBackup(v.name)}
+                      title="Back up this volume"
+                    >
+                      <HardDriveDownload size={12} />
+                    </button>
                     {isConfirming ? (
                       <button
                         className="ctr-action-btn ctr-action-confirm"

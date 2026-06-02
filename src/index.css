@@ -485,6 +485,97 @@ ul, ol { list-style: none; }
   background: var(--color-accent);
 }
 
+/*
+ * Grandchild navigation — mirrors the child level exactly.
+ *
+ * Level 2 geometry:  trunk@23, branch left=24 width=13, dot@35, text@47
+ * Level 3 geometry:  trunk@47, branch left=48 width=13, dot@59, text@71
+ *
+ * In both levels the delta from trunk to text-start is 24px, and every
+ * spacing value (gap, vertical padding, margin) is identical.
+ */
+
+.sidebar-grandchildren {
+  position: relative;
+  margin: 2px 0 6px 0;   /* identical to .sidebar-children */
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;              /* identical to .sidebar-children */
+  list-style: none;
+}
+
+/* Vertical trunk — sits at x=47, same fade as .sidebar-children::before */
+.sidebar-grandchildren::before {
+  content: '';
+  position: absolute;
+  left: 47px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(
+    to bottom,
+    var(--chrome-divider) 0%,
+    var(--chrome-divider) calc(100% - 14px),
+    transparent 100%
+  );
+  pointer-events: none;
+}
+
+/* Text starts at 71px  (47 + 24 = same 24px delta as child level) */
+.sidebar-grandchild-item {
+  position: relative;
+  width: 100%;
+  padding: 5px 8px 5px 71px;  /* vertical padding matches child */
+  border-radius: var(--radius-sm);
+  color: var(--chrome-text-subtle);
+  font-size: 12px;             /* matches child */
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.sidebar-grandchild-item:hover {
+  background: var(--chrome-surface);
+  color: var(--chrome-text-muted);
+}
+.sidebar-grandchild-item.active {
+  background: rgba(108,113,255,0.1);
+  color: var(--chrome-text);
+}
+
+/* L-shaped branch: left=48, width=13 → ends at x=61, same geometry as child */
+.sidebar-grandchild-item::before {
+  content: '';
+  position: absolute;
+  left: 48px;
+  top: 0;
+  bottom: 50%;
+  width: 13px;
+  border-left: 1px solid var(--chrome-divider);
+  border-bottom: 1px solid var(--chrome-divider);
+  border-bottom-left-radius: 5px;  /* matches child */
+  pointer-events: none;
+}
+
+/* Dot at x=59  (48 + 13 = 61, dot 4px wide → left: 59 centres it on branch end) */
+.sidebar-grandchild-item::after {
+  content: '';
+  position: absolute;
+  left: 59px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--chrome-text-subtle);
+  transition: background var(--transition-fast);
+  pointer-events: none;
+}
+.sidebar-grandchild-item.active::after {
+  background: var(--color-accent);
+}
+
 /* Footer */
 .sidebar-footer {
   padding: 10px 14px;
@@ -2590,80 +2681,66 @@ button:focus-visible {
 .compose-tab {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  /* Bleed to view-container edges (32px padding on each side) */
+  margin: 0 -32px;
 }
 
-.compose-header {
+/* ── Horizontal project tab bar ─────────────────────────────── */
+.compose-project-tabs-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-}
-
-.compose-header-title {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-text-tertiary);
-}
-
-/* ── Main layout: sidebar | viewer ─────────────────────────── */
-.compose-layout {
-  display: grid;
-  grid-template-columns: 260px 1fr;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  overflow: hidden; /* clips children to border-radius */
-}
-
-/* ── Project sidebar ────────────────────────────────────────── */
-.compose-sidebar {
-  display: flex;
-  flex-direction: column;
-  border-right: 1px solid var(--color-border);
+  gap: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--color-border);
   background: var(--color-bg-secondary);
-  /* no overflow constraint — let window scroll handle it */
+  flex-shrink: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
 }
 
-.compose-empty {
-  padding: 20px 14px;
+.compose-project-tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px 5px 10px;
+  border-radius: 20px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  max-width: 220px;
+}
+.compose-project-tab:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+.compose-project-tab.active {
+  background: var(--color-accent-subtle);
+  border-color: rgba(108,113,255,0.3);
+  color: var(--color-accent);
+}
+.compose-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+.compose-tabs-state {
   font-size: 12px;
   color: var(--color-text-tertiary);
-  line-height: 1.6;
-  text-align: center;
+  padding: 4px 2px;
 }
-.compose-empty code {
+.compose-tabs-state code {
   font-family: "Cascadia Code", "Consolas", monospace;
   font-size: 11px;
   background: var(--color-bg-tertiary);
   padding: 1px 5px;
   border-radius: 3px;
-  color: var(--color-text-secondary);
-}
-
-.compose-project-list {
-  display: flex;
-  flex-direction: column;
-}
-
-.compose-project-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  padding: 11px 12px;
-  border-bottom: 1px solid var(--color-border);
-  background: transparent;
-  border-left: 2px solid transparent;
-  width: 100%;
-  text-align: left;
-  cursor: pointer;
-  transition: background var(--transition-fast), border-color var(--transition-fast);
-}
-.compose-project-row:last-child { border-bottom: none; }
-.compose-project-row:hover { background: var(--color-bg-hover); }
-.compose-project-row.active {
-  background: var(--color-accent-subtle);
-  border-left-color: var(--color-accent);
 }
 
 .compose-status-dot {
@@ -2671,7 +2748,6 @@ button:focus-visible {
   height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
-  margin-top: 4px;
 }
 .compose-status-dot.running {
   background: var(--color-success);
@@ -2683,76 +2759,11 @@ button:focus-visible {
 }
 .compose-status-dot.stopped { background: var(--color-text-tertiary); }
 
-.compose-project-info {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
+[data-theme="light"] .compose-project-tab.active {
+  background: rgba(99,102,241,0.08);
+  border-color: rgba(99,102,241,0.25);
+  color: #4338ca;
 }
-
-.compose-project-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.compose-project-row.active .compose-project-name { color: var(--color-accent); }
-
-.compose-project-status {
-  font-size: 10.5px;
-  color: var(--color-text-tertiary);
-}
-
-.compose-project-files {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.compose-file-chip {
-  font-size: 10px;
-  padding: 1px 6px;
-  background: var(--color-bg-tertiary);
-  border: 1px solid var(--color-border);
-  border-radius: 3px;
-  color: var(--color-text-tertiary);
-  font-family: "Cascadia Code", "Consolas", monospace;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
-}
-
-.compose-chevron {
-  color: var(--color-text-tertiary);
-  flex-shrink: 0;
-  margin-top: 3px;
-  transition: transform var(--transition-fast), color var(--transition-fast);
-}
-.compose-chevron.active { transform: rotate(90deg); color: var(--color-accent); }
-
-/* ── Resize handle ──────────────────────────────────────────── */
-.compose-resize-handle {
-  cursor: col-resize;
-  background: var(--color-border);
-  position: relative;
-  transition: background 0.15s;
-  user-select: none;
-  flex-shrink: 0;
-}
-/* Expand the hit target without changing the visual width */
-.compose-resize-handle::before {
-  content: '';
-  position: absolute;
-  top: 0; bottom: 0;
-  left: -4px; right: -4px;
-  cursor: col-resize;
-}
-.compose-resize-handle:hover { background: var(--color-accent); }
 
 /* ── Viewer area ────────────────────────────────────────────── */
 .compose-viewer {
@@ -2821,6 +2832,26 @@ button:focus-visible {
 
 .compose-breadcrumb-icon { color: var(--color-text-tertiary); flex-shrink: 0; }
 
+.compose-breadcrumb-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.path-origin-icon { display: flex; align-items: center; flex-shrink: 0; }
+.path-origin-win  { color: #60a5fa; }
+.path-origin-wsl  { color: #fb923c; }
+
+.path-origin-win  + .compose-breadcrumb-label { color: #60a5fa; background: rgba(96,165,250,0.1); }
+.path-origin-wsl  + .compose-breadcrumb-label { color: #fb923c; background: rgba(251,146,60,0.1); }
+
+/* Separator before the folder icon */
+.compose-breadcrumb-label + .compose-breadcrumb-icon { margin-left: 2px; }
+
 .compose-breadcrumb-path {
   font-size: 11px;
   color: var(--color-text-tertiary);
@@ -2831,6 +2862,32 @@ button:focus-visible {
   direction: rtl;
   text-align: left;
 }
+
+/* ── Path badges on file tabs ───────────────────────────────── */
+.path-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+  flex-shrink: 0;
+}
+.path-badge--win {
+  background: rgba(96,165,250,0.12);
+  color: #60a5fa;
+  border: 1px solid rgba(96,165,250,0.2);
+}
+.path-badge--wsl {
+  background: rgba(251,146,60,0.1);
+  color: #fb923c;
+  border: 1px solid rgba(251,146,60,0.2);
+}
+[data-theme="light"] .path-badge--win { background: rgba(37,99,235,0.08); color: #1d4ed8; border-color: rgba(37,99,235,0.2); }
+[data-theme="light"] .path-badge--wsl { background: rgba(194,65,12,0.08); color: #c2410c; border-color: rgba(194,65,12,0.2); }
 
 .compose-viewer-body {
   /* grows to natural height — window provides vertical scroll */
@@ -2998,15 +3055,78 @@ button:focus-visible {
 [data-theme="light"] .yaml-env      { color: #c2410c; }
 
 /* =============================================================
-   Docker — Backup Tab
+   Docker — Backup Tab (redesigned)
    ============================================================= */
 .backup-tab {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 0;
 }
 
-/* ── Config card ─────────────────────────────────────────────── */
+/* ── Directory bar ───────────────────────────────────────────── */
+.backup-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 16px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  margin-bottom: 14px;
+}
+
+.backup-bar-inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.backup-bar-icon { color: var(--color-text-tertiary); flex-shrink: 0; }
+
+.backup-bar-input {
+  flex: 1;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: 12.5px;
+  padding: 5px 10px;
+  outline: none;
+  transition: border-color 0.15s;
+  min-width: 0;
+  font-family: "Cascadia Code", "Consolas", monospace;
+}
+.backup-bar-input:focus { border-color: var(--color-accent); }
+.backup-bar-input::placeholder { color: var(--color-text-tertiary); }
+
+.backup-bar-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  background: var(--color-bg-hover);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.backup-bar-btn:hover { background: var(--color-bg-tertiary); color: var(--color-text-primary); border-color: var(--color-border-strong); }
+
+.backup-bar-hint {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  padding-left: 21px; /* align with input */
+}
+.backup-bar-hint code {
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 10.5px;
+  color: var(--color-text-secondary);
+}
+
+/* (old config-card removed — replaced by .backup-bar above) */
 .backup-config-card {
   display: flex;
   flex-direction: column;
@@ -3187,147 +3307,94 @@ button:focus-visible {
   padding-left: 27px;
 }
 
-/* ── Two-column layout ───────────────────────────────────────── */
-.backup-columns {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  align-items: start;
-}
-@media (max-width: 900px) { .backup-columns { grid-template-columns: 1fr; } }
-
-/* ── Panels ──────────────────────────────────────────────────── */
-.backup-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  min-width: 0;
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-.backup-panel-header {
+/* ── Section headers ─────────────────────────────────────────── */
+.backup-section-hd {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px 10px;
+  padding: 6px 0 8px;
+  margin-top: 6px;
   border-bottom: 1px solid var(--color-border);
+  margin-bottom: 2px;
 }
-
-.backup-panel-title {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+.backup-section-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--color-text-tertiary);
 }
-
-.backup-panel-meta {
+.backup-section-meta {
   font-size: 11px;
   color: var(--color-text-tertiary);
 }
 
-.backup-panel-footer {
-  padding: 10px 12px;
-  border-top: 1px solid var(--color-border);
+/* ── Item list ───────────────────────────────────────────────── */
+.backup-item-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 4px;
 }
 
-.backup-empty {
-  padding: 24px 16px;
-  text-align: center;
-  font-size: 12px;
-  color: var(--color-text-tertiary);
-}
-
-/* ── Volume list ─────────────────────────────────────────────── */
-.backup-volume-list {
+.backup-item {
   display: flex;
   flex-direction: column;
-  gap: 0;
-  max-height: 280px;
-  overflow-y: auto;
+  border-bottom: 1px solid var(--color-border-light);
 }
+.backup-item:last-child { border-bottom: none; }
+.backup-item--orphan { margin-top: 4px; border-top: 1px solid var(--color-border); }
 
-.backup-volume-entry {
-  display: flex;
-  flex-direction: column;
-  border-bottom: 1px solid var(--color-border);
-}
-.backup-volume-entry:last-child { border-bottom: none; }
-
-.backup-volume-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px 14px;
-  cursor: pointer;
-  transition: background var(--transition-fast);
-  user-select: none;
-}
-.backup-volume-item:hover   { background: var(--color-bg-hover); }
-.backup-volume-item.checked { background: var(--color-accent-subtle); }
-.backup-volume-item input[type="checkbox"] {
-  cursor: pointer;
-  accent-color: var(--color-accent);
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
-.backup-volume-info {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.backup-volume-name-row {
+/* ── Item header row ─────────────────────────────────────────── */
+.backup-item-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
-  min-width: 0;
+  padding: 8px 6px;
+  cursor: pointer;
+  transition: background 0.1s;
+  user-select: none;
+  border-radius: 4px;
+}
+.backup-item-row:hover { background: var(--color-bg-hover); }
+.backup-item-row.selected { background: var(--color-accent-subtle); }
+.backup-item-row--compose { cursor: default; }
+.backup-item-row--compose:hover { background: transparent; }
+
+.backup-item-check {
+  flex-shrink: 0;
+  cursor: pointer;
+  accent-color: var(--color-accent);
 }
 
-.backup-volume-name {
+.backup-item-name {
   font-size: 12px;
   font-weight: 500;
   color: var(--color-text-primary);
   font-family: "Cascadia Code", "Consolas", monospace;
+  white-space: nowrap;
+  flex-shrink: 0;
+  max-width: 240px;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
 }
 
-.backup-volume-badges {
+.backup-item-tags {
   display: flex;
   align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-}
-
-.backup-inuse-warn {
-  color: var(--color-warning);
-  display: flex;
-  align-items: center;
-}
-
-.backup-volume-tags {
-  display: flex;
-  flex-wrap: wrap;
   gap: 4px;
+  flex: 1;
+  flex-wrap: wrap;
   min-width: 0;
 }
+
+.backup-warn-icon { color: var(--color-warning); display: flex; align-items: center; }
 
 .backup-vol-tag {
   display: inline-block;
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 3px;
-  max-width: 100%;
+  max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3343,90 +3410,146 @@ button:focus-visible {
   font-weight: 500;
 }
 
-/* ── Archive list ────────────────────────────────────────────── */
-.backup-list {
-  display: flex;
-  flex-direction: column;
-  max-height: 360px;
-  overflow-y: auto;
+.backup-compose-backup-btn {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
-.backup-list-item {
+/* ── Action row ──────────────────────────────────────────────── */
+.backup-action-row {
+  padding: 10px 0 14px;
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 11px 14px;
+  gap: 8px;
+}
+
+/* ── Empty state ─────────────────────────────────────────────── */
+.backup-empty-state {
+  padding: 20px 0;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  text-align: center;
+}
+
+/* ── Orphaned label ──────────────────────────────────────────── */
+.backup-orphaned-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 6px 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ── Tree lines ──────────────────────────────────────────────── */
+.backup-tree {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 4px 16px; /* indent from item left edge */
+}
+
+.backup-tree-item {
+  position: relative;
+  padding: 4px 0 4px 22px;
+}
+
+/* L-shape from top to branch midpoint */
+.backup-tree-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: calc(50% + 1px);
+  width: 18px;
+  border-left: 1px solid var(--color-border);
   border-bottom: 1px solid var(--color-border);
-  transition: background var(--transition-fast);
+  border-bottom-left-radius: 5px;
+  pointer-events: none;
 }
-.backup-list-item:last-child { border-bottom: none; }
-.backup-list-item:hover { background: var(--color-bg-hover); }
-.backup-list-item.confirming { background: var(--color-bg-tertiary); }
 
-.backup-list-item-info {
+/* Extend vertical line below midpoint for non-last items */
+.backup-tree-item:not(.last)::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: calc(50% + 1px);
+  bottom: 0;
+  width: 1px;
+  background: var(--color-border);
+  pointer-events: none;
+}
+
+.backup-tree-content {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  transition: background 0.1s;
+}
+.backup-tree-content:hover { background: var(--color-bg-hover); }
+
+.backup-tree-item.confirming .backup-tree-content {
+  background: var(--color-bg-tertiary);
+  flex-wrap: wrap;
+  align-items: flex-start;
+  padding-bottom: 8px;
+}
+
+.backup-tree-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex: 1;
   min-width: 0;
+  flex-wrap: wrap;
 }
 
-.backup-list-top {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-}
-
-.backup-list-volume {
-  font-size: 13px;
+.backup-tree-vol {
+  font-size: 11px;
   font-weight: 600;
-  color: var(--color-text-primary);
-  font-family: "Cascadia Code", "Consolas", monospace;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: var(--color-accent);
+  flex-shrink: 0;
   white-space: nowrap;
-  min-width: 0;
 }
 
-.backup-list-size {
+.backup-tree-date {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.backup-tree-size {
   font-size: 11px;
   color: var(--color-text-tertiary);
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
 }
 
-.backup-list-date {
-  font-size: 11px;
-  color: var(--color-text-secondary);
-}
-
-.backup-list-filename {
+.backup-tree-file {
   font-size: 10px;
   color: var(--color-text-tertiary);
   font-family: "Cascadia Code", "Consolas", monospace;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+  min-width: 0;
 }
 
-.backup-list-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-  padding-top: 1px;
-}
+.backup-tree-actions { display: flex; gap: 4px; flex-shrink: 0; }
 
-/* Inline confirm strip */
+/* ── Inline confirm strip ────────────────────────────────────── */
 .backup-inline-confirm {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 10px 14px 12px;
-  background: var(--color-bg-tertiary);
-  border-top: 1px solid var(--color-border);
+  padding: 8px 0 2px;
+  width: 100%;
 }
 
 .backup-confirm-text {
@@ -3435,10 +3558,7 @@ button:focus-visible {
 }
 .backup-confirm-text--danger { color: var(--color-danger); }
 
-.backup-confirm-actions {
-  display: flex;
-  gap: 6px;
-}
+.backup-confirm-actions { display: flex; gap: 6px; }
 
 /* Small button variant */
 .btn-sm {
@@ -3459,9 +3579,6 @@ button:focus-visible {
 /* =============================================================
    Backup — per-volume progress bar
    ============================================================= */
-.backup-volume-entry.has-progress .backup-volume-item {
-  border-bottom: none;
-}
 
 .vol-progress-wrap {
   padding: 4px 12px 6px;

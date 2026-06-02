@@ -75,10 +75,16 @@ export default function DockerView() {
           {dockerTab === 'volumes'     && <VolumesTab volumes={volumes} loading={loading} onRefresh={refresh} />}
           {dockerTab === 'networks'    && <NetworksTab />}
           {dockerTab === 'compose'     && <ComposeTab refreshTick={composeTick} />}
-          {/* BackupTab stays mounted once Docker is online so that in-progress backups
-              and event listeners survive tab switches. Hidden with CSS when inactive. */}
-          <div className={dockerTab !== 'backup' ? 'tab-hidden' : undefined}>
-            <BackupTab volumes={volumes} />
+          {/* BackupTab stays mounted for both backup sub-tabs so in-progress operations
+              and event listeners survive switching between Vol. Backup and Comp. Backup. */}
+          <div className={
+            dockerTab !== 'backup-volumes' && dockerTab !== 'backup-compose'
+              ? 'tab-hidden' : undefined
+          }>
+            <BackupTab
+              volumes={volumes}
+              section={dockerTab === 'backup-compose' ? 'compose' : 'volumes'}
+            />
           </div>
           {dockerTab === 'prune'       && <PruneTab images={images} onDone={refresh} />}
           {dockerTab === 'log'         && <LogTab />}

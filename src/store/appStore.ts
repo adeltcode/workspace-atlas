@@ -5,7 +5,7 @@ import type { TerminalLine } from '../types/terminal'
 
 export type View      = 'dashboard' | 'docker' | 'wsl' | 'packages' | 'automation'
 export type Theme     = 'dark' | 'light'
-export type DockerTab = 'overview' | 'images' | 'containers' | 'volumes' | 'networks' | 'compose' | 'backup' | 'prune' | 'log'
+export type DockerTab = 'overview' | 'images' | 'containers' | 'volumes' | 'networks' | 'compose' | 'backup-volumes' | 'backup-compose' | 'prune' | 'log'
 
 const MAX_DOCKER_LOGS    = 10
 const MAX_TERMINAL_LINES = 500
@@ -38,6 +38,10 @@ interface AppState {
   // ── Backup directory (persisted)
   backupDir: string
   setBackupDir: (dir: string) => void
+
+  // ── Backup pre-select — set before navigating to backup tab (ephemeral)
+  backupPreselect: string | null
+  setBackupPreselect: (name: string | null) => void
 
   // ── Docker keep-list (persisted)
   dockerKeepList: string[]
@@ -95,6 +99,10 @@ export const useAppStore = create<AppState>()(
       backupDir: '',
       setBackupDir: (backupDir) => set({ backupDir }),
 
+      // ── Backup pre-select (ephemeral)
+      backupPreselect: null,
+      setBackupPreselect: (backupPreselect) => set({ backupPreselect }),
+
       // ── Docker keep-list
       dockerKeepList: [],
       addToKeepList: (id) =>
@@ -144,7 +152,13 @@ export const useAppStore = create<AppState>()(
         dockerLogs:     s.dockerLogs,
       }),
       onRehydrateStorage: () => (state) => {
-        if (state) applyTheme(state.theme)
+        if (state) {
+          applyTheme(state.theme)
+          // Migrate legacy 'backup' tab value that may be stored in localStorage
+          if ((state.dockerTab as string) === 'backup') {
+            state.dockerTab = 'backup-volumes'
+          }
+        }
       },
     }
   )

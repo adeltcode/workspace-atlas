@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { FileText, Download, AlertCircle, FolderOpen, ChevronRight, Trash2, Clock } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { FileText, Download, AlertCircle, FolderOpen, Trash2, Clock, Monitor, Terminal, ArrowRight } from 'lucide-react'
 import clsx from 'clsx'
 import * as api from '../api'
 import { useAppStore } from '../../../store/appStore'
@@ -81,6 +81,31 @@ function YamlViewer({ content }: { content: string }) {
   )
 }
 
+// ── Path origin detection ─────────────────────────────────────────────────────
+
+type PathOrigin = 'windows' | 'wsl-mount' | 'wsl'
+
+function detectOrigin(path: string): PathOrigin {
+  if (/^[A-Za-z]:[/\\]/.test(path)) return 'windows'
+  if (/^\/mnt\/[a-z]\//i.test(path))  return 'wsl-mount'
+  return 'wsl'
+}
+
+function PathOriginLine({ path }: { path: string }) {
+  const origin = detectOrigin(path)
+  const isWin  = origin === 'windows'
+  return (
+    <>
+      <span className={clsx('path-origin-icon', isWin ? 'path-origin-win' : 'path-origin-wsl')}>
+        {isWin ? <Monitor size={11} /> : <Terminal size={11} />}
+      </span>
+      <span className="compose-breadcrumb-label">
+        {isWin ? 'Windows' : origin === 'wsl-mount' ? 'WSL mount' : 'WSL'}
+      </span>
+    </>
+  )
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const filename = (path: string) => path.split(/[\\/]/).pop() ?? path
@@ -97,17 +122,13 @@ function parseComposeStatus(raw: string): ServiceState[] {
     })
 }
 
-/** running: all services running; partial: some running; stopped: none running */
 function statusLabel(raw: string): { text: string; dot: 'running' | 'partial' | 'stopped' } {
   const parts = parseComposeStatus(raw)
   if (!parts.length) return { text: raw || 'unknown', dot: 'stopped' }
 
   const total   = parts.reduce((s, p) => s + p.count, 0)
   const running = parts.find(p => p.state === 'running')?.count ?? 0
-
-  // Human-readable: "2 running, 1 exited"
-  const segments = parts.map(p => `${p.count} ${p.state}`)
-  const text = segments.join(', ')
+  const text    = parts.map(p => `${p.count} ${p.state}`).join(', ')
 
   const dot = running === 0 ? 'stopped'
     : running === total     ? 'running'
@@ -134,11 +155,9 @@ function formatDate(ts: number) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-const MIN_SIDEBAR = 140
-const MAX_SIDEBAR = 480
-
 export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }) {
-  const backupDir = useAppStore(s => s.backupDir)
+  const backupDir    = useAppStore(s => s.backupDir)
+  const setDockerTab = useAppStore(s => s.setDockerTab)
 
   const [projects, setProjects]           = useState<ComposeProject[]>([])
   const [loading, setLoading]             = useState(true)
@@ -148,21 +167,11 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
   const [fileContent, setFileContent]     = useState<string | null>(null)
   const [fileLoading, setFileLoading]     = useState(false)
   const [fileError, setFileError]         = useState<string | null>(null)
-  const [backingUp, setBackingUp]         = useState(false)
-  const [backupMsg, setBackupMsg]         = useState<{ ok: boolean; text: string } | null>(null)
+  // Backup history (read-only view — management happens in Backup tab)
+  const [composeBackups, setComposeBackups] = useState<ComposeBackupEntry[]>([])
+  const [deletingFile, setDeletingFile]     = useState<string | null>(null)
 
-  // Backup history
-  const [composeBackups, setComposeBackups]   = useState<ComposeBackupEntry[]>([])
-  const [deletingFile, setDeletingFile]       = useState<string | null>(null)
-
-  // Sidebar resize — null = auto/max-content, number = user-set px
-  const [sidebarWidth, setSidebarWidth] = useState<number | null>(null)
-  const sidebarRef  = useRef<HTMLDivElement>(null)
-  const isDragging  = useRef(false)
-  const dragStartX  = useRef(0)
-  const dragStartW  = useRef(0)
-
-  // ── Load projects ─────────────────────────────────────────────
+  // ── Load projects ─────────────────────────────────────────────────────────
 
   const loadProjects = async () => {
     setLoading(true); setError(null)
@@ -178,11 +187,10 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
     if (projects.length > 0 && !selected) selectProject(projects[0])
   }, [projects]) // eslint-disable-line
 
-  // ── Project selection ─────────────────────────────────────────
+  // ── Project selection ─────────────────────────────────────────────────────
 
   const selectProject = (project: ComposeProject) => {
     setSelected(project)
-    setBackupMsg(null)
     setFileContent(null)
     setFileError(null)
     const first = project.config_files[0] ?? ''
@@ -199,30 +207,13 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
     finally { setFileLoading(false) }
   }
 
-  // ── Backup history ────────────────────────────────────────────
+  // ── Backup history ────────────────────────────────────────────────────────
 
   const loadComposeBackups = async (projectName: string) => {
     if (!backupDir) { setComposeBackups([]); return }
     try {
-      const entries = await api.dockerListComposeBackups(backupDir, projectName)
-      setComposeBackups(entries)
+      setComposeBackups(await api.dockerListComposeBackups(backupDir, projectName))
     } catch { setComposeBackups([]) }
-  }
-
-  const handleBackup = async () => {
-    if (!selected || !backupDir) return
-    setBackingUp(true); setBackupMsg(null)
-    try {
-      const saved = await api.dockerBackupCompose(selected.name, selected.config_files, backupDir)
-      if (saved.length === 0) {
-        setBackupMsg({ ok: true, text: 'No changes — backup is up to date' })
-      } else {
-        setBackupMsg({ ok: true, text: `${saved.length} file${saved.length !== 1 ? 's' : ''} backed up` })
-        await loadComposeBackups(selected.name)
-      }
-    } catch (e) {
-      setBackupMsg({ ok: false, text: `Backup failed: ${String(e)}` })
-    } finally { setBackingUp(false) }
   }
 
   const handleDeleteBackup = async (entry: ComposeBackupEntry) => {
@@ -231,193 +222,140 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
     try {
       await api.dockerDeleteComposeBackup(backupDir, entry.filename)
       setComposeBackups(prev => prev.filter(b => b.filename !== entry.filename))
-    } catch (e) {
-      setBackupMsg({ ok: false, text: `Delete failed: ${String(e)}` })
+    } catch {
+      // silent — backup history panel will just stay unchanged
     } finally { setDeletingFile(null) }
   }
 
-  // ── Drag-to-resize sidebar ────────────────────────────────────
+  const fileBackups = composeBackups.filter(e => !activeFile || e.original_path === activeFile)
 
-  const handleResizeStart = (e: React.MouseEvent) => {
-    e.preventDefault()
-    // Capture actual rendered width (works whether we're in max-content or fixed-px mode)
-    const actualW = sidebarRef.current?.offsetWidth ?? MIN_SIDEBAR
-    isDragging.current = true
-    dragStartX.current = e.clientX
-    dragStartW.current = actualW
+  // ── Render ────────────────────────────────────────────────────────────────
 
-    const onMove = (ev: MouseEvent) => {
-      if (!isDragging.current) return
-      const delta = ev.clientX - dragStartX.current
-      setSidebarWidth(Math.max(MIN_SIDEBAR, Math.min(MAX_SIDEBAR, dragStartW.current + delta)))
-    }
-    const onUp = () => {
-      isDragging.current = false
-      document.removeEventListener('mousemove', onMove)
-      document.removeEventListener('mouseup', onUp)
-    }
-    document.addEventListener('mousemove', onMove)
-    document.addEventListener('mouseup', onUp)
+  const goToBackup = () => {
+    setDockerTab('backup-compose')
   }
-
-  // ── Backup history filtered to active file ────────────────────
-
-  const fileBackups = composeBackups.filter(e =>
-    !activeFile || e.original_path === activeFile
-  )
-
-  // ── Render ────────────────────────────────────────────────────
 
   return (
     <div className="compose-tab">
-      <div className="compose-header">
-        <span className="compose-header-title">Compose Projects</span>
-      </div>
-
       {error && (
-        <div className="error-banner">
+        <div className="error-banner" style={{ margin: '0 32px 12px' }}>
           <span className="error-title">Error</span>
           <span className="error-msg">{error}</span>
         </div>
       )}
 
-      <div
-        className="compose-layout"
-        style={{
-          gridTemplateColumns: `${sidebarWidth !== null ? `${sidebarWidth}px` : 'max-content'} 5px 1fr`
-        }}
-      >
-        {/* ── Left: project sidebar ─────────────────────────── */}
-        <div className="compose-sidebar" ref={sidebarRef}>
-          {loading && <p className="compose-empty">Loading…</p>}
-          {!loading && projects.length === 0 && !error && (
-            <p className="compose-empty">
-              No compose projects found.<br />
-              Run <code>docker compose up</code> to get started.
-            </p>
-          )}
-          <ul className="compose-project-list">
-            {projects.map(p => {
-              const { text: stText, dot } = statusLabel(p.status)
-              const isActive = selected?.name === p.name
-              return (
-                <li key={p.name}>
-                  <button
-                    className={clsx('compose-project-row', isActive && 'active')}
-                    onClick={() => selectProject(p)}
-                  >
-                    <span className={clsx('compose-status-dot', dot)} />
-                    <div className="compose-project-info">
-                      <span className="compose-project-name">{p.name}</span>
-                      <span className="compose-project-status">{stText}</span>
-                    </div>
-                    <ChevronRight size={13} className={clsx('compose-chevron', isActive && 'active')} />
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-        </div>
+      {/* ── Horizontal project tab bar ─────────────────────────────────── */}
+      <div className="compose-project-tabs-bar">
+        {loading && <span className="compose-tabs-state">Loading…</span>}
+        {!loading && projects.length === 0 && !error && (
+          <span className="compose-tabs-state">
+            No compose projects found — run <code>docker compose up</code> to get started.
+          </span>
+        )}
+        {projects.map(p => {
+          const { text: stText, dot } = statusLabel(p.status)
+          const isActive = selected?.name === p.name
+          return (
+            <button
+              key={p.name}
+              className={clsx('compose-project-tab', isActive && 'active')}
+              onClick={() => selectProject(p)}
+              title={`${p.name} — ${stText}`}
+            >
+              <span className={clsx('compose-status-dot', dot)} />
+              <span className="compose-tab-name">{p.name}</span>
+            </button>
+          )
+        })}
+      </div>
 
-        {/* ── Resize handle ─────────────────────────────────── */}
-        <div className="compose-resize-handle" onMouseDown={handleResizeStart} />
+      {/* ── File viewer ────────────────────────────────────────────────── */}
+      {selected ? (
+        <div className="compose-viewer">
 
-        {/* ── Right: file viewer ────────────────────────────── */}
-        {selected ? (
-          <div className="compose-viewer">
-
-            {/* Toolbar */}
-            <div className="compose-viewer-toolbar">
-              <div className="compose-file-tabs">
-                {selected.config_files.map(f => (
-                  <button
-                    key={f}
-                    className={clsx('compose-file-tab', activeFile === f && 'active')}
-                    onClick={() => { setActiveFile(f); loadFile(f) }}
-                  >
-                    <FileText size={11} />
-                    {filename(f)}
-                  </button>
-                ))}
-              </div>
-              <div className="compose-viewer-actions">
-                {backupMsg && (
-                  <span className={clsx('compose-backup-msg', backupMsg.ok ? 'ok' : 'error')}>
-                    {backupMsg.text}
-                  </span>
-                )}
+          {/* Toolbar: file tabs + actions */}
+          <div className="compose-viewer-toolbar">
+            <div className="compose-file-tabs">
+              {selected.config_files.map(f => (
                 <button
-                  className="btn-refresh"
-                  onClick={handleBackup}
-                  disabled={backingUp || !backupDir}
-                  title={!backupDir
-                    ? 'Set a backup directory in the Backup tab first'
-                    : `Backup config files for '${selected.name}'`}
+                  key={f}
+                  className={clsx('compose-file-tab', activeFile === f && 'active')}
+                  onClick={() => { setActiveFile(f); loadFile(f) }}
                 >
-                  <Download size={12} className={backingUp ? 'spin' : ''} />
-                  {backingUp ? 'Backing up…' : 'Backup files'}
+                  <FileText size={11} />
+                  {filename(f)}
                 </button>
-              </div>
+              ))}
             </div>
-
-            {/* Path breadcrumb */}
-            <div className="compose-breadcrumb">
-              <FolderOpen size={11} className="compose-breadcrumb-icon" />
-              <span className="compose-breadcrumb-path" title={activeFile}>{activeFile}</span>
+            <div className="compose-viewer-actions">
+              <button
+                className="btn-refresh"
+                onClick={goToBackup}
+                title="Manage backups in the Backup tab"
+              >
+                <Download size={12} />
+                Backups
+                <ArrowRight size={11} />
+              </button>
             </div>
+          </div>
 
-            {/* File content */}
-            <div className="compose-viewer-body">
-              {fileLoading && <div className="compose-viewer-state">Loading file…</div>}
-              {fileError && (
-                <div className="compose-viewer-state compose-viewer-error">
-                  <AlertCircle size={14} />{fileError}
-                </div>
-              )}
-              {!fileLoading && fileContent !== null && <YamlViewer content={fileContent} />}
-            </div>
+          {/* Path breadcrumb with origin */}
+          <div className="compose-breadcrumb">
+            <PathOriginLine path={activeFile} />
+            <FolderOpen size={11} className="compose-breadcrumb-icon" />
+            <span className="compose-breadcrumb-path" title={activeFile}>{activeFile}</span>
+          </div>
 
-            {/* Backup history */}
-            {fileBackups.length > 0 && (
-              <div className="compose-history">
-                <div className="compose-history-header">
-                  <Clock size={12} className="compose-history-icon" />
-                  <span className="compose-history-title">Backup History</span>
-                  <span className="compose-history-count">
-                    {fileBackups.length} / 10
-                  </span>
-                </div>
-                <ul className="compose-history-list">
-                  {fileBackups.map(entry => (
-                    <li key={entry.filename} className="compose-history-item">
-                      <div className="compose-history-info">
-                        <span className="compose-history-date">{formatDate(entry.created_at)}</span>
-                        <span className="compose-history-size">{bytesToHuman(entry.size_bytes)}</span>
-                      </div>
-                      <span className="compose-history-file" title={entry.filename}>
-                        {entry.filename}
-                      </span>
-                      <button
-                        className="ctr-action-btn ctr-action-stop"
-                        onClick={() => handleDeleteBackup(entry)}
-                        disabled={deletingFile === entry.filename}
-                        title="Delete this backup"
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+          {/* File content */}
+          <div className="compose-viewer-body">
+            {fileLoading && <div className="compose-viewer-state">Loading file…</div>}
+            {fileError && (
+              <div className="compose-viewer-state compose-viewer-error">
+                <AlertCircle size={14} />{fileError}
               </div>
             )}
+            {!fileLoading && fileContent !== null && <YamlViewer content={fileContent} />}
           </div>
-        ) : (
-          <div className="compose-viewer-placeholder">
-            <FileText size={32} className="compose-placeholder-icon" />
-            <span className="compose-placeholder-text">Select a project to view its configuration</span>
-          </div>
-        )}
-      </div>
+
+          {/* Backup history */}
+          {fileBackups.length > 0 && (
+            <div className="compose-history">
+              <div className="compose-history-header">
+                <Clock size={12} className="compose-history-icon" />
+                <span className="compose-history-title">Backup History</span>
+                <span className="compose-history-count">{fileBackups.length} / 10</span>
+              </div>
+              <ul className="compose-history-list">
+                {fileBackups.map(entry => (
+                  <li key={entry.filename} className="compose-history-item">
+                    <div className="compose-history-info">
+                      <span className="compose-history-date">{formatDate(entry.created_at)}</span>
+                      <span className="compose-history-size">{bytesToHuman(entry.size_bytes)}</span>
+                    </div>
+                    <span className="compose-history-file" title={entry.filename}>
+                      {entry.filename}
+                    </span>
+                    <button
+                      className="ctr-action-btn ctr-action-stop"
+                      onClick={() => handleDeleteBackup(entry)}
+                      disabled={deletingFile === entry.filename}
+                      title="Delete this backup"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="compose-viewer-placeholder">
+          <FileText size={32} className="compose-placeholder-icon" />
+          <span className="compose-placeholder-text">Select a project to view its configuration</span>
+        </div>
+      )}
     </div>
   )
 }

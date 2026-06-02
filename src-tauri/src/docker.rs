@@ -1686,6 +1686,19 @@ pub async fn docker_backup_compose(
     Ok(saved)
 }
 
+/// List every compose backup across all projects, most-recent first.
+/// Entries whose archive files no longer exist are filtered out.
+#[tauri::command]
+pub async fn docker_list_all_compose_backups(backup_dir: String) -> Result<Vec<ComposeBackupEntry>, String> {
+    let mut entries: Vec<_> = read_compose_manifest(&backup_dir)
+        .backups
+        .into_iter()
+        .filter(|e| std::path::Path::new(&e.path).exists())
+        .collect();
+    entries.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    Ok(entries)
+}
+
 /// List all compose backups for a given project, most-recent first.
 /// Entries whose archive files no longer exist are filtered out.
 #[tauri::command]
