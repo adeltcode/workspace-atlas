@@ -5,74 +5,138 @@ import type { DockerSystemDf, DiskUsageRow } from '../../types/docker'
 const CARDS: {
   key: keyof DockerSystemDf
   label: string
+  description: string
   icon: React.ElementType
   color: string
 }[] = [
-  { key: 'images',      label: 'Images',      icon: Layers,   color: 'accent'  },
-  { key: 'containers',  label: 'Containers',  icon: Box,      color: 'success' },
-  { key: 'volumes',     label: 'Volumes',     icon: Database, color: 'warning' },
-  { key: 'build_cache', label: 'Build Cache', icon: Hammer,   color: 'danger'  },
+  {
+    key: 'images',
+    label: 'Images',
+    description: 'Container images on disk',
+    icon: Layers,
+    color: 'accent',
+  },
+  {
+    key: 'containers',
+    label: 'Containers',
+    description: 'Stopped & running containers',
+    icon: Box,
+    color: 'success',
+  },
+  {
+    key: 'volumes',
+    label: 'Volumes',
+    description: 'Persistent data volumes',
+    icon: Database,
+    color: 'warning',
+  },
+  {
+    key: 'build_cache',
+    label: 'Build Cache',
+    description: 'Layer & build artefacts',
+    icon: Hammer,
+    color: 'danger',
+  },
 ]
 
-function parseReclaimPercent(reclaimable: string): number {
+function parsePercent(reclaimable: string): number {
   const m = reclaimable.match(/\((\d+)%\)/)
   return m ? Math.min(100, parseInt(m[1], 10)) : 0
 }
 
-function isZero(reclaimable: string) {
-  return reclaimable.split(' (')[0].trim() === '0B'
+function parseReclaimSize(reclaimable: string): string {
+  return reclaimable.split(' (')[0].trim()
 }
 
-function DfCard({
-  row, label, icon: Icon, color,
+function isZeroSize(reclaimable: string): boolean {
+  const size = parseReclaimSize(reclaimable)
+  return size === '0B' || size === '0 B'
+}
+
+function BentoCard({
+  row,
+  label,
+  description,
+  icon: Icon,
+  color,
 }: {
   row: DiskUsageRow
   label: string
+  description: string
   icon: React.ElementType
   color: string
 }) {
-  const hasReclaimable = !isZero(row.reclaimable)
-  const percent        = parseReclaimPercent(row.reclaimable)
-  const reclaimSize    = row.reclaimable.split(' (')[0].trim()
+  const hasReclaim  = !isZeroSize(row.reclaimable)
+  const percent     = parsePercent(row.reclaimable)
+  const reclaimSize = parseReclaimSize(row.reclaimable)
 
   return (
-    <div className={clsx('df-card', `df-card--${color}`)}>
-      {/* Header row */}
-      <div className="df-card-header">
-        <div className={clsx('df-card-icon', `df-card-icon--${color}`)}>
-          <Icon size={15} />
+    <div className={clsx('bento-card', `bento-card--${color}`)}>
+      {/* Header: icon chip + label + count pill */}
+      <div className="bento-header">
+        <div className={clsx('bento-icon-chip', `bento-chip--${color}`)}>
+          <Icon size={16} />
         </div>
-        <span className="df-card-title">{label}</span>
-        <span className="df-card-count-pill">
+        <div style={{ flex: 1 }}>
+          <div className="bento-label">{label}</div>
+          <div className="bento-desc">{description}</div>
+        </div>
+        <span className={clsx('bento-count-pill', `bento-pill--${color}`)}>
           {row.total}
-          {row.active > 0 && (
-            <span className="df-count-active"> · {row.active} active</span>
-          )}
         </span>
       </div>
 
-      {/* Hero: reclaimable — what the user cares about */}
-      <div className="df-hero">
-        <span className={clsx('df-hero-value', hasReclaimable ? `df-hero--${color}` : 'df-hero-zero')}>
+      {/* Hero: reclaimable size */}
+      <div className="bento-hero">
+        <span className={clsx('bento-hero-value', hasReclaim ? `bento-value--${color}` : 'bento-value--zero')}>
           {reclaimSize}
         </span>
-        <span className="df-hero-label">reclaimable</span>
+        <span className="bento-hero-label">reclaimable</span>
       </div>
 
       {/* Progress bar */}
-      <div className="df-bar-track">
-        <div
-          className={clsx('df-bar-fill', `df-bar-fill--${color}`)}
-          style={{ width: hasReclaimable ? `${percent}%` : '0%' }}
-        />
+      <div className="bento-bar-wrap">
+        <div className="bento-bar">
+          <div
+            className={clsx('bento-bar-fill', `bento-fill--${color}`)}
+            style={{ width: hasReclaim ? `${percent}%` : '0%' }}
+          />
+        </div>
+        <span className="bento-bar-pct">{hasReclaim ? `${percent}%` : '—'}</span>
       </div>
 
-      {/* Footer row */}
-      <div className="df-bar-meta">
-        <span className="df-bar-pct">
-          {hasReclaimable ? `${percent}% of ` : ''}
+      {/* Footer */}
+      <div className="bento-footer">
+        <span className="bento-footer-size">
+          <span className="bento-footer-num">{row.size}</span>
+          <span className="bento-footer-sub"> on disk</span>
         </span>
-        <span className="df-bar-total">{row.size} total</span>
+        {row.active > 0 && (
+          <span className={clsx('bento-active-badge', `bento-active--${color}`)}>
+            {row.active} active
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function BentoSkeleton() {
+  return (
+    <div className="bento-card bento-skeleton">
+      <div className="sk-row">
+        <div className="sk-box" />
+        <div className="sk-col">
+          <div className="sk-line w-20" />
+          <div className="sk-line w-32 short" />
+        </div>
+        <div className="sk-line w-12" style={{ height: 24, borderRadius: 20 }} />
+      </div>
+      <div className="sk-line tall" />
+      <div className="sk-line w-full" style={{ height: 5 }} />
+      <div className="sk-row space-between">
+        <div className="sk-line w-20" />
+        <div className="sk-line w-16" />
       </div>
     </div>
   )
@@ -86,28 +150,31 @@ export default function OverviewTab({
   loading: boolean
 }) {
   return (
-    <>
-      <p className="section-label">Disk Usage</p>
+    <div className="overview-tab">
+      <div className="overview-header">
+        <p className="section-label" style={{ margin: 0 }}>Docker Disk Usage</p>
+        <p className="overview-sub">Click Prune tab to reclaim space</p>
+      </div>
 
       {loading && (
-        <div className="df-grid">
-          {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="df-card df-card-skeleton" />
-          ))}
+        <div className="bento-grid">
+          {[0, 1, 2, 3].map((i) => <BentoSkeleton key={i} />)}
         </div>
       )}
 
       {!loading && df && (
-        <div className="df-grid">
+        <div className="bento-grid">
           {CARDS.map(({ key, ...rest }) => (
-            <DfCard key={key} row={df[key]} {...rest} />
+            <BentoCard key={key} row={df[key]} {...rest} />
           ))}
         </div>
       )}
 
       {!loading && !df && (
-        <p className="empty-state">No disk usage data — is Docker running?</p>
+        <div className="overview-empty">
+          <p>No disk data available. Is Docker running?</p>
+        </div>
       )}
-    </>
+    </div>
   )
 }

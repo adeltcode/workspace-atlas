@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { Box, RefreshCw } from 'lucide-react'
 import clsx from 'clsx'
@@ -18,9 +18,11 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'log',      label: 'Log'      },
 ]
 
-export default function DockerView() {
-  const addTerminalLine = useAppStore(s => s.addTerminalLine)
+const CMD_CHECK = 'docker version --format "{{.Server.Version}}"'
+const CMD_DF    = 'docker system df'
+const CMD_IMGS  = 'docker images --format "{{json .}}"'
 
+export default function DockerView() {
   const [tab, setTab]         = useState<Tab>('overview')
   const [status, setStatus]   = useState<DockerStatus | null>(null)
   const [df, setDf]           = useState<DockerSystemDf | null>(null)
@@ -28,46 +30,51 @@ export default function DockerView() {
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState<string | null>(null)
 
+  // Guard against concurrent refresh calls
+  const refreshing = useRef(false)
+
   const refresh = useCallback(async () => {
+    if (refreshing.current) return
+    refreshing.current = true
     setLoading(true)
     setError(null)
 
-    const CMD_CHECK = 'docker version --format "{{.Server.Version}}"'
-    const CMD_DF    = 'docker system df'
-    const CMD_IMGS  = 'docker images --format "{{json .}}"'
+    // Access store imperatively — no reactive dep needed
+    const addLine = useAppStore.getState().addTerminalLine
 
     try {
-      addTerminalLine(`$ ${CMD_CHECK}`, 'cmd')
+      addLine(`$ ${CMD_CHECK}`, 'cmd')
       const s = await invoke<DockerStatus>('docker_check')
       setStatus(s)
 
       if (s.available) {
-        addTerminalLine(`  → Docker v${s.version ?? 'unknown'}`, 'info')
-        addTerminalLine(`$ ${CMD_DF}`, 'cmd')
-        addTerminalLine(`$ ${CMD_IMGS}`, 'cmd')
+        addLine(`  → Docker v${s.version ?? 'unknown'}`, 'info')
+        addLine(`$ ${CMD_DF}`, 'cmd')
+        addLine(`$ ${CMD_IMGS}`, 'cmd')
 
         const [dfData, imgData] = await Promise.all([
           invoke<DockerSystemDf>('docker_system_df')
-            .then(d => { addTerminalLine(`  ✓ system df complete`, 'success'); return d })
-            .catch(e => { addTerminalLine(`  ✗ ${String(e)}`, 'error'); throw e }),
+            .then(d => { addLine(`  ✓ system df complete`, 'success'); return d })
+            .catch(e => { addLine(`  ✗ ${String(e)}`, 'error'); throw e }),
           invoke<DockerImage[]>('docker_images')
-            .then(d => { addTerminalLine(`  ✓ ${d.length} image(s) loaded`, 'success'); return d })
-            .catch(e => { addTerminalLine(`  ✗ ${String(e)}`, 'error'); throw e }),
+            .then(d => { addLine(`  ✓ ${d.length} image(s) loaded`, 'success'); return d })
+            .catch(e => { addLine(`  ✗ ${String(e)}`, 'error'); throw e }),
         ])
         setDf(dfData)
         setImages(imgData)
       } else {
-        addTerminalLine(`  ✗ Docker not running: ${s.error ?? 'unknown error'}`, 'error')
+        addLine(`  ✗ Docker not running: ${s.error ?? 'unknown error'}`, 'error')
         setDf(null)
         setImages([])
       }
     } catch (e) {
       setError(String(e))
-      addTerminalLine(`  ✗ ${String(e)}`, 'error')
+      useAppStore.getState().addTerminalLine(`  ✗ ${String(e)}`, 'error')
     } finally {
       setLoading(false)
+      refreshing.current = false
     }
-  }, [addTerminalLine])
+  }, [])  // stable — no reactive deps
 
   useEffect(() => { refresh() }, [refresh])
 
