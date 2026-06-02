@@ -2677,6 +2677,10 @@ button:focus-visible {
   background: var(--color-success);
   box-shadow: 0 0 0 2px var(--color-success-subtle);
 }
+.compose-status-dot.partial {
+  background: var(--color-warning);
+  box-shadow: 0 0 0 2px var(--color-warning-subtle);
+}
 .compose-status-dot.stopped { background: var(--color-text-tertiary); }
 
 .compose-project-info {

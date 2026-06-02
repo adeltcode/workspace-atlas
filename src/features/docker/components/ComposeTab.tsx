@@ -85,10 +85,35 @@ function YamlViewer({ content }: { content: string }) {
 
 const filename = (path: string) => path.split(/[\\/]/).pop() ?? path
 
-function statusLabel(raw: string): { text: string; running: boolean } {
-  const m = raw.match(/^(\w+)\((\d+)\)$/)
-  if (m) return { text: raw, running: m[1] === 'running' }
-  return { text: raw, running: raw.startsWith('running') }
+interface ServiceState { state: string; count: number }
+
+function parseComposeStatus(raw: string): ServiceState[] {
+  return raw.split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map(part => {
+      const m = part.match(/^(\w+)\((\d+)\)$/)
+      return m ? { state: m[1], count: parseInt(m[2], 10) } : { state: part, count: 1 }
+    })
+}
+
+/** running: all services running; partial: some running; stopped: none running */
+function statusLabel(raw: string): { text: string; dot: 'running' | 'partial' | 'stopped' } {
+  const parts = parseComposeStatus(raw)
+  if (!parts.length) return { text: raw || 'unknown', dot: 'stopped' }
+
+  const total   = parts.reduce((s, p) => s + p.count, 0)
+  const running = parts.find(p => p.state === 'running')?.count ?? 0
+
+  // Human-readable: "2 running, 1 exited"
+  const segments = parts.map(p => `${p.count} ${p.state}`)
+  const text = segments.join(', ')
+
+  const dot = running === 0 ? 'stopped'
+    : running === total     ? 'running'
+    :                         'partial'
+
+  return { text, dot }
 }
 
 function bytesToHuman(b: number) {
@@ -273,7 +298,7 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
           )}
           <ul className="compose-project-list">
             {projects.map(p => {
-              const { text: stText, running } = statusLabel(p.status)
+              const { text: stText, dot } = statusLabel(p.status)
               const isActive = selected?.name === p.name
               return (
                 <li key={p.name}>
@@ -281,7 +306,7 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
                     className={clsx('compose-project-row', isActive && 'active')}
                     onClick={() => selectProject(p)}
                   >
-                    <span className={clsx('compose-status-dot', running ? 'running' : 'stopped')} />
+                    <span className={clsx('compose-status-dot', dot)} />
                     <div className="compose-project-info">
                       <span className="compose-project-name">{p.name}</span>
                       <span className="compose-project-status">{stText}</span>

@@ -434,11 +434,17 @@ export default function BackupTab({ volumes }: { volumes: DockerVolume[] }) {
                           <div className="backup-volume-name-row">
                             <span className="backup-volume-name" title={v.name}>{v.name}</span>
                             <div className="backup-volume-badges">
-                              <span className={clsx('badge', v.in_use ? 'badge-active' : 'badge-idle')}>
-                                {v.in_use ? 'in use' : 'unused'}
+                              <span className={clsx('badge',
+                                v.containers.length > 0 ? 'badge-active'
+                                : v.in_use             ? 'badge-paused'
+                                :                        'badge-idle'
+                              )}>
+                                {v.containers.length > 0 ? 'running'
+                                 : v.in_use             ? 'stopped ref'
+                                 :                        'unused'}
                               </span>
-                              {v.in_use && (
-                                <span className="backup-inuse-warn" title="Containers will be paused during backup">
+                              {v.containers.length > 0 && (
+                                <span className="backup-inuse-warn" title="Running containers will be paused during backup">
                                   <AlertTriangle size={11} />
                                 </span>
                               )}

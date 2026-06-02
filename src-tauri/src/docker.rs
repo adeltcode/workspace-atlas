@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::thread;
@@ -260,6 +260,77 @@ fn get_running_containers_for_volume(volume_name: &str) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// Parse a `{{.Names}}\t{{.Mounts}}` line from `docker ps --format`.
+/// Returns (container_name, [named_volume_names]).
+/// Filters out bind mounts (paths with `/`, `\`, or `:`) and empty entries.
+fn split_name_mounts(line: &str) -> (String, Vec<String>) {
+    let mut parts = line.splitn(2, '\t');
+    let cname = parts.next().unwrap_or("")
+        .trim()
+        .trim_start_matches('/')
+        .to_string();
+    let mounts_str = parts.next().unwrap_or("");
+    let vols = mounts_str
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| {
+            !s.is_empty()
+                && !s.contains('/')  // bind mount or WSL path
+                && !s.contains('\\') // Windows path
+                && !s.contains(':')  // Windows drive letter
+        })
+        .collect();
+    (cname, vols)
+}
+
+/// Build volume→container maps from a single bulk scan of all containers.
+///
+/// Returns:
+/// - `running`: volume name → names of **running** containers that mount it
+/// - `referenced`: set of volume names referenced by **any** container (running or stopped)
+///
+/// This replaces N individual `docker ps --filter volume=X` calls.
+fn build_volume_container_maps() -> (
+    HashMap<String, Vec<String>>,
+    HashSet<String>,
+) {
+    let mut running: HashMap<String, Vec<String>> = HashMap::new();
+    let mut referenced: HashSet<String> = HashSet::new();
+
+    // Running containers → `containers` field (need to be paused/stopped during backup)
+    if let Ok(out) = Command::new("docker")
+        .args(["ps", "--format", "{{.Names}}\t{{.Mounts}}"])
+        .output()
+    {
+        if out.status.success() {
+            for line in String::from_utf8_lossy(&out.stdout).lines() {
+                let (cname, vols) = split_name_mounts(line);
+                for vol in vols {
+                    referenced.insert(vol.clone());
+                    running.entry(vol).or_default().push(cname.clone());
+                }
+            }
+        }
+    }
+
+    // All containers (including stopped) → `in_use` field
+    if let Ok(out) = Command::new("docker")
+        .args(["ps", "-a", "--format", "{{.Names}}\t{{.Mounts}}"])
+        .output()
+    {
+        if out.status.success() {
+            for line in String::from_utf8_lossy(&out.stdout).lines() {
+                let (_, vols) = split_name_mounts(line);
+                for vol in vols {
+                    referenced.insert(vol);
+                }
+            }
+        }
+    }
+
+    (running, referenced)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -987,64 +1058,38 @@ fn get_volumes_sync() -> Result<Vec<DockerVolume>, String> {
         return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
     }
 
-    let dangling: HashSet<String> = Command::new("docker")
-        .args(["volume", "ls", "-qf", "dangling=true"])
-        .output()
-        .map(|o| {
-            String::from_utf8_lossy(&o.stdout)
-                .lines()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect()
-        })
-        .unwrap_or_default();
+    // One bulk scan: 2 calls total regardless of volume count.
+    // `running`    – volume → [running container names]  (needs pause during backup)
+    // `referenced` – all volumes touched by any container (running or stopped)
+    let (running_by_vol, referenced_vols) = build_volume_container_maps();
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut volumes = Vec::new();
 
     for line in stdout.lines() {
         let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
+        if line.is_empty() { continue; }
         let v: serde_json::Value =
             serde_json::from_str(line).map_err(|e| format!("JSON parse error: {}", e))?;
 
         let name = v["Name"].as_str().unwrap_or("").to_string();
-        let in_use = !dangling.contains(&name);
 
-        // Extract compose project from volume labels ("key=val,key2=val2" format).
+        // `in_use` = referenced by any container (running or stopped) → guard delete
+        let in_use = referenced_vols.contains(&name);
+
+        // `containers` = only RUNNING containers → shown as "will be paused" warning
+        let containers = running_by_vol.get(&name).cloned().unwrap_or_default();
+
         let label_str = v["Labels"].as_str().unwrap_or("");
         let compose_project = label_str.split(',').find_map(|kv| {
             let (k, val) = kv.split_once('=')?;
             if k.trim() == "com.docker.compose.project" { Some(val.trim().to_string()) } else { None }
         });
 
-        // Query which containers reference this volume (only when in use).
-        let containers: Vec<String> = if in_use {
-            Command::new("docker")
-                .args([
-                    "ps", "-a",
-                    "--filter", &format!("volume={}", name),
-                    "--format", "{{.Names}}",
-                ])
-                .output()
-                .map(|o| {
-                    String::from_utf8_lossy(&o.stdout)
-                        .lines()
-                        .map(|s| s.trim().trim_start_matches('/').to_string())
-                        .filter(|s| !s.is_empty())
-                        .collect()
-                })
-                .unwrap_or_default()
-        } else {
-            Vec::new()
-        };
-
         volumes.push(DockerVolume {
             in_use,
             name,
-            driver: v["Driver"].as_str().unwrap_or("local").to_string(),
+            driver:    v["Driver"].as_str().unwrap_or("local").to_string(),
             mountpoint: v["Mountpoint"].as_str().unwrap_or("").to_string(),
             containers,
             compose_project,
@@ -1504,10 +1549,38 @@ pub async fn docker_volume_restore(
         .unwrap_or("")
         .to_string();
 
-    emit_bp(&app, vol, &format!("Restoring '{}' from '{}'…", vol, filename), 10, false, None, None, None);
+    emit_bp(&app, vol, &format!("Restoring '{}' from '{}'…", vol, filename), 5, false, None, None, None);
+
+    // ── Stop running containers that use the volume ──────────────────────────
+    // Unlike backup (where pause is safe for a consistent snapshot), restore
+    // replaces volume data entirely — containers must be fully stopped first.
+    let running = get_running_containers_for_volume(vol);
+    let mut stopped: Vec<String> = Vec::new();
+
+    if !running.is_empty() {
+        let stop_cmd = format!("docker stop {}", running.join(" "));
+        emit_bp(&app, vol,
+            &format!("Stopping {} container(s) before restore…", running.len()),
+            15, false, None, None, Some(stop_cmd));
+
+        for id in &running {
+            let ok = Command::new("docker")
+                .args(["stop", id])
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            if ok {
+                stopped.push(id.clone());
+            } else {
+                emit_bp(&app, vol,
+                    &format!("Warning: could not stop '{}' — restore continues", id),
+                    18, false, None, None, None);
+            }
+        }
+    }
 
     // Ensure the target volume exists
-    emit_bp(&app, vol, "Preparing volume…", 20, false, None, None,
+    emit_bp(&app, vol, "Preparing volume…", 25, false, None, None,
         Some(format!("docker volume create {}", vol)));
     let create = Command::new("docker")
         .args(["volume", "create", vol])
@@ -1515,7 +1588,11 @@ pub async fn docker_volume_restore(
         .map_err(|e| format!("Cannot create volume: {}", e))?;
     if !create.status.success() {
         let err = String::from_utf8_lossy(&create.stderr).trim().to_string();
-        emit_bp(&app, vol, "Failed to prepare volume", 20, true, Some(err.clone()), None, None);
+        // Restart containers even on failure
+        for id in &stopped {
+            Command::new("docker").args(["start", id]).output().ok();
+        }
+        emit_bp(&app, vol, "Failed to prepare volume", 25, true, Some(err.clone()), None, None);
         return Err(err);
     }
 
@@ -1529,7 +1606,7 @@ pub async fn docker_volume_restore(
         "docker run --rm --volume {}:/target --volume {}:/backup:ro alpine sh -c \"{}\"",
         vol, backup_dir, restore_cmd
     );
-    emit_bp(&app, vol, "Restoring data…", 40, false, None, None, Some(docker_cmd));
+    emit_bp(&app, vol, "Restoring data…", 45, false, None, None, Some(docker_cmd));
 
     let output = Command::new("docker")
         .args([
@@ -1542,9 +1619,18 @@ pub async fn docker_volume_restore(
         .output()
         .map_err(|e| format!("Failed to run docker: {}", e))?;
 
+    // ── Always restart stopped containers ────────────────────────────────────
+    if !stopped.is_empty() {
+        let start_cmd = format!("docker start {}", stopped.join(" "));
+        emit_bp(&app, vol, "Restarting containers…", 92, false, None, None, Some(start_cmd));
+        for id in &stopped {
+            Command::new("docker").args(["start", id]).output().ok();
+        }
+    }
+
     if !output.status.success() {
         let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        emit_bp(&app, vol, "Restore failed", 40, true, Some(err.clone()), None, None);
+        emit_bp(&app, vol, "Restore failed", 45, true, Some(err.clone()), None, None);
         return Err(err);
     }
 
