@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::thread;
@@ -262,76 +262,6 @@ fn get_running_containers_for_volume(volume_name: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Parse a `{{.Names}}\t{{.Mounts}}` line from `docker ps --format`.
-/// Returns (container_name, [named_volume_names]).
-/// Filters out bind mounts (paths with `/`, `\`, or `:`) and empty entries.
-fn split_name_mounts(line: &str) -> (String, Vec<String>) {
-    let mut parts = line.splitn(2, '\t');
-    let cname = parts.next().unwrap_or("")
-        .trim()
-        .trim_start_matches('/')
-        .to_string();
-    let mounts_str = parts.next().unwrap_or("");
-    let vols = mounts_str
-        .split(',')
-        .map(|s| s.trim().to_string())
-        .filter(|s| {
-            !s.is_empty()
-                && !s.contains('/')  // bind mount or WSL path
-                && !s.contains('\\') // Windows path
-                && !s.contains(':')  // Windows drive letter
-        })
-        .collect();
-    (cname, vols)
-}
-
-/// Build volume→container maps from a single bulk scan of all containers.
-///
-/// Returns:
-/// - `running`: volume name → names of **running** containers that mount it
-/// - `referenced`: set of volume names referenced by **any** container (running or stopped)
-///
-/// This replaces N individual `docker ps --filter volume=X` calls.
-fn build_volume_container_maps() -> (
-    HashMap<String, Vec<String>>,
-    HashSet<String>,
-) {
-    let mut running: HashMap<String, Vec<String>> = HashMap::new();
-    let mut referenced: HashSet<String> = HashSet::new();
-
-    // Running containers → `containers` field (need to be paused/stopped during backup)
-    if let Ok(out) = Command::new("docker")
-        .args(["ps", "--format", "{{.Names}}\t{{.Mounts}}"])
-        .output()
-    {
-        if out.status.success() {
-            for line in String::from_utf8_lossy(&out.stdout).lines() {
-                let (cname, vols) = split_name_mounts(line);
-                for vol in vols {
-                    referenced.insert(vol.clone());
-                    running.entry(vol).or_default().push(cname.clone());
-                }
-            }
-        }
-    }
-
-    // All containers (including stopped) → `in_use` field
-    if let Ok(out) = Command::new("docker")
-        .args(["ps", "-a", "--format", "{{.Names}}\t{{.Mounts}}"])
-        .output()
-    {
-        if out.status.success() {
-            for line in String::from_utf8_lossy(&out.stdout).lines() {
-                let (_, vols) = split_name_mounts(line);
-                for vol in vols {
-                    referenced.insert(vol);
-                }
-            }
-        }
-    }
-
-    (running, referenced)
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers — parsing
@@ -1058,10 +988,20 @@ fn get_volumes_sync() -> Result<Vec<DockerVolume>, String> {
         return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
     }
 
-    // One bulk scan: 2 calls total regardless of volume count.
-    // `running`    – volume → [running container names]  (needs pause during backup)
-    // `referenced` – all volumes touched by any container (running or stopped)
-    let (running_by_vol, referenced_vols) = build_volume_container_maps();
+    // Docker's own reference-counting filter — the only reliable source of truth
+    // for whether a volume is referenced by at least one container.
+    // `dangling=true` means "not referenced by any container (running or stopped)".
+    let dangling: HashSet<String> = Command::new("docker")
+        .args(["volume", "ls", "-qf", "dangling=true"])
+        .output()
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut volumes = Vec::new();
@@ -1074,11 +1014,32 @@ fn get_volumes_sync() -> Result<Vec<DockerVolume>, String> {
 
         let name = v["Name"].as_str().unwrap_or("").to_string();
 
-        // `in_use` = referenced by any container (running or stopped) → guard delete
-        let in_use = referenced_vols.contains(&name);
+        // `in_use` = referenced by any container (running or stopped).
+        // Determined via Docker's dangling filter — the authoritative source.
+        let in_use = !dangling.contains(&name);
 
-        // `containers` = only RUNNING containers → shown as "will be paused" warning
-        let containers = running_by_vol.get(&name).cloned().unwrap_or_default();
+        // `containers` = names of RUNNING containers that mount this volume.
+        // Only queried for in-use volumes; these are the containers that will be
+        // paused during backup (shown as a warning in the UI).
+        let containers: Vec<String> = if in_use {
+            Command::new("docker")
+                .args([
+                    "ps",                                 // running-only (no -a)
+                    "--filter", &format!("volume={}", name),
+                    "--format", "{{.Names}}",
+                ])
+                .output()
+                .map(|o| {
+                    String::from_utf8_lossy(&o.stdout)
+                        .lines()
+                        .map(|s| s.trim().trim_start_matches('/').to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
 
         let label_str = v["Labels"].as_str().unwrap_or("");
         let compose_project = label_str.split(',').find_map(|kv| {
@@ -1089,7 +1050,7 @@ fn get_volumes_sync() -> Result<Vec<DockerVolume>, String> {
         volumes.push(DockerVolume {
             in_use,
             name,
-            driver:    v["Driver"].as_str().unwrap_or("local").to_string(),
+            driver:     v["Driver"].as_str().unwrap_or("local").to_string(),
             mountpoint: v["Mountpoint"].as_str().unwrap_or("").to_string(),
             containers,
             compose_project,
