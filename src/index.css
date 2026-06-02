@@ -3519,6 +3519,11 @@ button:focus-visible {
 .vol-progress-label.err { color: var(--color-danger); }
 
 /* =============================================================
+   Keep-alive tab wrapper — hidden but mounted
+   ============================================================= */
+.tab-hidden { display: none !important; }
+
+/* =============================================================
    Sidebar — tab count badges
    ============================================================= */
 .sidebar-child-item {
