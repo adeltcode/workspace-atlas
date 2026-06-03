@@ -168,14 +168,21 @@ function SortHeader({ label, col, sortKey, sortDir, onSort }: {
   )
 }
 
-function StateBadge({ state }: { state: string }) {
+function StateBadge({ state, sub }: { state: string; sub?: string }) {
   const s = state.toLowerCase()
-  if (s === 'running')                  return <span className="badge badge-running">running</span>
-  if (s === 'paused')                   return <span className="badge badge-paused">paused</span>
-  if (s === 'restarting')               return <span className="badge badge-paused">restarting</span>
-  if (s === 'created')                  return <span className="badge badge-created">created</span>
-  if (s === 'exited' || s === 'dead')   return <span className="badge badge-idle">{state}</span>
-  return <span className="badge badge-idle">{state || 'unknown'}</span>
+  const badge =
+    s === 'running'                 ? <span className="badge badge-running">▶ running</span> :
+    s === 'paused'                  ? <span className="badge badge-paused">⏸ paused</span> :
+    s === 'restarting'              ? <span className="badge badge-paused">↺ restarting</span> :
+    s === 'created'                 ? <span className="badge badge-created">created</span> :
+    (s === 'exited' || s === 'dead')? <span className="badge badge-idle">■ {state}</span> :
+                                      <span className="badge badge-idle">{state || 'unknown'}</span>
+  return (
+    <div className="ctr-status-cell">
+      {badge}
+      {sub && <span className="ctr-status-sub">{sub}</span>}
+    </div>
+  )
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -281,8 +288,7 @@ export default function ContainersTab({
             <tr>
               <SortHeader label="Name"    col="name"         sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
               <SortHeader label="Image"   col="image"        sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
-              <SortHeader label="State"   col="state"        sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
-              <th className="img-th">Status</th>
+              <SortHeader label="Status"  col="state"        sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
               <th className="img-th">Ports</th>
               <SortHeader label="Created" col="created_since" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
               <th className="img-th ctr-th-actions">Actions</th>
@@ -302,8 +308,7 @@ export default function ContainersTab({
                       <span className="img-repo">{c.name || <em className="img-colon">unnamed</em>}</span>
                     </td>
                     <td className="img-td img-age">{c.image}</td>
-                    <td className="img-td"><StateBadge state={c.state} /></td>
-                    <td className="img-td img-age">{c.status}</td>
+                    <td className="img-td"><StateBadge state={c.state} sub={c.status} /></td>
                     <td className="img-td"><PortChips raw={c.ports} /></td>
                     <td className="img-td img-age">{c.created_since}</td>
                     <td className="img-td ctr-td-actions">
@@ -357,7 +362,7 @@ export default function ContainersTab({
                   </tr>
                   {showLogs && (
                     <tr className="log-viewer-row">
-                      <td colSpan={7} className="log-viewer-cell">
+                      <td colSpan={6} className="log-viewer-cell">
                         <LogViewer
                           id={c.id}
                           name={c.name || c.id.slice(0, 12)}

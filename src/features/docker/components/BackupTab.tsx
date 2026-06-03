@@ -473,7 +473,7 @@ export default function BackupTab({
               const showBar     = vp && vp.status !== 'idle'
               const volArchives = backupsByVolume[v.name] ?? []
               const statusCls   = v.containers.length > 0 ? 'badge-active' : v.in_use ? 'badge-paused' : 'badge-idle'
-              const statusTxt   = v.containers.length > 0 ? 'running' : v.in_use ? 'stopped ref' : 'unused'
+              const statusTxt   = v.containers.length > 0 ? 'running' : v.in_use ? 'in use' : 'unused'
 
               return (
                 <li key={v.name} className="backup-item">
@@ -612,15 +612,15 @@ export default function BackupTab({
       {/* Volume backup action */}
       <div className="backup-action-row">
         <button
-          className="btn-execute btn-execute--success"
+          className={clsx('btn-execute btn-execute--success', selected.size === 0 && 'btn-execute--disabled-hint')}
           onClick={runBackup}
           disabled={anyRunning || selected.size === 0 || !backupDir}
-          title={!backupDir ? 'Set a backup directory first' : ''}
+          title={!backupDir ? 'Set a backup directory first' : selected.size === 0 ? 'Check one or more volumes above to back up' : ''}
         >
           <HardDriveDownload size={13} />
           {isBacking ? 'Backing up…'
-            : selected.size > 0 ? `Backup ${selected.size} selected`
-            : 'Select volumes to back up'}
+            : selected.size > 0 ? `Back up ${selected.size} volume${selected.size !== 1 ? 's' : ''}`
+            : 'Select volumes above to back up'}
         </button>
       </div>
       </>)}

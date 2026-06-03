@@ -4,6 +4,25 @@ import clsx from 'clsx'
 import * as api from '../api'
 import type { DockerNetwork } from '../types'
 
+/** Format an ISO date string as relative ("3 months ago") for recent dates,
+ *  or a short absolute date for older ones. */
+function fmtDate(raw: string): string {
+  if (!raw) return '—'
+  const d = new Date(raw)
+  if (isNaN(d.getTime())) return raw   // fallback: return as-is
+  const diffMs  = Date.now() - d.getTime()
+  const diffMin = Math.floor(diffMs / 60_000)
+  if (diffMin < 60)   return diffMin <= 1 ? 'just now' : `${diffMin}m ago`
+  const diffH = Math.floor(diffMin / 60)
+  if (diffH < 24)     return `${diffH}h ago`
+  const diffD = Math.floor(diffH / 24)
+  if (diffD < 30)     return `${diffD}d ago`
+  const diffMo = Math.floor(diffD / 30)
+  if (diffMo < 12)    return `${diffMo} month${diffMo !== 1 ? 's' : ''} ago`
+  const diffY = Math.floor(diffMo / 12)
+  return `${diffY} year${diffY !== 1 ? 's' : ''} ago`
+}
+
 // Built-in Docker networks that cannot (and should not) be removed.
 const PROTECTED = new Set(['bridge', 'host', 'none'])
 
@@ -89,7 +108,6 @@ export default function NetworksTab() {
               <th className="img-th">Name</th>
               <th className="img-th">Driver</th>
               <th className="img-th">Scope</th>
-              <th className="img-th">Flags</th>
               <th className="img-th">Created</th>
               <th className="img-th ctr-th-actions">Action</th>
             </tr>
@@ -103,23 +121,20 @@ export default function NetworksTab() {
               return (
                 <tr key={n.id} className="img-row">
                   <td className="img-td">
-                    <span className={clsx('img-repo', isProtected && 'net-protected-name')}>
-                      {n.name}
-                    </span>
+                    <div className="net-name-row">
+                      <span className={clsx('img-repo', isProtected && 'net-protected-name')}>
+                        {n.name}
+                      </span>
+                      {n.internal && <span className="badge badge-paused net-inline-flag">internal</span>}
+                      {n.ipv6     && <span className="badge badge-created net-inline-flag">IPv6</span>}
+                    </div>
                     <span className="img-colon net-id-hint" title={n.id}>
                       {n.id.slice(0, 12)}
                     </span>
                   </td>
                   <td className="img-td img-age">{n.driver}</td>
                   <td className="img-td"><ScopeBadge scope={n.scope} /></td>
-                  <td className="img-td">
-                    <div className="net-flag-row">
-                      {n.internal && <span className="badge badge-paused">internal</span>}
-                      {n.ipv6     && <span className="badge badge-created">IPv6</span>}
-                      {!n.internal && !n.ipv6 && <span className="img-colon">—</span>}
-                    </div>
-                  </td>
-                  <td className="img-td img-age">{n.created || '—'}</td>
+                  <td className="img-td img-age">{fmtDate(n.created)}</td>
                   <td className="img-td ctr-td-actions">
                     {isProtected ? (
                       <span className="img-colon" title="Built-in network — cannot be removed">—</span>

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Box, RefreshCw } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../../store/appStore'
@@ -13,12 +13,42 @@ import BackupTab      from './components/BackupTab'
 import PruneTab       from './components/PruneTab'
 import LogTab         from './components/LogTab'
 
+const TAB_SUBTITLES: Partial<Record<string, string>> = {
+  overview:        'Disk usage at a glance across images, containers, volumes, and build cache',
+  images:          'Browse, filter, and pin Docker images',
+  containers:      'Monitor and control running and stopped containers',
+  volumes:         'Inspect volumes, check usage, and navigate to backups',
+  networks:        'View and remove custom Docker networks',
+  compose:         'Inspect compose project configuration files',
+  'backup-volumes':'Back up and restore Docker volumes',
+  'backup-compose':'Back up compose project configuration files',
+  prune:           'Free disk space by removing unused images and stopped containers',
+  log:             'View recent Docker and Atlas activity',
+}
+
 export default function DockerView() {
   const dockerTab = useAppStore(s => s.dockerTab)
   const { status, df, images, containers, volumes, loading, error, refresh } = useDockerData()
   const [composeTick, setComposeTick] = useState(0)
 
   const online = status?.available ?? false
+  const subtitle = TAB_SUBTITLES[dockerTab] ?? 'Manage images, containers, and reclaim disk space'
+
+  // Ctrl+R / Cmd+R → Refresh
+  const handleRefresh = useCallback(() => {
+    refresh(); setComposeTick(t => t + 1)
+  }, [refresh])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'r' && !e.shiftKey) {
+        e.preventDefault()
+        handleRefresh()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [handleRefresh])
 
   return (
     <div className="view-container">
@@ -39,13 +69,13 @@ export default function DockerView() {
               </>
             )}
           </div>
-          <p className="view-subtitle">Manage images, containers, and reclaim disk space</p>
+          <p className="view-subtitle">{subtitle}</p>
         </div>
         <button
           className="btn-refresh"
-          onClick={() => { refresh(); setComposeTick(t => t + 1) }}
+          onClick={handleRefresh}
           disabled={loading}
-          title="Refresh data"
+          title="Refresh data (Ctrl+R)"
         >
           <RefreshCw size={13} className={loading ? 'spin' : ''} />
           Refresh

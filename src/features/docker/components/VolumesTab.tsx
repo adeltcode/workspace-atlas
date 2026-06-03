@@ -7,6 +7,13 @@ import type { DockerVolume } from '../types'
 
 type UsageFilter = 'all' | 'in-use' | 'unused'
 
+/** Shorten an anonymous Docker volume SHA to 12 chars; leave named volumes as-is. */
+function fmtVolName(name: string): { display: string; full?: string } {
+  if (/^[a-f0-9]{48,}$/i.test(name))
+    return { display: name.slice(0, 12) + '…', full: name }
+  return { display: name }
+}
+
 function bytesToHuman(b: number): string {
   if (!b) return '—'
   if (b >= 1e9) return `${(b / 1e9).toFixed(2)} GB`
@@ -143,7 +150,9 @@ export default function VolumesTab({
               return (
                 <tr key={v.name} className="img-row">
                   <td className="img-td">
-                    <span className="img-repo">{v.name}</span>
+                    {(() => { const n = fmtVolName(v.name); return (
+                      <span className="img-repo" title={n.full}>{n.display}</span>
+                    )})()}
                   </td>
                   <td className="img-td img-age">{v.driver}</td>
                   <td className="img-td img-age">{bytesToHuman(v.size_bytes)}</td>

@@ -46,6 +46,10 @@ function BarCard({
 }) {
   const percent     = parsePercent(row.reclaimable)
   const reclaimSize = parseReclaimSize(row.reclaimable)
+  // Only show the category accent color when there's actually something to reclaim.
+  // If freeable = 0, render muted so "0 B" doesn't look like an alert.
+  const hasFreeable = parseSizeBytes(reclaimSize) > 0
+  const pctColor    = hasFreeable ? color : 'muted'
 
   return (
     <div className="bar-card">
@@ -59,7 +63,7 @@ function BarCard({
       </div>
 
       {/* Vertical bar — hatched bg = used space, solid fill = freeable portion */}
-      <div className="bar-chart" title={`${percent}% of disk space is freeable`}>
+      <div className="bar-chart" title={percent > 0 ? `${percent}% of disk space is freeable` : 'Nothing reclaimable'}>
         <div className="bar-hatch" />
         <div
           className={clsx('bar-fill', `bar-fill--${color}`)}
@@ -70,7 +74,7 @@ function BarCard({
       {/* Footer — explicitly labelled so meaning is unambiguous */}
       <div className="bar-foot">
         <div>
-          <div className={clsx('bar-pct', `bar-pct--${color}`)}>{reclaimSize}</div>
+          <div className={clsx('bar-pct', `bar-pct--${pctColor}`)}>{reclaimSize}</div>
           <div className="bar-foot-sub">freeable</div>
         </div>
         <div style={{ textAlign: 'right' }}>
