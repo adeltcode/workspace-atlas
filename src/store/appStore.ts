@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware'
 import type { LogEntry, DockerStatus, DockerSystemDf, DockerImage, DockerContainer, DockerVolume } from '../features/docker/types'
 import type { TerminalLine } from '../types/terminal'
 
-export type View      = 'dashboard' | 'docker' | 'wsl' | 'packages' | 'automation'
+export type View      = 'dashboard' | 'docker' | 'wsl' | 'packages' | 'automation' | 'settings'
 export type Theme     = 'dark' | 'light'
 export type DockerTab = 'overview' | 'images' | 'containers' | 'volumes' | 'networks' | 'compose' | 'backup-volumes' | 'backup-compose' | 'prune' | 'log'
 

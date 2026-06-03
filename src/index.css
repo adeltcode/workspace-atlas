@@ -19,7 +19,7 @@
   /* ── Text */
   --color-text-primary:   #eaeafa;
   --color-text-secondary: #7878a0;
-  --color-text-tertiary:  #404060;
+  --color-text-tertiary:  #545678;   /* bumped from #404060 for contrast improvement */
 
   /* ── Accent (indigo-blue) */
   --color-accent:        #6c71ff;
@@ -576,10 +576,16 @@ ul, ol { list-style: none; }
   background: var(--color-accent);
 }
 
-/* Footer */
+/* Footer — matches terminal-header height (32px) */
 .sidebar-footer {
-  padding: 10px 14px;
+  height: 32px;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px 0 14px;
   border-top: 1px solid var(--chrome-divider);
+  flex-shrink: 0;
 }
 
 .sidebar-version {
@@ -588,6 +594,21 @@ ul, ol { list-style: none; }
   font-variant-numeric: tabular-nums;
   font-family: "JetBrains Mono", "Cascadia Code", monospace;
 }
+
+.sidebar-settings-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  color: var(--chrome-text-subtle);
+  background: transparent;
+  transition: background 0.12s, color 0.12s;
+  flex-shrink: 0;
+}
+.sidebar-settings-btn:hover { background: rgba(255,255,255,0.08); color: var(--chrome-text); }
+.sidebar-settings-btn.active { color: var(--color-accent); background: rgba(108,113,255,0.15); }
 
 /* Sidebar stays dark — no light overrides needed */
 
@@ -700,9 +721,10 @@ ul, ol { list-style: none; }
   transition: opacity 0.15s ease;
 }
 
-.module-card--accent::before { background: var(--color-accent); }
+.module-card--accent::before  { background: var(--color-accent);  }
 .module-card--success::before { background: var(--color-success); }
 .module-card--warning::before { background: var(--color-warning); }
+.module-card--danger::before  { background: var(--color-danger);  }
 
 .module-card:hover::before { opacity: 1; }
 
@@ -735,6 +757,11 @@ ul, ol { list-style: none; }
 .module-icon--warning {
   background: var(--color-warning-subtle);
   color: var(--color-warning);
+}
+
+.module-icon--danger {
+  background: var(--color-danger-subtle);
+  color: var(--color-danger);
 }
 
 .module-arrow {
@@ -1173,34 +1200,71 @@ ul, ol { list-style: none; }
 }
 
 /* =============================================================
-   Docker — Tabs
+   Docker — In-content tab strip
    ============================================================= */
-.docker-tabs {
-  display: flex;
-  gap: 2px;
-  border-bottom: 1px solid var(--color-border);
-  margin-bottom: 24px;
+
+/* Modifier: reduces header bottom margin so tab strip sits closer */
+.docker-view .view-header {
+  margin-bottom: 0;
+  padding-bottom: 18px;
 }
 
-.docker-tab {
-  padding: 8px 16px;
-  font-size: 13px;
+/* Tab strip — bleeds to view-container edges (padding: 28px 32px) */
+.docker-tab-strip {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin: 0 -32px 24px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--color-border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.docker-tab-strip::-webkit-scrollbar { display: none; }
+
+/* Individual tab button */
+.docker-tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--color-text-secondary);
+  white-space: nowrap;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
-  transition: color 0.12s, border-color 0.12s;
   border-radius: 0;
+  transition: color 0.12s, border-color 0.12s;
+  cursor: pointer;
+  flex-shrink: 0;
 }
-
-.docker-tab:hover { color: var(--color-text-primary); }
-
-.docker-tab.active {
+.docker-tab-btn:hover { color: var(--color-text-primary); }
+.docker-tab-btn.active {
   color: var(--color-accent);
   border-bottom-color: var(--color-accent);
 }
 
-.docker-tab-content { /* no extra padding needed — tabs sit inside view-container */ }
+/* Count/badge inside a tab */
+.docker-tab-badge {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  background: var(--color-bg-tertiary);
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.docker-tab-btn.active .docker-tab-badge {
+  color: var(--color-accent);
+  background: var(--color-accent-subtle);
+}
+
+/* Legacy class kept for any remaining references */
+.docker-tabs { display: none; }
+.docker-tab  { display: none; }
+
+.docker-tab-content { /* content sits directly below tab strip */ }
 
 /* =============================================================
    Docker — Images Tab
@@ -1262,9 +1326,65 @@ ul, ol { list-style: none; }
 .img-th.sortable { cursor: pointer; }
 .img-th.sortable:hover { color: var(--color-text-primary); }
 .img-th.active { color: var(--color-accent); }
-.img-th-pin { width: 44px; }
+/* Sort header — th keeps display:table-cell; inner div is flex */
+.img-th-sort {
+  cursor: pointer;
+  user-select: none;
+}
+.img-th-sort:hover { color: var(--color-text-primary); }
+.img-th-sort.active { color: var(--color-text-primary); }
+
+/* Inner wrapper provides flex alignment without breaking table layout */
+.th-sort-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
 
 .sort-idle { opacity: 0.3; }
+
+/* Checkbox column */
+.img-th-check, .img-td-check {
+  width: 36px;
+  text-align: center;
+  padding-left: 8px;
+  padding-right: 4px;
+}
+
+/* Checkbox style */
+.row-checkbox {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  accent-color: var(--color-accent);
+}
+
+/* Volume name header — offset for chevron space (11px icon + 5px gap = 16px) */
+.img-th-vol-name { padding-left: 28px; }
+
+.img-th-pin { width: 44px; }
+
+/* Row selected state — set on tr so there are no inter-cell gaps */
+.row-selected { background: var(--color-accent-subtle) !important; }
+.row-selected td { background: transparent !important; }
+.row-selected:hover { filter: brightness(1.05); }
+
+/* Row with logs open — tr-level bg + accent left border */
+.row-logs-open {
+  background: var(--color-accent-subtle) !important;
+  box-shadow: inset 3px 0 0 var(--color-accent);
+}
+.row-logs-open td { background: transparent !important; border-bottom: none !important; }
+.row-logs-open:hover { filter: brightness(1.04); }
+
+/* ── Accordion slide-down animation (for table cells) ──────────────── */
+@keyframes slide-down {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.log-viewer-cell  { animation: slide-down 0.18s ease; }
+.vol-backup-expand-td { animation: slide-down 0.18s ease; }
 
 .img-row {
   border-bottom: 1px solid var(--color-border-light);
@@ -2647,6 +2767,213 @@ button:focus-visible {
    Docker — Volumes Tab
    ============================================================= */
 
+/* Clickable row style */
+.img-row--clickable {
+  cursor: pointer;
+}
+.img-row--clickable:hover td { background: var(--color-bg-hover); }
+.img-row--clickable.img-row--expanded td { background: var(--color-accent-subtle); }
+.img-row--clickable.img-row--expanded:hover td { background: var(--color-accent-subtle); filter: brightness(1.05); }
+
+/* Volume name cell (chevron + name, no button wrapper) */
+.vol-name-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.vol-name-text {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+.vol-name-chevron {
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+  transition: color var(--transition-fast);
+}
+.img-row--clickable:hover .vol-name-chevron { color: var(--color-accent); }
+.img-row--expanded .vol-name-chevron { color: var(--color-accent); }
+
+/* Row state when backup panel is expanded */
+.img-row--expanded td { border-bottom: none; }
+
+/* Expanded backup panel row */
+.vol-backup-expand-row { background: var(--color-bg-secondary); }
+.vol-backup-expand-td {
+  padding: 0 !important;
+  border-bottom: 2px solid var(--color-border) !important;
+}
+
+.vol-backup-panel {
+  padding: 10px 14px 12px 44px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.vol-backup-state {
+  font-size: 11.5px;
+  color: var(--color-text-tertiary);
+  padding: 4px 0;
+}
+.vol-backup-no-dir { color: var(--color-warning); }
+.vol-backup-settings-link {
+  background: none;
+  border: none;
+  color: var(--color-accent);
+  font-size: 11.5px;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+.vol-backup-settings-link:hover { opacity: 0.8; }
+
+/* Backup list */
+.vol-backup-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.vol-backup-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  border-bottom: 1px solid var(--color-border-light);
+  transition: background var(--transition-fast);
+}
+.vol-backup-entry:last-child { border-bottom: none; }
+.vol-backup-entry:hover { background: var(--color-bg-hover); }
+.vol-backup-entry.confirming { background: var(--color-danger-subtle); border-radius: var(--radius-sm); }
+
+.vol-backup-entry-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.vol-backup-date {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  min-width: 100px;
+}
+.vol-backup-size {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  min-width: 48px;
+}
+.vol-backup-file {
+  font-size: 10.5px;
+  color: var(--color-text-tertiary);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.vol-backup-entry-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* Labeled action button (icon + text) */
+.ctr-action-btn--labeled {
+  width: auto;
+  padding: 0 9px;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* ── Inline toolbar bulk controls (no layout shift) ─────────────── */
+
+/* Vertical divider separating filters from bulk actions */
+.toolbar-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--color-border-strong);
+  flex-shrink: 0;
+  margin: 0 2px;
+  opacity: 0.5;
+}
+
+/* "N selected" label */
+.toolbar-sel-count {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--color-accent);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Compact action buttons that live inside the toolbar */
+.toolbar-bulk-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: filter var(--transition-fast);
+}
+.toolbar-bulk-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.toolbar-bulk-btn:hover:not(:disabled) { filter: brightness(1.12); }
+
+.toolbar-bulk-btn--success {
+  background: var(--color-success-subtle);
+  border: 1px solid rgba(54,200,90,0.22);
+  color: var(--color-success);
+}
+.toolbar-bulk-btn--warn {
+  background: var(--color-warning-subtle);
+  border: 1px solid rgba(240,165,0,0.22);
+  color: var(--color-warning);
+}
+.toolbar-bulk-btn--danger {
+  background: var(--color-danger-subtle);
+  border: 1px solid rgba(255,80,80,0.22);
+  color: var(--color-danger);
+}
+/* Ghost: icon-only "clear" button */
+.toolbar-bulk-btn--ghost {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-tertiary);
+  padding: 3px 6px;
+}
+.toolbar-bulk-btn--ghost:hover:not(:disabled) { color: var(--color-text-primary); filter: none; background: var(--color-bg-hover); }
+
+/* ── Container name cell with log chevron ──────────────────────────── */
+.ctr-name-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.ctr-logs-chevron {
+  color: var(--color-text-tertiary);
+  transition: transform 0.18s ease, color 0.12s;
+  transform: rotate(-90deg);
+  flex-shrink: 0;
+}
+.ctr-logs-chevron.open {
+  transform: rotate(0deg);
+  color: var(--color-accent);
+}
+
 /* Mountpoint: mono, small, truncate */
 .vol-mountpoint {
   font-family: "Cascadia Code", "Consolas", monospace;
@@ -2793,20 +3120,36 @@ button:focus-visible {
   flex-wrap: wrap;
 }
 
-.compose-file-tab {
+/* Plain path display — no border, no background, not button-looking */
+.compose-file-path-item {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
+  gap: 6px;
+  padding: 3px 6px;
   border-radius: var(--radius-sm);
-  font-size: 11.5px;
-  color: var(--color-text-secondary);
-  transition: background var(--transition-fast), color var(--transition-fast);
-  font-family: "Cascadia Code", "Consolas", monospace;
+  background: transparent;
+  border: none;
+  color: var(--color-text-tertiary);
   cursor: pointer;
+  min-width: 0;
+  max-width: 100%;
+  transition: color var(--transition-fast);
 }
-.compose-file-tab:hover  { background: var(--color-bg-hover); color: var(--color-text-primary); }
-.compose-file-tab.active { background: var(--color-accent-subtle); color: var(--color-accent); }
+.compose-file-path-item:hover { color: var(--color-text-secondary); }
+.compose-file-path-item.active { color: var(--color-text-primary); }
+
+/* Full path text — direction rtl so the filename end is always visible */
+.compose-file-path-text {
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+  min-width: 0;
+  flex: 1;
+}
 
 .compose-viewer-actions {
   display: flex;
@@ -2815,12 +3158,184 @@ button:focus-visible {
   flex-shrink: 0;
 }
 
+/* Inline path in toolbar (replaces separate breadcrumb row) */
+.compose-path-inline {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+  padding: 0 4px;
+  opacity: 0.6;
+}
+.compose-path-inline-text {
+  font-size: 10.5px;
+  color: var(--color-text-tertiary);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+/* Don't show path inline on narrow viewports */
+
+/* ── Accordion animation wrapper (CSS grid trick) ───────────────── */
+.compose-accordion-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.22s ease;
+  overflow: hidden;
+}
+.compose-accordion-wrap.open {
+  grid-template-rows: 1fr;
+}
+.compose-backup-accordion {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Backup toggle button in toolbar */
+.compose-backup-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-tertiary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+.compose-backup-toggle-btn:hover { background: var(--color-bg-hover); color: var(--color-text-primary); border-color: var(--color-border-strong); }
+.compose-backup-toggle-btn.active { background: var(--color-accent-subtle); color: var(--color-accent); border-color: rgba(108,113,255,0.3); }
+.compose-backup-toggle-chevron { color: var(--color-text-tertiary); transition: transform 0.15s; flex-shrink: 0; }
+.compose-backup-toggle-chevron.open { transform: rotate(180deg); }
+
+/* Count badge inside the Backup toggle button */
+.compose-backup-btn-count {
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 1px 5px;
+  border-radius: 9px;
+  background: var(--color-accent-subtle);
+  color: var(--color-accent);
+  border: 1px solid rgba(108,113,255,0.25);
+}
+.compose-backup-toggle-btn.active .compose-backup-btn-count {
+  background: rgba(108,113,255,0.22);
+}
+
+/* Inline toolbar status message (replaces accordion head row) */
+.compose-toolbar-status {
+  font-size: 11.5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.compose-toolbar-status.success { color: var(--color-success); }
+.compose-toolbar-status.error   { color: var(--color-danger);  }
+.compose-toolbar-status.info    { color: var(--color-text-tertiary); }
+
+/* Backup accordion — no separate head, just the list */
+.compose-backup-accordion {
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+  flex-shrink: 0;
+}
+
+.compose-backup-empty {
+  padding: 10px 14px;
+  font-size: 11.5px;
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+/* "Run Backup" — secondary accent style, not green */
+.compose-run-backup-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(108,113,255,0.3);
+  background: var(--color-accent-subtle);
+  color: var(--color-accent);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: filter var(--transition-fast);
+}
+.compose-run-backup-btn:hover:not(:disabled) { filter: brightness(1.12); }
+.compose-run-backup-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
 .compose-backup-msg {
   font-size: 11.5px;
   white-space: nowrap;
 }
-.compose-backup-msg.ok    { color: var(--color-success); }
-.compose-backup-msg.error { color: var(--color-danger);  }
+.compose-backup-msg.success { color: var(--color-success); }
+.compose-backup-msg.error   { color: var(--color-danger);  }
+.compose-backup-msg.info    { color: var(--color-text-secondary); }
+
+/* ── Polished backup entry list ─────────────────────────────── */
+.compose-backup-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--color-border-light);
+}
+
+.compose-backup-entry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px 6px 14px;
+  border-bottom: 1px solid var(--color-border-light);
+  transition: background var(--transition-fast);
+  cursor: default;
+}
+.compose-backup-entry:last-child { border-bottom: none; }
+.compose-backup-entry:hover { background: var(--color-bg-hover); }
+
+.compose-backup-entry-date {
+  font-size: 11.5px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.compose-backup-entry-size {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.compose-backup-entry-file {
+  flex: 1;
+  font-size: 10.5px;
+  color: var(--color-text-tertiary);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+/* Spacer pushes actions to the right */
+.compose-backup-entry-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+.compose-backup-entry:hover .compose-backup-entry-actions { opacity: 1; }
 
 .compose-breadcrumb {
   display: flex;
@@ -2959,35 +3474,8 @@ button:focus-visible {
 
 .yaml-line { display: block; white-space: pre; }
 
-/* ── Backup history panel ───────────────────────────────────── */
-.compose-history {
-  border-top: 1px solid var(--color-border);
-  background: var(--color-bg-secondary);
-}
-
-.compose-history-header {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 9px 14px 8px;
-  border-bottom: 1px solid var(--color-border);
-}
-
+/* ── Backup history (shared list styles, used in accordion) ─── */
 .compose-history-icon { color: var(--color-text-tertiary); flex-shrink: 0; }
-
-.compose-history-title {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-text-tertiary);
-  flex: 1;
-}
-
-.compose-history-count {
-  font-size: 11px;
-  color: var(--color-text-tertiary);
-}
 
 .compose-history-list {
   display: flex;
@@ -3594,6 +4082,14 @@ button:focus-visible {
   gap: 4px;
 }
 
+/* Inline variant inside the backup panel */
+.vol-progress-wrap--inline {
+  background: transparent;
+  border: none;
+  padding: 2px 0 6px;
+  border-radius: 0;
+}
+
 .vol-progress-track {
   height: 4px;
   background: var(--color-bg-tertiary);
@@ -3714,16 +4210,19 @@ button:focus-visible {
 /* =============================================================
    Log viewer — inline row panel
    ============================================================= */
-.row-logs-open td { border-bottom: none !important; }
 
-.log-viewer-row { background: transparent !important; }
+/* Log viewer row: left accent stripe ties it visually to the active row */
+.log-viewer-row {
+  box-shadow: inset 3px 0 0 var(--color-accent);
+}
 .log-viewer-cell {
   padding: 0 !important;
-  border-bottom: 1px solid var(--color-border) !important;
+  border-bottom: 2px solid var(--color-border) !important;
 }
+
 .log-viewer {
   background: var(--color-bg-primary);
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid rgba(108,113,255,0.18);
 }
 
 .log-viewer-header {
@@ -3870,5 +4369,254 @@ button:focus-visible {
 .btn-execute--disabled-hint:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+/* =============================================================
+   Settings View
+   ============================================================= */
+
+.settings-body {
+  padding: 24px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 640px;
+}
+
+.settings-card {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.settings-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 18px 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.settings-card-icon {
+  color: var(--color-accent);
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.settings-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 4px;
+}
+
+.settings-card-desc {
+  font-size: 11.5px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0;
+}
+.settings-card-desc code {
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 10.5px;
+  background: var(--color-bg-tertiary);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+/* Directory picker row */
+.settings-dir-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+}
+
+.settings-dir-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0 10px;
+  min-width: 0;
+  transition: border-color var(--transition-fast);
+}
+.settings-dir-input-wrap:focus-within { border-color: var(--color-accent); }
+
+.settings-dir-icon { color: var(--color-text-tertiary); flex-shrink: 0; }
+
+.settings-dir-input {
+  flex: 1;
+  height: 32px;
+  background: transparent;
+  border: none;
+  font-size: 12px;
+  color: var(--color-text-primary);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  min-width: 0;
+}
+.settings-dir-input::placeholder { color: var(--color-text-tertiary); }
+.settings-dir-input:focus { outline: none; }
+
+.settings-dir-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-tertiary);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.settings-dir-btn:hover { background: var(--color-bg-hover); color: var(--color-text-primary); }
+
+.settings-dir-refresh {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.settings-dir-refresh:hover:not(:disabled) { background: var(--color-bg-hover); color: var(--color-text-primary); }
+.settings-dir-refresh:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.settings-dir-hint {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  padding: 0 16px 10px;
+  margin: 0;
+  line-height: 1.5;
+}
+.settings-dir-hint code {
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 10px;
+  background: var(--color-bg-tertiary);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.settings-status {
+  margin: 0 16px 12px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+}
+.settings-status--success { background: var(--color-success-subtle); color: var(--color-success); border: 1px solid rgba(34,197,94,0.2); }
+.settings-status--info    { background: var(--color-bg-tertiary);    color: var(--color-text-secondary); border: 1px solid var(--color-border); }
+.settings-status--error   { background: var(--color-danger-subtle);  color: var(--color-danger); border: 1px solid rgba(255,80,80,0.2); }
+
+/* Transfer dialog */
+.settings-transfer-card {
+  margin: 0 16px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-primary);
+  overflow: hidden;
+}
+
+.settings-transfer-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.settings-transfer-icon { color: var(--color-accent); margin-top: 1px; flex-shrink: 0; }
+
+.settings-transfer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.settings-transfer-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.settings-transfer-sub {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+.settings-transfer-sub code {
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 10px;
+  background: var(--color-bg-tertiary);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.settings-transfer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  flex-wrap: wrap;
+}
+
+/* ── About card ──────────────────────────────────────────────────────────────── */
+.settings-about-body {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+}
+
+.settings-about-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 18px;
+  border-bottom: 1px solid var(--color-border-light);
+}
+.settings-about-row:last-child { border-bottom: none; }
+
+.settings-about-label {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.settings-about-value {
+  font-size: 11.5px;
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-about-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--color-accent);
+  text-decoration: none;
+}
+.settings-about-link:hover { text-decoration: underline; }
+
+.settings-about-privacy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--color-success);
 }
 

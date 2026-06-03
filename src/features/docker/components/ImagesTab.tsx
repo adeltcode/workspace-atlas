@@ -13,11 +13,13 @@ function SortHeader({ label, sortKey, active, dir, onSort }: {
 }) {
   const isActive = sortKey === active
   return (
-    <th className={clsx('img-th sortable', isActive && 'active')} onClick={() => onSort(sortKey)}>
-      <span>{label}</span>
-      {isActive
-        ? dir === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />
-        : <ChevronDown size={12} className="sort-idle" />}
+    <th className={clsx('img-th img-th-sort sortable', isActive && 'active')} onClick={() => onSort(sortKey)}>
+      <div className="th-sort-inner">
+        {label}
+        {isActive
+          ? dir === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />
+          : <ChevronDown size={12} className="sort-idle" />}
+      </div>
     </th>
   )
 }

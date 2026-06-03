@@ -1,4 +1,4 @@
-import { Box, HardDrive, Package, ArrowRight } from 'lucide-react'
+import { Box, HardDrive, Package, Bot, ArrowRight } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore, type View } from '../store/appStore'
 
@@ -26,6 +26,14 @@ const MODULES = [
     description: 'Scan 10+ package sources, flag outdated packages, and run upgrades with live output.',
     tags: ['winget', 'npm', 'pip', 'Cargo'],
     color: 'warning',
+  },
+  {
+    view: 'automation' as View,
+    icon: Bot,
+    title: 'Automation',
+    description: 'Schedule recurring tasks, set up event-driven triggers, and automate your dev workflows.',
+    tags: ['Scheduling', 'Triggers', 'Webhooks', 'Git Hooks'],
+    color: 'danger',
   },
 ] as const
 

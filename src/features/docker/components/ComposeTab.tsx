@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { FileText, Download, AlertCircle, FolderOpen, Trash2, Clock, Monitor, Terminal, ArrowRight } from 'lucide-react'
+import { revealItemInDir } from '@tauri-apps/plugin-opener'
+import { FileText, Download, AlertCircle, FolderOpen, Trash2, Monitor, Terminal, ChevronDown } from 'lucide-react'
 import clsx from 'clsx'
 import * as api from '../api'
 import { useAppStore } from '../../../store/appStore'
@@ -108,7 +109,6 @@ function PathOriginLine({ path }: { path: string }) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const filename = (path: string) => path.split(/[\\/]/).pop() ?? path
 
 interface ServiceState { state: string; count: number }
 
@@ -156,8 +156,7 @@ function formatDate(ts: number) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }) {
-  const backupDir    = useAppStore(s => s.backupDir)
-  const setDockerTab = useAppStore(s => s.setDockerTab)
+  const backupDir = useAppStore(s => s.backupDir)
 
   const [projects, setProjects]           = useState<ComposeProject[]>([])
   const [loading, setLoading]             = useState(true)
@@ -167,9 +166,11 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
   const [fileContent, setFileContent]     = useState<string | null>(null)
   const [fileLoading, setFileLoading]     = useState(false)
   const [fileError, setFileError]         = useState<string | null>(null)
-  // Backup history (read-only view — management happens in Backup tab)
   const [composeBackups, setComposeBackups] = useState<ComposeBackupEntry[]>([])
   const [deletingFile, setDeletingFile]     = useState<string | null>(null)
+  const [backupOpen, setBackupOpen]         = useState(false)
+  const [backingUp, setBackingUp]           = useState(false)
+  const [backupMsg, setBackupMsg]           = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null)
 
   // ── Load projects ─────────────────────────────────────────────────────────
 
@@ -193,6 +194,7 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
     setSelected(project)
     setFileContent(null)
     setFileError(null)
+    setBackupMsg(null)
     const first = project.config_files[0] ?? ''
     setActiveFile(first)
     if (first) loadFile(first)
@@ -229,11 +231,26 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
 
   const fileBackups = composeBackups.filter(e => !activeFile || e.original_path === activeFile)
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ── Backup ────────────────────────────────────────────────────────────────
 
-  const goToBackup = () => {
-    setDockerTab('backup-compose')
+  const runBackup = async () => {
+    if (!selected || !backupDir) return
+    setBackingUp(true)
+    setBackupMsg(null)
+    try {
+      const saved = await api.dockerBackupCompose(selected.name, selected.config_files, backupDir)
+      if (saved.length === 0) {
+        setBackupMsg({ type: 'info', text: 'Already up to date — no changes to back up' })
+      } else {
+        setBackupMsg({ type: 'success', text: `${saved.length} file${saved.length !== 1 ? 's' : ''} backed up` })
+        await loadComposeBackups(selected.name)
+      }
+    } catch (e) {
+      setBackupMsg({ type: 'error', text: String(e) })
+    } finally { setBackingUp(false) }
   }
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="compose-tab">
@@ -273,41 +290,88 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
       {selected ? (
         <div className="compose-viewer">
 
-          {/* Toolbar: file tabs + actions */}
+          {/* ── Toolbar: path selector on left (replaces redundant file tabs) ── */}
           <div className="compose-viewer-toolbar">
+
+            {/* File selector — plain path display, one per config file */}
             <div className="compose-file-tabs">
               {selected.config_files.map(f => (
                 <button
                   key={f}
-                  className={clsx('compose-file-tab', activeFile === f && 'active')}
-                  onClick={() => { setActiveFile(f); loadFile(f) }}
+                  className={clsx('compose-file-path-item', activeFile === f && 'active')}
+                  onClick={() => { setActiveFile(f); loadFile(f); setBackupMsg(null) }}
+                  title={f}
                 >
-                  <FileText size={11} />
-                  {filename(f)}
+                  <PathOriginLine path={f} />
+                  <span className="compose-file-path-text">{f}</span>
                 </button>
               ))}
             </div>
+
+            {/* Status + Run Backup — inline in toolbar, no extra row */}
             <div className="compose-viewer-actions">
+              {backupOpen && (
+                <>
+                  {backupMsg && (
+                    <span className={clsx('compose-toolbar-status', backupMsg.type)}>
+                      {backupMsg.text}
+                    </span>
+                  )}
+                  <button
+                    className="compose-run-backup-btn"
+                    onClick={runBackup}
+                    disabled={backingUp || !backupDir || !selected}
+                    title={!backupDir ? 'Configure a backup directory in Settings first' : `Back up all files for '${selected?.name}'`}
+                  >
+                    <Download size={11} className={backingUp ? 'spin' : ''} />
+                    {backingUp ? 'Backing up…' : 'Run Backup'}
+                  </button>
+                </>
+              )}
               <button
-                className="btn-refresh"
-                onClick={goToBackup}
-                title="Manage backups in the Backup tab"
+                className={clsx('compose-backup-toggle-btn', backupOpen && 'active')}
+                onClick={() => setBackupOpen(o => !o)}
+                title={fileBackups.length > 0 ? `${fileBackups.length} backup${fileBackups.length !== 1 ? 's' : ''} — click to manage` : 'Backup history and controls'}
               >
                 <Download size={12} />
-                Backups
-                <ArrowRight size={11} />
+                Backup
+                {fileBackups.length > 0 && (
+                  <span className="compose-backup-btn-count">{fileBackups.length}</span>
+                )}
+                <ChevronDown size={10} className={clsx('compose-backup-toggle-chevron', backupOpen && 'open')} />
               </button>
             </div>
           </div>
 
-          {/* Path breadcrumb with origin */}
-          <div className="compose-breadcrumb">
-            <PathOriginLine path={activeFile} />
-            <FolderOpen size={11} className="compose-breadcrumb-icon" />
-            <span className="compose-breadcrumb-path" title={activeFile}>{activeFile}</span>
+          {/* ── Backup list — no head row, just entries ──────────────── */}
+          <div className={clsx('compose-accordion-wrap', backupOpen && 'open')}>
+            <div className="compose-backup-accordion">
+              {fileBackups.length === 0 ? (
+                <p className="compose-backup-empty">No backups yet for this file.</p>
+              ) : (
+                <ul className="compose-backup-list">
+                  {fileBackups.map(entry => (
+                    <li key={entry.filename} className="compose-backup-entry">
+                      <span className="compose-backup-entry-date">{formatDate(entry.created_at)}</span>
+                      <span className="compose-backup-entry-size">{bytesToHuman(entry.size_bytes)}</span>
+                      <span className="compose-backup-entry-file" title={entry.filename}>{entry.filename}</span>
+                      <div className="compose-backup-entry-actions">
+                        <button className="ctr-action-btn" onClick={() => revealItemInDir(entry.path).catch(() => {})} title="Open file location">
+                          <FolderOpen size={12} />
+                        </button>
+                        <button className="ctr-action-btn ctr-action-remove" onClick={() => handleDeleteBackup(entry)}
+                          disabled={deletingFile === entry.filename} title="Delete this backup">
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
 
-          {/* File content */}
+          {/* ── File content ─────────────────────────────────────────── */}
           <div className="compose-viewer-body">
             {fileLoading && <div className="compose-viewer-state">Loading file…</div>}
             {fileError && (
@@ -317,38 +381,6 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
             )}
             {!fileLoading && fileContent !== null && <YamlViewer content={fileContent} />}
           </div>
-
-          {/* Backup history */}
-          {fileBackups.length > 0 && (
-            <div className="compose-history">
-              <div className="compose-history-header">
-                <Clock size={12} className="compose-history-icon" />
-                <span className="compose-history-title">Backup History</span>
-                <span className="compose-history-count">{fileBackups.length} / 10</span>
-              </div>
-              <ul className="compose-history-list">
-                {fileBackups.map(entry => (
-                  <li key={entry.filename} className="compose-history-item">
-                    <div className="compose-history-info">
-                      <span className="compose-history-date">{formatDate(entry.created_at)}</span>
-                      <span className="compose-history-size">{bytesToHuman(entry.size_bytes)}</span>
-                    </div>
-                    <span className="compose-history-file" title={entry.filename}>
-                      {entry.filename}
-                    </span>
-                    <button
-                      className="ctr-action-btn ctr-action-stop"
-                      onClick={() => handleDeleteBackup(entry)}
-                      disabled={deletingFile === entry.filename}
-                      title="Delete this backup"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
         </div>
       ) : (
         <div className="compose-viewer-placeholder">

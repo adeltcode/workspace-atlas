@@ -4,6 +4,7 @@ import DockerView     from '../features/docker/DockerView'
 import WslView        from '../views/WslView'
 import PackagesView   from '../views/PackagesView'
 import AutomationView from '../views/AutomationView'
+import SettingsView   from '../views/SettingsView'
 
 export default function MainPanel() {
   const activeView = useAppStore(s => s.activeView)
@@ -15,6 +16,7 @@ export default function MainPanel() {
       {activeView === 'wsl'        && <WslView />}
       {activeView === 'packages'   && <PackagesView />}
       {activeView === 'automation' && <AutomationView />}
+      {activeView === 'settings'   && <SettingsView />}
     </main>
   )
 }
