@@ -623,49 +623,6 @@ ul, ol { list-style: none; }
 }
 
 /* =============================================================
-   View Container (shared by all views)
-   ============================================================= */
-.view-container {
-  padding: 36px 40px;
-  width: 100%;
-}
-
-.view-header {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 28px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.view-header-icon {
-  width: 40px;
-  height: 40px;
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text-secondary);
-  flex-shrink: 0;
-}
-
-.view-title {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  line-height: 1.3;
-}
-
-.view-subtitle {
-  font-size: 13px;
-  color: var(--color-text-secondary);
-  margin-top: 2px;
-}
-
-/* =============================================================
    Dashboard
    ============================================================= */
 .dashboard-header {
@@ -673,10 +630,10 @@ ul, ol { list-style: none; }
 }
 
 .dashboard-title {
-  font-size: 26px;
-  font-weight: 700;
+  font-size: 24px;
+  font-weight: 800;
   color: var(--color-text-primary);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
   line-height: 1.2;
 }
 
@@ -688,7 +645,7 @@ ul, ol { list-style: none; }
 
 .module-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 16px;
   margin-bottom: 32px;
 }
@@ -922,51 +879,8 @@ ul, ol { list-style: none; }
 }
 
 /* =============================================================
-   Docker — Status Bar
+   Docker — Status indicators & toolbar buttons
    ============================================================= */
-.docker-status-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  margin-bottom: 24px;
-}
-
-.status-bar-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.btn-trace-toggle {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 9px;
-  background: var(--color-bg-tertiary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  color: var(--color-text-tertiary);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  transition: background var(--transition-fast), color var(--transition-fast);
-}
-.btn-trace-toggle:hover { background: var(--color-bg-hover); color: var(--color-text-secondary); }
-
-.trace-chevron {
-  transition: transform var(--transition-base);
-}
-.trace-chevron.open { transform: rotate(180deg); }
-
-.docker-status-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .status-dot {
   width: 7px;
   height: 7px;
@@ -1017,121 +931,6 @@ ul, ol { list-style: none; }
   to { transform: rotate(360deg); }
 }
 .spin { animation: spin 0.8s linear infinite; }
-
-/* =============================================================
-   Docker — Disk Usage Cards
-   ============================================================= */
-.df-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
-  margin-bottom: 28px;
-}
-
-.df-card {
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 18px;
-  position: relative;
-  overflow: hidden;
-}
-.df-card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 2px;
-}
-.df-card--accent::before  { background: var(--color-accent); }
-.df-card--success::before { background: var(--color-success); }
-.df-card--warning::before { background: var(--color-warning); }
-.df-card--danger::before  { background: var(--color-danger); }
-
-.df-card-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
-}
-
-.df-card-icon {
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.df-card-icon--accent  { background: var(--color-accent-subtle);  color: var(--color-accent); }
-.df-card-icon--success { background: var(--color-success-subtle); color: var(--color-success); }
-.df-card-icon--warning { background: var(--color-warning-subtle); color: var(--color-warning); }
-.df-card-icon--danger  { background: var(--color-danger-subtle);  color: var(--color-danger); }
-
-.df-card-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.df-count-row {
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
-  margin-bottom: 16px;
-}
-.df-count-num {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--color-text-primary);
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-}
-.df-count-label {
-  font-size: 11px;
-  color: var(--color-text-tertiary);
-}
-.df-count-sep {
-  font-size: 12px;
-  color: var(--color-text-tertiary);
-  margin: 0 2px;
-}
-
-.df-stat {
-  margin-bottom: 10px;
-}
-.df-stat-size {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  font-variant-numeric: tabular-nums;
-  line-height: 1.2;
-}
-.df-stat-label {
-  font-size: 11px;
-  color: var(--color-text-tertiary);
-  margin-top: 2px;
-}
-
-.df-reclaimable { color: var(--color-text-tertiary); }
-.df-reclaimable.has-value { color: var(--color-success); }
-
-/* Shimmer skeleton */
-.df-card-skeleton {
-  min-height: 190px;
-  background: linear-gradient(
-    90deg,
-    var(--color-bg-secondary) 0%,
-    var(--color-bg-tertiary) 50%,
-    var(--color-bg-secondary) 100%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
-}
-@keyframes shimmer {
-  0%   { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
 
 /* =============================================================
    Docker — Error / Offline States
@@ -1259,12 +1058,6 @@ ul, ol { list-style: none; }
   color: var(--color-accent);
   background: var(--color-accent-subtle);
 }
-
-/* Legacy class kept for any remaining references */
-.docker-tabs { display: none; }
-.docker-tab  { display: none; }
-
-.docker-tab-content { /* content sits directly below tab strip */ }
 
 /* =============================================================
    Docker — Images Tab
@@ -1851,15 +1644,6 @@ ul, ol { list-style: none; }
 }
 .pin-btn.pinned { animation: pin-pop 0.28s ease; }
 
-/* Card hover lift */
-.df-card {
-  transition: transform var(--transition-base), box-shadow var(--transition-base);
-}
-.df-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
-}
-
 /* Button active press */
 .btn-preview:active:not(:disabled),
 .btn-execute:active,
@@ -1876,146 +1660,6 @@ ul, ol { list-style: none; }
   transform: translateY(-2px);
   box-shadow: var(--shadow-sm);
 }
-
-/* =============================================================
-   Command trace panel
-   ============================================================= */
-.trace-panel {
-  max-height: 0;
-  overflow: hidden;
-  transition: max-height var(--transition-slow);
-  margin-bottom: 0;
-}
-.trace-panel.open {
-  max-height: 200px;
-  margin-bottom: 14px;
-}
-
-.trace-panel-inner {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 10px 14px;
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-}
-
-.trace-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  opacity: 0.45;
-  transition: opacity var(--transition-base);
-  animation: trace-slide-in 0.18s ease both;
-}
-@keyframes trace-slide-in {
-  from { opacity: 0; transform: translateX(-6px); }
-  to   { opacity: 0.45; transform: translateX(0); }
-}
-.trace-row.trace-done { opacity: 1; }
-.trace-row.trace-err  { opacity: 1; }
-
-.trace-icon {
-  display: flex;
-  align-items: center;
-  width: 14px;
-  flex-shrink: 0;
-  color: var(--color-text-tertiary);
-}
-.trace-row.trace-done .trace-icon { color: var(--color-success); }
-.trace-row.trace-err  .trace-icon { color: var(--color-danger); }
-.trace-x { font-size: 11px; font-weight: 700; }
-
-.trace-cmd {
-  font-size: 11px;
-  font-family: "Cascadia Code", "Consolas", monospace;
-  color: var(--color-text-secondary);
-  user-select: text;
-}
-.trace-row.trace-done .trace-cmd { color: var(--color-text-primary); }
-.trace-row.trace-err  .trace-cmd { color: var(--color-danger); }
-
-/* =============================================================
-   Disk usage cards — restructured hierarchy
-   ============================================================= */
-
-/* Remove old conflicting rules by re-declaring df-card-header */
-.df-card-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 18px;
-}
-
-.df-card-count-pill {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--color-text-tertiary);
-  background: var(--color-bg-tertiary);
-  border: 1px solid var(--color-border-light);
-  border-radius: 20px;
-  padding: 2px 8px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.df-count-active { opacity: 0.75; }
-
-/* Hero reclaimable */
-.df-hero {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-.df-hero-value {
-  font-size: 26px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-  letter-spacing: -0.02em;
-}
-.df-hero-zero    { color: var(--color-text-tertiary); }
-.df-hero--accent  { color: var(--color-accent); }
-.df-hero--success { color: var(--color-success); }
-.df-hero--warning { color: var(--color-warning); }
-.df-hero--danger  { color: var(--color-danger); }
-
-.df-hero-label {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--color-text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-/* Progress bar */
-.df-bar-track {
-  height: 4px;
-  background: var(--color-bg-tertiary);
-  border-radius: 2px;
-  overflow: hidden;
-  margin-bottom: 6px;
-}
-.df-bar-fill {
-  height: 100%;
-  border-radius: 2px;
-  transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.df-bar-fill--accent  { background: var(--color-accent); }
-.df-bar-fill--success { background: var(--color-success); }
-.df-bar-fill--warning { background: var(--color-warning); }
-.df-bar-fill--danger  { background: var(--color-danger); }
-
-.df-bar-meta {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 11px;
-  color: var(--color-text-tertiary);
-  font-variant-numeric: tabular-nums;
-}
-.df-bar-total { color: var(--color-text-secondary); }
 
 /* =============================================================
    Prune level cards — improved selection state
@@ -2117,15 +1761,6 @@ ul, ol { list-style: none; }
 .modal-icon-wrap.danger { background: var(--color-danger-subtle); color: var(--color-danger); }
 
 /* =============================================================
-   Sidebar — polish
-   ============================================================= */
-.sidebar-item {
-  transition: background var(--transition-fast), color var(--transition-fast),
-              transform  var(--transition-fast);
-}
-.sidebar-item:active { transform: scale(0.97); }
-
-/* =============================================================
    Global interactive polish
    ============================================================= */
 button { transition: opacity var(--transition-fast); }
@@ -2133,34 +1768,6 @@ button:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
-
-/* =============================================================
-   Card system — floating cards with depth
-   ============================================================= */
-.df-card {
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 20px;
-  position: relative;
-  overflow: hidden;
-  box-shadow: var(--shadow-card);
-  transition: transform var(--transition-base), box-shadow var(--transition-base);
-}
-.df-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
-}
-.df-card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 2px;
-}
-.df-card--accent::before  { background: var(--color-accent); }
-.df-card--success::before { background: var(--color-success); }
-.df-card--warning::before { background: var(--color-warning); }
-.df-card--danger::before  { background: var(--color-danger); }
 
 /* =============================================================
    Global Terminal panel
@@ -2435,13 +2042,6 @@ button:focus-visible {
   gap: 6px;
 }
 
-/* Dashboard title update */
-.dashboard-title {
-  font-size: 24px;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-}
-
 /* =============================================================
    Resize handles
    ============================================================= */
@@ -2477,8 +2077,7 @@ button:focus-visible {
 }
 @media (max-width: 720px) {
   .bar-grid      { grid-template-columns: repeat(2, 1fr); }
-  .module-grid   { grid-template-columns: repeat(2, 1fr); }
-  .df-grid       { grid-template-columns: repeat(2, 1fr); }
+  .module-grid   { grid-template-columns: repeat(1, 1fr); }
 }
 
 /* =============================================================
@@ -4376,7 +3975,6 @@ button:focus-visible {
    ============================================================= */
 
 .settings-body {
-  padding: 24px 32px;
   display: flex;
   flex-direction: column;
   gap: 20px;

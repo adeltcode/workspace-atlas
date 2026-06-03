@@ -6,6 +6,7 @@ import clsx from 'clsx'
 import * as api from '../api'
 import { useAppStore } from '../../../store/appStore'
 import type { DockerVolume, VolumeBackupEntry, BackupProgress } from '../types'
+import { fmtBytes, formatDate } from '../../../utils/format'
 
 type UsageFilter = 'all' | 'in-use' | 'unused'
 type VolStatus   = 'running' | 'done' | 'error'
@@ -28,24 +29,6 @@ function fmtVolName(name: string): { display: string; full?: string } {
 
 function truncFilename(name: string, max = 30): string {
   return name.length <= max ? name : name.slice(0, max - 1) + '…'
-}
-
-function bytesToHuman(b: number): string {
-  if (!b) return '—'
-  if (b >= 1e9) return `${(b / 1e9).toFixed(2)} GB`
-  if (b >= 1e6) return `${(b / 1e6).toFixed(1)} MB`
-  if (b >= 1e3) return `${Math.round(b / 1e3)} kB`
-  return `${b} B`
-}
-
-function formatDate(ts: number): string {
-  const d   = new Date(ts * 1000)
-  const now = new Date()
-  const t   = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  if (d.toDateString() === now.toDateString()) return `Today, ${t}`
-  const yest = new Date(now); yest.setDate(now.getDate() - 1)
-  if (d.toDateString() === yest.toDateString()) return `Yesterday, ${t}`
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 // ── Inline progress bar ───────────────────────────────────────────────────────
@@ -351,6 +334,7 @@ export default function VolumesTab({
               const vp           = volProgress[v.name]
               const entries      = volBackups[v.name] ?? []
               const isSelected   = selectedVols.has(v.name)
+              const volName      = fmtVolName(v.name)
 
               return (
                 <Fragment key={v.name}>
@@ -367,18 +351,16 @@ export default function VolumesTab({
                       />
                     </td>
                     <td className="img-td">
-                      {(() => { const n = fmtVolName(v.name); return (
-                        <div className="vol-name-cell">
-                          {isExpanded
-                            ? <ChevronDown size={11} className="vol-name-chevron" />
-                            : <ChevronRight size={11} className="vol-name-chevron" />
-                          }
-                          <span className="vol-name-text" title={n.full}>{n.display}</span>
-                        </div>
-                      )})()}
+                      <div className="vol-name-cell">
+                        {isExpanded
+                          ? <ChevronDown size={11} className="vol-name-chevron" />
+                          : <ChevronRight size={11} className="vol-name-chevron" />
+                        }
+                        <span className="vol-name-text" title={volName.full}>{volName.display}</span>
+                      </div>
                     </td>
                     <td className="img-td img-age">{v.driver}</td>
-                    <td className="img-td img-age">{bytesToHuman(v.size_bytes)}</td>
+                    <td className="img-td img-age">{fmtBytes(v.size_bytes)}</td>
                     <td className="img-td">
                       {v.in_use
                         ? <span className="badge badge-active">In use</span>
@@ -478,7 +460,7 @@ export default function VolumesTab({
                                       <>
                                         <div className="vol-backup-entry-info">
                                           <span className="vol-backup-date">{formatDate(entry.created_at)}</span>
-                                          <span className="vol-backup-size">{bytesToHuman(entry.size_bytes)}</span>
+                                          <span className="vol-backup-size">{fmtBytes(entry.size_bytes)}</span>
                                           <span className="vol-backup-file" title={entry.filename}>
                                             {truncFilename(entry.filename)}
                                           </span>

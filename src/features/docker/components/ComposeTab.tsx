@@ -5,6 +5,7 @@ import clsx from 'clsx'
 import * as api from '../api'
 import { useAppStore } from '../../../store/appStore'
 import type { ComposeProject, ComposeBackupEntry } from '../types'
+import { bytesToHuman, formatDate } from '../../../utils/format'
 
 // ── YAML syntax highlighter ───────────────────────────────────────────────────
 
@@ -137,21 +138,6 @@ function statusLabel(raw: string): { text: string; dot: 'running' | 'partial' | 
   return { text, dot }
 }
 
-function bytesToHuman(b: number) {
-  if (b >= 1e6) return `${(b / 1e6).toFixed(1)} MB`
-  if (b >= 1e3) return `${Math.round(b / 1e3)} kB`
-  return `${b} B`
-}
-
-function formatDate(ts: number) {
-  const d   = new Date(ts * 1000)
-  const now = new Date()
-  const t   = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  if (d.toDateString() === now.toDateString()) return `Today ${t}`
-  const y = new Date(now); y.setDate(now.getDate() - 1)
-  if (d.toDateString() === y.toDateString()) return `Yesterday ${t}`
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
-}
 
 // ── Main component ────────────────────────────────────────────────────────────
 

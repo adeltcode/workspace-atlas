@@ -1,5 +1,6 @@
 import clsx from 'clsx'
 import type { DockerSystemDf, DockerContainer, DiskUsageRow } from '../types'
+import { bytesToHuman } from '../../../utils/format'
 
 /**
  * Containers stopped for fewer than STALE_DAYS days are considered "active"
@@ -32,12 +33,6 @@ function parseSizeBytes(s: string): number {
   return n
 }
 
-function bytesToHuman(b: number): string {
-  if (b >= 1e9) return `${(b / 1e9).toFixed(2)} GB`
-  if (b >= 1e6) return `${(b / 1e6).toFixed(1)} MB`
-  if (b >= 1e3) return `${Math.round(b / 1e3)} kB`
-  return `${b} B`
-}
 
 function BarCard({
   row, label, color, totalLabel = false,
