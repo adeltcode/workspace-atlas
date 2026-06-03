@@ -43,6 +43,14 @@ interface AppState {
   backupPreselect: string | null
   setBackupPreselect: (name: string | null) => void
 
+  // ── Tab pre-filters — set before navigating, consumed once by target tab (ephemeral)
+  imagesFilter: 'dangling' | null
+  volumesFilter: 'unused' | null
+  composePreselect: string | null
+  setImagesFilter:    (f: 'dangling' | null) => void
+  setVolumesFilter:   (f: 'unused' | null) => void
+  setComposePreselect: (name: string | null) => void
+
   // ── Docker keep-list (persisted)
   dockerKeepList: string[]
   addToKeepList: (id: string) => void
@@ -103,6 +111,14 @@ export const useAppStore = create<AppState>()(
       // ── Backup pre-select (ephemeral)
       backupPreselect: null,
       setBackupPreselect: (backupPreselect) => set({ backupPreselect }),
+
+      // ── Tab pre-filters (ephemeral)
+      imagesFilter:     null,
+      volumesFilter:    null,
+      composePreselect: null,
+      setImagesFilter:     (imagesFilter)     => set({ imagesFilter }),
+      setVolumesFilter:    (volumesFilter)    => set({ volumesFilter }),
+      setComposePreselect: (composePreselect) => set({ composePreselect }),
 
       // ── Docker keep-list
       dockerKeepList: [],

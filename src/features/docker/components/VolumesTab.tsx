@@ -67,7 +67,11 @@ export default function VolumesTab({
   onRefresh: () => void
 }) {
   const [search, setSearch]           = useState('')
-  const [usageFilter, setUsageFilter] = useState<UsageFilter>('all')
+  const [usageFilter, setUsageFilter] = useState<UsageFilter>(() => {
+    const s = useAppStore.getState()
+    if (s.volumesFilter === 'unused') { s.setVolumesFilter(null); return 'unused' }
+    return 'all'
+  })
   const [confirmId, setConfirmId]     = useState<string | null>(null)
   const [busy, setBusy]               = useState<string | null>(null)
   const [pruningAll, setPruningAll]   = useState(false)

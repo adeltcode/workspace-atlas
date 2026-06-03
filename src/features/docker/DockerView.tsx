@@ -158,7 +158,7 @@ export default function DockerView() {
       {/* ── Tab content ──────────────────────────────────────────────── */}
       {(online || loading) && (
         <div className="docker-tab-content">
-          {dockerTab === 'overview'   && <OverviewTab df={df} containers={containers} loading={loading} />}
+          {dockerTab === 'overview'   && <OverviewTab df={df} containers={containers} images={images} volumes={volumes} status={status} loading={loading} refreshTick={composeTick} />}
           {dockerTab === 'images'     && <ImagesTab images={images} loading={loading} />}
           {dockerTab === 'containers' && <ContainersTab containers={containers} loading={loading} onRefresh={refreshContainers} />}
 

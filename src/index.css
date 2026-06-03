@@ -1064,6 +1064,37 @@ ul, ol { list-style: none; }
    ============================================================= */
 .img-tab { display: flex; flex-direction: column; gap: 16px; }
 
+/* Pre-filter banner — shown when navigated from overview cleanup panel */
+.prefilter-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--color-accent-subtle);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-accent-hover);
+}
+
+.prefilter-banner-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-sm);
+  background: none;
+  border: none;
+  color: var(--color-accent-hover);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.prefilter-banner-close:hover { background: rgba(108, 113, 255, 0.15); }
+
 .img-toolbar {
   display: flex;
   align-items: center;
@@ -2264,6 +2295,344 @@ button:focus-visible {
 .sk-line.w-20   { width: 80px; }
 .sk-line.w-16   { width: 64px; }
 .sk-line.w-12   { width: 48px; }
+
+/* =============================================================
+   Overview — Hero status strip
+   ============================================================= */
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  background: var(--color-border);
+  gap: 1px;
+}
+
+.hero-tile {
+  background: var(--color-bg-secondary);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.hero-tile-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  margin-bottom: 2px;
+}
+
+.hero-tile-value {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.hero-tile-value--text {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.hero-tile-value--ok  { color: var(--color-success); }
+.hero-tile-value--err { color: var(--color-danger); }
+
+.hero-tile-sub {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  line-height: 1.4;
+}
+
+/* Runtime warning rows */
+.hero-warnings {
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+}
+
+.hero-warning-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.hero-warning-row--critical {
+  color: var(--color-danger);
+  background: var(--color-danger-subtle);
+}
+.hero-warning-row--critical:hover { background: rgba(255, 80, 80, 0.15); }
+
+@media (max-width: 900px) {
+  .hero-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* =============================================================
+   Overview — running containers + attention sections
+   ============================================================= */
+
+.overview-section {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.overview-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+  cursor: pointer;
+  color: inherit;
+  font-size: inherit;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+.overview-section-head:hover { background: var(--color-bg-hover); }
+.overview-section-head--static { cursor: default; }
+.overview-section-head--static:hover { background: none; }
+
+.overview-section-meta {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.overview-section-arrow {
+  margin-left: auto;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+/* Running containers list */
+.overview-running-list { display: flex; flex-direction: column; }
+
+.overview-running-row {
+  display: grid;
+  grid-template-columns: 8px 1fr 1.5fr 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--color-border-light);
+  font-size: 12px;
+}
+.overview-running-row:last-child { border-bottom: none; }
+
+.overview-ctr-name {
+  font-weight: 500;
+  color: var(--color-text-primary);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overview-ctr-image {
+  color: var(--color-text-secondary);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overview-ctr-uptime {
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.overview-ctr-ports {
+  color: var(--color-accent-hover);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 11px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.overview-empty-row {
+  padding: 14px;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+/* Attention chips */
+.overview-attention {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.overview-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.overview-chip--clean {
+  background: var(--color-success-subtle);
+  color: var(--color-success);
+}
+
+button.overview-chip--warn {
+  background: var(--color-warning-subtle);
+  color: var(--color-warning);
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
+
+.overview-chip-count {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+/* =============================================================
+   Overview — Cleanup rows
+   ============================================================= */
+
+.cleanup-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.cleanup-row {
+  display: grid;
+  grid-template-columns: 10px 1fr auto auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-border-light);
+  font-family: inherit;
+  font-size: 13px;
+  color: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.cleanup-row:last-child { border-bottom: none; }
+.cleanup-row:hover { background: var(--color-bg-hover); }
+.cleanup-row--skeleton { pointer-events: none; }
+
+/* Category dot — matches bar card colors */
+.cleanup-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.cleanup-dot--accent  { background: var(--color-accent); }
+.cleanup-dot--success { background: var(--color-success); }
+.cleanup-dot--warning { background: var(--color-warning); }
+.cleanup-dot--danger  { background: var(--color-danger); }
+
+.cleanup-row-label {
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cleanup-row-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.cleanup-row-size {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  min-width: 60px;
+  text-align: right;
+}
+
+.cleanup-row-size-note {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+}
+
+.cleanup-row-arrow {
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+/* Compose stack rows reuse .cleanup-row but have a different grid */
+.cleanup-row:has(.compose-status-dot) {
+  grid-template-columns: 10px 1fr auto auto;
+}
+
+.compose-stack-status {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+/* Footer with CTA */
+.cleanup-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px 14px;
+  border-top: 1px solid var(--color-border);
+}
+
+.cleanup-cta-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  background: var(--color-accent-subtle);
+  color: var(--color-accent-hover);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.cleanup-cta-btn:hover {
+  background: rgba(108, 113, 255, 0.18);
+  border-color: var(--color-accent);
+}
 
 /* =============================================================
    Docker — State badges (shared by Containers + Images)

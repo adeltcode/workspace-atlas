@@ -169,9 +169,17 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
 
   useEffect(() => { loadProjects() }, [refreshTick]) // eslint-disable-line
 
-  // Auto-open the first project once loaded
+  // Auto-open on load — honour composePreselect if set by the overview panel
   useEffect(() => {
-    if (projects.length > 0 && !selected) selectProject(projects[0])
+    if (projects.length === 0 || selected) return
+    const s = useAppStore.getState()
+    const name = s.composePreselect
+    if (name) {
+      s.setComposePreselect(null)
+      selectProject(projects.find(p => p.name === name) ?? projects[0])
+    } else {
+      selectProject(projects[0])
+    }
   }, [projects]) // eslint-disable-line
 
   // ── Project selection ─────────────────────────────────────────────────────
