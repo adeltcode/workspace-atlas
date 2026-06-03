@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { DockerStatus, DockerSystemDf, DockerImage, DockerContainer, DockerVolume, DockerNetwork, ComposeProject, VolumeBackupEntry, PrunePreview, TransferResult, ComposeBackupEntry } from './types'
+import type { DockerStatus, DockerSystemDf, DockerImage, DockerContainer, DockerVolume, DockerNetwork, ContainerStats, ComposeProject, VolumeBackupEntry, PrunePreview, TransferResult, ComposeBackupEntry } from './types'
 
 export const dockerCheck     = () => invoke<DockerStatus>('docker_check')
 export const dockerSystemDf  = () => invoke<DockerSystemDf>('docker_system_df')
@@ -29,6 +29,7 @@ export const dockerNetworkRemove = (id: string) =>
   invoke<void>('docker_network_remove', { id })
 
 export const dockerComposeLs        = () => invoke<ComposeProject[]>('docker_compose_ls')
+export const dockerStats            = () => invoke<ContainerStats[]>('docker_stats')
 export const readFileContent         = (path: string) => invoke<string>('read_file_content', { path })
 export const getDefaultBackupDir     = () => invoke<string>('get_default_backup_dir')
 export const dockerListBackups       = (backupDir: string) => invoke<VolumeBackupEntry[]>('docker_list_backups', { backupDir })

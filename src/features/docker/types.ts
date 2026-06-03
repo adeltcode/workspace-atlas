@@ -80,6 +80,14 @@ export interface PrunePreview {
   volume_count: number
 }
 
+export interface ContainerStats {
+  name: string
+  cpu_pct: number
+  mem_used_bytes: number
+  mem_limit_bytes: number
+  mem_pct: number
+}
+
 export interface ComposeProject {
   name: string
   status: string

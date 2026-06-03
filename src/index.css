@@ -2595,6 +2595,97 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
   flex-shrink: 0;
 }
 
+/* =============================================================
+   Overview — Resource usage (stats grid)
+   ============================================================= */
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 12px 0;
+}
+
+.stats-col {
+  padding: 0 14px;
+}
+.stats-col + .stats-col {
+  border-left: 1px solid var(--color-border);
+}
+
+.stats-col-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  margin-bottom: 8px;
+}
+
+.stats-row {
+  display: grid;
+  grid-template-columns: 1fr 80px 46px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 9px;
+}
+.stats-row:last-child { margin-bottom: 0; }
+
+.stats-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stats-bar-wrap {
+  height: 6px;
+  background: var(--color-bg-tertiary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.stats-bar {
+  height: 100%;
+  border-radius: 3px;
+  min-width: 2px;
+  transition: width 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.stats-bar--cpu { background: var(--color-accent); }
+.stats-bar--mem { background: var(--color-warning); }
+
+.stats-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.stats-refresh-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  background: none;
+  border: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  margin-left: auto;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+.stats-refresh-btn:hover:not(:disabled) {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+.stats-refresh-btn:disabled { opacity: 0.4; cursor: default; }
+
 /* Compose stack rows reuse .cleanup-row but have a different grid */
 .cleanup-row:has(.compose-status-dot) {
   grid-template-columns: 10px 1fr auto auto;

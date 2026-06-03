@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
-import { CheckCircle, AlertTriangle, ChevronRight } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { CheckCircle, AlertTriangle, ChevronRight, RefreshCw } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../../../store/appStore'
-import type { DockerStatus, DockerSystemDf, DockerContainer, DockerImage, DockerVolume, DiskUsageRow, ComposeProject } from '../types'
+import type { DockerStatus, DockerSystemDf, DockerContainer, DockerImage, DockerVolume, DiskUsageRow, ComposeProject, ContainerStats } from '../types'
 import { bytesToHuman } from '../../../utils/format'
 import * as api from '../api'
 
@@ -231,6 +231,25 @@ export default function OverviewTab({
       .finally(() => setComposeLoading(false))
   }, [refreshTick, status?.available]) // eslint-disable-line
 
+  // ── Container stats (docker stats --no-stream; re-runs on tick or manual refresh) ──
+  const [containerStats, setContainerStats] = useState<ContainerStats[]>([])
+  const [statsLoading, setStatsLoading]     = useState(true)
+  const [statsError, setStatsError]         = useState<string | null>(null)
+
+  const loadStats = useCallback(() => {
+    if (!status?.available) { setStatsLoading(false); return }
+    setStatsLoading(true)
+    setStatsError(null)
+    api.dockerStats()
+      .then(s => { setContainerStats(s); setStatsLoading(false) })
+      .catch(e => { setStatsError(String(e)); setStatsLoading(false) })
+  }, [status?.available]) // eslint-disable-line
+
+  useEffect(() => { loadStats() }, [refreshTick, loadStats]) // eslint-disable-line
+
+  const topCpu = [...containerStats].sort((a, b) => b.cpu_pct - a.cpu_pct).slice(0, 3)
+  const topMem = [...containerStats].sort((a, b) => b.mem_used_bytes - a.mem_used_bytes).slice(0, 3)
+
   // ── Hero counts ───────────────────────────────────────────────────────────
   const runningCtrs = containers.filter(c => c.state === 'running').length
   const pausedCtrs  = containers.filter(c => c.state === 'paused').length
@@ -336,6 +355,76 @@ export default function OverviewTab({
                 {dead.length} dead container{dead.length !== 1 ? 's' : ''} — view Containers
               </button>
             )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Resource Usage ───────────────────────────────────────────── */}
+      <div className="overview-section">
+        <div className="overview-section-head overview-section-head--static">
+          <span className="section-label" style={{ margin: 0 }}>Resource Usage</span>
+          <span className="overview-section-meta">top containers by CPU and memory</span>
+          <button
+            className="stats-refresh-btn"
+            onClick={loadStats}
+            disabled={statsLoading}
+            title="Refresh stats"
+          >
+            <RefreshCw size={12} className={statsLoading ? 'spin' : ''} />
+          </button>
+        </div>
+
+        {statsLoading ? (
+          <div className="stats-grid">
+            {[0, 1].map(col => (
+              <div key={col} className="stats-col">
+                <div className="sk-line w-12" style={{ height: 9, marginBottom: 10 }} />
+                {[0, 1, 2].map(i => (
+                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 80px 44px', gap: 8, marginBottom: 10 }}>
+                    <div className="sk-line" />
+                    <div className="sk-line" style={{ height: 6, alignSelf: 'center' }} />
+                    <div className="sk-line w-12" />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        ) : statsError ? (
+          <p className="overview-empty-row" style={{ color: 'var(--color-danger)' }}>{statsError}</p>
+        ) : containerStats.length === 0 ? (
+          <p className="overview-empty-row">No running containers</p>
+        ) : (
+          <div className="stats-grid">
+            <div className="stats-col">
+              <div className="stats-col-label">CPU</div>
+              {topCpu.map(s => {
+                const maxCpu = topCpu[0].cpu_pct || 1
+                return (
+                  <div key={s.name} className="stats-row">
+                    <span className="stats-name" title={s.name}>{s.name}</span>
+                    <div className="stats-bar-wrap">
+                      <div className="stats-bar stats-bar--cpu" style={{ width: `${(s.cpu_pct / maxCpu) * 100}%` }} />
+                    </div>
+                    <span className="stats-value">{s.cpu_pct.toFixed(1)}%</span>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="stats-col">
+              <div className="stats-col-label">Memory</div>
+              {topMem.map(s => {
+                const maxMem = topMem[0].mem_used_bytes || 1
+                return (
+                  <div key={s.name} className="stats-row">
+                    <span className="stats-name" title={s.name}>{s.name}</span>
+                    <div className="stats-bar-wrap">
+                      <div className="stats-bar stats-bar--mem" style={{ width: `${(s.mem_used_bytes / maxMem) * 100}%` }} />
+                    </div>
+                    <span className="stats-value">{bytesToHuman(s.mem_used_bytes)}</span>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         )}
       </div>

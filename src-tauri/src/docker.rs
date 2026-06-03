@@ -87,6 +87,19 @@ pub struct DockerNetwork {
 
 // ── Compose / Backup types ────────────────────────────────────────────────────
 
+#[derive(serde::Serialize, Clone, Debug)]
+pub struct ContainerStats {
+    pub name: String,
+    /// CPU usage percent (0–100+; multi-core can exceed 100).
+    pub cpu_pct: f64,
+    /// Memory used by the container, in bytes.
+    pub mem_used_bytes: u64,
+    /// Container memory limit, in bytes (0 = no limit / unknown).
+    pub mem_limit_bytes: u64,
+    /// Memory usage as a percentage of the container's limit.
+    pub mem_pct: f64,
+}
+
 #[derive(serde::Serialize, Clone)]
 pub struct ComposeProject {
     pub name: String,
@@ -1290,6 +1303,86 @@ pub async fn docker_compose_ls() -> Result<Vec<ComposeProject>, String> {
             }
         })
         .collect())
+}
+
+/// Parse "12.34%" or "--" → f64. Returns 0.0 for dashes / parse failures.
+fn parse_pct(s: &str) -> f64 {
+    let s = s.trim().trim_end_matches('%');
+    if s == "--" || s == "N/A" { return 0.0; }
+    s.parse::<f64>().unwrap_or(0.0)
+}
+
+/// Parse IEC byte strings produced by `docker stats`:
+/// "23.5MiB", "512KiB", "15.55GiB", "1.2TiB", "128B"
+/// Also handles the SI variants Docker occasionally emits (MB, GB, kB).
+fn parse_iec_bytes(s: &str) -> u64 {
+    let s = s.trim();
+    let table: &[(&str, f64)] = &[
+        ("TiB", 1024.0_f64.powi(4)),
+        ("GiB", 1024.0_f64.powi(3)),
+        ("MiB", 1024.0_f64.powi(2)),
+        ("KiB", 1024.0),
+        ("TB",  1_000_000_000_000.0),
+        ("GB",  1_000_000_000.0),
+        ("MB",  1_000_000.0),
+        ("kB",  1_000.0),
+        ("KB",  1_000.0),
+        ("B",   1.0),
+    ];
+    for &(suffix, factor) in table {
+        if let Some(n) = s.strip_suffix(suffix) {
+            return (n.trim().parse::<f64>().unwrap_or(0.0) * factor) as u64;
+        }
+    }
+    0
+}
+
+/// Parse `docker stats` MemUsage like "23.5MiB / 15.55GiB" → (used, limit) in bytes.
+fn parse_mem_usage(s: &str) -> (u64, u64) {
+    let mut parts = s.splitn(2, '/');
+    let used  = parse_iec_bytes(parts.next().unwrap_or("").trim());
+    let limit = parse_iec_bytes(parts.next().unwrap_or("").trim());
+    (used, limit)
+}
+
+fn get_stats_sync() -> Result<Vec<ContainerStats>, String> {
+    let output = Command::new("docker")
+        .args(["stats", "--no-stream", "--format", "{{json .}}"])
+        .output()
+        .map_err(|e| format!("Failed to run docker stats: {}", e))?;
+
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("docker stats: {}", err.trim()));
+    }
+
+    let mut stats = Vec::new();
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let line = line.trim();
+        if line.is_empty() { continue; }
+        let v: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let name = v["Name"].as_str().unwrap_or("")
+            .trim_start_matches('/')
+            .to_string();
+        if name.is_empty() { continue; }
+        let cpu_pct = parse_pct(v["CPUPerc"].as_str().unwrap_or("0%"));
+        let mem_pct = parse_pct(v["MemPerc"].as_str().unwrap_or("0%"));
+        let (mem_used_bytes, mem_limit_bytes) =
+            parse_mem_usage(v["MemUsage"].as_str().unwrap_or("0B / 0B"));
+        stats.push(ContainerStats { name, cpu_pct, mem_used_bytes, mem_limit_bytes, mem_pct });
+    }
+    Ok(stats)
+}
+
+/// Run `docker stats --no-stream` and return resource usage for all running containers.
+#[tauri::command]
+pub async fn docker_stats() -> Result<Vec<ContainerStats>, String> {
+    tauri::async_runtime::spawn_blocking(get_stats_sync)
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Read a text file from the filesystem. Handles three path types:
