@@ -3,6 +3,7 @@ import { Trash2 } from 'lucide-react'
 import clsx from 'clsx'
 import * as api from '../api'
 import type { DockerNetwork } from '../types'
+import { useAppStore } from '../../../store/appStore'
 
 /** Format an ISO date string as relative ("3 months ago") for recent dates,
  *  or a short absolute date for older ones. */
@@ -53,10 +54,15 @@ export default function NetworksTab() {
 
   const doRemove = async (id: string) => {
     setBusy(id); setConfirmId(null); setActionError(null)
+    const { addTerminalLine } = useAppStore.getState()
+    const name = networks.find(n => n.id === id)?.name || id.slice(0, 12)
+    addTerminalLine(`$ docker network rm ${id.slice(0, 12)}`, 'cmd')
     try {
       await api.dockerNetworkRemove(id)
+      addTerminalLine(`  ✓ ${name} removed`, 'success')
       setNetworks(prev => prev.filter(n => n.id !== id))
     } catch (e) {
+      addTerminalLine(`  ✗ ${String(e)}`, 'error')
       setActionError(String(e))
     } finally { setBusy(null) }
   }

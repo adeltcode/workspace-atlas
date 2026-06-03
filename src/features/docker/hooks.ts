@@ -56,25 +56,24 @@ export function useDockerData() {
 
       if (s.available) {
         addTerminalLine(`  → Docker v${s.version ?? 'unknown'}`, 'info')
-        addTerminalLine(`$ ${CMD_DF}`, 'cmd')
-        addTerminalLine(`$ ${CMD_IMGS}`, 'cmd')
-        addTerminalLine(`$ ${CMD_CTRS}`, 'cmd')
-        addTerminalLine(`$ ${CMD_VOLS}`, 'cmd')
 
-        const [dfData, imgData, ctrData, volData] = await Promise.all([
-          api.dockerSystemDf()
-            .then(d => { addTerminalLine('  ✓ system df complete', 'success'); return d })
-            .catch(e => { addTerminalLine(`  ✗ ${String(e)}`, 'error'); throw e }),
-          api.dockerImages()
-            .then(d => { addTerminalLine(`  ✓ ${d.length} image(s) loaded`, 'success'); return d })
-            .catch(e => { addTerminalLine(`  ✗ ${String(e)}`, 'error'); throw e }),
-          api.dockerContainers()
-            .then(d => { addTerminalLine(`  ✓ ${d.length} container(s) loaded`, 'success'); return d })
-            .catch(e => { addTerminalLine(`  ✗ ${String(e)}`, 'error'); throw e }),
-          api.dockerVolumes()
-            .then(d => { addTerminalLine(`  ✓ ${d.length} volume(s) loaded`, 'success'); return d })
-            .catch(e => { addTerminalLine(`  ✗ ${String(e)}`, 'error'); throw e }),
-        ])
+        // Run sequentially so the terminal shows command → result → command → result
+        // instead of all commands first then all results together.
+        addTerminalLine(`$ ${CMD_DF}`, 'cmd')
+        const dfData = await api.dockerSystemDf()
+        addTerminalLine('  ✓ system df complete', 'success')
+
+        addTerminalLine(`$ ${CMD_IMGS}`, 'cmd')
+        const imgData = await api.dockerImages()
+        addTerminalLine(`  ✓ ${imgData.length} image(s) loaded`, 'success')
+
+        addTerminalLine(`$ ${CMD_CTRS}`, 'cmd')
+        const ctrData = await api.dockerContainers()
+        addTerminalLine(`  ✓ ${ctrData.length} container(s) loaded`, 'success')
+
+        addTerminalLine(`$ ${CMD_VOLS}`, 'cmd')
+        const volData = await api.dockerVolumes()
+        addTerminalLine(`  ✓ ${volData.length} volume(s) loaded`, 'success')
 
         setDf(dfData)
         setImages(imgData)
@@ -103,12 +102,53 @@ export function useDockerData() {
       setLoading(false)
       running.current = false
     }
-  }, [])
+  }, []) // eslint-disable-line
 
-  /** Force a fresh fetch regardless of cache age. */
+  /** Force a fresh fetch of all Docker data. */
   const refresh = useCallback(() => fetchData(true), [fetchData])
+
+  /**
+   * Refresh only the containers list — used after a single container
+   * start/stop/remove so we don't reload images, volumes, and df.
+   */
+  const refreshContainers = useCallback(async () => {
+    const { addTerminalLine } = useAppStore.getState()
+    addTerminalLine(`$ ${CMD_CTRS}`, 'cmd')
+    try {
+      const ctrData = await api.dockerContainers()
+      addTerminalLine(`  ✓ ${ctrData.length} container(s)`, 'success')
+      setContainers(ctrData)
+      // Keep cache in sync so the next full refresh doesn't undo this
+      const st = useAppStore.getState()
+      if (st.dockerCache) {
+        st.setDockerCache({ ...st.dockerCache, containers: ctrData, fetchedAt: Date.now() })
+      }
+    } catch (e) {
+      addTerminalLine(`  ✗ ${String(e)}`, 'error')
+    }
+  }, []) // eslint-disable-line — setContainers is stable (from useState)
+
+  /**
+   * Refresh only the volumes list — used after a single volume remove/prune
+   * so we don't reload everything else.
+   */
+  const refreshVolumes = useCallback(async () => {
+    const { addTerminalLine } = useAppStore.getState()
+    addTerminalLine(`$ ${CMD_VOLS}`, 'cmd')
+    try {
+      const volData = await api.dockerVolumes()
+      addTerminalLine(`  ✓ ${volData.length} volume(s)`, 'success')
+      setVolumes(volData)
+      const st = useAppStore.getState()
+      if (st.dockerCache) {
+        st.setDockerCache({ ...st.dockerCache, volumes: volData, fetchedAt: Date.now() })
+      }
+    } catch (e) {
+      addTerminalLine(`  ✗ ${String(e)}`, 'error')
+    }
+  }, []) // eslint-disable-line — setVolumes is stable (from useState)
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  return { status, df, images, containers, volumes, loading, error, refresh }
+  return { status, df, images, containers, volumes, loading, error, refresh, refreshContainers, refreshVolumes }
 }

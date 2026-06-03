@@ -1599,6 +1599,13 @@ pub async fn docker_volume_restore(
     Ok(())
 }
 
+/// Emitted as a `shell-out` event so the terminal shows the real command.
+#[derive(serde::Serialize, Clone)]
+struct ShellOut {
+    text:   String,
+    stderr: bool,
+}
+
 /// Backup compose config files for a project.
 /// - Skips files whose content is unchanged since the last backup (deduplication).
 /// - Keeps at most 10 backups per (project, original_path), pruning the oldest.
@@ -1606,6 +1613,7 @@ pub async fn docker_volume_restore(
 /// Returns only the entries that were actually saved (empty = no changes).
 #[tauri::command]
 pub async fn docker_backup_compose(
+    app: tauri::AppHandle,
     project: String,
     config_files: Vec<String>,
     backup_dir: String,
@@ -1651,8 +1659,27 @@ pub async fn docker_backup_compose(
         let filename  = format!("{}_{}__{}.{}", project, stem, ts_to_datetime_str(ts), ext);
         let dest_path = format!("{}/{}", compose_dir.replace('\\', "/"), filename);
 
+        // Emit the real PowerShell command the user could run themselves
+        let display_src = if is_windows_absolute(src_str) {
+            src_str.replace('/', "\\")
+        } else {
+            wsl_mount_to_windows(src_str)
+                .map(|p| p.replace('/', "\\"))
+                .unwrap_or_else(|| src_str.to_string())
+        };
+        let display_dest = dest_path.replace('/', "\\");
+        app.emit("shell-out", ShellOut {
+            text: format!("Copy-Item -Path \"{}\" -Destination \"{}\"", display_src, display_dest),
+            stderr: false,
+        }).ok();
+
         fs::write(&dest_path, &content)
             .map_err(|e| format!("Failed to write '{}': {}", dest_path, e))?;
+
+        app.emit("shell-out", ShellOut {
+            text: format!("  \u{2713} saved {}", filename),
+            stderr: false,
+        }).ok();
 
         let size_bytes = fs::metadata(&dest_path).map(|m| m.len()).unwrap_or(0);
 
@@ -1718,6 +1745,7 @@ pub async fn docker_list_compose_backups(
 /// Delete a single compose backup archive and remove it from the manifest.
 #[tauri::command]
 pub async fn docker_delete_compose_backup(
+    app: tauri::AppHandle,
     backup_dir: String,
     filename: String,
 ) -> Result<(), String> {
@@ -1728,12 +1756,23 @@ pub async fn docker_delete_compose_backup(
         .map(|e| e.path.clone())
         .unwrap_or_else(|| format!("{}/docker/compose/{}", backup_dir, filename));
 
+    app.emit("shell-out", ShellOut {
+        text:   format!("Remove-Item \"{}\"", path.replace('/', "\\")),
+        stderr: false,
+    }).ok();
+
     if std::path::Path::new(&path).exists() {
         std::fs::remove_file(&path)
             .map_err(|e| format!("Failed to delete '{}': {}", path, e))?;
     }
     manifest.backups.retain(|e| e.filename != filename);
-    write_compose_manifest(&backup_dir, &manifest)
+    write_compose_manifest(&backup_dir, &manifest)?;
+
+    app.emit("shell-out", ShellOut {
+        text:   format!("  \u{2713} deleted {}", filename),
+        stderr: false,
+    }).ok();
+    Ok(())
 }
 
 /// Returns true if `path` contains no files anywhere in its tree.
@@ -1827,7 +1866,11 @@ pub async fn transfer_backups(from_dir: String, to_dir: String) -> Result<Transf
 
 /// Delete a backup archive and remove its entry from the manifest.
 #[tauri::command]
-pub async fn docker_delete_backup(backup_dir: String, filename: String) -> Result<(), String> {
+pub async fn docker_delete_backup(
+    app: tauri::AppHandle,
+    backup_dir: String,
+    filename: String,
+) -> Result<(), String> {
     let mut manifest = read_manifest(&backup_dir);
 
     // Find the stored path from the manifest so we delete the right file.
@@ -1838,13 +1881,24 @@ pub async fn docker_delete_backup(backup_dir: String, filename: String) -> Resul
         .map(|e| e.path.clone())
         .unwrap_or_else(|| format!("{}/docker/volumes/{}", backup_dir, filename));
 
+    app.emit("shell-out", ShellOut {
+        text:   format!("Remove-Item \"{}\"", path.replace('/', "\\")),
+        stderr: false,
+    }).ok();
+
     if std::path::Path::new(&path).exists() {
         std::fs::remove_file(&path)
             .map_err(|e| format!("Failed to delete '{}': {}", path, e))?;
     }
 
     manifest.backups.retain(|e| e.filename != filename);
-    write_manifest(&backup_dir, &manifest)
+    write_manifest(&backup_dir, &manifest)?;
+
+    app.emit("shell-out", ShellOut {
+        text:   format!("  \u{2713} deleted {}", filename),
+        stderr: false,
+    }).ok();
+    Ok(())
 }
 
 /// Open a native folder-picker dialog and return the selected path.

@@ -5,6 +5,7 @@ mod shell;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .manage(shell::ShellState(std::sync::Arc::new(std::sync::Mutex::new(None))))
         .invoke_handler(tauri::generate_handler![
             docker::docker_check,
             docker::docker_system_df,
@@ -33,6 +34,7 @@ pub fn run() {
             docker::transfer_backups,
             docker::pick_backup_folder,
             shell::shell_run,
+            shell::shell_kill,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

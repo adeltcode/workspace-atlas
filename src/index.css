@@ -1851,6 +1851,14 @@ button:focus-visible {
   color: var(--chrome-text-muted);
 }
 
+.terminal-kill-btn {
+  color: var(--color-danger);
+}
+.terminal-kill-btn:hover {
+  background: rgba(255, 59, 59, 0.12);
+  color: var(--color-danger);
+}
+
 .rotate-180 { transform: rotate(180deg); }
 
 .terminal-body {
@@ -1862,6 +1870,7 @@ button:focus-visible {
   gap: 1px;
   scrollbar-width: thin;
   scrollbar-color: var(--chrome-divider) transparent;
+  user-select: text;
 }
 
 .terminal-body::-webkit-scrollbar       { width: 4px; }
@@ -1889,15 +1898,11 @@ button:focus-visible {
   to   { opacity: 1; transform: translateX(0); }
 }
 
-.tl-ts {
-  color: var(--chrome-text-subtle);
-  font-size: 10px;
-  white-space: nowrap;
-  flex-shrink: 0;
-  padding-top: 1px;
+.tl-text {
+  white-space: pre-wrap;   /* preserve tabs and indentation from command output */
+  word-break: break-word;  /* only break long words as a last resort */
+  user-select: text;
 }
-
-.tl-text { word-break: break-all; }
 
 /* Line type colors */
 .tl-cmd     .tl-text { color: var(--color-accent-hover); font-weight: 500; }
@@ -3878,6 +3883,7 @@ button:focus-visible {
   font-size: 11.5px;
   line-height: 1.55;
   padding: 6px 0;
+  user-select: text;
 }
 .log-viewer-empty {
   padding: 20px 16px;
@@ -3911,6 +3917,7 @@ button:focus-visible {
   white-space: pre-wrap;
   color: var(--color-text-primary);
   min-width: 0;
+  user-select: text;
 }
 .log-line--error .log-msg { color: inherit; }
 

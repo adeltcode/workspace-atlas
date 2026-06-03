@@ -62,6 +62,7 @@ interface AppState {
   terminalLines: TerminalLine[]
   terminalOpen: boolean
   addTerminalLine: (text: string, type: TerminalLine['type']) => void
+  addTerminalLines: (items: Array<{ text: string; type: TerminalLine['type'] }>) => void
   clearTerminal: () => void
   setTerminalOpen: (open: boolean) => void
   toggleTerminal: () => void
@@ -129,10 +130,17 @@ export const useAppStore = create<AppState>()(
       terminalOpen: false,
       addTerminalLine: (text, type) =>
         set((s) => ({
-          // Do NOT force-open the terminal — user controls visibility explicitly
           terminalLines: [
             ...s.terminalLines,
             { id: `${++_lineId}`, text, type, ts: Date.now() },
+          ].slice(-MAX_TERMINAL_LINES),
+        })),
+      // Batch variant — one set() call for many lines, avoids per-line re-renders
+      addTerminalLines: (items) =>
+        set((s) => ({
+          terminalLines: [
+            ...s.terminalLines,
+            ...items.map(item => ({ id: `${++_lineId}`, text: item.text, type: item.type, ts: Date.now() })),
           ].slice(-MAX_TERMINAL_LINES),
         })),
       clearTerminal:   () => set({ terminalLines: [] }),

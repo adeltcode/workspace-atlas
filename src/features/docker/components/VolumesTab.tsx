@@ -127,7 +127,7 @@ export default function VolumesTab({
     setVolProgress(prev => ({ ...prev, [name]: { status: 'running', progress: 0, message: 'Starting…' } }))
 
     const { addTerminalLine } = useAppStore.getState()
-    addTerminalLine(`─── Backup: ${name}`, 'cmd')
+    addTerminalLine(`─── backing up: ${name}`, 'info')
 
     const unlisten = await listen<BackupProgress>('backup-progress', e => {
       const { volume, step, progress, done, error, filename, cmd } = e.payload
@@ -168,7 +168,7 @@ export default function VolumesTab({
     setConfirmRestore(null)
     setIsRestoring(true)
     const { addTerminalLine } = useAppStore.getState()
-    addTerminalLine(`─── Restore: ${entry.volume}`, 'cmd')
+    addTerminalLine(`─── restoring: ${entry.volume}`, 'info')
     const unlisten = await listen<BackupProgress>('backup-progress', e => {
       const { step, done, error, cmd } = e.payload
       if (cmd) addTerminalLine(`$ ${cmd}`, 'cmd')
@@ -193,8 +193,9 @@ export default function VolumesTab({
         ...prev,
         [entry.volume]: (prev[entry.volume] ?? []).filter(b => b.filename !== entry.filename),
       }))
-    } catch { /* entry stays in list */ }
-    finally { setIsDeletingEntry(null) }
+    } catch (e) {
+      useAppStore.getState().addTerminalLine(`  ✗ ${String(e)}`, 'error')
+    } finally { setIsDeletingEntry(null) }
   }
 
   // ── Volume remove ─────────────────────────────────────────────────────────
@@ -225,15 +226,31 @@ export default function VolumesTab({
 
   const doRemove = async (name: string) => {
     setBusy(name); setConfirmId(null); setActionError(null)
-    try { await api.dockerVolumeRemove(name); onRefresh() }
-    catch (e) { setActionError(String(e)) }
+    const { addTerminalLine } = useAppStore.getState()
+    addTerminalLine(`$ docker volume rm ${name}`, 'cmd')
+    try {
+      await api.dockerVolumeRemove(name)
+      addTerminalLine(`  ✓ ${name} removed`, 'success')
+      onRefresh()
+    } catch (e) {
+      addTerminalLine(`  ✗ ${String(e)}`, 'error')
+      setActionError(String(e))
+    }
     finally { setBusy(null) }
   }
 
   const doPruneAll = async () => {
     setPruningAll(true); setActionError(null)
-    try { await api.dockerVolumesPrune(); onRefresh() }
-    catch (e) { setActionError(String(e)) }
+    const { addTerminalLine } = useAppStore.getState()
+    addTerminalLine('$ docker volume prune -f', 'cmd')
+    try {
+      await api.dockerVolumesPrune()
+      addTerminalLine('  ✓ unused volumes pruned', 'success')
+      onRefresh()
+    } catch (e) {
+      addTerminalLine(`  ✗ ${String(e)}`, 'error')
+      setActionError(String(e))
+    }
     finally { setPruningAll(false) }
   }
 

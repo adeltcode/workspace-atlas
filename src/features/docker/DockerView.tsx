@@ -51,7 +51,7 @@ const TAB_SUBTITLES: Partial<Record<DockerTab, string>> = {
 export default function DockerView() {
   const dockerTab = useAppStore(s => s.dockerTab)
   const setDockerTab = useAppStore(s => s.setDockerTab)
-  const { status, df, images, containers, volumes, loading, error, refresh } = useDockerData()
+  const { status, df, images, containers, volumes, loading, error, refresh, refreshContainers, refreshVolumes } = useDockerData()
   const [composeTick, setComposeTick] = useState(0)
 
   const online   = status?.available ?? false
@@ -160,12 +160,12 @@ export default function DockerView() {
         <div className="docker-tab-content">
           {dockerTab === 'overview'   && <OverviewTab df={df} containers={containers} loading={loading} />}
           {dockerTab === 'images'     && <ImagesTab images={images} loading={loading} />}
-          {dockerTab === 'containers' && <ContainersTab containers={containers} loading={loading} onRefresh={refresh} />}
+          {dockerTab === 'containers' && <ContainersTab containers={containers} loading={loading} onRefresh={refreshContainers} />}
 
           {/* VolumesTab stays mounted while Docker is online so that in-progress
               backups, event listeners, and progress state survive tab switches. */}
           <div className={dockerTab !== 'volumes' ? 'tab-hidden' : undefined}>
-            <VolumesTab volumes={volumes} loading={loading} onRefresh={refresh} />
+            <VolumesTab volumes={volumes} loading={loading} onRefresh={refreshVolumes} />
           </div>
 
           {dockerTab === 'networks'   && <NetworksTab />}

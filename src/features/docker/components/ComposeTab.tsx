@@ -210,8 +210,8 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
     try {
       await api.dockerDeleteComposeBackup(backupDir, entry.filename)
       setComposeBackups(prev => prev.filter(b => b.filename !== entry.filename))
-    } catch {
-      // silent — backup history panel will just stay unchanged
+    } catch (e) {
+      useAppStore.getState().addTerminalLine(`  ✗ ${String(e)}`, 'error')
     } finally { setDeletingFile(null) }
   }
 
@@ -223,15 +223,18 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
     if (!selected || !backupDir) return
     setBackingUp(true)
     setBackupMsg(null)
+    const { addTerminalLine } = useAppStore.getState()
     try {
       const saved = await api.dockerBackupCompose(selected.name, selected.config_files, backupDir)
       if (saved.length === 0) {
+        addTerminalLine(`  → already up to date`, 'info')
         setBackupMsg({ type: 'info', text: 'Already up to date — no changes to back up' })
       } else {
         setBackupMsg({ type: 'success', text: `${saved.length} file${saved.length !== 1 ? 's' : ''} backed up` })
         await loadComposeBackups(selected.name)
       }
     } catch (e) {
+      addTerminalLine(`  ✗ ${String(e)}`, 'error')
       setBackupMsg({ type: 'error', text: String(e) })
     } finally { setBackingUp(false) }
   }

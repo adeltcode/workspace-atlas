@@ -3,6 +3,7 @@ import { Play, Square, Trash2, ChevronUp, ChevronDown, FileText, RefreshCw, X } 
 import clsx from 'clsx'
 import * as api from '../api'
 import type { DockerContainer } from '../types'
+import { useAppStore } from '../../../store/appStore'
 
 type SortKey    = 'name' | 'image' | 'state' | 'created_since'
 type SortDir    = 'asc' | 'desc'
@@ -218,8 +219,15 @@ export default function ContainersTab({
   const bulkStart = async () => {
     if (!selectedStopped.length || bulkBusy) return
     setBulkBusy(true)
+    const { addTerminalLine } = useAppStore.getState()
     for (const c of selectedStopped) {
-      try { await api.dockerContainerAction(c.id, 'start') } catch { /* continue */ }
+      addTerminalLine(`$ docker start ${c.id.slice(0, 12)}`, 'cmd')
+      try {
+        await api.dockerContainerAction(c.id, 'start')
+        addTerminalLine(`  ✓ ${c.name || c.id.slice(0, 12)} started`, 'success')
+      } catch (e) {
+        addTerminalLine(`  ✗ ${String(e)}`, 'error')
+      }
     }
     setSelectedIds(new Set()); onRefresh(); setBulkBusy(false)
   }
@@ -227,8 +235,15 @@ export default function ContainersTab({
   const bulkStop = async () => {
     if (!selectedRunning.length || bulkBusy) return
     setBulkBusy(true)
+    const { addTerminalLine } = useAppStore.getState()
     for (const c of selectedRunning) {
-      try { await api.dockerContainerAction(c.id, 'stop') } catch { /* continue */ }
+      addTerminalLine(`$ docker stop ${c.id.slice(0, 12)}`, 'cmd')
+      try {
+        await api.dockerContainerAction(c.id, 'stop')
+        addTerminalLine(`  ✓ ${c.name || c.id.slice(0, 12)} stopped`, 'success')
+      } catch (e) {
+        addTerminalLine(`  ✗ ${String(e)}`, 'error')
+      }
     }
     setSelectedIds(new Set()); onRefresh(); setBulkBusy(false)
   }
@@ -236,8 +251,15 @@ export default function ContainersTab({
   const bulkRemove = async () => {
     if (!selectedStopped.length || bulkBusy) return
     setBulkBusy(true)
+    const { addTerminalLine } = useAppStore.getState()
     for (const c of selectedStopped) {
-      try { await api.dockerContainerAction(c.id, 'remove') } catch { /* continue */ }
+      addTerminalLine(`$ docker rm ${c.id.slice(0, 12)}`, 'cmd')
+      try {
+        await api.dockerContainerAction(c.id, 'remove')
+        addTerminalLine(`  ✓ ${c.name || c.id.slice(0, 12)} removed`, 'success')
+      } catch (e) {
+        addTerminalLine(`  ✗ ${String(e)}`, 'error')
+      }
     }
     setSelectedIds(new Set()); onRefresh(); setBulkBusy(false)
   }
@@ -246,8 +268,19 @@ export default function ContainersTab({
 
   const doAction = async (id: string, action: 'start' | 'stop' | 'remove') => {
     setBusy(id); setConfirmId(null); setActionError(null)
-    try { await api.dockerContainerAction(id, action); onRefresh() }
-    catch (e) { setActionError(String(e)) }
+    const { addTerminalLine } = useAppStore.getState()
+    const sub  = action === 'remove' ? 'rm' : action
+    const name = containers.find(c => c.id === id)?.name || id.slice(0, 12)
+    addTerminalLine(`$ docker ${sub} ${id.slice(0, 12)}`, 'cmd')
+    try {
+      await api.dockerContainerAction(id, action)
+      const past = action === 'start' ? 'started' : action === 'stop' ? 'stopped' : 'removed'
+      addTerminalLine(`  ✓ ${name} ${past}`, 'success')
+      onRefresh()
+    } catch (e) {
+      addTerminalLine(`  ✗ ${String(e)}`, 'error')
+      setActionError(String(e))
+    }
     finally { setBusy(null) }
   }
 

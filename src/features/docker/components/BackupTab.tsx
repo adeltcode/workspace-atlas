@@ -267,7 +267,7 @@ export default function BackupTab({
     for (const v of selected) initial[v] = { status: 'queued', progress: 0, message: 'Queued…' }
     setVolProgress(initial); setIsBacking(true)
     const { addTerminalLine } = useAppStore.getState()
-    addTerminalLine(`─── Volume backup (${selected.size} volume${selected.size !== 1 ? 's' : ''})`, 'cmd')
+    addTerminalLine(`─── Volume backup (${selected.size} volume${selected.size !== 1 ? 's' : ''})`, 'info')
     const unlisten = await listen<BackupProgress>('backup-progress', e => {
       const { volume, step, progress, done, error, filename, cmd } = e.payload
       const key = volume ?? ''
@@ -286,7 +286,7 @@ export default function BackupTab({
     })
     try {
       for (const vol of selected) {
-        addTerminalLine(`─── ${vol}`, 'cmd')
+        addTerminalLine(`─── backing up: ${vol}`, 'info')
         setVolProgress(prev => ({ ...prev, [vol]: { ...prev[vol], status: 'running' } }))
         await api.dockerVolumeBackup(vol, backupDir)
       }
@@ -302,7 +302,7 @@ export default function BackupTab({
   const runRestore = async (entry: VolumeBackupEntry) => {
     setConfirmRestore(null)
     const { addTerminalLine } = useAppStore.getState()
-    addTerminalLine(`─── Restore: ${entry.volume}`, 'cmd')
+    addTerminalLine(`─── restoring: ${entry.volume}`, 'info')
     setVolProgress(prev => ({ ...prev, [entry.volume]: { status: 'running', progress: 10, message: 'Starting restore…' } }))
     const unlisten = await listen<BackupProgress>('backup-progress', e => {
       const { volume, step, progress, done, error, cmd } = e.payload
@@ -330,10 +330,14 @@ export default function BackupTab({
 
   const runDeleteVolBackup = async (entry: VolumeBackupEntry) => {
     setConfirmDelete(null); setIsDeleting(true)
+    const { addTerminalLine } = useAppStore.getState()
     try {
       await api.dockerDeleteBackup(backupDir, entry.filename)
       setBackups(prev => prev.filter(b => b.filename !== entry.filename))
-    } catch (e) { addNotice('error', `Delete failed: ${String(e)}`) }
+    } catch (e) {
+      addTerminalLine(`  ✗ ${String(e)}`, 'error')
+      addNotice('error', `Delete failed: ${String(e)}`)
+    }
     finally { setIsDeleting(false) }
   }
 
@@ -342,15 +346,18 @@ export default function BackupTab({
   const handleBackupCompose = async (project: ComposeProject) => {
     if (!backupDir) { addNotice('error', 'Set a backup directory first'); return }
     setBackingUpCompose(prev => new Set([...prev, project.name]))
+    const { addTerminalLine } = useAppStore.getState()
     try {
       const saved = await api.dockerBackupCompose(project.name, project.config_files, backupDir)
       if (saved.length === 0) {
+        addTerminalLine(`  → ${project.name}: already up to date`, 'info')
         addNotice('info', `${project.name}: No changes — already up to date`)
       } else {
         addNotice('success', `${project.name}: ${saved.length} file${saved.length !== 1 ? 's' : ''} backed up`)
         await loadComposeBackups(backupDir)
       }
     } catch (e) {
+      addTerminalLine(`  ✗ ${String(e)}`, 'error')
       addNotice('error', `${project.name}: backup failed — ${String(e)}`)
     } finally {
       setBackingUpCompose(prev => { const s = new Set(prev); s.delete(project.name); return s })
@@ -359,10 +366,14 @@ export default function BackupTab({
 
   const deleteComposeBackup = async (entry: ComposeBackupEntry) => {
     setDeletingCompose(entry.filename)
+    const { addTerminalLine } = useAppStore.getState()
     try {
       await api.dockerDeleteComposeBackup(backupDir, entry.filename)
       setComposeBackups(prev => prev.filter(b => b.filename !== entry.filename))
-    } catch (e) { addNotice('error', `Delete failed: ${String(e)}`) }
+    } catch (e) {
+      addTerminalLine(`  ✗ ${String(e)}`, 'error')
+      addNotice('error', `Delete failed: ${String(e)}`)
+    }
     finally { setDeletingCompose(null) }
   }
 
