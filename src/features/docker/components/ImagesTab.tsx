@@ -28,10 +28,11 @@ export default function ImagesTab({ images, loading }: { images: DockerImage[]; 
   const { dockerKeepList, addToKeepList, removeFromKeepList } = useAppStore()
 
   // Consume a pre-filter set by the overview cleanup panel (ephemeral, one-shot)
-  const [showDanglingOnly, setShowDanglingOnly] = useState(() => {
+  const [imageFilter, setImageFilter] = useState<'dangling' | 'unused-tagged' | null>(() => {
     const s = useAppStore.getState()
-    if (s.imagesFilter === 'dangling') { s.setImagesFilter(null); return true }
-    return false
+    const f = s.imagesFilter
+    if (f) { s.setImagesFilter(null); return f }
+    return null
   })
 
   const [sortKey, setSortKey] = useState<SortKey>('size_bytes')
@@ -47,7 +48,11 @@ export default function ImagesTab({ images, loading }: { images: DockerImage[]; 
   const sorted = useMemo(() => {
     const q = search.toLowerCase()
     return [...images]
-      .filter(img => !showDanglingOnly || !img.in_use)
+      .filter(img => {
+        if (imageFilter === 'dangling')      return !img.in_use && img.repository === '<none>'
+        if (imageFilter === 'unused-tagged') return !img.in_use && img.repository !== '<none>'
+        return true
+      })
       .filter(img => img.age_days <= maxAge)
       .filter(img => !q || img.repository.toLowerCase().includes(q) || img.tag.toLowerCase().includes(q) || img.id.includes(q))
       .sort((a, b) => {
@@ -56,7 +61,7 @@ export default function ImagesTab({ images, loading }: { images: DockerImage[]; 
         const cmp = av < bv ? -1 : av > bv ? 1 : 0
         return sortDir === 'asc' ? cmp : -cmp
       })
-  }, [images, sortKey, sortDir, maxAge, search, showDanglingOnly])
+  }, [images, sortKey, sortDir, maxAge, search, imageFilter])
 
   const rows = [...sorted.filter(i => dockerKeepList.includes(i.id)), ...sorted.filter(i => !dockerKeepList.includes(i.id))]
 
@@ -65,10 +70,12 @@ export default function ImagesTab({ images, loading }: { images: DockerImage[]; 
 
   return (
     <div className="img-tab">
-      {showDanglingOnly && (
+      {imageFilter && (
         <div className="prefilter-banner">
-          Showing dangling (unused) images only
-          <button className="prefilter-banner-close" onClick={() => setShowDanglingOnly(false)} title="Clear filter">
+          {imageFilter === 'dangling'
+            ? 'Showing dangling (<none>:<none>) images only'
+            : 'Showing unused tagged images only'}
+          <button className="prefilter-banner-close" onClick={() => setImageFilter(null)} title="Clear filter">
             <X size={12} />
           </button>
         </div>

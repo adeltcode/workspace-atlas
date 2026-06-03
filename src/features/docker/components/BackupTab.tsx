@@ -8,7 +8,7 @@ import { listen } from '@tauri-apps/api/event'
 import * as api from '../api'
 import { useAppStore } from '../../../store/appStore'
 import type { DockerVolume, VolumeBackupEntry, ComposeBackupEntry, ComposeProject, BackupProgress } from '../types'
-import { bytesToHuman, formatDate } from '../../../utils/format'
+import { bytesToHuman, formatDate, composeStatusLabel } from '../../../utils/format'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -34,17 +34,6 @@ interface Notice {
 /** Truncate long volume/project names with an ellipsis. */
 function truncName(name: string, max = 30): string {
   return name.length <= max ? name : name.slice(0, max - 1) + '…'
-}
-
-/** Return a dot class for compose status strings like "running(2), exited(1)". */
-function composeDot(status: string): 'running' | 'partial' | 'stopped' {
-  const parts = status.split(',').map(s => {
-    const m = s.trim().match(/^(\w+)\((\d+)\)$/)
-    return m ? { state: m[1], count: parseInt(m[2]) } : { state: s.trim(), count: 1 }
-  })
-  const total   = parts.reduce((s, p) => s + p.count, 0)
-  const running = parts.find(p => p.state === 'running')?.count ?? 0
-  return running === 0 ? 'stopped' : running === total ? 'running' : 'partial'
 }
 
 // ── Progress bar ──────────────────────────────────────────────────────────────
@@ -639,7 +628,7 @@ export default function BackupTab({
           <ul className="backup-item-list">
             {allComposeItems.map(item => {
               const isBacking  = backingUpCompose.has(item.name)
-              const dot        = item.project ? composeDot(item.project.status) : 'stopped'
+              const dot        = item.project ? composeStatusLabel(item.project.status).dot : 'stopped'
 
               return (
                 <li key={item.name} className="backup-item">

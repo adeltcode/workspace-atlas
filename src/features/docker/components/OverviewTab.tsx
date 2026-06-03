@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { CheckCircle, AlertTriangle, ChevronRight, RefreshCw, Trash2 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../../../store/appStore'
 import type { DockerStatus, DockerSystemDf, DockerContainer, DockerImage, DockerVolume, DiskUsageRow, ComposeProject, ContainerStats } from '../types'
-import { bytesToHuman } from '../../../utils/format'
+import { bytesToHuman, composeStatusLabel } from '../../../utils/format'
 import * as api from '../api'
 
 /**
@@ -35,21 +35,6 @@ function parseSizeBytes(s: string): number {
   if (s.endsWith('MB')) return n * 1e6
   if (s.endsWith('kB')) return n * 1e3
   return n
-}
-
-// ── Compose status helpers ────────────────────────────────────────────────────
-
-function composeStatusLabel(raw: string): { text: string; dot: 'running' | 'partial' | 'stopped' } {
-  const parts = raw.split(',').map(s => s.trim()).filter(Boolean).map(part => {
-    const m = part.match(/^(\w+)\((\d+)\)$/)
-    return m ? { state: m[1], count: parseInt(m[2], 10) } : { state: part, count: 1 }
-  })
-  if (!parts.length) return { text: raw || 'unknown', dot: 'stopped' }
-  const total   = parts.reduce((s, p) => s + p.count, 0)
-  const running = parts.find(p => p.state === 'running')?.count ?? 0
-  const text    = parts.map(p => `${p.count} ${p.state}`).join(', ')
-  const dot     = running === 0 ? 'stopped' : running === total ? 'running' : 'partial'
-  return { text, dot }
 }
 
 // ── Bar card ──────────────────────────────────────────────────────────────────
@@ -213,10 +198,7 @@ export default function OverviewTab({
   loading: boolean
   refreshTick?: number
 }) {
-  const setDockerTab       = useAppStore(s => s.setDockerTab)
-  const setImagesFilter    = useAppStore(s => s.setImagesFilter)
-  const setVolumesFilter   = useAppStore(s => s.setVolumesFilter)
-  const setComposePreselect = useAppStore(s => s.setComposePreselect)
+  const { setDockerTab, setImagesFilter, setVolumesFilter, setComposePreselect } = useAppStore()
 
   // ── Compose projects (fetched independently; refreshes with global tick) ──
   const [composeProjects, setComposeProjects] = useState<ComposeProject[]>([])
@@ -247,13 +229,13 @@ export default function OverviewTab({
 
   useEffect(() => { loadStats() }, [refreshTick, loadStats]) // eslint-disable-line
 
-  const topCpu = [...containerStats].sort((a, b) => b.cpu_pct - a.cpu_pct).slice(0, 3)
-  const topMem = [...containerStats].sort((a, b) => b.mem_used_bytes - a.mem_used_bytes).slice(0, 3)
+  const topCpu = useMemo(() => [...containerStats].sort((a, b) => b.cpu_pct - a.cpu_pct).slice(0, 3), [containerStats])
+  const topMem = useMemo(() => [...containerStats].sort((a, b) => b.mem_used_bytes - a.mem_used_bytes).slice(0, 3), [containerStats])
 
   // ── Hero counts ───────────────────────────────────────────────────────────
   const runningCtrs = containers.filter(c => c.state === 'running').length
   const pausedCtrs  = containers.filter(c => c.state === 'paused').length
-  const stoppedCtrs = containers.filter(c => c.state !== 'running' && c.state !== 'paused').length
+  const stoppedCtrs = containers.length - runningCtrs - pausedCtrs
   const restarting  = containers.filter(c => c.state === 'restarting')
   const dead        = containers.filter(c => c.state === 'dead')
 
@@ -286,12 +268,7 @@ export default function OverviewTab({
   const buildCacheBytes     = buildCacheFree ? parseSizeBytes(buildCacheFree) : 0
   const showBuildCache      = buildCacheBytes > 0
 
-  const totalFreeBytes =
-    (trueDangling.length > 0  ? trueDanglingBytes   : 0) +
-    (unusedTagged.length > 0  ? unusedTaggedBytes   : 0) +
-    (stale.length > 0         ? staleContainerBytes : 0) +
-    (unusedVols.length > 0    ? unusedVolBytes      : 0) +
-    (showBuildCache            ? buildCacheBytes     : 0)
+  const totalFreeBytes = trueDanglingBytes + unusedTaggedBytes + staleContainerBytes + unusedVolBytes + buildCacheBytes
 
   const allClean = trueDangling.length === 0 && unusedTagged.length === 0 &&
                    stale.length === 0 && unusedVols.length === 0 && !showBuildCache
@@ -404,9 +381,9 @@ export default function OverviewTab({
           <div className="stats-grid">
             <div className="stats-col">
               <div className="stats-col-label">CPU</div>
-              {topCpu.map(s => {
-                const maxCpu = topCpu[0].cpu_pct || 1
-                return (
+              {(() => {
+                const maxCpu = topCpu[0]?.cpu_pct > 0 ? topCpu[0].cpu_pct : 1
+                return topCpu.map(s => (
                   <div key={s.name} className="stats-row">
                     <span className="stats-name" title={s.name}>{s.name}</span>
                     <div className="stats-bar-wrap">
@@ -414,14 +391,14 @@ export default function OverviewTab({
                     </div>
                     <span className="stats-value">{s.cpu_pct.toFixed(1)}%</span>
                   </div>
-                )
-              })}
+                ))
+              })()}
             </div>
             <div className="stats-col">
               <div className="stats-col-label">Memory</div>
-              {topMem.map(s => {
-                const maxMem = topMem[0].mem_used_bytes || 1
-                return (
+              {(() => {
+                const maxMem = topMem[0]?.mem_used_bytes > 0 ? topMem[0].mem_used_bytes : 1
+                return topMem.map(s => (
                   <div key={s.name} className="stats-row">
                     <span className="stats-name" title={s.name}>{s.name}</span>
                     <div className="stats-bar-wrap">
@@ -429,8 +406,8 @@ export default function OverviewTab({
                     </div>
                     <span className="stats-value">{bytesToHuman(s.mem_used_bytes)}</span>
                   </div>
-                )
-              })}
+                ))
+              })()}
             </div>
           </div>
         )}
@@ -465,7 +442,7 @@ export default function OverviewTab({
               return (
                 <button
                   key={p.name}
-                  className="cleanup-row"
+                  className="cleanup-row cleanup-row--compose"
                   onClick={() => { setComposePreselect(p.name); setDockerTab('compose') }}
                 >
                   <span className={clsx('compose-status-dot', dot)} />
@@ -524,7 +501,7 @@ export default function OverviewTab({
                   label="Unused tagged images"
                   count={unusedTagged.length}
                   size={unusedTaggedBytes > 0 ? bytesToHuman(unusedTaggedBytes) : null}
-                  onClick={() => { setImagesFilter('dangling'); setDockerTab('images') }}
+                  onClick={() => { setImagesFilter('unused-tagged'); setDockerTab('images') }}
                 />
               )}
               {stale.length > 0 && (

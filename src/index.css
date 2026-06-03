@@ -2686,8 +2686,8 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
 }
 .stats-refresh-btn:disabled { opacity: 0.4; cursor: default; }
 
-/* Compose stack rows reuse .cleanup-row but have a different grid */
-.cleanup-row:has(.compose-status-dot) {
+/* Compose stack rows reuse .cleanup-row but have a different grid (dot + name + status + arrow) */
+.cleanup-row--compose {
   grid-template-columns: 10px 1fr auto auto;
 }
 

@@ -1,4 +1,4 @@
-import { useState, useMemo, Fragment } from 'react'
+import { useState, useMemo, useEffect, Fragment } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { Trash2, HardDriveDownload, ChevronRight, ChevronDown, RotateCcw, FolderOpen, X } from 'lucide-react'
@@ -67,11 +67,17 @@ export default function VolumesTab({
   onRefresh: () => void
 }) {
   const [search, setSearch]           = useState('')
-  const [usageFilter, setUsageFilter] = useState<UsageFilter>(() => {
-    const s = useAppStore.getState()
-    if (s.volumesFilter === 'unused') { s.setVolumesFilter(null); return 'unused' }
-    return 'all'
-  })
+  const [usageFilter, setUsageFilter] = useState<UsageFilter>('all')
+
+  // VolumesTab stays permanently mounted (tab-hidden pattern in DockerView).
+  // React to volumesFilter store updates even while the tab is not visible.
+  const volumesFilterSignal = useAppStore(s => s.volumesFilter)
+  useEffect(() => {
+    if (volumesFilterSignal === 'unused') {
+      useAppStore.getState().setVolumesFilter(null)
+      setUsageFilter('unused')
+    }
+  }, [volumesFilterSignal])
   const [confirmId, setConfirmId]     = useState<string | null>(null)
   const [busy, setBusy]               = useState<string | null>(null)
   const [pruningAll, setPruningAll]   = useState(false)

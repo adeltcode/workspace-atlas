@@ -44,10 +44,10 @@ interface AppState {
   setBackupPreselect: (name: string | null) => void
 
   // ── Tab pre-filters — set before navigating, consumed once by target tab (ephemeral)
-  imagesFilter: 'dangling' | null
+  imagesFilter: 'dangling' | 'unused-tagged' | null
   volumesFilter: 'unused' | null
   composePreselect: string | null
-  setImagesFilter:    (f: 'dangling' | null) => void
+  setImagesFilter:    (f: 'dangling' | 'unused-tagged' | null) => void
   setVolumesFilter:   (f: 'unused' | null) => void
   setComposePreselect: (name: string | null) => void
 

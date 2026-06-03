@@ -5,7 +5,7 @@ import clsx from 'clsx'
 import * as api from '../api'
 import { useAppStore } from '../../../store/appStore'
 import type { ComposeProject, ComposeBackupEntry } from '../types'
-import { bytesToHuman, formatDate } from '../../../utils/format'
+import { bytesToHuman, formatDate, composeStatusLabel } from '../../../utils/format'
 
 // ── YAML syntax highlighter ───────────────────────────────────────────────────
 
@@ -107,37 +107,6 @@ function PathOriginLine({ path }: { path: string }) {
     </>
   )
 }
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-
-interface ServiceState { state: string; count: number }
-
-function parseComposeStatus(raw: string): ServiceState[] {
-  return raw.split(',')
-    .map(s => s.trim())
-    .filter(Boolean)
-    .map(part => {
-      const m = part.match(/^(\w+)\((\d+)\)$/)
-      return m ? { state: m[1], count: parseInt(m[2], 10) } : { state: part, count: 1 }
-    })
-}
-
-function statusLabel(raw: string): { text: string; dot: 'running' | 'partial' | 'stopped' } {
-  const parts = parseComposeStatus(raw)
-  if (!parts.length) return { text: raw || 'unknown', dot: 'stopped' }
-
-  const total   = parts.reduce((s, p) => s + p.count, 0)
-  const running = parts.find(p => p.state === 'running')?.count ?? 0
-  const text    = parts.map(p => `${p.count} ${p.state}`).join(', ')
-
-  const dot = running === 0 ? 'stopped'
-    : running === total     ? 'running'
-    :                         'partial'
-
-  return { text, dot }
-}
-
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -267,7 +236,7 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
           </span>
         )}
         {projects.map(p => {
-          const { text: stText, dot } = statusLabel(p.status)
+          const { text: stText, dot } = composeStatusLabel(p.status)
           const isActive = selected?.name === p.name
           return (
             <button
