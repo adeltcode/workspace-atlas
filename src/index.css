@@ -2697,32 +2697,35 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
   white-space: nowrap;
 }
 
-/* Footer with CTA */
-.cleanup-footer {
+/* Full-width "Clean up" CTA button */
+.cleanup-cta-full {
   display: flex;
-  justify-content: flex-end;
-  padding: 10px 14px;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 12px 16px;
+  width: 100%;
+  background: var(--color-success-subtle);
+  border: none;
   border-top: 1px solid var(--color-border);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+.cleanup-cta-full:hover { background: rgba(54, 200, 90, 0.16); }
+
+.cleanup-cta-main {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-success);
 }
 
-.cleanup-cta-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 12px;
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-  font-weight: 600;
-  font-family: inherit;
-  background: var(--color-accent-subtle);
-  color: var(--color-accent-hover);
-  border: 1px solid transparent;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
-}
-.cleanup-cta-btn:hover {
-  background: rgba(108, 113, 255, 0.18);
-  border-color: var(--color-accent);
+.cleanup-cta-sub {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
 }
 
 /* =============================================================

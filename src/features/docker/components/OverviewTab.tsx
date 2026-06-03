@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { CheckCircle, AlertTriangle, ChevronRight, RefreshCw } from 'lucide-react'
+import { CheckCircle, AlertTriangle, ChevronRight, RefreshCw, Trash2 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../../../store/appStore'
 import type { DockerStatus, DockerSystemDf, DockerContainer, DockerImage, DockerVolume, DiskUsageRow, ComposeProject, ContainerStats } from '../types'
@@ -269,11 +269,16 @@ export default function OverviewTab({
   const hasFree   = totalFree != null && parseSizeBytes(totalFree) > 0
 
   // ── Cleanup data ──────────────────────────────────────────────────────────
-  const dangling   = images.filter(i => !i.in_use)
-  const stale      = containers.filter(c => c.stopped_days >= STALE_DAYS)
-  const unusedVols = volumes.filter(v => !v.in_use)
+  // Split unused images into two categories — they target different prune levels:
+  //   trueDangling  = <none>:<none>  (untagged intermediates)  → Level 1
+  //   unusedTagged  = named but unreferenced by any container  → Level 2
+  const trueDangling  = images.filter(i => !i.in_use && i.repository === '<none>')
+  const unusedTagged  = images.filter(i => !i.in_use && i.repository !== '<none>')
+  const stale         = containers.filter(c => c.stopped_days >= STALE_DAYS)
+  const unusedVols    = volumes.filter(v => !v.in_use)
 
-  const danglingBytes       = dangling.reduce((s, i) => s + i.size_bytes, 0)
+  const trueDanglingBytes   = trueDangling.reduce((s, i) => s + i.size_bytes, 0)
+  const unusedTaggedBytes   = unusedTagged.reduce((s, i) => s + i.size_bytes, 0)
   const staleContainerFree  = patchedDf ? parseReclaimSize(patchedDf.containers.reclaimable) : null
   const staleContainerBytes = staleContainerFree ? parseSizeBytes(staleContainerFree) : 0
   const unusedVolBytes      = unusedVols.reduce((s, v) => s + v.size_bytes, 0)
@@ -282,12 +287,14 @@ export default function OverviewTab({
   const showBuildCache      = buildCacheBytes > 0
 
   const totalFreeBytes =
-    (dangling.length > 0 ? danglingBytes : 0) +
-    (stale.length > 0 ? staleContainerBytes : 0) +
-    (unusedVols.length > 0 ? unusedVolBytes : 0) +
-    (showBuildCache ? buildCacheBytes : 0)
+    (trueDangling.length > 0  ? trueDanglingBytes   : 0) +
+    (unusedTagged.length > 0  ? unusedTaggedBytes   : 0) +
+    (stale.length > 0         ? staleContainerBytes : 0) +
+    (unusedVols.length > 0    ? unusedVolBytes      : 0) +
+    (showBuildCache            ? buildCacheBytes     : 0)
 
-  const allClean = dangling.length === 0 && stale.length === 0 && unusedVols.length === 0 && !showBuildCache
+  const allClean = trueDangling.length === 0 && unusedTagged.length === 0 &&
+                   stale.length === 0 && unusedVols.length === 0 && !showBuildCache
   const hasWarnings = !loading && (restarting.length > 0 || dead.length > 0)
 
   return (
@@ -502,12 +509,21 @@ export default function OverviewTab({
         ) : (
           <>
             <div className="cleanup-rows">
-              {dangling.length > 0 && (
+              {trueDangling.length > 0 && (
                 <CleanupRow
                   color="accent"
                   label="Dangling images"
-                  count={dangling.length}
-                  size={danglingBytes > 0 ? bytesToHuman(danglingBytes) : null}
+                  count={trueDangling.length}
+                  size={trueDanglingBytes > 0 ? bytesToHuman(trueDanglingBytes) : null}
+                  onClick={() => { setImagesFilter('dangling'); setDockerTab('images') }}
+                />
+              )}
+              {unusedTagged.length > 0 && (
+                <CleanupRow
+                  color="accent"
+                  label="Unused tagged images"
+                  count={unusedTagged.length}
+                  size={unusedTaggedBytes > 0 ? bytesToHuman(unusedTaggedBytes) : null}
                   onClick={() => { setImagesFilter('dangling'); setDockerTab('images') }}
                 />
               )}
@@ -540,12 +556,13 @@ export default function OverviewTab({
               )}
             </div>
 
-            <div className="cleanup-footer">
-              <button className="cleanup-cta-btn" onClick={() => setDockerTab('prune')}>
-                Open Prune tab
-                <ChevronRight size={13} />
-              </button>
-            </div>
+            <button className="cleanup-cta-full" onClick={() => setDockerTab('prune')}>
+              <span className="cleanup-cta-main">
+                <Trash2 size={14} />
+                Clean up ~{bytesToHuman(totalFreeBytes)} of space
+              </span>
+              <span className="cleanup-cta-sub">View breakdown and run safely in Prune tab</span>
+            </button>
           </>
         )}
       </div>
