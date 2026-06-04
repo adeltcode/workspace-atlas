@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { CheckCircle, AlertTriangle, ChevronRight, RefreshCw, Trash2 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../../../store/appStore'
@@ -83,19 +83,278 @@ function HeroSkeleton() {
   )
 }
 
-// ── Sparkline ─────────────────────────────────────────────────────────────────
+// ── Live Charts ───────────────────────────────────────────────────────────────
 
-function Sparkline({ values, color }: { values: number[]; color: string }) {
-  if (values.length < 2) return <div className="sparkline-ph" />
-  const max = Math.max(...values, 0.001)
-  const W = 64, H = 28
-  const pts = values.map((v, i) =>
-    `${(i / (values.length - 1)) * W},${H - (v / max) * (H - 4) - 1}`
-  ).join(' ')
+const CHART_COLORS = [
+  '#6c71ff', '#36c85a', '#f0a500', '#38bdf8',
+  '#a78bfa', '#ff5050', '#fb923c', '#34d399',
+]
+
+interface LiveSeries {
+  name:  string
+  color: string
+  cpu:   number[]
+  mem:   number[]
+}
+
+function padLeft(arr: number[], n: number): number[] {
+  if (arr.length >= n) return arr.slice(-n)
+  return [...Array(n - arr.length).fill(0), ...arr]
+}
+
+// Chart layout constants
+const CH = 148    // chart SVG height (px)
+const YT = 8      // top padding
+const YB = 22     // bottom padding (x-axis labels)
+const XL = 44     // left padding (y-axis labels)
+const XR = 8      // right padding
+
+function ChartPanel({
+  type, series, numPoints, hidden, hoverIdx, maxMem, onHover, onLeave,
+}: {
+  type:      'cpu' | 'mem'
+  series:    LiveSeries[]
+  numPoints: number
+  hidden:    Set<string>
+  hoverIdx:  number | null
+  maxMem:    number
+  onHover:   (idx: number) => void
+  onLeave:   () => void
+}) {
+  const svgRef = useRef<SVGSVGElement>(null)
+  const [svgW, setSvgW] = useState(300)
+
+  useEffect(() => {
+    const el = svgRef.current
+    if (!el) return
+    const ro = new ResizeObserver(([e]) => setSvgW(e.contentRect.width))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  const innerW = svgW - XL - XR
+  const innerH = CH - YT - YB
+
+  const xAt = (i: number) =>
+    XL + (numPoints <= 1 ? innerW / 2 : (i / (numPoints - 1)) * innerW)
+
+  const yFor = (v: number) => {
+    const scale = type === 'cpu' ? 100 : maxMem
+    return YT + (1 - Math.min(v, scale) / (scale || 1)) * innerH
+  }
+
+  const ticks = type === 'cpu'
+    ? [0, 25, 50, 75, 100]
+    : (() => {
+        const step = maxMem / 4
+        return [0, step, step * 2, step * 3, maxMem]
+      })()
+
+  const tickLabel = (v: number) =>
+    type === 'cpu' ? `${Math.round(v)}%` : bytesToHuman(v)
+
+  function handleMove(e: React.MouseEvent<SVGSVGElement>) {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const raw = Math.round((e.clientX - rect.left - XL) / innerW * (numPoints - 1))
+    onHover(Math.max(0, Math.min(numPoints - 1, raw)))
+  }
+
+  const visible = series.filter(s => !hidden.has(s.name))
+  const timeLabels = Array.from(new Set([0, Math.floor((numPoints - 1) / 2), numPoints - 1]))
+
   return (
-    <svg className="sparkline" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
-      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
-    </svg>
+    <div className="live-chart-wrap">
+      <div className="live-chart-title">{type === 'cpu' ? 'CPU %' : 'Memory'}</div>
+      <div style={{ position: 'relative' }}>
+        <svg
+          ref={svgRef}
+          className="live-chart-svg"
+          height={CH}
+          width="100%"
+          onMouseMove={handleMove}
+          onMouseLeave={onLeave}
+        >
+          {/* Grid lines + Y-axis */}
+          {ticks.map(v => {
+            const y = yFor(v)
+            return (
+              <g key={v}>
+                <line x1={XL} y1={y} x2={svgW - XR} y2={y}
+                  stroke="var(--color-border-light)"
+                  strokeWidth={v === 0 ? 1 : 0.5} />
+                <text x={XL - 5} y={y} fontSize={9}
+                  fill="var(--color-text-tertiary)" textAnchor="end"
+                  dominantBaseline="middle" fontFamily="inherit">
+                  {tickLabel(v)}
+                </text>
+              </g>
+            )
+          })}
+
+          {/* Series lines */}
+          {visible.map(s => {
+            const vals = padLeft(type === 'cpu' ? s.cpu : s.mem, numPoints)
+            const pts  = vals.map((v, i) => ({ x: xAt(i), y: yFor(v) }))
+            const line = pts.map(p => `${p.x},${p.y}`).join(' ')
+            const area = [
+              ...pts,
+              { x: xAt(numPoints - 1), y: YT + innerH },
+              { x: xAt(0), y: YT + innerH },
+            ].map(p => `${p.x},${p.y}`).join(' ')
+            const gid  = `lcg-${type}-${s.name.replace(/\W/g, '_')}`
+            const last = pts[pts.length - 1]
+            return (
+              <g key={s.name}>
+                <defs>
+                  <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%"   stopColor={s.color} stopOpacity={0.22} />
+                    <stop offset="100%" stopColor={s.color} stopOpacity={0}    />
+                  </linearGradient>
+                </defs>
+                <polygon points={area} fill={`url(#${gid})`} />
+                <polyline points={line} fill="none" stroke={s.color}
+                  strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+                {hoverIdx === null && (
+                  <circle cx={last.x} cy={last.y} r={3} fill={s.color} />
+                )}
+              </g>
+            )
+          })}
+
+          {/* Crosshair + intersection dots */}
+          {hoverIdx !== null && (
+            <>
+              <line
+                x1={xAt(hoverIdx)} y1={YT}
+                x2={xAt(hoverIdx)} y2={YT + innerH}
+                stroke="var(--color-text-secondary)"
+                strokeWidth={1} strokeDasharray="3 3"
+              />
+              {visible.map(s => {
+                const vals = padLeft(type === 'cpu' ? s.cpu : s.mem, numPoints)
+                return (
+                  <circle key={s.name}
+                    cx={xAt(hoverIdx)} cy={yFor(vals[hoverIdx])}
+                    r={4} fill={s.color}
+                    stroke="var(--color-bg-secondary)" strokeWidth={1.5}
+                  />
+                )
+              })}
+            </>
+          )}
+
+          {/* X-axis time labels */}
+          {timeLabels.map(i => {
+            const sAgo = (numPoints - 1 - i) * 5
+            return (
+              <text key={i} x={xAt(i)} y={CH - 5} fontSize={9}
+                fill="var(--color-text-tertiary)" textAnchor="middle"
+                fontFamily="inherit">
+                {sAgo === 0 ? 'now' : `-${sAgo}s`}
+              </text>
+            )
+          })}
+        </svg>
+
+        {/* Hover tooltip */}
+        {hoverIdx !== null && (() => {
+          const x     = xAt(hoverIdx)
+          const left  = x > svgW / 2 ? x - 144 : x + 12
+          const sAgo  = (numPoints - 1 - hoverIdx) * 5
+          const items = visible
+            .map(s => {
+              const vals = padLeft(type === 'cpu' ? s.cpu : s.mem, numPoints)
+              return { name: s.name, color: s.color, v: vals[hoverIdx] }
+            })
+            .sort((a, b) => b.v - a.v)
+          return (
+            <div className="live-chart-tooltip" style={{ left, top: YT + 4 }}>
+              {items.map(it => (
+                <div key={it.name} className="live-chart-tooltip-row">
+                  <span className="live-chart-tooltip-dot" style={{ background: it.color }} />
+                  <span className="live-chart-tooltip-name" title={it.name}>{it.name}</span>
+                  <span className="live-chart-tooltip-val">
+                    {type === 'cpu' ? `${it.v.toFixed(1)}%` : bytesToHuman(it.v)}
+                  </span>
+                </div>
+              ))}
+              <div className="live-chart-tooltip-time">
+                {sAgo === 0 ? 'current' : `${sAgo}s ago`}
+              </div>
+            </div>
+          )
+        })()}
+      </div>
+    </div>
+  )
+}
+
+function LiveCharts({
+  containerStats, statHistory,
+}: {
+  containerStats: ContainerStats[]
+  statHistory:    Map<string, { cpu: number[]; mem: number[] }>
+}) {
+  const [hidden,   setHidden]   = useState<Set<string>>(() => new Set())
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
+
+  const sorted = useMemo(
+    () => [...containerStats].sort((a, b) => b.cpu_pct - a.cpu_pct),
+    [containerStats],
+  )
+
+  const series: LiveSeries[] = useMemo(
+    () => sorted.map((s, i) => ({
+      name:  s.name,
+      color: CHART_COLORS[i % CHART_COLORS.length],
+      cpu:   statHistory.get(s.name)?.cpu?.length ? statHistory.get(s.name)!.cpu : [s.cpu_pct],
+      mem:   statHistory.get(s.name)?.mem?.length ? statHistory.get(s.name)!.mem : [s.mem_used_bytes],
+    })),
+    [sorted, statHistory],
+  )
+
+  const numPoints = useMemo(
+    () => Math.max(2, ...series.map(s => Math.max(s.cpu.length, s.mem.length))),
+    [series],
+  )
+
+  const maxMem = useMemo(() => {
+    let m = 1024 * 1024
+    series.forEach(s => { if (!hidden.has(s.name)) m = Math.max(m, ...s.mem) })
+    return m * 1.15
+  }, [series, hidden])
+
+  function toggleHide(name: string) {
+    setHidden(prev => {
+      const next = new Set(prev)
+      next.has(name) ? next.delete(name) : next.add(name)
+      return next
+    })
+  }
+
+  const shared = { series, numPoints, hidden, hoverIdx, maxMem,
+    onHover: setHoverIdx, onLeave: () => setHoverIdx(null) }
+
+  return (
+    <div className="live-charts">
+      <div className="live-charts-grid">
+        <ChartPanel type="cpu" {...shared} />
+        <ChartPanel type="mem" {...shared} />
+      </div>
+      <div className="live-chart-legend">
+        {series.map(s => (
+          <button
+            key={s.name}
+            className={clsx('live-chart-legend-btn', hidden.has(s.name) && 'live-chart-legend-btn--off')}
+            onClick={() => toggleHide(s.name)}
+          >
+            <span className="live-chart-legend-dot"
+              style={{ background: hidden.has(s.name) ? 'transparent' : s.color, borderColor: s.color }} />
+            <span className="live-chart-legend-name">{s.name}</span>
+          </button>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -525,27 +784,7 @@ export default function OverviewTab({
             </div>
           </div>
         ) : (
-          <div style={{ padding: '10px 14px' }}>
-            <div className="realtime-header">
-              <span />
-              <span className="realtime-col-label">CPU</span>
-              <span />
-              <span className="realtime-col-label">Memory</span>
-              <span />
-            </div>
-            {[...containerStats].sort((a, b) => b.cpu_pct - a.cpu_pct).map(s => {
-              const hist = statHistory.get(s.name)
-              return (
-                <div key={s.name} className="realtime-row">
-                  <span className="stats-name" title={s.name}>{s.name}</span>
-                  <Sparkline values={hist?.cpu ?? [s.cpu_pct]} color="var(--color-accent)" />
-                  <span className="stats-value">{s.cpu_pct.toFixed(1)}%</span>
-                  <Sparkline values={hist?.mem ?? [s.mem_used_bytes]} color="var(--color-warning)" />
-                  <span className="stats-value">{bytesToHuman(s.mem_used_bytes)}</span>
-                </div>
-              )
-            })}
-          </div>
+          <LiveCharts containerStats={containerStats} statHistory={statHistory} />
         )}
       </div>
 
@@ -663,7 +902,7 @@ export default function OverviewTab({
               <span className="section-label" style={{ margin: 0 }}>Disk Usage</span>
             </div>
 
-            <div style={{ padding: '12px 14px 4px' }}>
+            <div className="disk-body">
               <div className="drive-bars-grid">
 
               {/* Docker drive bar */}
