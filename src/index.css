@@ -2806,6 +2806,103 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
 }
 
 /* =============================================================
+   Overview — Disk usage stacked horizontal bar
+   ============================================================= */
+
+.disk-stacked-bar {
+  display: flex;
+  height: 20px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--color-bg-tertiary);
+  gap: 2px;
+  margin-bottom: 12px;
+}
+
+/* Each segment — color variants */
+.disk-seg {
+  height: 100%;
+  border-radius: 2px;
+  min-width: 4px;
+  transition: width 0.4s ease;
+}
+.disk-seg--images     { background: var(--color-accent); }
+.disk-seg--containers { background: var(--color-success); }
+.disk-seg--volumes    { background: var(--color-warning); }
+.disk-seg--cache      { background: var(--color-danger); }
+.disk-seg--backups    { background: #8b5cf6; }
+
+/* Legend */
+.disk-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+
+.disk-legend-row {
+  display: grid;
+  grid-template-columns: 10px 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.disk-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.disk-legend-label {
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.disk-legend-size {
+  color: var(--color-text-primary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.disk-legend-free {
+  font-size: 11px;
+  color: var(--color-success);
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* Summary line */
+.disk-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border-light);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.disk-summary strong {
+  color: var(--color-text-primary);
+}
+
+.disk-summary-free {
+  color: var(--color-success);
+  font-weight: 600;
+}
+
+.disk-summary-note {
+  margin-left: auto;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
+/* =============================================================
    Docker — State badges (shared by Containers + Images)
    ============================================================= */
 .badge-running {

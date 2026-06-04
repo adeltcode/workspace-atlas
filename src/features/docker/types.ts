@@ -6,6 +6,12 @@ export interface DockerStatus {
   state: 'running' | 'stopped' | 'not_installed'
 }
 
+export interface DiskStats {
+  total_bytes: number
+  free_bytes: number
+  drive_label: string
+}
+
 export interface DiskUsageRow {
   type: string
   total: number

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { CheckCircle, AlertTriangle, ChevronRight, RefreshCw, Trash2 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../../../store/appStore'
-import type { DockerStatus, DockerSystemDf, DockerContainer, DockerImage, DockerVolume, DiskUsageRow, ComposeProject, ContainerStats } from '../types'
+import type { DockerStatus, DiskStats, DockerSystemDf, DockerContainer, DockerImage, DockerVolume, DiskUsageRow, ComposeProject, ContainerStats } from '../types'
 import { bytesToHuman, composeStatusLabel } from '../../../utils/format'
 import * as api from '../api'
 
@@ -11,18 +11,6 @@ import * as api from '../api'
  * and excluded from the freeable estimate — they're likely still in use.
  */
 const STALE_DAYS = 7
-
-const CARDS: { key: keyof DockerSystemDf; label: string; color: string }[] = [
-  { key: 'images',      label: 'Images',      color: 'accent'  },
-  { key: 'containers',  label: 'Containers',  color: 'success' },
-  { key: 'volumes',     label: 'Volumes',     color: 'warning' },
-  { key: 'build_cache', label: 'Build Cache', color: 'danger'  },
-]
-
-function parsePercent(reclaimable: string): number {
-  const m = reclaimable.match(/\((\d+)%\)/)
-  return m ? Math.min(100, parseInt(m[1], 10)) : 0
-}
 
 function parseReclaimSize(reclaimable: string): string {
   return reclaimable.split(' (')[0].trim()
@@ -35,50 +23,6 @@ function parseSizeBytes(s: string): number {
   if (s.endsWith('MB')) return n * 1e6
   if (s.endsWith('kB')) return n * 1e3
   return n
-}
-
-// ── Bar card ──────────────────────────────────────────────────────────────────
-
-function BarCard({
-  row, label, color, totalLabel = false,
-}: {
-  row: DiskUsageRow; label: string; color: string; totalLabel?: boolean
-}) {
-  const percent     = parsePercent(row.reclaimable)
-  const reclaimSize = parseReclaimSize(row.reclaimable)
-  const hasFreeable = parseSizeBytes(reclaimSize) > 0
-  const pctColor    = hasFreeable ? color : 'muted'
-
-  return (
-    <div className="bar-card">
-      <div className="bar-top">
-        {!totalLabel
-          ? <span className="bar-ratio">{row.active} active / {row.total} total</span>
-          : <span className="bar-ratio">all categories</span>
-        }
-        <span className="bar-name">{label}</span>
-      </div>
-
-      <div className="bar-chart" title={percent > 0 ? `${percent}% of disk space is freeable` : 'Nothing reclaimable'}>
-        <div className="bar-hatch" />
-        <div
-          className={clsx('bar-fill', `bar-fill--${color}`)}
-          style={{ height: `${percent}%` }}
-        />
-      </div>
-
-      <div className="bar-foot">
-        <div>
-          <div className={clsx('bar-pct', `bar-pct--${pctColor}`)}>{reclaimSize}</div>
-          <div className="bar-foot-sub">freeable</div>
-        </div>
-        <div style={{ textAlign: 'right' }}>
-          <div className="bar-size">{row.size}</div>
-          <div className="bar-foot-sub">total</div>
-        </div>
-      </div>
-    </div>
-  )
 }
 
 // ── Disk usage helpers ────────────────────────────────────────────────────────
@@ -124,20 +68,6 @@ function buildTotalRow(df: DockerSystemDf): DiskUsageRow {
 }
 
 // ── Skeletons ─────────────────────────────────────────────────────────────────
-
-function BarSkeleton() {
-  return (
-    <div className="bar-card bar-card-skeleton">
-      <div className="sk-line w-24" style={{ marginBottom: 2 }} />
-      <div className="sk-line w-16" />
-      <div className="sk-line" style={{ height: 90, width: '100%', borderRadius: 4 }} />
-      <div className="sk-row space-between">
-        <div className="sk-line w-12" />
-        <div className="sk-line w-16" />
-      </div>
-    </div>
-  )
-}
 
 function HeroSkeleton() {
   return (
@@ -198,7 +128,7 @@ export default function OverviewTab({
   loading: boolean
   refreshTick?: number
 }) {
-  const { setDockerTab, setImagesFilter, setVolumesFilter, setComposePreselect } = useAppStore()
+  const { setDockerTab, setImagesFilter, setVolumesFilter, setComposePreselect, backupDir } = useAppStore()
 
   // ── Compose projects (fetched independently; refreshes with global tick) ──
   const [composeProjects, setComposeProjects] = useState<ComposeProject[]>([])
@@ -228,6 +158,20 @@ export default function OverviewTab({
   }, [status?.available]) // eslint-disable-line
 
   useEffect(() => { loadStats() }, [refreshTick, loadStats]) // eslint-disable-line
+
+  // ── Disk stats (drive total/free) and backup size ─────────────────────────
+  const [diskStats,   setDiskStats]   = useState<DiskStats | null>(null)
+  const [backupBytes, setBackupBytes] = useState(0)
+
+  useEffect(() => {
+    const path = backupDir || 'C:\\'
+    api.getDiskStats(path).then(setDiskStats).catch(() => setDiskStats(null))
+  }, [refreshTick, backupDir]) // eslint-disable-line
+
+  useEffect(() => {
+    if (!backupDir) { setBackupBytes(0); return }
+    api.getBackupSize(backupDir).then(setBackupBytes).catch(() => setBackupBytes(0))
+  }, [refreshTick, backupDir]) // eslint-disable-line
 
   const topCpu = useMemo(() => [...containerStats].sort((a, b) => b.cpu_pct - a.cpu_pct).slice(0, 3), [containerStats])
   const topMem = useMemo(() => [...containerStats].sort((a, b) => b.mem_used_bytes - a.mem_used_bytes).slice(0, 3), [containerStats])
@@ -545,33 +489,86 @@ export default function OverviewTab({
       </div>
 
       {/* ── Disk usage ───────────────────────────────────────────────── */}
-      <div>
-        <div className="overview-header">
-          <p className="section-label" style={{ margin: 0 }}>Disk Usage</p>
-          <p className="overview-sub">
-            Solid fill = freeable · hatched = in use · containers: stale ≥ {STALE_DAYS}d
-          </p>
-        </div>
-
-        {loading && (
-          <div className="bar-grid">
-            {[0, 1, 2, 3, 4].map(i => <BarSkeleton key={i} />)}
-          </div>
-        )}
-
-        {!loading && patchedDf && totalRow && (
-          <div className="bar-grid">
-            {CARDS.map(({ key, label, color }) => (
-              <BarCard key={key} row={patchedDf[key]} label={label} color={color} />
-            ))}
-            <BarCard row={totalRow} label="Total" color="total" totalLabel />
-          </div>
-        )}
-
-        {!loading && !df && (
+      {(() => {
+        if (!patchedDf) return !loading ? (
           <div className="overview-empty">No disk data available. Is Docker running?</div>
-        )}
-      </div>
+        ) : null
+
+        const imgBytes = parseSizeBytes(patchedDf.images.size)
+        const ctrBytes = parseSizeBytes(patchedDf.containers.size)
+        const volBytes = parseSizeBytes(patchedDf.volumes.size)
+        const bldBytes = parseSizeBytes(patchedDf.build_cache.size)
+        const dockerTotal = imgBytes + ctrBytes + volBytes + bldBytes
+
+        const imgFree  = parseSizeBytes(parseReclaimSize(patchedDf.images.reclaimable))
+        const ctrFree  = parseSizeBytes(parseReclaimSize(patchedDf.containers.reclaimable))
+        const bldFree  = parseSizeBytes(parseReclaimSize(patchedDf.build_cache.reclaimable))
+        const totalFreeableBytes = imgFree + ctrFree + bldFree
+
+        // Bar segments are proportional to drive total when available;
+        // otherwise proportional to dockerTotal + backups.
+        const barMax = diskStats ? diskStats.total_bytes : (dockerTotal + backupBytes || 1)
+        const pct    = (b: number) => Math.max(b / barMax * 100, b > 0 ? 0.4 : 0)
+
+        const SEGS = [
+          { key: 'images',     bytes: imgBytes,    color: 'images',     label: 'Images',      freeBytes: imgFree },
+          { key: 'containers', bytes: ctrBytes,    color: 'containers', label: 'Containers',  freeBytes: ctrFree },
+          { key: 'volumes',    bytes: volBytes,    color: 'volumes',    label: 'Volumes',     freeBytes: 0 },
+          { key: 'cache',      bytes: bldBytes,    color: 'cache',      label: 'Build Cache', freeBytes: bldFree },
+          { key: 'backups',    bytes: backupBytes, color: 'backups',    label: 'Backups',     freeBytes: 0 },
+        ].filter(s => s.bytes > 0)
+
+        return (
+          <div className="overview-section">
+            <div className="overview-section-head overview-section-head--static">
+              <span className="section-label" style={{ margin: 0 }}>Disk Usage</span>
+              {diskStats && (
+                <span className="overview-section-meta">
+                  {diskStats.drive_label} — {bytesToHuman(diskStats.total_bytes)} total · {bytesToHuman(diskStats.free_bytes)} free
+                </span>
+              )}
+            </div>
+
+            <div style={{ padding: '14px 14px 4px' }}>
+              {/* Stacked horizontal bar */}
+              <div className="disk-stacked-bar">
+                {SEGS.map(s => (
+                  <div
+                    key={s.key}
+                    className={`disk-seg disk-seg--${s.color}`}
+                    style={{ width: `${pct(s.bytes)}%` }}
+                    title={`${s.label}: ${bytesToHuman(s.bytes)}`}
+                  />
+                ))}
+              </div>
+
+              {/* Legend */}
+              <div className="disk-legend">
+                {SEGS.map(s => (
+                  <div key={s.key} className="disk-legend-row">
+                    <span className={`disk-legend-dot disk-seg--${s.color}`} />
+                    <span className="disk-legend-label">{s.label}</span>
+                    <span className="disk-legend-size">{bytesToHuman(s.bytes)}</span>
+                    {s.freeBytes > 0 && (
+                      <span className="disk-legend-free">{bytesToHuman(s.freeBytes)} freeable</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Summary line */}
+              <div className="disk-summary">
+                <span>Docker: <strong>{bytesToHuman(dockerTotal)}</strong></span>
+                {backupBytes > 0 && <span>Backups: <strong>{bytesToHuman(backupBytes)}</strong></span>}
+                {totalFreeableBytes > 0 && (
+                  <span className="disk-summary-free">{bytesToHuman(totalFreeableBytes)} freeable</span>
+                )}
+                <span className="disk-summary-note">containers: stale ≥ {STALE_DAYS}d</span>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
     </div>
   )

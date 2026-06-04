@@ -1,8 +1,10 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { DockerStatus, DockerSystemDf, DockerImage, DockerContainer, DockerVolume, DockerNetwork, ContainerStats, ComposeProject, VolumeBackupEntry, PrunePreview, TransferResult, ComposeBackupEntry } from './types'
+import type { DockerStatus, DiskStats, DockerSystemDf, DockerImage, DockerContainer, DockerVolume, DockerNetwork, ContainerStats, ComposeProject, VolumeBackupEntry, PrunePreview, TransferResult, ComposeBackupEntry } from './types'
 
 export const dockerCheck          = () => invoke<DockerStatus>('docker_check')
 export const launchDockerDesktop  = () => invoke<void>('launch_docker_desktop')
+export const getDiskStats         = (path: string) => invoke<DiskStats>('get_disk_stats', { path })
+export const getBackupSize        = (backupDir: string) => invoke<number>('get_backup_size', { backupDir })
 export const dockerSystemDf  = () => invoke<DockerSystemDf>('docker_system_df')
 export const dockerImages    = () => invoke<DockerImage[]>('docker_images')
 export const dockerContainers = () => invoke<DockerContainer[]>('docker_containers')

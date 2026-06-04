@@ -18,6 +18,16 @@ pub struct DockerStatus {
     pub state: String,
 }
 
+#[derive(serde::Serialize, Clone, Debug)]
+pub struct DiskStats {
+    /// Total bytes on the drive that contains `path`.
+    pub total_bytes: u64,
+    /// Free bytes available on that drive.
+    pub free_bytes: u64,
+    /// Drive label shown in the UI (e.g. "C:").
+    pub drive_label: String,
+}
+
 #[derive(serde::Serialize, Clone)]
 pub struct DiskUsageRow {
     pub r#type: String,
@@ -1427,6 +1437,73 @@ pub async fn docker_stats() -> Result<Vec<ContainerStats>, String> {
     tauri::async_runtime::spawn_blocking(get_stats_sync)
         .await
         .map_err(|e| e.to_string())?
+}
+
+/// Query total and free bytes for the drive that contains `path` (Windows only).
+/// Uses PowerShell's `[System.IO.DriveInfo]` — no extra crates needed.
+#[tauri::command]
+pub async fn get_disk_stats(path: String) -> Result<DiskStats, String> {
+    // Extract drive letter from a Windows path (e.g. "C:\Users\..." → 'C').
+    // Fall back to %SYSTEMDRIVE% if the path is empty or has no letter.
+    let drive = path
+        .chars()
+        .next()
+        .filter(|c| c.is_ascii_alphabetic())
+        .map(|c| c.to_ascii_uppercase().to_string())
+        .unwrap_or_else(|| {
+            std::env::var("SYSTEMDRIVE")
+                .unwrap_or_else(|_| "C:".to_string())
+                .trim_end_matches(':')
+                .to_uppercase()
+        });
+
+    let script = format!(
+        r#"$d=[System.IO.DriveInfo]::new('{}'); "$($d.TotalSize) $($d.AvailableFreeSpace)""#,
+        drive
+    );
+
+    let output = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .output()
+        .map_err(|e| format!("powershell: {}", e))?;
+
+    let out = String::from_utf8_lossy(&output.stdout);
+    let parts: Vec<u64> = out
+        .trim()
+        .trim_matches('"')
+        .split_whitespace()
+        .filter_map(|s| s.parse().ok())
+        .collect();
+
+    if parts.len() < 2 {
+        return Err(format!("unexpected powershell output: {:?}", out.trim()));
+    }
+
+    Ok(DiskStats {
+        total_bytes:  parts[0],
+        free_bytes:   parts[1],
+        drive_label:  format!("{}:", drive),
+    })
+}
+
+/// Sum the sizes of all files in `backup_dir` (non-recursive).
+/// Returns 0 if the directory does not exist or is not set.
+#[tauri::command]
+pub async fn get_backup_size(backup_dir: String) -> u64 {
+    if backup_dir.is_empty() { return 0; }
+    tauri::async_runtime::spawn_blocking(move || {
+        std::fs::read_dir(&backup_dir)
+            .map(|dir| {
+                dir.flatten()
+                    .filter_map(|e| e.metadata().ok())
+                    .filter(|m| m.is_file())
+                    .map(|m| m.len())
+                    .sum()
+            })
+            .unwrap_or(0)
+    })
+    .await
+    .unwrap_or(0)
 }
 
 /// Read a text file from the filesystem. Handles three path types:

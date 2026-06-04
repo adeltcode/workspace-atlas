@@ -9,6 +9,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             docker::docker_check,
             docker::launch_docker_desktop,
+            docker::get_disk_stats,
+            docker::get_backup_size,
             docker::docker_system_df,
             docker::docker_images,
             docker::docker_prune_preview,
