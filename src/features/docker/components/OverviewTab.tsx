@@ -1,22 +1,22 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { CheckCircle, AlertTriangle, ChevronRight, ChevronDown, RefreshCw, Trash2 } from 'lucide-react'
+import {
+  CheckCircle, AlertTriangle, ChevronRight, ChevronDown, RefreshCw, Trash2,
+} from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../../../store/appStore'
-import type { DockerStatus, DiskStats, DockerSystemDf, DockerContainer, DockerImage, DockerVolume, DiskUsageRow, ComposeProject, ContainerStats } from '../types'
+import type {
+  DockerStatus, DiskStats, DockerSystemDf, DockerContainer, DockerImage,
+  DockerVolume, DiskUsageRow, ComposeProject, ContainerStats,
+} from '../types'
 import { bytesToHuman, composeStatusLabel } from '../../../utils/format'
 import * as api from '../api'
 
-/**
- * Containers stopped for fewer than STALE_DAYS days are considered "active"
- * and excluded from the freeable estimate — they're likely still in use.
- */
 const STALE_DAYS = 7
 
 function parseReclaimSize(reclaimable: string): string {
   return reclaimable.split(' (')[0].trim()
 }
 
-/** Parse Docker size strings like "2.54GB", "187MB", "1.2kB", "0B" → bytes */
 function parseSizeBytes(s: string): number {
   const n = parseFloat(s)
   if (s.endsWith('GB')) return n * 1e9
@@ -25,39 +25,22 @@ function parseSizeBytes(s: string): number {
   return n
 }
 
-// ── Disk usage helpers ────────────────────────────────────────────────────────
-
-/**
- * Overrides the containers row so that "reclaimable" only reflects containers
- * stopped for ≥ STALE_DAYS days, not every stopped container.
- */
-function buildContainersRow(
-  dfRow: DiskUsageRow,
-  containers: DockerContainer[],
-): DiskUsageRow {
+function buildContainersRow(dfRow: DiskUsageRow, containers: DockerContainer[]): DiskUsageRow {
   const stopped = containers.filter(c => c.stopped_days >= 0)
   const stale   = containers.filter(c => c.stopped_days >= STALE_DAYS)
-
-  if (stopped.length === 0 || stale.length === 0) {
-    return { ...dfRow, reclaimable: `0B (0%)` }
-  }
-
+  if (stopped.length === 0 || stale.length === 0) return { ...dfRow, reclaimable: `0B (0%)` }
   const dfReclaimBytes = parseSizeBytes(parseReclaimSize(dfRow.reclaimable))
   const estimated      = Math.round(dfReclaimBytes * (stale.length / stopped.length))
   const totalBytes     = parseSizeBytes(dfRow.size)
   const pct            = totalBytes > 0 ? Math.round(estimated / totalBytes * 100) : 0
-
   return { ...dfRow, reclaimable: `${bytesToHuman(estimated)} (${pct}%)` }
 }
 
-/** Derives a synthetic "Total" row by summing all 4 categories */
 function buildTotalRow(df: DockerSystemDf): DiskUsageRow {
   const rows = [df.images, df.containers, df.volumes, df.build_cache]
-
   const totalBytes   = rows.reduce((s, r) => s + parseSizeBytes(r.size), 0)
   const reclaimBytes = rows.reduce((s, r) => s + parseSizeBytes(parseReclaimSize(r.reclaimable)), 0)
   const pct          = totalBytes > 0 ? Math.round(reclaimBytes / totalBytes * 100) : 0
-
   return {
     type:        'Total',
     total:       rows.reduce((s, r) => s + r.total, 0),
@@ -67,12 +50,67 @@ function buildTotalRow(df: DockerSystemDf): DiskUsageRow {
   }
 }
 
+// ── New helpers ───────────────────────────────────────────────────────────────
+
+function parseComposeCounts(status: string): { running: number; total: number } {
+  let running = 0, total = 0
+  for (const part of status.split(',').map(s => s.trim()).filter(Boolean)) {
+    const m = part.match(/^(\w+)\((\d+)\)$/)
+    if (m) {
+      const n = parseInt(m[2])
+      total += n
+      if (m[1] === 'running') running += n
+    } else {
+      total += 1
+      if (part === 'running') running += 1
+    }
+  }
+  return { running, total }
+}
+
+function projectContainerNames(projectName: string, containers: DockerContainer[], allProjectNames: string[]): string[] {
+  const p1 = `${projectName}-`, p2 = `${projectName}_`
+  return containers
+    .filter(c => {
+      if (!c.name.startsWith(p1) && !c.name.startsWith(p2)) return false
+      // Exclude containers that belong to a longer-named sibling project
+      // e.g. container "web-debug-db-1" matches prefix "web-" but actually belongs to "web-debug"
+      return !allProjectNames.some(
+        other => other !== projectName &&
+          other.length > projectName.length &&
+          (c.name.startsWith(`${other}-`) || c.name.startsWith(`${other}_`))
+      )
+    })
+    .map(c => c.name)
+}
+
+function projectMemBytes(names: string[], stats: ContainerStats[]): number {
+  return stats
+    .filter(s => names.includes(s.name))
+    .reduce((sum, s) => sum + s.mem_used_bytes, 0)
+}
+
+function projectCpuPct(names: string[], stats: ContainerStats[]): number {
+  return stats
+    .filter(s => names.includes(s.name))
+    .reduce((sum, s) => sum + s.cpu_pct, 0)
+}
+
+function extractHostPort(mapping: string): string {
+  // Published port: "0.0.0.0:8080->80/tcp" | "[::]:8080->80/tcp" → "8080"
+  const published = mapping.match(/:(\d+)->/)
+  if (published) return published[1]
+  // Exposed-only port: "80/tcp" → "80"
+  const exposed = mapping.match(/^(\d+)\//)
+  return exposed ? exposed[1] : ''
+}
+
 // ── Skeletons ─────────────────────────────────────────────────────────────────
 
 function HeroSkeleton() {
   return (
     <div className="hero-grid">
-      {[0, 1, 2, 3, 4].map(i => (
+      {[0, 1, 2, 3, 4, 5].map(i => (
         <div key={i} className="hero-tile">
           <div className="sk-line w-16" style={{ height: 9 }} />
           <div className="sk-line w-20" style={{ height: 24, marginTop: 4 }} />
@@ -101,27 +139,29 @@ interface LiveSeries {
 
 function padLeft(arr: number[], n: number): number[] {
   if (arr.length >= n) return arr.slice(-n)
-  return [...Array(n - arr.length).fill(0), ...arr]
+  const fill = arr.length > 0 ? arr[0] : 0
+  return [...Array(n - arr.length).fill(fill), ...arr]
 }
 
-// Chart layout constants
-const CH = 148    // chart SVG height (px)
-const YT = 8      // top padding
-const YB = 22     // bottom padding (x-axis labels)
-const XL = 44     // left padding (y-axis labels)
-const XR = 8      // right padding
+const CH = 148
+const YT = 8
+const YB = 22
+const XL = 44
+const XR = 8
 
 function ChartPanel({
-  type, series, numPoints, hidden, hoverIdx, maxMem, onHover, onLeave,
+  type, series, numPoints, realDataStart, hidden, hoverIdx, maxCpu, maxMem, onHover, onLeave,
 }: {
-  type:      'cpu' | 'mem'
-  series:    LiveSeries[]
-  numPoints: number
-  hidden:    Set<string>
-  hoverIdx:  number | null
-  maxMem:    number
-  onHover:   (idx: number) => void
-  onLeave:   () => void
+  type:          'cpu' | 'mem'
+  series:        LiveSeries[]
+  numPoints:     number
+  realDataStart: number
+  hidden:        Set<string>
+  hoverIdx:      number | null
+  maxCpu:        number
+  maxMem:        number
+  onHover:       (idx: number) => void
+  onLeave:       () => void
 }) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [svgW, setSvgW] = useState(300)
@@ -141,16 +181,24 @@ function ChartPanel({
     XL + (numPoints <= 1 ? innerW / 2 : (i / (numPoints - 1)) * innerW)
 
   const yFor = (v: number) => {
-    const scale = type === 'cpu' ? 100 : maxMem
+    const scale = type === 'cpu' ? maxCpu : maxMem
     return YT + (1 - Math.min(v, scale) / (scale || 1)) * innerH
   }
 
-  const ticks = type === 'cpu'
-    ? [0, 25, 50, 75, 100]
-    : (() => {
-        const step = maxMem / 4
-        return [0, step, step * 2, step * 3, maxMem]
-      })()
+  const ticks = (() => {
+    if (type === 'mem') {
+      const step = maxMem / 4
+      return [0, step, step * 2, step * 3, maxMem]
+    }
+    // CPU: find the smallest "nice" step that produces integer grid lines
+    const niceSteps = [1, 2, 5, 10, 20, 25, 50, 100]
+    const rawStep   = maxCpu / 4
+    const step      = niceSteps.find(s => s >= rawStep) ?? rawStep
+    const result: number[] = []
+    for (let v = 0; v <= maxCpu; v += step) result.push(v)
+    if (result[result.length - 1] < maxCpu) result.push(maxCpu)
+    return result
+  })()
 
   const tickLabel = (v: number) =>
     type === 'cpu' ? `${Math.round(v)}%` : bytesToHuman(v)
@@ -161,7 +209,7 @@ function ChartPanel({
     onHover(Math.max(0, Math.min(numPoints - 1, raw)))
   }
 
-  const visible = series.filter(s => !hidden.has(s.name))
+  const visible    = series.filter(s => !hidden.has(s.name))
   const timeLabels = Array.from(new Set([0, Math.floor((numPoints - 1) / 2), numPoints - 1]))
 
   return (
@@ -176,7 +224,6 @@ function ChartPanel({
           onMouseMove={handleMove}
           onMouseLeave={onLeave}
         >
-          {/* Grid lines + Y-axis */}
           {ticks.map(v => {
             const y = yFor(v)
             return (
@@ -193,7 +240,6 @@ function ChartPanel({
             )
           })}
 
-          {/* Series lines */}
           {visible.map(s => {
             const vals = padLeft(type === 'cpu' ? s.cpu : s.mem, numPoints)
             const pts  = vals.map((v, i) => ({ x: xAt(i), y: yFor(v) }))
@@ -223,7 +269,6 @@ function ChartPanel({
             )
           })}
 
-          {/* Crosshair + intersection dots */}
           {hoverIdx !== null && (
             <>
               <line
@@ -245,7 +290,6 @@ function ChartPanel({
             </>
           )}
 
-          {/* X-axis time labels */}
           {timeLabels.map(i => {
             const sAgo = (numPoints - 1 - i) * 5
             return (
@@ -258,7 +302,6 @@ function ChartPanel({
           })}
         </svg>
 
-        {/* Hover tooltip */}
         {hoverIdx !== null && (() => {
           const x     = xAt(hoverIdx)
           const left  = x > svgW / 2 ? x - 144 : x + 12
@@ -281,7 +324,7 @@ function ChartPanel({
                 </div>
               ))}
               <div className="live-chart-tooltip-time">
-                {sAgo === 0 ? 'current' : `${sAgo}s ago`}
+                {hoverIdx < realDataStart ? 'no data' : sAgo === 0 ? 'current' : `${sAgo}s ago`}
               </div>
             </div>
           )
@@ -319,15 +362,25 @@ function LiveCharts({
     [sorted, statHistory, theme], // eslint-disable-line — theme invalidates chart colors on toggle
   )
 
-  const numPoints = useMemo(
-    () => Math.max(2, ...series.map(s => Math.max(s.cpu.length, s.mem.length))),
+  const maxRealPoints = useMemo(
+    () => Math.max(1, ...series.map(s => Math.max(s.cpu.length, s.mem.length))),
     [series],
   )
+
+  const numPoints = Math.max(30, maxRealPoints)
+  const realDataStart = numPoints - maxRealPoints
 
   const maxMem = useMemo(() => {
     let m = 1024 * 1024
     series.forEach(s => { if (!hidden.has(s.name)) m = Math.max(m, ...s.mem) })
     return m * 1.15
+  }, [series, hidden])
+
+  const maxCpu = useMemo(() => {
+    let m = 0
+    series.forEach(s => { if (!hidden.has(s.name)) m = Math.max(m, ...s.cpu) })
+    const padded = Math.max(m * 1.15, 1)
+    return Math.ceil(padded / 5) * 5
   }, [series, hidden])
 
   function toggleHide(name: string) {
@@ -338,7 +391,7 @@ function LiveCharts({
     })
   }
 
-  const shared = { series, numPoints, hidden, hoverIdx, maxMem,
+  const shared = { series, numPoints, realDataStart, hidden, hoverIdx, maxCpu, maxMem,
     onHover: setHoverIdx, onLeave: () => setHoverIdx(null) }
 
   return (
@@ -466,6 +519,63 @@ function CleanupRow({
   )
 }
 
+// ── Project Card ──────────────────────────────────────────────────────────────
+
+function ProjectCard({
+  project, containers, containerStats, allProjectNames, onOpen,
+}: {
+  project:         ComposeProject
+  containers:      DockerContainer[]
+  containerStats:  ContainerStats[]
+  allProjectNames: string[]
+  onOpen:          () => void
+}) {
+  const { text, dot } = composeStatusLabel(project.status)
+  const { running, total } = parseComposeCounts(project.status)
+  const names   = projectContainerNames(project.name, containers, allProjectNames)
+  const memUsed = projectMemBytes(names, containerStats)
+  const cpuUsed = projectCpuPct(names, containerStats)
+  const ports = [...new Set(
+    containers
+      .filter(c => names.includes(c.name) && c.ports)
+      .flatMap(c => c.ports.split(',').map(p => extractHostPort(p.trim())).filter(Boolean))
+  )].slice(0, 5)
+
+  const statusColor =
+    dot === 'running' ? 'var(--color-success)' :
+    dot === 'partial' ? 'var(--color-warning)' :
+    'var(--color-text-tertiary)'
+
+  return (
+    <button className="project-card" onClick={onOpen}>
+      <span className={clsx('compose-status-dot', dot)} />
+      <div className="project-card-main">
+        <div className="project-card-name">{project.name}</div>
+        <div className="project-card-meta">
+          <span style={{ color: statusColor }}>{text}</span>
+          {cpuUsed > 0 && (
+            <span className="project-card-metric">{cpuUsed.toFixed(1)}% CPU</span>
+          )}
+          {memUsed > 0 && (
+            <span className="project-card-metric">{bytesToHuman(memUsed)} RAM</span>
+          )}
+          {ports.length > 0 && (
+            <span className="project-card-ports">{ports.map(p => `:${p}`).join(' ')}</span>
+          )}
+        </div>
+      </div>
+      <div className="project-card-counts">
+        <span className="project-card-count"
+          style={{ color: running > 0 ? 'var(--color-success)' : 'var(--color-text-tertiary)' }}>
+          {running}/{total}
+        </span>
+        <span className="project-card-count-label">running</span>
+      </div>
+      <ChevronRight size={11} className="cleanup-row-arrow" />
+    </button>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function OverviewTab({
@@ -499,9 +609,9 @@ export default function OverviewTab({
 }) {
   const { setDockerTab, setImagesFilter, setVolumesFilter, setComposePreselect, backupDir } = useAppStore()
 
-  // ── Compose projects (fetched independently; refreshes with global tick) ──
+  // ── Compose projects ──────────────────────────────────────────────────────
   const [composeProjects, setComposeProjects] = useState<ComposeProject[]>([])
-  const [composeLoading, setComposeLoading]   = useState(true)
+  const [composeLoading,  setComposeLoading]  = useState(true)
 
   useEffect(() => {
     if (!status?.available) { setComposeLoading(false); return }
@@ -512,17 +622,14 @@ export default function OverviewTab({
       .finally(() => setComposeLoading(false))
   }, [refreshTick, status?.available]) // eslint-disable-line
 
-  const [resourceView, setResourceView] = useState<'top' | 'all'>('top')
+  const [resourceView, setResourceView] = useState<'top' | 'all'>('all')
 
-  // ── Disk stats — fetched separately for Docker's drive and the backup drive ──
-  // Docker data on Windows Desktop lives on the system drive (C:).
-  // Backups may be on a completely different drive (e.g. F:).
+  // ── Disk stats ────────────────────────────────────────────────────────────
   const [dockerDiskStats, setDockerDiskStats] = useState<DiskStats | null>(null)
   const [backupDiskStats, setBackupDiskStats] = useState<DiskStats | null>(null)
   const [backupBytes,     setBackupBytes]     = useState(0)
 
   useEffect(() => {
-    // Pass empty string → Rust falls back to %SYSTEMDRIVE% (the Docker drive on Windows)
     api.getDiskStats('').then(setDockerDiskStats).catch(() => setDockerDiskStats(null))
   }, [refreshTick]) // eslint-disable-line
 
@@ -551,6 +658,13 @@ export default function OverviewTab({
     stoppedCtrs > 0 && `${stoppedCtrs} stopped`,
   ].filter(Boolean).join(' · ')
 
+  const runningProjects = useMemo(
+    () => composeProjects.filter(p => composeStatusLabel(p.status).dot === 'running').length,
+    [composeProjects],
+  )
+  const issueCount       = restarting.length + dead.length
+  const allProjectNames  = useMemo(() => composeProjects.map(p => p.name), [composeProjects])
+
   // ── Disk totals ───────────────────────────────────────────────────────────
   const patchedDf = df ? { ...df, containers: buildContainersRow(df.containers, containers) } : null
   const totalRow  = patchedDf ? buildTotalRow(patchedDf) : null
@@ -558,9 +672,6 @@ export default function OverviewTab({
   const hasFree   = totalFree != null && parseSizeBytes(totalFree) > 0
 
   // ── Cleanup data ──────────────────────────────────────────────────────────
-  // Split unused images into two categories — they target different prune levels:
-  //   trueDangling  = <none>:<none>  (untagged intermediates)  → Level 1
-  //   unusedTagged  = named but unreferenced by any container  → Level 2
   const trueDangling  = images.filter(i => !i.in_use && i.repository === '<none>')
   const unusedTagged  = images.filter(i => !i.in_use && i.repository !== '<none>')
   const stale         = containers.filter(c => c.stopped_days >= STALE_DAYS)
@@ -577,14 +688,14 @@ export default function OverviewTab({
 
   const totalFreeBytes = trueDanglingBytes + unusedTaggedBytes + staleContainerBytes + unusedVolBytes + buildCacheBytes
 
-  const allClean = trueDangling.length === 0 && unusedTagged.length === 0 &&
-                   stale.length === 0 && unusedVols.length === 0 && !showBuildCache
+  const allClean   = trueDangling.length === 0 && unusedTagged.length === 0 &&
+                     stale.length === 0 && unusedVols.length === 0 && !showBuildCache
   const hasWarnings = !loading && (restarting.length > 0 || dead.length > 0)
 
   return (
     <div className="overview-tab">
 
-      {/* ── Hero status strip ────────────────────────────────────────── */}
+      {/* ── 1. Workspace Summary ─────────────────────────────────────── */}
       <div className="overview-section">
         {loading ? <HeroSkeleton /> : (
           <div className="hero-grid">
@@ -601,32 +712,48 @@ export default function OverviewTab({
               </span>
             </div>
 
-            <button className="hero-tile hero-tile--clickable" onClick={() => setDockerTab('containers')} aria-label={`Containers: ${runningCtrs} running`}>
+            <button className="hero-tile hero-tile--clickable" onClick={() => setDockerTab('containers')}
+              aria-label={`Containers: ${runningCtrs} running`}>
               <span className="hero-tile-label">Containers</span>
               <span className="hero-tile-value">{runningCtrs}</span>
               <span className="hero-tile-sub">running</span>
               {notRunning && <span className="hero-tile-sub">{notRunning}</span>}
             </button>
 
-            <button className="hero-tile hero-tile--clickable" onClick={() => setDockerTab('images')} aria-label={`Images: ${images.length}`}>
+            <button className="hero-tile hero-tile--clickable" onClick={() => setDockerTab('compose')}
+              aria-label={`Projects: ${runningProjects} running`}>
+              <span className="hero-tile-label">Projects</span>
+              <span className="hero-tile-value">
+                {composeLoading ? '…' : runningProjects}
+              </span>
+              <span className="hero-tile-sub">
+                {composeLoading ? 'loading' : `${composeProjects.length} total`}
+              </span>
+            </button>
+
+            <button className="hero-tile hero-tile--clickable" onClick={() => setDockerTab('images')}
+              aria-label={`Images: ${images.length}`}>
               <span className="hero-tile-label">Images</span>
               <span className="hero-tile-value">{images.length}</span>
               <span className="hero-tile-sub">{df?.images.size ?? '—'}</span>
-            </button>
-
-            <button className="hero-tile hero-tile--clickable" onClick={() => setDockerTab('volumes')} aria-label={`Volumes: ${volumes.length}`}>
-              <span className="hero-tile-label">Volumes</span>
-              <span className="hero-tile-value">{volumes.length}</span>
-              {unusedVols.length > 0
-                ? <span className="hero-tile-sub">{unusedVols.length} unused</span>
-                : <span className="hero-tile-sub">all in use</span>
-              }
             </button>
 
             <div className="hero-tile">
               <span className="hero-tile-label">Total Disk</span>
               <span className="hero-tile-value">{totalRow?.size ?? '—'}</span>
               {hasFree && <span className="hero-tile-sub">{totalFree} freeable</span>}
+            </div>
+
+            <div className="hero-tile">
+              <span className="hero-tile-label">Issues</span>
+              <span className={clsx('hero-tile-value hero-tile-value--text',
+                issueCount > 0 ? 'hero-tile-value--err' : 'hero-tile-value--ok'
+              )}>
+                {issueCount > 0 ? issueCount : 'None'}
+              </span>
+              <span className="hero-tile-sub">
+                {issueCount > 0 ? 'critical' : 'all healthy'}
+              </span>
             </div>
 
           </div>
@@ -650,141 +777,62 @@ export default function OverviewTab({
         )}
       </div>
 
-      {/* ── Cleanup Opportunities ────────────────────────────────────── */}
+      {/* ── 2. Active Projects ───────────────────────────────────────── */}
       <div className="overview-section">
-        <div className="overview-section-head overview-section-head--static">
-          <span className="section-label" style={{ margin: 0 }}>Cleanup Opportunities</span>
-          {!loading && totalFreeBytes > 0 && (
-            <span className="overview-section-meta" style={{ marginLeft: 'auto' }}>~{bytesToHuman(totalFreeBytes)} estimated freeable</span>
-          )}
-          {!loading && totalFreeBytes > 0 && (
-            <button className="overview-prune-btn" onClick={() => setDockerTab('prune')}>
-              <Trash2 size={11} />
-              Prune all
-            </button>
-          )}
-        </div>
+        <button className="overview-section-head" onClick={() => setDockerTab('compose')}>
+          <span className="section-label" style={{ margin: 0 }}>Active Projects</span>
+          <span className="overview-section-meta">
+            {composeLoading ? '…' : `${runningProjects} running · ${composeProjects.length} total`}
+          </span>
+          <ChevronRight size={12} className="overview-section-arrow" />
+        </button>
 
-        {loading ? (
+        {composeLoading ? (
           <div className="cleanup-rows">
             {[0, 1, 2].map(i => (
               <div key={i} className="cleanup-row cleanup-row--skeleton">
                 <div className="sk-line" style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0 }} />
                 <div className="sk-line w-24" />
-                <div className="sk-line w-12" style={{ marginLeft: 'auto' }} />
-                <div className="sk-line w-16" />
+                <div className="sk-line w-32" style={{ marginLeft: 'auto' }} />
               </div>
             ))}
           </div>
-        ) : allClean ? (
-          <div className="overview-attention">
-            <div className="overview-chip overview-chip--clean">
-              <CheckCircle size={12} />
-              All resources clean
-            </div>
-          </div>
+        ) : composeProjects.length === 0 ? (
+          <p className="overview-empty-row">
+            No compose projects found — create a compose.yaml file to manage multi-container apps.
+          </p>
         ) : (
-          <>
-            <div className="cleanup-rows">
-              {trueDangling.length > 0 && (
-                <CleanupRow
-                  color="accent"
-                  label="Dangling images"
-                  count={trueDangling.length}
-                  size={trueDanglingBytes > 0 ? bytesToHuman(trueDanglingBytes) : null}
-                  onNavigate={() => { setImagesFilter('dangling'); setDockerTab('images') }}
-                  items={trueDangling.map(i => ({
-                    id:       i.id,
-                    label:    i.id.replace('sha256:', '').slice(0, 12),
-                    sublabel: i.created_since,
-                    size:     i.size,
-                  }))}
-                  onRemoveSelected={async ids => { await api.dockerPruneRun(2, ids); onRefresh?.() }}
-                />
-              )}
-              {unusedTagged.length > 0 && (
-                <CleanupRow
-                  color="accent"
-                  label="Unused tagged images"
-                  count={unusedTagged.length}
-                  size={unusedTaggedBytes > 0 ? bytesToHuman(unusedTaggedBytes) : null}
-                  onNavigate={() => { setImagesFilter('unused-tagged'); setDockerTab('images') }}
-                  items={unusedTagged.map(i => ({
-                    id:       i.id,
-                    label:    `${i.repository}:${i.tag}`,
-                    sublabel: i.created_since,
-                    size:     i.size,
-                  }))}
-                  onRemoveSelected={async ids => { await api.dockerPruneRun(2, ids); onRefresh?.() }}
-                />
-              )}
-              {stale.length > 0 && (
-                <CleanupRow
-                  color="success"
-                  label={`Stale containers ≥${STALE_DAYS}d`}
-                  count={stale.length}
-                  size={staleContainerBytes > 0 ? bytesToHuman(staleContainerBytes) : null}
-                  sizeEst
-                  onNavigate={() => setDockerTab('prune')}
-                  items={stale.map(c => ({
-                    id:       c.id,
-                    label:    c.name,
-                    sublabel: c.status,
-                  }))}
-                  onRemoveSelected={async ids => {
-                    try { for (const id of ids) await api.dockerContainerAction(id, 'remove') }
-                    finally { onRefresh?.() }
-                  }}
-                />
-              )}
-              {unusedVols.length > 0 && (
-                <CleanupRow
-                  color="warning"
-                  label="Unused volumes"
-                  count={unusedVols.length}
-                  size={unusedVolBytes > 0 ? bytesToHuman(unusedVolBytes) : null}
-                  onNavigate={() => { setVolumesFilter('unused'); setDockerTab('volumes') }}
-                  items={unusedVols.map(v => ({
-                    id:       v.name,
-                    label:    v.name,
-                    sublabel: v.compose_project ?? undefined,
-                    size:     v.size_bytes > 0 ? bytesToHuman(v.size_bytes) : null,
-                  }))}
-                  onRemoveSelected={async ids => {
-                    try { for (const id of ids) await api.dockerVolumeRemove(id) }
-                    finally { onRefresh?.() }
-                  }}
-                />
-              )}
-              {showBuildCache && (
-                <CleanupRow
-                  color="danger"
-                  label="Build cache"
-                  size={buildCacheFree}
-                  onNavigate={() => setDockerTab('prune')}
-                />
-              )}
-            </div>
-          </>
+          <div className="project-cards" style={{ maxHeight: 320, overflowY: 'auto' }}>
+            {composeProjects.map(p => (
+              <ProjectCard
+                key={p.name}
+                project={p}
+                containers={containers}
+                containerStats={containerStats}
+                allProjectNames={allProjectNames}
+                onOpen={() => { setComposePreselect(p.name); setDockerTab('compose') }}
+              />
+            ))}
+          </div>
         )}
       </div>
 
-      {/* ── Resource Monitoring (Top Offenders + Live Activity) ──────── */}
-      <div className="overview-section" style={{ marginTop: 8 }}>
+      {/* ── 3. Resource Monitoring ───────────────────────────────────── */}
+      <div className="overview-section">
         <div className="overview-section-head overview-section-head--static">
           <span className="section-label" style={{ margin: 0 }}>Resource Monitoring</span>
           <div className="resource-tab-strip" style={{ marginLeft: 'auto' }}>
-            <button
-              className={clsx('resource-tab', resourceView === 'top' && 'resource-tab--active')}
-              onClick={() => setResourceView('top')}
-            >
-              Top Offenders
-            </button>
             <button
               className={clsx('resource-tab', resourceView === 'all' && 'resource-tab--active')}
               onClick={() => setResourceView('all')}
             >
               Live Activity
+            </button>
+            <button
+              className={clsx('resource-tab', resourceView === 'top' && 'resource-tab--active')}
+              onClick={() => setResourceView('top')}
+            >
+              Top Offenders
             </button>
           </div>
           <button
@@ -854,50 +902,7 @@ export default function OverviewTab({
         )}
       </div>
 
-      {/* ── Compose Stacks ───────────────────────────────────────────── */}
-      <div className="overview-section" style={{ marginTop: 8 }}>
-        <button className="overview-section-head" onClick={() => setDockerTab('compose')}>
-          <span className="section-label" style={{ margin: 0 }}>Compose Stacks</span>
-          <span className="overview-section-meta">
-            {composeLoading ? '…' : `${composeProjects.filter(p => composeStatusLabel(p.status).dot === 'running').length} running · ${composeProjects.length} total`}
-          </span>
-          <ChevronRight size={12} className="overview-section-arrow" />
-        </button>
-
-        {composeLoading ? (
-          <div className="cleanup-rows">
-            {[0, 1, 2].map(i => (
-              <div key={i} className="cleanup-row cleanup-row--skeleton">
-                <div className="sk-line" style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0 }} />
-                <div className="sk-line w-24" />
-                <div className="sk-line w-32" style={{ marginLeft: 'auto' }} />
-              </div>
-            ))}
-          </div>
-        ) : composeProjects.length === 0 ? (
-          <p className="overview-empty-row">No compose projects found</p>
-        ) : (
-          <div className="cleanup-rows">
-            {composeProjects.map(p => {
-              const { text, dot } = composeStatusLabel(p.status)
-              return (
-                <button
-                  key={p.name}
-                  className="cleanup-row cleanup-row--compose"
-                  onClick={() => { setComposePreselect(p.name); setDockerTab('compose') }}
-                >
-                  <span className={clsx('compose-status-dot', dot)} />
-                  <span className="cleanup-row-label">{p.name}</span>
-                  <span className="compose-stack-status">{text}</span>
-                  <ChevronRight size={11} className="cleanup-row-arrow" />
-                </button>
-              )
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* ── Disk usage ───────────────────────────────────────────────── */}
+      {/* ── 4. Disk Usage ────────────────────────────────────────────── */}
       {(() => {
         if (!patchedDf) return !loading ? (
           <div className="overview-empty">No disk data available. Is Docker running?</div>
@@ -917,8 +922,6 @@ export default function OverviewTab({
         const sameDrive = dockerDiskStats && backupDiskStats &&
           dockerDiskStats.drive_label === backupDiskStats.drive_label
 
-        // Build segments for a single drive bar: known categories + Other + Free.
-        // "Other" = drive used space not accounted for by the categories we track.
         type Seg = { key: string; label: string; bytes: number; color: string }
         const buildBar = (stats: DiskStats, cats: Seg[], extraBytes: number): Seg[] => {
           const driveUsed = stats.total_bytes - stats.free_bytes
@@ -939,12 +942,10 @@ export default function OverviewTab({
           { key: 'cache',      label: 'Build Cache', bytes: bldBytes, color: 'cache' },
         ].filter(s => s.bytes > 0)
 
-        // Docker drive bar
         const dockerBarSegs = dockerDiskStats
           ? buildBar(dockerDiskStats, dockerCats, sameDrive ? backupBytes : 0)
-          : dockerCats  // fallback: no drive stats, show categories only
+          : dockerCats
 
-        // Backup drive bar — only when backups are on a separate drive
         const backupBarSegs = !sameDrive && backupDiskStats && backupBytes > 0
           ? buildBar(backupDiskStats, [], backupBytes)
           : null
@@ -952,7 +953,6 @@ export default function OverviewTab({
         const segPct = (bytes: number, driveTotal: number) =>
           driveTotal > 0 ? Math.max(bytes / driveTotal * 100, bytes > 0 ? 0.3 : 0) : 0
 
-        // Legend rows — categories across all drives
         const legendRows: { key: string; label: string; bytes: number; color: string; freeBytes: number; driveNote?: string }[] = [
           { key: 'images',     label: 'Images',      bytes: imgBytes,    color: 'images',     freeBytes: imgFree },
           { key: 'containers', label: 'Containers',  bytes: ctrBytes,    color: 'containers', freeBytes: ctrFree },
@@ -967,59 +967,55 @@ export default function OverviewTab({
             <div className="overview-section-head overview-section-head--static">
               <span className="section-label" style={{ margin: 0 }}>Disk Usage</span>
             </div>
-
             <div className="disk-body">
               <div className="drive-bars-grid">
 
-              {/* Docker drive bar */}
-              <div className="drive-bar-group">
-                <div className="drive-bar-header">
-                  <span className="drive-bar-title">
-                    {dockerDiskStats ? dockerDiskStats.drive_label : 'Docker'}
-                  </span>
-                  {dockerDiskStats && (
-                    <span className="drive-bar-meta">
-                      {bytesToHuman(dockerDiskStats.total_bytes)} disk size · {bytesToHuman(dockerDiskStats.free_bytes)} free
-                    </span>
-                  )}
-                </div>
-                <div className="disk-stacked-bar">
-                  {dockerBarSegs.map(s => (
-                    <div
-                      key={s.key}
-                      className={`disk-seg disk-seg--${s.color}`}
-                      style={{ width: dockerDiskStats ? `${segPct(s.bytes, dockerDiskStats.total_bytes)}%` : 'auto', flex: dockerDiskStats ? undefined : s.bytes }}
-                      title={`${s.label}: ${bytesToHuman(s.bytes)}`}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              {/* Backup drive bar — only rendered when backups are on a separate drive */}
-              {backupBarSegs && backupDiskStats && (
                 <div className="drive-bar-group">
                   <div className="drive-bar-header">
-                    <span className="drive-bar-title">{backupDiskStats.drive_label}</span>
-                    <span className="drive-bar-meta">
-                      {bytesToHuman(backupDiskStats.total_bytes)} disk size · {bytesToHuman(backupDiskStats.free_bytes)} free
+                    <span className="drive-bar-title">
+                      {dockerDiskStats ? dockerDiskStats.drive_label : 'Docker'}
                     </span>
+                    {dockerDiskStats && (
+                      <span className="drive-bar-meta">
+                        {bytesToHuman(dockerDiskStats.total_bytes)} disk size · {bytesToHuman(dockerDiskStats.free_bytes)} free
+                      </span>
+                    )}
                   </div>
                   <div className="disk-stacked-bar">
-                    {backupBarSegs.map(s => (
+                    {dockerBarSegs.map(s => (
                       <div
                         key={s.key}
                         className={`disk-seg disk-seg--${s.color}`}
-                        style={{ width: `${segPct(s.bytes, backupDiskStats.total_bytes)}%` }}
+                        style={{ width: dockerDiskStats ? `${segPct(s.bytes, dockerDiskStats.total_bytes)}%` : 'auto', flex: dockerDiskStats ? undefined : s.bytes }}
                         title={`${s.label}: ${bytesToHuman(s.bytes)}`}
                       />
                     ))}
                   </div>
                 </div>
-              )}
 
-              </div>{/* end drive-bars-grid */}
+                {backupBarSegs && backupDiskStats && (
+                  <div className="drive-bar-group">
+                    <div className="drive-bar-header">
+                      <span className="drive-bar-title">{backupDiskStats.drive_label}</span>
+                      <span className="drive-bar-meta">
+                        {bytesToHuman(backupDiskStats.total_bytes)} disk size · {bytesToHuman(backupDiskStats.free_bytes)} free
+                      </span>
+                    </div>
+                    <div className="disk-stacked-bar">
+                      {backupBarSegs.map(s => (
+                        <div
+                          key={s.key}
+                          className={`disk-seg disk-seg--${s.color}`}
+                          style={{ width: `${segPct(s.bytes, backupDiskStats.total_bytes)}%` }}
+                          title={`${s.label}: ${bytesToHuman(s.bytes)}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-              {/* Legend */}
+              </div>
+
               <div className="disk-legend">
                 {legendRows.map(r => (
                   <div key={r.key} className="disk-legend-row">
@@ -1036,19 +1032,139 @@ export default function OverviewTab({
                 ))}
               </div>
 
-              {/* Summary line */}
               <div className="disk-summary">
                 <span>Docker: <strong>{bytesToHuman(dockerTotal)}</strong></span>
                 {backupBytes > 0 && <span>Backups: <strong>{bytesToHuman(backupBytes)}</strong></span>}
                 {totalFreeableBytes > 0 && (
                   <span className="disk-summary-free">{bytesToHuman(totalFreeableBytes)} freeable</span>
                 )}
-                <span className="disk-summary-note" title="docker system df — may not include Buildx cache on Docker Desktop for Windows">via docker system df</span>
+                <span className="disk-summary-note" title="docker system df — may not include Buildx cache on Docker Desktop for Windows">
+                  via docker system df
+                </span>
               </div>
             </div>
           </div>
         )
       })()}
+
+      {/* ── 5. Cleanup Opportunities ─────────────────────────────────── */}
+      <div className="overview-section">
+        <div className="overview-section-head overview-section-head--static">
+          <span className="section-label" style={{ margin: 0 }}>Cleanup Opportunities</span>
+          {!loading && totalFreeBytes > 0 && (
+            <span className="overview-section-meta" style={{ marginLeft: 'auto' }}>
+              ~{bytesToHuman(totalFreeBytes)} freeable
+            </span>
+          )}
+          {!loading && totalFreeBytes > 0 && (
+            <button className="overview-prune-btn" onClick={() => setDockerTab('prune')}>
+              <Trash2 size={11} />
+              Prune all
+            </button>
+          )}
+        </div>
+
+        {loading ? (
+          <div className="cleanup-rows">
+            {[0, 1, 2].map(i => (
+              <div key={i} className="cleanup-row cleanup-row--skeleton">
+                <div className="sk-line" style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0 }} />
+                <div className="sk-line w-24" />
+                <div className="sk-line w-12" style={{ marginLeft: 'auto' }} />
+                <div className="sk-line w-16" />
+              </div>
+            ))}
+          </div>
+        ) : allClean ? (
+          <div className="overview-attention">
+            <div className="overview-chip overview-chip--clean">
+              <CheckCircle size={12} />
+              All resources clean
+            </div>
+          </div>
+        ) : (
+          <div className="cleanup-rows">
+            {trueDangling.length > 0 && (
+              <CleanupRow
+                color="accent"
+                label="Dangling images"
+                count={trueDangling.length}
+                size={trueDanglingBytes > 0 ? bytesToHuman(trueDanglingBytes) : null}
+                onNavigate={() => { setImagesFilter('dangling'); setDockerTab('images') }}
+                items={trueDangling.map(i => ({
+                  id:       i.id,
+                  label:    i.id.replace('sha256:', '').slice(0, 12),
+                  sublabel: i.created_since,
+                  size:     i.size,
+                }))}
+                onRemoveSelected={async ids => { await api.dockerPruneRun(2, ids); onRefresh?.() }}
+              />
+            )}
+            {unusedTagged.length > 0 && (
+              <CleanupRow
+                color="accent"
+                label="Unused tagged images"
+                count={unusedTagged.length}
+                size={unusedTaggedBytes > 0 ? bytesToHuman(unusedTaggedBytes) : null}
+                onNavigate={() => { setImagesFilter('unused-tagged'); setDockerTab('images') }}
+                items={unusedTagged.map(i => ({
+                  id:       i.id,
+                  label:    `${i.repository}:${i.tag}`,
+                  sublabel: i.created_since,
+                  size:     i.size,
+                }))}
+                onRemoveSelected={async ids => { await api.dockerPruneRun(2, ids); onRefresh?.() }}
+              />
+            )}
+            {stale.length > 0 && (
+              <CleanupRow
+                color="success"
+                label={`Stale containers ≥${STALE_DAYS}d`}
+                count={stale.length}
+                size={staleContainerBytes > 0 ? bytesToHuman(staleContainerBytes) : null}
+                sizeEst
+                onNavigate={() => setDockerTab('prune')}
+                items={stale.map(c => ({
+                  id:       c.id,
+                  label:    c.name,
+                  sublabel: c.status,
+                }))}
+                onRemoveSelected={async ids => {
+                  try { for (const id of ids) await api.dockerContainerAction(id, 'remove') }
+                  finally { onRefresh?.() }
+                }}
+              />
+            )}
+            {unusedVols.length > 0 && (
+              <CleanupRow
+                color="warning"
+                label="Unused volumes"
+                count={unusedVols.length}
+                size={unusedVolBytes > 0 ? bytesToHuman(unusedVolBytes) : null}
+                onNavigate={() => { setVolumesFilter('unused'); setDockerTab('volumes') }}
+                items={unusedVols.map(v => ({
+                  id:       v.name,
+                  label:    v.name,
+                  sublabel: v.compose_project ?? undefined,
+                  size:     v.size_bytes > 0 ? bytesToHuman(v.size_bytes) : null,
+                }))}
+                onRemoveSelected={async ids => {
+                  try { for (const id of ids) await api.dockerVolumeRemove(id) }
+                  finally { onRefresh?.() }
+                }}
+              />
+            )}
+            {showBuildCache && (
+              <CleanupRow
+                color="danger"
+                label="Build cache"
+                size={buildCacheFree}
+                onNavigate={() => setDockerTab('prune')}
+              />
+            )}
+          </div>
+        )}
+      </div>
 
     </div>
   )

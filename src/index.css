@@ -2422,7 +2422,7 @@ button:focus-visible {
 
 .hero-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   background: var(--color-border);
   gap: 1px;
 }
@@ -2975,6 +2975,247 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
   transition: filter var(--transition-fast);
 }
 .overview-prune-btn:hover { filter: brightness(1.12); }
+
+/* =============================================================
+   Overview — Quick Actions Bar
+   ============================================================= */
+
+.quick-actions-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+}
+
+.quick-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+.quick-action-btn:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+  border-color: var(--color-border-strong);
+}
+.quick-action-btn--prune {
+  color: var(--color-danger);
+  border-color: var(--color-danger-border);
+  background: var(--color-danger-subtle);
+}
+.quick-action-btn--prune:hover {
+  background: rgba(255, 80, 80, 0.15);
+  color: var(--color-danger);
+  border-color: var(--color-danger-border);
+}
+
+/* =============================================================
+   Overview — Active Projects (rich compose stack cards)
+   ============================================================= */
+
+.project-cards {
+  display: flex;
+  flex-direction: column;
+}
+
+.project-card {
+  display: grid;
+  grid-template-columns: 10px 1fr auto 12px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-border-light);
+  font-family: inherit;
+  font-size: 13px;
+  color: inherit;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.project-card:last-child { border-bottom: none; }
+.project-card:hover      { background: var(--color-bg-hover); }
+.project-card:active     { transform: scale(0.995); }
+
+.project-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.project-card-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.project-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+
+.project-card-metric {
+  color: var(--color-text-tertiary);
+}
+
+.project-card-ports {
+  color: var(--color-accent-hover);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 10.5px;
+}
+
+.project-card-counts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  flex-shrink: 0;
+}
+
+.project-card-count {
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.project-card-count-label {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+/* =============================================================
+   Overview — Two-column layout (Health + Resource Monitoring)
+   ============================================================= */
+
+.overview-two-col {
+  display: grid;
+  grid-template-columns: 250px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .overview-two-col { grid-template-columns: 1fr; }
+}
+
+/* =============================================================
+   Overview — Health & Alerts Panel
+   ============================================================= */
+
+.health-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.health-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  border-bottom: 1px solid var(--color-border-light);
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  width: 100%;
+  color: inherit;
+  line-height: 1.4;
+}
+.health-item:last-child { border-bottom: none; }
+
+button.health-item {
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.health-item--ok       { color: var(--color-success); }
+.health-item--warn     { color: var(--color-warning); }
+.health-item--critical { color: var(--color-danger); background: var(--color-danger-subtle); }
+.health-item--info     { color: var(--color-text-secondary); }
+
+button.health-item--warn:hover     { background: var(--color-bg-hover); }
+button.health-item--critical:hover { background: rgba(255, 80, 80, 0.15); }
+button.health-item--info:hover     { background: var(--color-bg-hover); }
+
+.health-item-arrow {
+  margin-left: auto;
+  opacity: 0.45;
+  flex-shrink: 0;
+}
+
+/* =============================================================
+   Overview — System Insights Grid
+   ============================================================= */
+
+.insights-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  background: var(--color-border);
+  gap: 1px;
+}
+
+@media (max-width: 900px) {
+  .insights-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+.insights-tile {
+  background: var(--color-bg-secondary);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.insights-tile-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+.insights-tile-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.insights-tile-sub {
+  font-size: 10.5px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
 
 /* =============================================================
    Overview — Disk usage stacked horizontal bar
