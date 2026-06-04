@@ -85,10 +85,12 @@ function HeroSkeleton() {
 
 // ── Live Charts ───────────────────────────────────────────────────────────────
 
-const CHART_COLORS = [
-  '#6c71ff', '#36c85a', '#f0a500', '#38bdf8',
-  '#a78bfa', '#ff5050', '#fb923c', '#34d399',
-]
+function getChartColors(): string[] {
+  const style = getComputedStyle(document.documentElement)
+  return Array.from({ length: 8 }, (_, i) =>
+    style.getPropertyValue(`--chart-${i + 1}`).trim()
+  )
+}
 
 interface LiveSeries {
   name:  string
@@ -304,12 +306,15 @@ function LiveCharts({
   )
 
   const series: LiveSeries[] = useMemo(
-    () => sorted.map((s, i) => ({
-      name:  s.name,
-      color: CHART_COLORS[i % CHART_COLORS.length],
-      cpu:   statHistory.get(s.name)?.cpu?.length ? statHistory.get(s.name)!.cpu : [s.cpu_pct],
-      mem:   statHistory.get(s.name)?.mem?.length ? statHistory.get(s.name)!.mem : [s.mem_used_bytes],
-    })),
+    () => {
+      const colors = getChartColors()
+      return sorted.map((s, i) => ({
+        name:  s.name,
+        color: colors[i % colors.length],
+        cpu:   statHistory.get(s.name)?.cpu?.length ? statHistory.get(s.name)!.cpu : [s.cpu_pct],
+        mem:   statHistory.get(s.name)?.mem?.length ? statHistory.get(s.name)!.mem : [s.mem_used_bytes],
+      }))
+    },
     [sorted, statHistory],
   )
 

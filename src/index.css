@@ -68,6 +68,16 @@
   --transition-fast: 0.1s ease;
   --transition-base: 0.18s ease;
   --transition-slow: 0.3s ease;
+
+  /* ── Chart series colors — 8 slots, theme-aware */
+  --chart-1: #6c71ff;   /* accent */
+  --chart-2: #36c85a;   /* success-green */
+  --chart-3: #f0a500;   /* warning-amber */
+  --chart-4: #38bdf8;   /* sky-blue */
+  --chart-5: #a78bfa;   /* violet */
+  --chart-6: #ff5050;   /* danger-red */
+  --chart-7: #fb923c;   /* orange */
+  --chart-8: #34d399;   /* emerald */
 }
 
 /* =============================================================
@@ -116,6 +126,15 @@
   --shadow-sm:   0 1px 4px rgba(0,0,0,0.07);
   --shadow-md:   0 4px 16px rgba(0,0,0,0.1);
   --shadow-lg:   0 12px 40px rgba(0,0,0,0.14);
+
+  --chart-1: #4f52e8;
+  --chart-2: #1a9440;
+  --chart-3: #b07a00;
+  --chart-4: #0284c7;
+  --chart-5: #7c3aed;
+  --chart-6: #cc2828;
+  --chart-7: #c2410c;
+  --chart-8: #059669;
 }
 
 /* =============================================================
@@ -1410,6 +1429,7 @@ ul, ol { list-style: none; }
   align-items: center;
   gap: 7px;
   padding: 7px 14px;
+  border: none;
   border-radius: var(--radius-sm);
   font-size: 13px;
   font-weight: 600;
@@ -1418,7 +1438,7 @@ ul, ol { list-style: none; }
 .btn-execute--success { background: var(--color-success); color: #fff; }
 .btn-execute--warning { background: var(--color-warning); color: #fff; }
 .btn-execute--danger  { background: var(--color-danger);  color: #fff; }
-.btn-execute:hover { filter: brightness(1.1); }
+.btn-execute:hover:not(:disabled) { filter: brightness(1.1); }
 
 .btn-reset {
   display: flex;
@@ -1621,7 +1641,7 @@ ul, ol { list-style: none; }
   outline: none;
   user-select: text;
 }
-.modal-input:focus { border-color: var(--color-danger); }
+.modal-input:focus { border-color: var(--color-accent); }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .btn-modal-cancel {
   padding: 7px 14px;
@@ -1636,6 +1656,7 @@ ul, ol { list-style: none; }
 .btn-modal-confirm {
   padding: 7px 14px;
   background: var(--color-danger);
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   color: #fff;
   font-size: 13px;
