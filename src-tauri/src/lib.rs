@@ -8,6 +8,7 @@ pub fn run() {
         .manage(shell::ShellState(std::sync::Arc::new(std::sync::Mutex::new(None))))
         .invoke_handler(tauri::generate_handler![
             docker::docker_check,
+            docker::launch_docker_desktop,
             docker::docker_system_df,
             docker::docker_images,
             docker::docker_prune_preview,

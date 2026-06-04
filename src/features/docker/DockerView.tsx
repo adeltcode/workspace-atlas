@@ -3,10 +3,13 @@ import {
   Box, RefreshCw,
   LayoutGrid, Layers, Boxes, Database, Network,
   FileCode, Eraser, ScrollText,
+  Play, ExternalLink, Download,
 } from 'lucide-react'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import clsx from 'clsx'
 import { useAppStore, type DockerTab } from '../../store/appStore'
 import { useDockerData } from './hooks'
+import * as api from './api'
 import OverviewTab    from './components/OverviewTab'
 import ImagesTab      from './components/ImagesTab'
 import ContainersTab  from './components/ContainersTab'
@@ -53,6 +56,8 @@ export default function DockerView() {
   const setDockerTab = useAppStore(s => s.setDockerTab)
   const { status, df, images, containers, volumes, loading, error, refresh, refreshContainers, refreshVolumes } = useDockerData()
   const [composeTick, setComposeTick] = useState(0)
+  const [starting, setStarting]       = useState(false)
+  const [startError, setStartError]   = useState<string | null>(null)
 
   const online   = status?.available ?? false
   const subtitle = TAB_SUBTITLES[dockerTab] ?? ''
@@ -60,6 +65,20 @@ export default function DockerView() {
   // Ctrl+R / Cmd+R → Refresh
   const handleRefresh = useCallback(() => {
     refresh(); setComposeTick(t => t + 1)
+  }, [refresh])
+
+  const handleStartDocker = useCallback(async () => {
+    setStarting(true)
+    setStartError(null)
+    try {
+      await api.launchDockerDesktop()
+      // Docker Desktop takes ~30–60 s to start; auto-refresh after 8 s so the
+      // user sees progress without having to click Refresh manually.
+      setTimeout(() => { refresh(); setStarting(false) }, 8000)
+    } catch (e) {
+      setStartError(String(e))
+      setStarting(false)
+    }
   }, [refresh])
 
   useEffect(() => {
@@ -147,11 +166,65 @@ export default function DockerView() {
         </div>
       )}
 
-      {!loading && status && !online && (
+      {!loading && status && !online && status.state === 'not_installed' && (
+        <div className="docker-install-card" style={{ marginTop: 20 }}>
+          <div className="docker-install-icon"><Download size={28} /></div>
+          <h2 className="docker-install-title">Docker is not installed</h2>
+          <p className="docker-install-desc">
+            Docker Desktop is required to use this application. Download and install it for Windows, then restart the app.
+          </p>
+          <ol className="docker-install-steps">
+            <li>Download <strong>Docker Desktop for Windows</strong> from docker.com</li>
+            <li>Run the installer and follow the on-screen instructions</li>
+            <li>Start Docker Desktop and wait for the engine to come online</li>
+            <li>Return here and click <strong>Refresh</strong></li>
+          </ol>
+          <div className="docker-install-actions">
+            <button
+              className="btn-primary"
+              onClick={() => openUrl('https://www.docker.com/products/docker-desktop/')}
+            >
+              <ExternalLink size={14} />
+              Download Docker Desktop
+            </button>
+            <button className="btn-refresh" onClick={handleRefresh}>
+              <RefreshCw size={13} />
+              Refresh
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!loading && status && !online && status.state === 'stopped' && (
         <div className="offline-card" style={{ marginTop: 20 }}>
           <p className="offline-title">Docker Desktop is not running</p>
-          <p className="offline-desc">Start Docker Desktop, then click Refresh.</p>
-          {status.error && <code className="offline-code">{status.error}</code>}
+          {starting ? (
+            <p className="offline-desc">
+              <RefreshCw size={13} className="spin" style={{ display: 'inline', marginRight: 6 }} />
+              Starting Docker Desktop… this can take up to a minute.
+            </p>
+          ) : (
+            <p className="offline-desc">
+              Docker Desktop is installed but the engine is stopped.
+              Start it below or from the system tray, then click Refresh.
+            </p>
+          )}
+          {startError && <code className="offline-code" style={{ color: 'var(--color-danger)' }}>{startError}</code>}
+          {status.error && !startError && <code className="offline-code">{status.error}</code>}
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <button
+              className="btn-primary"
+              onClick={handleStartDocker}
+              disabled={starting}
+            >
+              <Play size={13} />
+              {starting ? 'Starting…' : 'Start Docker Desktop'}
+            </button>
+            <button className="btn-refresh" onClick={handleRefresh} disabled={loading}>
+              <RefreshCw size={13} className={loading ? 'spin' : ''} />
+              Refresh
+            </button>
+          </div>
         </div>
       )}
 

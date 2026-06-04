@@ -14,6 +14,8 @@ pub struct DockerStatus {
     pub available: bool,
     pub version: Option<String>,
     pub error: Option<String>,
+    /// "running" | "stopped" | "not_installed"
+    pub state: String,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -712,9 +714,11 @@ pub async fn docker_check() -> DockerStatus {
                 available: true,
                 version: if version.is_empty() { None } else { Some(version) },
                 error: None,
+                state: "running".to_string(),
             }
         }
         Ok(o) => {
+            // CLI found but daemon not responding
             let err = String::from_utf8_lossy(&o.stderr).trim().to_string();
             DockerStatus {
                 available: false,
@@ -724,14 +728,54 @@ pub async fn docker_check() -> DockerStatus {
                 } else {
                     err
                 }),
+                state: "stopped".to_string(),
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // `docker` binary not in PATH — check common install paths before
+            // declaring it truly absent (Docker Desktop may not update PATH yet)
+            let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
+            let candidates = [
+                r"C:\Program Files\Docker\Docker\resources\bin\docker.exe".to_string(),
+                format!(r"{}\Programs\Docker\Docker\resources\bin\docker.exe", local_app_data),
+            ];
+            let found_elsewhere = candidates.iter().any(|p| std::path::Path::new(p).exists());
+            DockerStatus {
+                available: false,
+                version: None,
+                error: Some(format!("docker not found: {}", e)),
+                state: if found_elsewhere { "stopped" } else { "not_installed" }.to_string(),
             }
         }
         Err(e) => DockerStatus {
             available: false,
             version: None,
             error: Some(format!("docker not found: {}", e)),
+            state: "stopped".to_string(),
         },
     }
+}
+
+/// Try to launch Docker Desktop on Windows. Returns an error string if the
+/// executable cannot be located or spawned.
+#[tauri::command]
+pub async fn launch_docker_desktop() -> Result<(), String> {
+    let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
+    let candidates = [
+        r"C:\Program Files\Docker\Docker\Docker Desktop.exe".to_string(),
+        format!(r"{}\Programs\Docker\Docker\Docker Desktop.exe", local_app_data),
+    ];
+
+    for path in &candidates {
+        if std::path::Path::new(path).exists() {
+            return std::process::Command::new(path)
+                .spawn()
+                .map(|_| ())
+                .map_err(|e| format!("Failed to start Docker Desktop: {}", e));
+        }
+    }
+
+    Err("Docker Desktop executable not found. Please launch it from the Start Menu.".to_string())
 }
 
 #[tauri::command]

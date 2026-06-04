@@ -2,6 +2,8 @@ export interface DockerStatus {
   available: boolean
   version: string | null
   error: string | null
+  /** "running" | "stopped" | "not_installed" */
+  state: 'running' | 'stopped' | 'not_installed'
 }
 
 export interface DiskUsageRow {
