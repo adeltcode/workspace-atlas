@@ -113,16 +113,16 @@ export default function PruneTab({ images: _images, onDone }: { images: DockerIm
       )}
 
       <div className="prune-actions">
-        <button className="btn-preview" onClick={handlePreview} disabled={pruneState === 'previewing' || running}>
+        <button className="btn-secondary" onClick={handlePreview} disabled={pruneState === 'previewing' || running}>
           <Eye size={14} />{pruneState === 'previewing' ? 'Calculating…' : 'Preview changes'}
         </button>
         {canExecute && (
-          <button className={clsx('btn-execute', `btn-execute--${LEVELS[selectedLevel - 1].color}`)} onClick={handleExecute}>
+          <button className={clsx('btn-filled', `btn-filled--${LEVELS[selectedLevel - 1].color}`)} onClick={handleExecute}>
             <Play size={13} />Execute Level {selectedLevel}
           </button>
         )}
         {(preview || previewError) && (
-          <button className="btn-reset" onClick={reset} disabled={running}><RotateCcw size={12} />Reset</button>
+          <button className="btn-ghost" onClick={reset} disabled={running}><RotateCcw size={12} />Reset</button>
         )}
         {running && <span className="prune-running-notice">Running — see Terminal panel below</span>}
       </div>
@@ -176,8 +176,8 @@ export default function PruneTab({ images: _images, onDone }: { images: DockerIm
             </p>
             <input ref={confirmRef} className="modal-input" type="text" placeholder='Type "I understand"' value={confirmText} onChange={e => setConfirmText(e.target.value)} />
             <div className="modal-actions">
-              <button className="btn-modal-cancel" onClick={() => { setPruneState('idle'); setConfirmText('') }}>Cancel</button>
-              <button className="btn-modal-confirm" disabled={confirmText !== 'I understand'} onClick={runPrune}>Execute Nuclear Prune</button>
+              <button className="btn-secondary" onClick={() => { setPruneState('idle'); setConfirmText('') }}>Cancel</button>
+              <button className="btn-filled btn-filled--danger" disabled={confirmText !== 'I understand'} onClick={runPrune}>Execute Nuclear Prune</button>
             </div>
           </div>
         </div>

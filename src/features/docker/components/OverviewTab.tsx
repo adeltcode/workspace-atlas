@@ -451,14 +451,14 @@ function CleanupRow({
           {removeErr && <div className="cleanup-expand-error">{removeErr}</div>}
           <div className="cleanup-expand-actions">
             <button
-              className="btn-execute btn-execute--danger btn-sm"
+              className="btn-filled btn-filled--danger btn-sm"
               disabled={selected.size === 0 || removing}
               onClick={handleRemove}
             >
               <Trash2 size={11} />
               {removing ? 'Removing…' : `Remove${selected.size > 0 ? ` ${selected.size}` : ''}`}
             </button>
-            <button className="btn-reset btn-sm" onClick={onNavigate}>View in tab</button>
+            <button className="btn-ghost btn-sm" onClick={onNavigate}>View in tab</button>
           </div>
         </div>
       )}
@@ -655,7 +655,7 @@ export default function OverviewTab({
         <div className="overview-section-head overview-section-head--static">
           <span className="section-label" style={{ margin: 0 }}>Cleanup Opportunities</span>
           {!loading && totalFreeBytes > 0 && (
-            <span className="overview-section-meta">~{bytesToHuman(totalFreeBytes)} estimated freeable</span>
+            <span className="overview-section-meta" style={{ marginLeft: 'auto' }}>~{bytesToHuman(totalFreeBytes)} estimated freeable</span>
           )}
           {!loading && totalFreeBytes > 0 && (
             <button className="overview-prune-btn" onClick={() => setDockerTab('prune')}>
@@ -788,7 +788,7 @@ export default function OverviewTab({
             </button>
           </div>
           <button
-            className="stats-refresh-btn"
+            className="btn-icon"
             onClick={onPollStats}
             disabled={statsLoading}
             title="Refresh stats"

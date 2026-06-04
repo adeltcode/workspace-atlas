@@ -467,20 +467,20 @@ export default function VolumesTab({
                                       <div className="backup-inline-confirm">
                                         <span className="backup-confirm-text">Restore will overwrite existing volume data.</span>
                                         <div className="backup-confirm-actions">
-                                          <button className="btn-execute btn-execute--success btn-sm" onClick={() => doRestore(entry)} disabled={isRestoring}>
+                                          <button className="btn-filled btn-filled--success btn-sm" onClick={() => doRestore(entry)} disabled={isRestoring}>
                                             <RotateCcw size={11} /> Restore
                                           </button>
-                                          <button className="btn-reset btn-sm" onClick={() => setConfirmRestore(null)}>Cancel</button>
+                                          <button className="btn-ghost btn-sm" onClick={() => setConfirmRestore(null)}>Cancel</button>
                                         </div>
                                       </div>
                                     ) : isConfD ? (
                                       <div className="backup-inline-confirm">
                                         <span className="backup-confirm-text backup-confirm-text--danger">Delete this archive permanently?</span>
                                         <div className="backup-confirm-actions">
-                                          <button className="btn-execute btn-execute--danger btn-sm" onClick={() => doDeleteEntry(entry)} disabled={isDeletingEntry === entry.filename}>
+                                          <button className="btn-filled btn-filled--danger btn-sm" onClick={() => doDeleteEntry(entry)} disabled={isDeletingEntry === entry.filename}>
                                             <Trash2 size={11} /> Delete
                                           </button>
-                                          <button className="btn-reset btn-sm" onClick={() => setConfirmDelete(null)}>Cancel</button>
+                                          <button className="btn-ghost btn-sm" onClick={() => setConfirmDelete(null)}>Cancel</button>
                                         </div>
                                       </div>
                                     ) : (

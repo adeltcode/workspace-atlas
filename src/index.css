@@ -34,6 +34,14 @@
   --color-danger:         #ff5050;
   --color-danger-subtle:  rgba(255,80,80,0.1);
 
+  /* ── On-brand & border shades */
+  --color-on-brand:      #fff;
+  --color-accent-border: color-mix(in srgb, var(--color-accent) 30%, transparent);
+  --color-danger-border: color-mix(in srgb, var(--color-danger) 20%, transparent);
+
+  /* ── Radius */
+  --radius-full: 9999px;
+
   /* ── Chrome areas (sidebar, titlebar, terminal) */
   --color-sidebar-bg:    #080910;
   --color-titlebar-bg:   #080910;
@@ -931,12 +939,12 @@ ul, ol { list-style: none; }
   background: var(--color-accent);
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  color: #fff;
+  color: var(--color-on-brand);
   font-size: 13px;
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
-  transition: background 0.12s, opacity 0.12s;
+  transition: background var(--transition-fast), opacity var(--transition-fast);
 }
 .btn-primary:hover:not(:disabled) { background: var(--color-accent-hover); }
 .btn-primary:disabled { opacity: 0.5; cursor: default; }
@@ -963,6 +971,87 @@ ul, ol { list-style: none; }
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* =============================================================
+   Shared Button System
+   btn-secondary / btn-ghost / btn-filled / btn-icon
+   ctr-action-btn (row icon buttons — shared across all tabs)
+   ============================================================= */
+
+.btn-secondary {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 14px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: 13px; font-weight: 500; font-family: inherit; cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+.btn-secondary:hover:not(:disabled) { background: var(--color-bg-tertiary); border-color: var(--color-accent); }
+.btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-ghost {
+  display: flex; align-items: center; gap: 5px;
+  padding: 7px 12px;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-tertiary);
+  font-size: 12px; font-family: inherit; cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.btn-ghost:hover:not(:disabled) { background: var(--color-bg-hover); color: var(--color-text-secondary); }
+.btn-ghost:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-filled {
+  display: flex; align-items: center; gap: 7px;
+  padding: 7px 14px;
+  border: none; border-radius: var(--radius-sm);
+  font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer;
+  color: var(--color-on-brand);
+  transition: filter var(--transition-fast);
+}
+.btn-filled--success { background: var(--color-success); }
+.btn-filled--warning { background: var(--color-warning); }
+.btn-filled--danger  { background: var(--color-danger); }
+.btn-filled:hover:not(:disabled) { filter: brightness(1.1); }
+.btn-filled:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px;
+  border: none; border-radius: var(--radius-sm);
+  background: none; color: var(--color-text-tertiary);
+  cursor: pointer; flex-shrink: 0;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.btn-icon:hover:not(:disabled) { background: var(--color-bg-hover); color: var(--color-text-primary); }
+.btn-icon:disabled { opacity: 0.4; cursor: default; }
+
+.ctr-action-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: 3px; width: 28px; height: 26px;
+  border-radius: var(--radius-sm);
+  font-size: 11px; font-weight: 600;
+  color: var(--color-text-tertiary); background: transparent;
+  transition: background var(--transition-fast), color var(--transition-fast);
+  flex-shrink: 0;
+}
+.ctr-action-btn:hover:not(:disabled) { background: var(--color-bg-hover); color: var(--color-text-primary); }
+.ctr-action-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.ctr-action-btn--labeled { width: auto; padding: 0 9px; gap: 5px; font-size: 11px; font-weight: 500; }
+
+.ctr-action-start:hover:not(:disabled)  { color: var(--color-success); background: var(--color-success-subtle); }
+.ctr-action-stop:hover:not(:disabled)   { color: var(--color-warning); background: var(--color-warning-subtle); }
+.ctr-action-remove:hover:not(:disabled) { color: var(--color-danger);  background: var(--color-danger-subtle);  }
+
+.ctr-action-confirm {
+  width: auto; padding: 0 7px;
+  background: var(--color-danger-subtle); color: var(--color-danger);
+  border: 1px solid var(--color-danger-border);
+}
+.ctr-action-confirm:hover:not(:disabled) { filter: brightness(1.15); }
 
 @keyframes spin {
   to { transform: rotate(360deg); }
@@ -1408,52 +1497,6 @@ ul, ol { list-style: none; }
 
 .prune-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
-.btn-preview {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 7px 14px;
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  color: var(--color-text-primary);
-  font-size: 13px;
-  font-weight: 500;
-  transition: background 0.12s, border-color 0.12s;
-}
-.btn-preview:hover:not(:disabled) { background: var(--color-bg-tertiary); border-color: var(--color-accent); }
-.btn-preview:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.btn-execute {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 7px 14px;
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  font-weight: 600;
-  transition: filter 0.12s;
-}
-.btn-execute--success { background: var(--color-success); color: #fff; }
-.btn-execute--warning { background: var(--color-warning); color: #fff; }
-.btn-execute--danger  { background: var(--color-danger);  color: #fff; }
-.btn-execute:hover:not(:disabled) { filter: brightness(1.1); }
-
-.btn-reset {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 7px 12px;
-  background: transparent;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  color: var(--color-text-tertiary);
-  font-size: 12px;
-  transition: background 0.1s, color 0.1s;
-}
-.btn-reset:hover:not(:disabled) { background: var(--color-bg-hover); color: var(--color-text-secondary); }
-.btn-reset:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .prune-preview {
   background: var(--color-bg-secondary);
@@ -1643,28 +1686,6 @@ ul, ol { list-style: none; }
 }
 .modal-input:focus { border-color: var(--color-accent); }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
-.btn-modal-cancel {
-  padding: 7px 14px;
-  background: var(--color-bg-tertiary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  color: var(--color-text-secondary);
-  font-size: 13px;
-  transition: background 0.1s;
-}
-.btn-modal-cancel:hover { background: var(--color-bg-hover); }
-.btn-modal-confirm {
-  padding: 7px 14px;
-  background: var(--color-danger);
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  color: #fff;
-  font-size: 13px;
-  font-weight: 600;
-  transition: filter 0.1s, opacity 0.1s;
-}
-.btn-modal-confirm:hover:not(:disabled) { filter: brightness(1.1); }
-.btn-modal-confirm:disabled { opacity: 0.35; cursor: not-allowed; }
 
 /* =============================================================
    Docker — Log Tab
@@ -1774,8 +1795,9 @@ ul, ol { list-style: none; }
 .pin-btn.pinned { animation: pin-pop 0.28s ease; }
 
 /* Button active press */
-.btn-preview:active:not(:disabled),
-.btn-execute:active,
+.btn-secondary:active:not(:disabled),
+.btn-ghost:active:not(:disabled),
+.btn-filled:active:not(:disabled),
 .btn-refresh:active:not(:disabled) {
   transform: scale(0.97);
 }
@@ -2633,6 +2655,11 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
   flex-direction: column;
 }
 
+.cleanup-row-wrap {
+  border-bottom: 1px solid var(--color-border-light);
+}
+.cleanup-row-wrap:last-child { border-bottom: none; }
+
 .cleanup-row {
   display: grid;
   grid-template-columns: 10px 1fr auto auto auto;
@@ -2643,16 +2670,99 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
   text-align: left;
   background: none;
   border: none;
-  border-bottom: 1px solid var(--color-border-light);
   font-family: inherit;
   font-size: 13px;
   color: inherit;
   cursor: pointer;
   transition: background 0.15s;
 }
-.cleanup-row:last-child { border-bottom: none; }
 .cleanup-row:hover { background: var(--color-bg-hover); }
-.cleanup-row--skeleton { pointer-events: none; }
+.cleanup-row--skeleton { pointer-events: none; border-bottom: 1px solid var(--color-border-light); }
+.cleanup-row--skeleton:last-child { border-bottom: none; }
+
+.cleanup-row-arrow--open { transform: rotate(180deg); }
+
+/* Expand panel */
+.cleanup-expand {
+  border-top: 1px solid var(--color-border-light);
+  padding: 8px 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--color-bg-primary);
+}
+
+.cleanup-expand-all {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  border-bottom: 1px solid var(--color-border-light);
+  margin-bottom: 2px;
+}
+
+.cleanup-expand-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.cleanup-expand-item {
+  display: grid;
+  grid-template-columns: 16px 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 2px;
+  font-size: 11.5px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast);
+}
+.cleanup-expand-item:hover { background: var(--color-bg-hover); }
+
+.cleanup-expand-item-label {
+  color: var(--color-text-primary);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cleanup-expand-item-sub {
+  color: var(--color-text-tertiary);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.cleanup-expand-item-size {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.cleanup-expand-error {
+  font-size: 11px;
+  color: var(--color-danger);
+  padding: 4px 2px;
+}
+
+.cleanup-expand-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border-light);
+  margin-top: 4px;
+}
 
 /* Category dot — matches bar card colors */
 .cleanup-dot {
@@ -2838,26 +2948,6 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
   white-space: nowrap;
 }
 
-.stats-refresh-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: var(--radius-sm);
-  background: none;
-  border: none;
-  color: var(--color-text-tertiary);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background 0.15s, color 0.15s;
-}
-.stats-refresh-btn:hover:not(:disabled) {
-  background: var(--color-bg-hover);
-  color: var(--color-text-primary);
-}
-.stats-refresh-btn:disabled { opacity: 0.4; cursor: default; }
-
 /* Compose stack rows reuse .cleanup-row but have a different grid (dot + name + status + arrow) */
 .cleanup-row--compose {
   grid-template-columns: 10px 1fr auto auto;
@@ -2869,36 +2959,22 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
   white-space: nowrap;
 }
 
-/* Full-width "Clean up" CTA button */
-.cleanup-cta-full {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  padding: 12px 16px;
-  width: 100%;
-  background: var(--color-success-subtle);
-  border: none;
-  border-top: 1px solid var(--color-border);
-  cursor: pointer;
-  font-family: inherit;
-  transition: background 0.15s;
-}
-.cleanup-cta-full:hover { background: rgba(54, 200, 90, 0.16); }
-
-.cleanup-cta-main {
+/* Compact "Prune all" button in the cleanup section header */
+.overview-prune-btn {
   display: flex;
   align-items: center;
-  gap: 7px;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--color-success);
-}
-
-.cleanup-cta-sub {
+  gap: 5px;
+  padding: 4px 10px;
+  background: var(--color-danger-subtle);
+  border: 1px solid var(--color-danger-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-danger);
   font-size: 11px;
-  color: var(--color-text-tertiary);
+  font-weight: 600;
+  font-family: inherit;
+  transition: filter var(--transition-fast);
 }
+.overview-prune-btn:hover { filter: brightness(1.12); }
 
 /* =============================================================
    Overview — Disk usage stacked horizontal bar
@@ -3249,38 +3325,6 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
   white-space: nowrap;
 }
 
-/* Base action button */
-.ctr-action-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  width: 28px;
-  height: 26px;
-  border-radius: var(--radius-sm);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--color-text-tertiary);
-  background: transparent;
-  transition: background var(--transition-fast), color var(--transition-fast);
-  flex-shrink: 0;
-}
-.ctr-action-btn:hover:not(:disabled) { background: var(--color-bg-hover); color: var(--color-text-primary); }
-.ctr-action-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-
-.ctr-action-start:hover:not(:disabled)  { color: var(--color-success); background: var(--color-success-subtle); }
-.ctr-action-stop:hover:not(:disabled)   { color: var(--color-warning); background: var(--color-warning-subtle); }
-.ctr-action-remove:hover:not(:disabled) { color: var(--color-danger);  background: var(--color-danger-subtle);  }
-
-/* Confirm-state: red filled, wider to fit icon + "?" */
-.ctr-action-confirm {
-  width: auto;
-  padding: 0 7px;
-  background: var(--color-danger-subtle);
-  color: var(--color-danger);
-  border: 1px solid rgba(255,80,80,0.25);
-}
-.ctr-action-confirm:hover:not(:disabled) { filter: brightness(1.15); }
 
 /* =============================================================
    Docker — Volumes Tab
@@ -3403,15 +3447,6 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
-}
-
-/* Labeled action button (icon + text) */
-.ctr-action-btn--labeled {
-  width: auto;
-  padding: 0 9px;
-  gap: 5px;
-  font-size: 11px;
-  font-weight: 500;
 }
 
 /* ── Inline toolbar bulk controls (no layout shift) ─────────────── */
@@ -3722,7 +3757,7 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
   padding: 4px 10px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--color-text-secondary);
   background: var(--color-bg-tertiary);
@@ -3731,8 +3766,8 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
   transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
 }
 .compose-backup-toggle-btn:hover { background: var(--color-bg-hover); color: var(--color-text-primary); border-color: var(--color-border-strong); }
-.compose-backup-toggle-btn.active { background: var(--color-accent-subtle); color: var(--color-accent); border-color: rgba(108,113,255,0.3); }
-.compose-backup-toggle-chevron { color: var(--color-text-tertiary); transition: transform 0.15s; flex-shrink: 0; }
+.compose-backup-toggle-btn.active { background: var(--color-accent-subtle); color: var(--color-accent); border-color: var(--color-accent-border); }
+.compose-backup-toggle-chevron { color: var(--color-text-tertiary); transition: transform var(--transition-fast); flex-shrink: 0; }
 .compose-backup-toggle-chevron.open { transform: rotate(180deg); }
 
 /* Count badge inside the Backup toggle button */
@@ -3741,13 +3776,13 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
   font-weight: 700;
   line-height: 1;
   padding: 1px 5px;
-  border-radius: 9px;
+  border-radius: var(--radius-full);
   background: var(--color-accent-subtle);
   color: var(--color-accent);
-  border: 1px solid rgba(108,113,255,0.25);
+  border: 1px solid var(--color-accent-border);
 }
 .compose-backup-toggle-btn.active .compose-backup-btn-count {
-  background: rgba(108,113,255,0.22);
+  background: color-mix(in srgb, var(--color-accent) 22%, transparent);
 }
 
 /* Inline toolbar status message (replaces accordion head row) */
@@ -3781,10 +3816,10 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
   gap: 5px;
   padding: 4px 10px;
   border-radius: var(--radius-sm);
-  border: 1px solid rgba(108,113,255,0.3);
+  border: 1px solid var(--color-accent-border);
   background: var(--color-accent-subtle);
   color: var(--color-accent);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
@@ -4571,18 +4606,10 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
 
 /* Small button variant */
 .btn-sm {
-  font-size: 11.5px !important;
+  font-size: 11px !important;
   padding: 0 10px !important;
   height: 26px !important;
   gap: 4px !important;
-}
-
-.btn-execute--danger {
-  background: var(--color-danger) !important;
-  color: #fff !important;
-}
-.btn-execute--danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--color-danger) 80%, white) !important;
 }
 
 /* =============================================================
@@ -4887,7 +4914,7 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
 }
 
 /* ── BackupTab CTA hint when disabled ───────────────────────────────────────── */
-.btn-execute--disabled-hint:disabled {
+.btn-filled--disabled-hint:disabled {
   opacity: 0.45;
   cursor: default;
 }

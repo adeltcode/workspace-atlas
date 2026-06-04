@@ -425,11 +425,11 @@ export default function BackupTab({
             </div>
           </div>
           <div className="backup-transfer-actions">
-            <button className="btn-execute btn-execute--success" onClick={() => handleTransfer(true)} disabled={transferring}>
+            <button className="btn-filled btn-filled--success" onClick={() => handleTransfer(true)} disabled={transferring}>
               <MoveRight size={12} />{transferring ? 'Moving…' : 'Transfer & Switch'}
             </button>
-            <button className="btn-reset" onClick={() => handleTransfer(false)} disabled={transferring}>Switch without moving</button>
-            <button className="btn-reset" onClick={() => { setPendingDir(null); setDirInput(backupDir) }} disabled={transferring}>Cancel</button>
+            <button className="btn-ghost" onClick={() => handleTransfer(false)} disabled={transferring}>Switch without moving</button>
+            <button className="btn-ghost" onClick={() => { setPendingDir(null); setDirInput(backupDir) }} disabled={transferring}>Cancel</button>
           </div>
         </div>
       )}
@@ -518,20 +518,20 @@ export default function BackupTab({
                                 <div className="backup-inline-confirm">
                                   <span className="backup-confirm-text">Restore will overwrite existing data.</span>
                                   <div className="backup-confirm-actions">
-                                    <button className="btn-execute btn-execute--success btn-sm" onClick={() => runRestore(entry)} disabled={anyRunning}>
+                                    <button className="btn-filled btn-filled--success btn-sm" onClick={() => runRestore(entry)} disabled={anyRunning}>
                                       <RotateCcw size={11} /> Confirm
                                     </button>
-                                    <button className="btn-reset btn-sm" onClick={() => setConfirmRestore(null)}>Cancel</button>
+                                    <button className="btn-ghost btn-sm" onClick={() => setConfirmRestore(null)}>Cancel</button>
                                   </div>
                                 </div>
                               ) : isConfirmD ? (
                                 <div className="backup-inline-confirm">
                                   <span className="backup-confirm-text backup-confirm-text--danger">Permanently delete archive?</span>
                                   <div className="backup-confirm-actions">
-                                    <button className="btn-execute btn-execute--danger btn-sm" onClick={() => runDeleteVolBackup(entry)} disabled={isDeleting}>
+                                    <button className="btn-filled btn-filled--danger btn-sm" onClick={() => runDeleteVolBackup(entry)} disabled={isDeleting}>
                                       <Trash2 size={11} /> Delete
                                     </button>
-                                    <button className="btn-reset btn-sm" onClick={() => setConfirmDelete(null)}>Cancel</button>
+                                    <button className="btn-ghost btn-sm" onClick={() => setConfirmDelete(null)}>Cancel</button>
                                   </div>
                                 </div>
                               ) : (
@@ -597,7 +597,7 @@ export default function BackupTab({
       {/* Volume backup action */}
       <div className="backup-action-row">
         <button
-          className={clsx('btn-execute btn-execute--success', selected.size === 0 && 'btn-execute--disabled-hint')}
+          className={clsx('btn-filled btn-filled--success', selected.size === 0 && 'btn-filled--disabled-hint')}
           onClick={runBackup}
           disabled={anyRunning || selected.size === 0 || !backupDir}
           title={!backupDir ? 'Set a backup directory first' : selected.size === 0 ? 'Check one or more volumes above to back up' : ''}
@@ -646,7 +646,7 @@ export default function BackupTab({
                     </div>
                     {item.project && (
                       <button
-                        className={clsx('btn-execute btn-execute--success btn-sm backup-compose-backup-btn', isBacking && 'loading')}
+                        className={clsx('btn-filled btn-filled--success btn-sm backup-compose-backup-btn', isBacking && 'loading')}
                         onClick={() => handleBackupCompose(item.project!)}
                         disabled={isBacking || !backupDir}
                         title={!backupDir ? 'Set a backup directory first' : `Back up compose files for '${item.name}'`}

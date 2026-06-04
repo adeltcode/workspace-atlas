@@ -179,17 +179,17 @@ export default function SettingsView() {
               </div>
               <div className="settings-transfer-actions">
                 <button
-                  className="btn-execute btn-execute--success"
+                  className="btn-filled btn-filled--success"
                   onClick={() => handleTransfer(true)}
                   disabled={transferring}
                 >
                   <MoveRight size={12} />
                   {transferring ? 'Moving…' : 'Transfer & Switch'}
                 </button>
-                <button className="btn-reset" onClick={() => handleTransfer(false)} disabled={transferring}>
+                <button className="btn-ghost" onClick={() => handleTransfer(false)} disabled={transferring}>
                   Switch without moving
                 </button>
-                <button className="btn-reset" onClick={() => { setPendingDir(null); setDirInput(backupDir) }} disabled={transferring}>
+                <button className="btn-ghost" onClick={() => { setPendingDir(null); setDirInput(backupDir) }} disabled={transferring}>
                   Cancel
                 </button>
               </div>
