@@ -1486,21 +1486,25 @@ pub async fn get_disk_stats(path: String) -> Result<DiskStats, String> {
     })
 }
 
-/// Sum the sizes of all files in `backup_dir` (non-recursive).
+/// Recursively sum the sizes of all files under a directory.
+fn dir_size_recursive(path: &std::path::Path) -> u64 {
+    let Ok(dir) = std::fs::read_dir(path) else { return 0 };
+    dir.flatten().map(|e| {
+        let Ok(meta) = e.metadata() else { return 0 };
+        if meta.is_dir() { dir_size_recursive(&e.path()) } else { meta.len() }
+    }).sum()
+}
+
+/// Recursively sum the sizes of all files under `{backup_dir}/docker/`.
+/// Only the Docker-specific subfolder is counted — the Atlas backup root may
+/// contain unrelated categories (e.g. WSL, other tools) in the future.
 /// Returns 0 if the directory does not exist or is not set.
 #[tauri::command]
 pub async fn get_backup_size(backup_dir: String) -> u64 {
     if backup_dir.is_empty() { return 0; }
     tauri::async_runtime::spawn_blocking(move || {
-        std::fs::read_dir(&backup_dir)
-            .map(|dir| {
-                dir.flatten()
-                    .filter_map(|e| e.metadata().ok())
-                    .filter(|m| m.is_file())
-                    .map(|m| m.len())
-                    .sum()
-            })
-            .unwrap_or(0)
+        let docker_dir = std::path::Path::new(&backup_dir).join("docker");
+        dir_size_recursive(&docker_dir)
     })
     .await
     .unwrap_or(0)

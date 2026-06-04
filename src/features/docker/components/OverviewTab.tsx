@@ -83,6 +83,22 @@ function HeroSkeleton() {
   )
 }
 
+// ── Sparkline ─────────────────────────────────────────────────────────────────
+
+function Sparkline({ values, color }: { values: number[]; color: string }) {
+  if (values.length < 2) return <div className="sparkline-ph" />
+  const max = Math.max(...values, 0.001)
+  const W = 64, H = 28
+  const pts = values.map((v, i) =>
+    `${(i / (values.length - 1)) * W},${H - (v / max) * (H - 4) - 1}`
+  ).join(' ')
+  return (
+    <svg className="sparkline" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 // ── Cleanup row ───────────────────────────────────────────────────────────────
 
 function CleanupRow({
@@ -143,29 +159,74 @@ export default function OverviewTab({
       .finally(() => setComposeLoading(false))
   }, [refreshTick, status?.available]) // eslint-disable-line
 
-  // ── Container stats (docker stats --no-stream; re-runs on tick or manual refresh) ──
+  // ── Container stats — polled every 5 s while Overview tab is mounted ────────
+  // Polling stops automatically when the component unmounts (tab switch).
   const [containerStats, setContainerStats] = useState<ContainerStats[]>([])
   const [statsLoading, setStatsLoading]     = useState(true)
   const [statsError, setStatsError]         = useState<string | null>(null)
+  const [statHistory, setStatHistory]       = useState<Map<string, { cpu: number[]; mem: number[] }>>(() => new Map())
+  const [resourceView, setResourceView]     = useState<'top' | 'all'>('top')
+  const [lastPolledAt, setLastPolledAt]     = useState(0)
+  const [pollSecTick, setPollSecTick]       = useState(0)
 
-  const loadStats = useCallback(() => {
+  const pollStats = useCallback(() => {
     if (!status?.available) { setStatsLoading(false); return }
-    setStatsLoading(true)
-    setStatsError(null)
     api.dockerStats()
-      .then(s => { setContainerStats(s); setStatsLoading(false) })
+      .then(snaps => {
+        setContainerStats(snaps)
+        setStatsError(null)
+        setStatsLoading(false)
+        setLastPolledAt(Date.now())
+        setStatHistory(prev => {
+          const next = new Map(prev)
+          const active = new Set(snaps.map(s => s.name))
+          for (const k of next.keys()) if (!active.has(k)) next.delete(k)
+          snaps.forEach(s => {
+            const h = next.get(s.name) ?? { cpu: [], mem: [] }
+            next.set(s.name, {
+              cpu: [...h.cpu.slice(-14), s.cpu_pct],
+              mem: [...h.mem.slice(-14), s.mem_used_bytes],
+            })
+          })
+          return next
+        })
+      })
       .catch(e => { setStatsError(String(e)); setStatsLoading(false) })
   }, [status?.available]) // eslint-disable-line
 
-  useEffect(() => { loadStats() }, [refreshTick, loadStats]) // eslint-disable-line
+  // Reset history and restart interval on global refresh or availability change.
+  useEffect(() => {
+    if (!status?.available) { setStatsLoading(false); return }
+    setStatsLoading(true)
+    setStatsError(null)
+    setStatHistory(new Map())
+    pollStats()
+    const id = setInterval(pollStats, 5000)
+    return () => clearInterval(id)
+  }, [refreshTick, status?.available]) // eslint-disable-line
 
-  // ── Disk stats (drive total/free) and backup size ─────────────────────────
-  const [diskStats,   setDiskStats]   = useState<DiskStats | null>(null)
-  const [backupBytes, setBackupBytes] = useState(0)
+  // Tick every second to keep the "Xs ago" freshness label current.
+  useEffect(() => {
+    if (!status?.available) return
+    const id = setInterval(() => setPollSecTick(t => t + 1), 1000)
+    return () => clearInterval(id)
+  }, [status?.available]) // eslint-disable-line
+
+  // ── Disk stats — fetched separately for Docker's drive and the backup drive ──
+  // Docker data on Windows Desktop lives on the system drive (C:).
+  // Backups may be on a completely different drive (e.g. F:).
+  const [dockerDiskStats, setDockerDiskStats] = useState<DiskStats | null>(null)
+  const [backupDiskStats, setBackupDiskStats] = useState<DiskStats | null>(null)
+  const [backupBytes,     setBackupBytes]     = useState(0)
 
   useEffect(() => {
-    const path = backupDir || 'C:\\'
-    api.getDiskStats(path).then(setDiskStats).catch(() => setDiskStats(null))
+    // Pass empty string → Rust falls back to %SYSTEMDRIVE% (the Docker drive on Windows)
+    api.getDiskStats('').then(setDockerDiskStats).catch(() => setDockerDiskStats(null))
+  }, [refreshTick]) // eslint-disable-line
+
+  useEffect(() => {
+    if (!backupDir) { setBackupDiskStats(null); return }
+    api.getDiskStats(backupDir).then(setBackupDiskStats).catch(() => setBackupDiskStats(null))
   }, [refreshTick, backupDir]) // eslint-disable-line
 
   useEffect(() => {
@@ -175,6 +236,11 @@ export default function OverviewTab({
 
   const topCpu = useMemo(() => [...containerStats].sort((a, b) => b.cpu_pct - a.cpu_pct).slice(0, 3), [containerStats])
   const topMem = useMemo(() => [...containerStats].sort((a, b) => b.mem_used_bytes - a.mem_used_bytes).slice(0, 3), [containerStats])
+
+  const secondsSincePoll = useMemo(
+    () => lastPolledAt > 0 ? Math.floor((Date.now() - lastPolledAt) / 1000) : null,
+    [lastPolledAt, pollSecTick], // eslint-disable-line
+  )
 
   // ── Hero counts ───────────────────────────────────────────────────────────
   const runningCtrs = containers.filter(c => c.state === 'running').length
@@ -238,27 +304,27 @@ export default function OverviewTab({
               </span>
             </div>
 
-            <div className="hero-tile">
+            <button className="hero-tile hero-tile--clickable" onClick={() => setDockerTab('containers')} aria-label={`Containers: ${runningCtrs} running`}>
               <span className="hero-tile-label">Containers</span>
               <span className="hero-tile-value">{runningCtrs}</span>
               <span className="hero-tile-sub">running</span>
               {notRunning && <span className="hero-tile-sub">{notRunning}</span>}
-            </div>
+            </button>
 
-            <div className="hero-tile">
+            <button className="hero-tile hero-tile--clickable" onClick={() => setDockerTab('images')} aria-label={`Images: ${images.length}`}>
               <span className="hero-tile-label">Images</span>
               <span className="hero-tile-value">{images.length}</span>
               <span className="hero-tile-sub">{df?.images.size ?? '—'}</span>
-            </div>
+            </button>
 
-            <div className="hero-tile">
+            <button className="hero-tile hero-tile--clickable" onClick={() => setDockerTab('volumes')} aria-label={`Volumes: ${volumes.length}`}>
               <span className="hero-tile-label">Volumes</span>
               <span className="hero-tile-value">{volumes.length}</span>
               {unusedVols.length > 0
                 ? <span className="hero-tile-sub">{unusedVols.length} unused</span>
                 : <span className="hero-tile-sub">all in use</span>
               }
-            </div>
+            </button>
 
             <div className="hero-tile">
               <span className="hero-tile-label">Total Disk</span>
@@ -283,119 +349,6 @@ export default function OverviewTab({
                 {dead.length} dead container{dead.length !== 1 ? 's' : ''} — view Containers
               </button>
             )}
-          </div>
-        )}
-      </div>
-
-      {/* ── Resource Usage ───────────────────────────────────────────── */}
-      <div className="overview-section">
-        <div className="overview-section-head overview-section-head--static">
-          <span className="section-label" style={{ margin: 0 }}>Resource Usage</span>
-          <span className="overview-section-meta">top containers by CPU and memory</span>
-          <button
-            className="stats-refresh-btn"
-            onClick={loadStats}
-            disabled={statsLoading}
-            title="Refresh stats"
-          >
-            <RefreshCw size={12} className={statsLoading ? 'spin' : ''} />
-          </button>
-        </div>
-
-        {statsLoading ? (
-          <div className="stats-grid">
-            {[0, 1].map(col => (
-              <div key={col} className="stats-col">
-                <div className="sk-line w-12" style={{ height: 9, marginBottom: 10 }} />
-                {[0, 1, 2].map(i => (
-                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 80px 44px', gap: 8, marginBottom: 10 }}>
-                    <div className="sk-line" />
-                    <div className="sk-line" style={{ height: 6, alignSelf: 'center' }} />
-                    <div className="sk-line w-12" />
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
-        ) : statsError ? (
-          <p className="overview-empty-row" style={{ color: 'var(--color-danger)' }}>{statsError}</p>
-        ) : containerStats.length === 0 ? (
-          <p className="overview-empty-row">No running containers</p>
-        ) : (
-          <div className="stats-grid">
-            <div className="stats-col">
-              <div className="stats-col-label">CPU</div>
-              {(() => {
-                const maxCpu = topCpu[0]?.cpu_pct > 0 ? topCpu[0].cpu_pct : 1
-                return topCpu.map(s => (
-                  <div key={s.name} className="stats-row">
-                    <span className="stats-name" title={s.name}>{s.name}</span>
-                    <div className="stats-bar-wrap">
-                      <div className="stats-bar stats-bar--cpu" style={{ width: `${(s.cpu_pct / maxCpu) * 100}%` }} />
-                    </div>
-                    <span className="stats-value">{s.cpu_pct.toFixed(1)}%</span>
-                  </div>
-                ))
-              })()}
-            </div>
-            <div className="stats-col">
-              <div className="stats-col-label">Memory</div>
-              {(() => {
-                const maxMem = topMem[0]?.mem_used_bytes > 0 ? topMem[0].mem_used_bytes : 1
-                return topMem.map(s => (
-                  <div key={s.name} className="stats-row">
-                    <span className="stats-name" title={s.name}>{s.name}</span>
-                    <div className="stats-bar-wrap">
-                      <div className="stats-bar stats-bar--mem" style={{ width: `${(s.mem_used_bytes / maxMem) * 100}%` }} />
-                    </div>
-                    <span className="stats-value">{bytesToHuman(s.mem_used_bytes)}</span>
-                  </div>
-                ))
-              })()}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* ── Compose Stacks ───────────────────────────────────────────── */}
-      <div className="overview-section">
-        <button className="overview-section-head" onClick={() => setDockerTab('compose')}>
-          <span className="section-label" style={{ margin: 0 }}>Compose Stacks</span>
-          <span className="overview-section-meta">
-            {composeLoading ? '…' : `${composeProjects.filter(p => composeStatusLabel(p.status).dot === 'running').length} running · ${composeProjects.length} total`}
-          </span>
-          <ChevronRight size={12} className="overview-section-arrow" />
-        </button>
-
-        {composeLoading ? (
-          <div className="cleanup-rows">
-            {[0, 1, 2].map(i => (
-              <div key={i} className="cleanup-row cleanup-row--skeleton">
-                <div className="sk-line" style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0 }} />
-                <div className="sk-line w-24" />
-                <div className="sk-line w-32" style={{ marginLeft: 'auto' }} />
-              </div>
-            ))}
-          </div>
-        ) : composeProjects.length === 0 ? (
-          <p className="overview-empty-row">No compose projects found</p>
-        ) : (
-          <div className="cleanup-rows">
-            {composeProjects.map(p => {
-              const { text, dot } = composeStatusLabel(p.status)
-              return (
-                <button
-                  key={p.name}
-                  className="cleanup-row cleanup-row--compose"
-                  onClick={() => { setComposePreselect(p.name); setDockerTab('compose') }}
-                >
-                  <span className={clsx('compose-status-dot', dot)} />
-                  <span className="cleanup-row-label">{p.name}</span>
-                  <span className="compose-stack-status">{text}</span>
-                  <ChevronRight size={11} className="cleanup-row-arrow" />
-                </button>
-              )
-            })}
           </div>
         )}
       </div>
@@ -488,16 +441,167 @@ export default function OverviewTab({
         )}
       </div>
 
+      {/* ── Resource Monitoring (Top Offenders + Live Activity) ──────── */}
+      <div className="overview-section" style={{ marginTop: 8 }}>
+        <div className="overview-section-head overview-section-head--static">
+          <span className="section-label" style={{ margin: 0 }}>Resource Monitoring</span>
+          <div className="resource-tab-strip" style={{ marginLeft: 'auto' }}>
+            <button
+              className={clsx('resource-tab', resourceView === 'top' && 'resource-tab--active')}
+              onClick={() => setResourceView('top')}
+            >
+              Top Offenders
+            </button>
+            <button
+              className={clsx('resource-tab', resourceView === 'all' && 'resource-tab--active')}
+              onClick={() => setResourceView('all')}
+            >
+              Live Activity
+            </button>
+          </div>
+          {secondsSincePoll !== null && (
+            <span className="overview-section-meta">{secondsSincePoll}s ago</span>
+          )}
+          <button
+            className="stats-refresh-btn"
+            onClick={pollStats}
+            disabled={statsLoading}
+            title="Refresh stats"
+          >
+            <RefreshCw size={12} className={statsLoading ? 'spin' : ''} />
+          </button>
+        </div>
+
+        {statsLoading ? (
+          <div className="stats-grid">
+            {[0, 1].map(col => (
+              <div key={col} className="stats-col">
+                <div className="sk-line w-12" style={{ height: 9, marginBottom: 10 }} />
+                {[0, 1, 2].map(i => (
+                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 80px 46px', gap: 8, marginBottom: 10 }}>
+                    <div className="sk-line" />
+                    <div className="sk-line" style={{ height: 6, alignSelf: 'center' }} />
+                    <div className="sk-line w-12" />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        ) : statsError ? (
+          <p className="overview-empty-row" style={{ color: 'var(--color-danger)' }}>{statsError}</p>
+        ) : containerStats.length === 0 ? (
+          <p className="overview-empty-row">No running containers</p>
+        ) : resourceView === 'top' ? (
+          <div className="stats-grid">
+            <div className="stats-col">
+              <div className="stats-col-label">CPU</div>
+              {(() => {
+                const maxCpu = topCpu[0]?.cpu_pct > 0 ? topCpu[0].cpu_pct : 1
+                return topCpu.map(s => (
+                  <div key={s.name} className="stats-row">
+                    <span className="stats-name" title={s.name}>{s.name}</span>
+                    <div className="stats-bar-wrap">
+                      <div className="stats-bar stats-bar--cpu" style={{ width: `${(s.cpu_pct / maxCpu) * 100}%` }} />
+                    </div>
+                    <span className="stats-value">{s.cpu_pct.toFixed(1)}%</span>
+                  </div>
+                ))
+              })()}
+            </div>
+            <div className="stats-col">
+              <div className="stats-col-label">Memory</div>
+              {(() => {
+                const maxMem = topMem[0]?.mem_used_bytes > 0 ? topMem[0].mem_used_bytes : 1
+                return topMem.map(s => (
+                  <div key={s.name} className="stats-row">
+                    <span className="stats-name" title={s.name}>{s.name}</span>
+                    <div className="stats-bar-wrap">
+                      <div className="stats-bar stats-bar--mem" style={{ width: `${(s.mem_used_bytes / maxMem) * 100}%` }} />
+                    </div>
+                    <span className="stats-value">{bytesToHuman(s.mem_used_bytes)}</span>
+                  </div>
+                ))
+              })()}
+            </div>
+          </div>
+        ) : (
+          <div style={{ padding: '10px 14px' }}>
+            <div className="realtime-header">
+              <span />
+              <span className="realtime-col-label">CPU</span>
+              <span />
+              <span className="realtime-col-label">Memory</span>
+              <span />
+            </div>
+            {[...containerStats].sort((a, b) => b.cpu_pct - a.cpu_pct).map(s => {
+              const hist = statHistory.get(s.name)
+              return (
+                <div key={s.name} className="realtime-row">
+                  <span className="stats-name" title={s.name}>{s.name}</span>
+                  <Sparkline values={hist?.cpu ?? [s.cpu_pct]} color="var(--color-accent)" />
+                  <span className="stats-value">{s.cpu_pct.toFixed(1)}%</span>
+                  <Sparkline values={hist?.mem ?? [s.mem_used_bytes]} color="var(--color-warning)" />
+                  <span className="stats-value">{bytesToHuman(s.mem_used_bytes)}</span>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── Compose Stacks ───────────────────────────────────────────── */}
+      <div className="overview-section" style={{ marginTop: 8 }}>
+        <button className="overview-section-head" onClick={() => setDockerTab('compose')}>
+          <span className="section-label" style={{ margin: 0 }}>Compose Stacks</span>
+          <span className="overview-section-meta">
+            {composeLoading ? '…' : `${composeProjects.filter(p => composeStatusLabel(p.status).dot === 'running').length} running · ${composeProjects.length} total`}
+          </span>
+          <ChevronRight size={12} className="overview-section-arrow" />
+        </button>
+
+        {composeLoading ? (
+          <div className="cleanup-rows">
+            {[0, 1, 2].map(i => (
+              <div key={i} className="cleanup-row cleanup-row--skeleton">
+                <div className="sk-line" style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0 }} />
+                <div className="sk-line w-24" />
+                <div className="sk-line w-32" style={{ marginLeft: 'auto' }} />
+              </div>
+            ))}
+          </div>
+        ) : composeProjects.length === 0 ? (
+          <p className="overview-empty-row">No compose projects found</p>
+        ) : (
+          <div className="cleanup-rows">
+            {composeProjects.map(p => {
+              const { text, dot } = composeStatusLabel(p.status)
+              return (
+                <button
+                  key={p.name}
+                  className="cleanup-row cleanup-row--compose"
+                  onClick={() => { setComposePreselect(p.name); setDockerTab('compose') }}
+                >
+                  <span className={clsx('compose-status-dot', dot)} />
+                  <span className="cleanup-row-label">{p.name}</span>
+                  <span className="compose-stack-status">{text}</span>
+                  <ChevronRight size={11} className="cleanup-row-arrow" />
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
       {/* ── Disk usage ───────────────────────────────────────────────── */}
       {(() => {
         if (!patchedDf) return !loading ? (
           <div className="overview-empty">No disk data available. Is Docker running?</div>
         ) : null
 
-        const imgBytes = parseSizeBytes(patchedDf.images.size)
-        const ctrBytes = parseSizeBytes(patchedDf.containers.size)
-        const volBytes = parseSizeBytes(patchedDf.volumes.size)
-        const bldBytes = parseSizeBytes(patchedDf.build_cache.size)
+        const imgBytes    = parseSizeBytes(patchedDf.images.size)
+        const ctrBytes    = parseSizeBytes(patchedDf.containers.size)
+        const volBytes    = parseSizeBytes(patchedDf.volumes.size)
+        const bldBytes    = parseSizeBytes(patchedDf.build_cache.size)
         const dockerTotal = imgBytes + ctrBytes + volBytes + bldBytes
 
         const imgFree  = parseSizeBytes(parseReclaimSize(patchedDf.images.reclaimable))
@@ -505,52 +609,123 @@ export default function OverviewTab({
         const bldFree  = parseSizeBytes(parseReclaimSize(patchedDf.build_cache.reclaimable))
         const totalFreeableBytes = imgFree + ctrFree + bldFree
 
-        // Bar segments are proportional to drive total when available;
-        // otherwise proportional to dockerTotal + backups.
-        const barMax = diskStats ? diskStats.total_bytes : (dockerTotal + backupBytes || 1)
-        const pct    = (b: number) => Math.max(b / barMax * 100, b > 0 ? 0.4 : 0)
+        const sameDrive = dockerDiskStats && backupDiskStats &&
+          dockerDiskStats.drive_label === backupDiskStats.drive_label
 
-        const SEGS = [
-          { key: 'images',     bytes: imgBytes,    color: 'images',     label: 'Images',      freeBytes: imgFree },
-          { key: 'containers', bytes: ctrBytes,    color: 'containers', label: 'Containers',  freeBytes: ctrFree },
-          { key: 'volumes',    bytes: volBytes,    color: 'volumes',    label: 'Volumes',     freeBytes: 0 },
-          { key: 'cache',      bytes: bldBytes,    color: 'cache',      label: 'Build Cache', freeBytes: bldFree },
-          { key: 'backups',    bytes: backupBytes, color: 'backups',    label: 'Backups',     freeBytes: 0 },
+        // Build segments for a single drive bar: known categories + Other + Free.
+        // "Other" = drive used space not accounted for by the categories we track.
+        type Seg = { key: string; label: string; bytes: number; color: string }
+        const buildBar = (stats: DiskStats, cats: Seg[], extraBytes: number): Seg[] => {
+          const driveUsed = stats.total_bytes - stats.free_bytes
+          const tracked   = cats.reduce((s, c) => s + c.bytes, 0) + extraBytes
+          const other     = Math.max(0, driveUsed - tracked)
+          return [
+            ...cats,
+            ...(extraBytes > 0 ? [{ key: 'backups', label: 'Backups', bytes: extraBytes, color: 'backups' }] : []),
+            ...(other > 0      ? [{ key: 'other',   label: 'Other apps', bytes: other,    color: 'other'   }] : []),
+            { key: 'free', label: 'Free', bytes: stats.free_bytes, color: 'free' },
+          ]
+        }
+
+        const dockerCats: Seg[] = [
+          { key: 'images',     label: 'Images',      bytes: imgBytes, color: 'images' },
+          { key: 'containers', label: 'Containers',  bytes: ctrBytes, color: 'containers' },
+          { key: 'volumes',    label: 'Volumes',     bytes: volBytes, color: 'volumes' },
+          { key: 'cache',      label: 'Build Cache', bytes: bldBytes, color: 'cache' },
         ].filter(s => s.bytes > 0)
+
+        // Docker drive bar
+        const dockerBarSegs = dockerDiskStats
+          ? buildBar(dockerDiskStats, dockerCats, sameDrive ? backupBytes : 0)
+          : dockerCats  // fallback: no drive stats, show categories only
+
+        // Backup drive bar — only when backups are on a separate drive
+        const backupBarSegs = !sameDrive && backupDiskStats && backupBytes > 0
+          ? buildBar(backupDiskStats, [], backupBytes)
+          : null
+
+        const segPct = (bytes: number, driveTotal: number) =>
+          driveTotal > 0 ? Math.max(bytes / driveTotal * 100, bytes > 0 ? 0.3 : 0) : 0
+
+        // Legend rows — categories across all drives
+        const legendRows: { key: string; label: string; bytes: number; color: string; freeBytes: number; driveNote?: string }[] = [
+          { key: 'images',     label: 'Images',      bytes: imgBytes,    color: 'images',     freeBytes: imgFree },
+          { key: 'containers', label: 'Containers',  bytes: ctrBytes,    color: 'containers', freeBytes: ctrFree },
+          { key: 'volumes',    label: 'Volumes',     bytes: volBytes,    color: 'volumes',    freeBytes: 0 },
+          { key: 'cache',      label: 'Build Cache', bytes: bldBytes,    color: 'cache',      freeBytes: bldFree },
+          { key: 'backups',    label: 'Backups',     bytes: backupBytes, color: 'backups',    freeBytes: 0,
+            driveNote: !sameDrive && backupDiskStats ? backupDiskStats.drive_label : undefined },
+        ].filter(r => r.bytes > 0)
 
         return (
           <div className="overview-section">
             <div className="overview-section-head overview-section-head--static">
               <span className="section-label" style={{ margin: 0 }}>Disk Usage</span>
-              {diskStats && (
-                <span className="overview-section-meta">
-                  {diskStats.drive_label} — {bytesToHuman(diskStats.total_bytes)} total · {bytesToHuman(diskStats.free_bytes)} free
-                </span>
-              )}
             </div>
 
-            <div style={{ padding: '14px 14px 4px' }}>
-              {/* Stacked horizontal bar */}
-              <div className="disk-stacked-bar">
-                {SEGS.map(s => (
-                  <div
-                    key={s.key}
-                    className={`disk-seg disk-seg--${s.color}`}
-                    style={{ width: `${pct(s.bytes)}%` }}
-                    title={`${s.label}: ${bytesToHuman(s.bytes)}`}
-                  />
-                ))}
+            <div style={{ padding: '12px 14px 4px' }}>
+              <div className="drive-bars-grid">
+
+              {/* Docker drive bar */}
+              <div className="drive-bar-group">
+                <div className="drive-bar-header">
+                  <span className="drive-bar-title">
+                    {dockerDiskStats ? dockerDiskStats.drive_label : 'Docker'}
+                  </span>
+                  {dockerDiskStats && (
+                    <span className="drive-bar-meta">
+                      {bytesToHuman(dockerDiskStats.total_bytes)} disk size · {bytesToHuman(dockerDiskStats.free_bytes)} free
+                    </span>
+                  )}
+                </div>
+                <div className="disk-stacked-bar">
+                  {dockerBarSegs.map(s => (
+                    <div
+                      key={s.key}
+                      className={`disk-seg disk-seg--${s.color}`}
+                      style={{ width: dockerDiskStats ? `${segPct(s.bytes, dockerDiskStats.total_bytes)}%` : 'auto', flex: dockerDiskStats ? undefined : s.bytes }}
+                      title={`${s.label}: ${bytesToHuman(s.bytes)}`}
+                    />
+                  ))}
+                </div>
               </div>
+
+              {/* Backup drive bar — only rendered when backups are on a separate drive */}
+              {backupBarSegs && backupDiskStats && (
+                <div className="drive-bar-group">
+                  <div className="drive-bar-header">
+                    <span className="drive-bar-title">{backupDiskStats.drive_label}</span>
+                    <span className="drive-bar-meta">
+                      {bytesToHuman(backupDiskStats.total_bytes)} disk size · {bytesToHuman(backupDiskStats.free_bytes)} free
+                    </span>
+                  </div>
+                  <div className="disk-stacked-bar">
+                    {backupBarSegs.map(s => (
+                      <div
+                        key={s.key}
+                        className={`disk-seg disk-seg--${s.color}`}
+                        style={{ width: `${segPct(s.bytes, backupDiskStats.total_bytes)}%` }}
+                        title={`${s.label}: ${bytesToHuman(s.bytes)}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              </div>{/* end drive-bars-grid */}
 
               {/* Legend */}
               <div className="disk-legend">
-                {SEGS.map(s => (
-                  <div key={s.key} className="disk-legend-row">
-                    <span className={`disk-legend-dot disk-seg--${s.color}`} />
-                    <span className="disk-legend-label">{s.label}</span>
-                    <span className="disk-legend-size">{bytesToHuman(s.bytes)}</span>
-                    {s.freeBytes > 0 && (
-                      <span className="disk-legend-free">{bytesToHuman(s.freeBytes)} freeable</span>
+                {legendRows.map(r => (
+                  <div key={r.key} className="disk-legend-row">
+                    <span className={`disk-legend-dot disk-seg--${r.color}`} />
+                    <span className="disk-legend-label">
+                      {r.label}
+                      {r.driveNote && <span className="disk-legend-drive-note">{r.driveNote}</span>}
+                    </span>
+                    <span className="disk-legend-size">{bytesToHuman(r.bytes)}</span>
+                    {r.freeBytes > 0 && (
+                      <span className="disk-legend-free">{bytesToHuman(r.freeBytes)} freeable</span>
                     )}
                   </div>
                 ))}
@@ -563,7 +738,7 @@ export default function OverviewTab({
                 {totalFreeableBytes > 0 && (
                   <span className="disk-summary-free">{bytesToHuman(totalFreeableBytes)} freeable</span>
                 )}
-                <span className="disk-summary-note">containers: stale ≥ {STALE_DAYS}d</span>
+                <span className="disk-summary-note" title="docker system df — may not include Buildx cache on Docker Desktop for Windows">via docker system df</span>
               </div>
             </div>
           </div>

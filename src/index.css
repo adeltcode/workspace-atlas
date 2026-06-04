@@ -2424,6 +2424,17 @@ button:focus-visible {
   line-height: 1.4;
 }
 
+.hero-tile--clickable {
+  cursor: pointer;
+  text-align: left;
+  border: none;
+  font: inherit;
+  color: inherit;
+  transition: background 0.12s, transform 0.1s;
+}
+.hero-tile--clickable:hover  { background: var(--color-bg-hover); }
+.hero-tile--clickable:active { transform: scale(0.97); }
+
 /* Runtime warning rows */
 .hero-warnings {
   border-top: 1px solid var(--color-border);
@@ -2676,6 +2687,38 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
    Overview — Resource usage (stats grid)
    ============================================================= */
 
+/* Resource Monitoring tab strip */
+.resource-tab-strip {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  flex-shrink: 0;
+}
+
+.resource-tab {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  padding: 3px 9px;
+  border-radius: calc(var(--radius-sm) - 1px);
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s, color 0.12s;
+  white-space: nowrap;
+}
+.resource-tab:hover        { color: var(--color-text-primary); }
+.resource-tab--active {
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}
+
 .stats-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2707,6 +2750,44 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
 }
 .stats-row:last-child { margin-bottom: 0; }
 
+.sparkline {
+  width: 64px;
+  height: 28px;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.sparkline-ph {
+  width: 64px;
+  height: 28px;
+}
+
+/* Live Activity — one row per container with CPU + mem sparklines */
+.realtime-header {
+  display: grid;
+  grid-template-columns: 1fr 64px 44px 64px 52px;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.realtime-col-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+.realtime-row {
+  display: grid;
+  grid-template-columns: 1fr 64px 44px 64px 52px;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--color-border-light);
+}
+.realtime-row:last-child { border-bottom: none; }
+
 .stats-name {
   font-size: 12px;
   font-weight: 500;
@@ -2728,7 +2809,7 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
   height: 100%;
   border-radius: 3px;
   min-width: 2px;
-  transition: width 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: width 0.4s ease;
 }
 .stats-bar--cpu { background: var(--color-accent); }
 .stats-bar--mem { background: var(--color-warning); }
@@ -2809,6 +2890,40 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
    Overview — Disk usage stacked horizontal bar
    ============================================================= */
 
+/* Grid of drive columns — each drive gets its own column */
+.drive-bars-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+/* Per-drive bar group: label row + stacked bar */
+.drive-bar-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.drive-bar-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.drive-bar-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+  min-width: 24px;
+}
+
+.drive-bar-meta {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
 .disk-stacked-bar {
   display: flex;
   height: 20px;
@@ -2831,6 +2946,8 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
 .disk-seg--volumes    { background: var(--color-warning); }
 .disk-seg--cache      { background: var(--color-danger); }
 .disk-seg--backups    { background: #8b5cf6; }
+.disk-seg--other      { background: var(--color-bg-hover); opacity: 0.9; }
+.disk-seg--free       { background: var(--color-bg-tertiary); }
 
 /* Legend */
 .disk-legend {
@@ -2873,6 +2990,17 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
   color: var(--color-success);
   white-space: nowrap;
   text-align: right;
+}
+
+.disk-legend-drive-note {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+  background: var(--color-bg-tertiary);
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-left: 5px;
+  vertical-align: middle;
 }
 
 /* Summary line */
