@@ -297,6 +297,7 @@ function LiveCharts({
   containerStats: ContainerStats[]
   statHistory:    Map<string, { cpu: number[]; mem: number[] }>
 }) {
+  const theme = useAppStore(s => s.theme)
   const [hidden,   setHidden]   = useState<Set<string>>(() => new Set())
   const [hoverIdx, setHoverIdx] = useState<number | null>(null)
 
@@ -315,7 +316,7 @@ function LiveCharts({
         mem:   statHistory.get(s.name)?.mem?.length ? statHistory.get(s.name)!.mem : [s.mem_used_bytes],
       }))
     },
-    [sorted, statHistory],
+    [sorted, statHistory, theme], // eslint-disable-line — theme invalidates chart colors on toggle
   )
 
   const numPoints = useMemo(
@@ -698,7 +699,7 @@ export default function OverviewTab({
                     sublabel: i.created_since,
                     size:     i.size,
                   }))}
-                  onRemoveSelected={async ids => { await api.dockerPruneRun(1, ids); onRefresh?.() }}
+                  onRemoveSelected={async ids => { await api.dockerPruneRun(2, ids); onRefresh?.() }}
                 />
               )}
               {unusedTagged.length > 0 && (
@@ -731,8 +732,8 @@ export default function OverviewTab({
                     sublabel: c.status,
                   }))}
                   onRemoveSelected={async ids => {
-                    for (const id of ids) await api.dockerContainerAction(id, 'remove')
-                    onRefresh?.()
+                    try { for (const id of ids) await api.dockerContainerAction(id, 'remove') }
+                    finally { onRefresh?.() }
                   }}
                 />
               )}
@@ -750,8 +751,8 @@ export default function OverviewTab({
                     size:     v.size_bytes > 0 ? bytesToHuman(v.size_bytes) : null,
                   }))}
                   onRemoveSelected={async ids => {
-                    for (const id of ids) await api.dockerVolumeRemove(id)
-                    onRefresh?.()
+                    try { for (const id of ids) await api.dockerVolumeRemove(id) }
+                    finally { onRefresh?.() }
                   }}
                 />
               )}

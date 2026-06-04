@@ -66,7 +66,7 @@ export default function DockerView() {
   // Kept here (not in OverviewTab) so history accumulates from the moment Docker
   // is detected as running, regardless of which tab is active.
   const [containerStats, setContainerStats] = useState<ContainerStats[]>([])
-  const [statsLoading,   setStatsLoading]   = useState(false)
+  const [statsLoading,   setStatsLoading]   = useState(true)
   const [statsError,     setStatsError]     = useState<string | null>(null)
   const [statHistory,    setStatHistory]    = useState<Map<string, { cpu: number[]; mem: number[] }>>(() => new Map())
 
@@ -98,7 +98,9 @@ export default function DockerView() {
     if (!online) { setStatsLoading(false); setContainerStats([]); setStatHistory(new Map()); return }
     setStatsLoading(true)
     setStatsError(null)
-    setStatHistory(new Map())
+    // Do not reset statHistory here — the history updater already evicts departed
+    // containers, so accumulated sparkline data survives a manual Refresh cleanly.
+    // History is only wiped in the !online branch above (engine went offline).
     pollStats()
     const id = setInterval(pollStats, 5000)
     return () => clearInterval(id)
