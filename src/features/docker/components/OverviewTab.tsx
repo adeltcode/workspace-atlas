@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { CheckCircle, AlertTriangle, ChevronRight, RefreshCw, Trash2 } from 'lucide-react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { CheckCircle, AlertTriangle, ChevronRight, ChevronDown, RefreshCw, Trash2 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../../../store/appStore'
 import type { DockerStatus, DiskStats, DockerSystemDf, DockerContainer, DockerImage, DockerVolume, DiskUsageRow, ComposeProject, ContainerStats } from '../types'
@@ -365,27 +365,103 @@ function LiveCharts({
 
 // ── Cleanup row ───────────────────────────────────────────────────────────────
 
+type CleanupItem = { id: string; label: string; sublabel?: string; size?: string | null }
+
 function CleanupRow({
-  color, label, count, size, sizeEst, onClick,
+  color, label, count, size, sizeEst, onNavigate, items, onRemoveSelected,
 }: {
-  color: string
-  label: string
-  count?: number
-  size: string | null
-  sizeEst?: boolean
-  onClick: () => void
+  color:             string
+  label:             string
+  count?:            number
+  size:              string | null
+  sizeEst?:          boolean
+  onNavigate:        () => void
+  items?:            CleanupItem[]
+  onRemoveSelected?: (ids: string[]) => Promise<void>
 }) {
+  const [expanded,  setExpanded]  = useState(false)
+  const [selected,  setSelected]  = useState<Set<string>>(new Set())
+  const [removing,  setRemoving]  = useState(false)
+  const [removeErr, setRemoveErr] = useState<string | null>(null)
+
+  const expandable = items != null && onRemoveSelected != null
+
+  function handleHeaderClick() {
+    if (expandable) { setExpanded(e => !e); setRemoveErr(null) }
+    else onNavigate()
+  }
+
+  function toggleItem(id: string) {
+    setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  }
+
+  function toggleAll() {
+    setSelected(prev => prev.size === items!.length ? new Set() : new Set(items!.map(i => i.id)))
+  }
+
+  async function handleRemove() {
+    if (!onRemoveSelected || selected.size === 0) return
+    setRemoving(true); setRemoveErr(null)
+    try {
+      await onRemoveSelected([...selected])
+      setExpanded(false); setSelected(new Set())
+    } catch (e) {
+      setRemoveErr(String(e))
+    } finally {
+      setRemoving(false)
+    }
+  }
+
   return (
-    <button className="cleanup-row" onClick={onClick}>
-      <span className={clsx('cleanup-dot', `cleanup-dot--${color}`)} />
-      <span className="cleanup-row-label">{label}</span>
-      {count != null && <span className="cleanup-row-count">{count}</span>}
-      <span className="cleanup-row-size">
-        {size ?? '—'}
-        {sizeEst && size && <span className="cleanup-row-size-note"> est.</span>}
-      </span>
-      <ChevronRight size={11} className="cleanup-row-arrow" />
-    </button>
+    <div className={clsx('cleanup-row-wrap', expanded && 'cleanup-row-wrap--open')}>
+      <button className="cleanup-row" onClick={handleHeaderClick}>
+        <span className={clsx('cleanup-dot', `cleanup-dot--${color}`)} />
+        <span className="cleanup-row-label">{label}</span>
+        {count != null && <span className="cleanup-row-count">{count}</span>}
+        <span className="cleanup-row-size">
+          {size ?? '—'}
+          {sizeEst && size && <span className="cleanup-row-size-note"> est.</span>}
+        </span>
+        {expandable
+          ? <ChevronDown size={11} className={clsx('cleanup-row-arrow', expanded && 'cleanup-row-arrow--open')} />
+          : <ChevronRight size={11} className="cleanup-row-arrow" />
+        }
+      </button>
+
+      {expandable && expanded && (
+        <div className="cleanup-expand">
+          <label className="cleanup-expand-all">
+            <input type="checkbox"
+              checked={items.length > 0 && selected.size === items.length}
+              onChange={toggleAll}
+            />
+            <span>Select all ({items.length})</span>
+          </label>
+          <div className="cleanup-expand-list">
+            {items.map(item => (
+              <label key={item.id} className="cleanup-expand-item">
+                <input type="checkbox" checked={selected.has(item.id)} onChange={() => toggleItem(item.id)} />
+                <span className="cleanup-expand-item-label">{item.label}</span>
+                {item.sublabel && <span className="cleanup-expand-item-sub">{item.sublabel}</span>}
+                {item.size    && <span className="cleanup-expand-item-size">{item.size}</span>}
+              </label>
+            ))}
+          </div>
+          {removeErr && <div className="cleanup-expand-error">{removeErr}</div>}
+          <div className="cleanup-expand-actions">
+            <button
+              className="btn-execute btn-execute--danger btn-sm"
+              disabled={selected.size === 0 || removing}
+              onClick={handleRemove}
+            >
+              <Trash2 size={11} />
+              {removing ? 'Removing…' : `Remove${selected.size > 0 ? ` ${selected.size}` : ''}`}
+            </button>
+            <button className="btn-reset btn-sm" onClick={onNavigate}>View in tab</button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -399,6 +475,12 @@ export default function OverviewTab({
   status,
   loading,
   refreshTick = 0,
+  onRefresh,
+  containerStats,
+  statsLoading,
+  statsError,
+  statHistory,
+  onPollStats,
 }: {
   df: DockerSystemDf | null
   containers: DockerContainer[]
@@ -407,6 +489,12 @@ export default function OverviewTab({
   status: DockerStatus | null
   loading: boolean
   refreshTick?: number
+  onRefresh?: () => void
+  containerStats: ContainerStats[]
+  statsLoading: boolean
+  statsError: string | null
+  statHistory: Map<string, { cpu: number[]; mem: number[] }>
+  onPollStats: () => void
 }) {
   const { setDockerTab, setImagesFilter, setVolumesFilter, setComposePreselect, backupDir } = useAppStore()
 
@@ -423,58 +511,7 @@ export default function OverviewTab({
       .finally(() => setComposeLoading(false))
   }, [refreshTick, status?.available]) // eslint-disable-line
 
-  // ── Container stats — polled every 5 s while Overview tab is mounted ────────
-  // Polling stops automatically when the component unmounts (tab switch).
-  const [containerStats, setContainerStats] = useState<ContainerStats[]>([])
-  const [statsLoading, setStatsLoading]     = useState(true)
-  const [statsError, setStatsError]         = useState<string | null>(null)
-  const [statHistory, setStatHistory]       = useState<Map<string, { cpu: number[]; mem: number[] }>>(() => new Map())
-  const [resourceView, setResourceView]     = useState<'top' | 'all'>('top')
-  const [lastPolledAt, setLastPolledAt]     = useState(0)
-  const [pollSecTick, setPollSecTick]       = useState(0)
-
-  const pollStats = useCallback(() => {
-    if (!status?.available) { setStatsLoading(false); return }
-    api.dockerStats()
-      .then(snaps => {
-        setContainerStats(snaps)
-        setStatsError(null)
-        setStatsLoading(false)
-        setLastPolledAt(Date.now())
-        setStatHistory(prev => {
-          const next = new Map(prev)
-          const active = new Set(snaps.map(s => s.name))
-          for (const k of next.keys()) if (!active.has(k)) next.delete(k)
-          snaps.forEach(s => {
-            const h = next.get(s.name) ?? { cpu: [], mem: [] }
-            next.set(s.name, {
-              cpu: [...h.cpu.slice(-14), s.cpu_pct],
-              mem: [...h.mem.slice(-14), s.mem_used_bytes],
-            })
-          })
-          return next
-        })
-      })
-      .catch(e => { setStatsError(String(e)); setStatsLoading(false) })
-  }, [status?.available]) // eslint-disable-line
-
-  // Reset history and restart interval on global refresh or availability change.
-  useEffect(() => {
-    if (!status?.available) { setStatsLoading(false); return }
-    setStatsLoading(true)
-    setStatsError(null)
-    setStatHistory(new Map())
-    pollStats()
-    const id = setInterval(pollStats, 5000)
-    return () => clearInterval(id)
-  }, [refreshTick, status?.available]) // eslint-disable-line
-
-  // Tick every second to keep the "Xs ago" freshness label current.
-  useEffect(() => {
-    if (!status?.available) return
-    const id = setInterval(() => setPollSecTick(t => t + 1), 1000)
-    return () => clearInterval(id)
-  }, [status?.available]) // eslint-disable-line
+  const [resourceView, setResourceView] = useState<'top' | 'all'>('top')
 
   // ── Disk stats — fetched separately for Docker's drive and the backup drive ──
   // Docker data on Windows Desktop lives on the system drive (C:).
@@ -500,11 +537,6 @@ export default function OverviewTab({
 
   const topCpu = useMemo(() => [...containerStats].sort((a, b) => b.cpu_pct - a.cpu_pct).slice(0, 3), [containerStats])
   const topMem = useMemo(() => [...containerStats].sort((a, b) => b.mem_used_bytes - a.mem_used_bytes).slice(0, 3), [containerStats])
-
-  const secondsSincePoll = useMemo(
-    () => lastPolledAt > 0 ? Math.floor((Date.now() - lastPolledAt) / 1000) : null,
-    [lastPolledAt, pollSecTick], // eslint-disable-line
-  )
 
   // ── Hero counts ───────────────────────────────────────────────────────────
   const runningCtrs = containers.filter(c => c.state === 'running').length
@@ -624,6 +656,12 @@ export default function OverviewTab({
           {!loading && totalFreeBytes > 0 && (
             <span className="overview-section-meta">~{bytesToHuman(totalFreeBytes)} estimated freeable</span>
           )}
+          {!loading && totalFreeBytes > 0 && (
+            <button className="overview-prune-btn" onClick={() => setDockerTab('prune')}>
+              <Trash2 size={11} />
+              Prune all
+            </button>
+          )}
         </div>
 
         {loading ? (
@@ -653,7 +691,14 @@ export default function OverviewTab({
                   label="Dangling images"
                   count={trueDangling.length}
                   size={trueDanglingBytes > 0 ? bytesToHuman(trueDanglingBytes) : null}
-                  onClick={() => { setImagesFilter('dangling'); setDockerTab('images') }}
+                  onNavigate={() => { setImagesFilter('dangling'); setDockerTab('images') }}
+                  items={trueDangling.map(i => ({
+                    id:       i.id,
+                    label:    i.id.replace('sha256:', '').slice(0, 12),
+                    sublabel: i.created_since,
+                    size:     i.size,
+                  }))}
+                  onRemoveSelected={async ids => { await api.dockerPruneRun(1, ids); onRefresh?.() }}
                 />
               )}
               {unusedTagged.length > 0 && (
@@ -662,7 +707,14 @@ export default function OverviewTab({
                   label="Unused tagged images"
                   count={unusedTagged.length}
                   size={unusedTaggedBytes > 0 ? bytesToHuman(unusedTaggedBytes) : null}
-                  onClick={() => { setImagesFilter('unused-tagged'); setDockerTab('images') }}
+                  onNavigate={() => { setImagesFilter('unused-tagged'); setDockerTab('images') }}
+                  items={unusedTagged.map(i => ({
+                    id:       i.id,
+                    label:    `${i.repository}:${i.tag}`,
+                    sublabel: i.created_since,
+                    size:     i.size,
+                  }))}
+                  onRemoveSelected={async ids => { await api.dockerPruneRun(2, ids); onRefresh?.() }}
                 />
               )}
               {stale.length > 0 && (
@@ -672,7 +724,16 @@ export default function OverviewTab({
                   count={stale.length}
                   size={staleContainerBytes > 0 ? bytesToHuman(staleContainerBytes) : null}
                   sizeEst
-                  onClick={() => setDockerTab('prune')}
+                  onNavigate={() => setDockerTab('prune')}
+                  items={stale.map(c => ({
+                    id:       c.id,
+                    label:    c.name,
+                    sublabel: c.status,
+                  }))}
+                  onRemoveSelected={async ids => {
+                    for (const id of ids) await api.dockerContainerAction(id, 'remove')
+                    onRefresh?.()
+                  }}
                 />
               )}
               {unusedVols.length > 0 && (
@@ -681,7 +742,17 @@ export default function OverviewTab({
                   label="Unused volumes"
                   count={unusedVols.length}
                   size={unusedVolBytes > 0 ? bytesToHuman(unusedVolBytes) : null}
-                  onClick={() => { setVolumesFilter('unused'); setDockerTab('volumes') }}
+                  onNavigate={() => { setVolumesFilter('unused'); setDockerTab('volumes') }}
+                  items={unusedVols.map(v => ({
+                    id:       v.name,
+                    label:    v.name,
+                    sublabel: v.compose_project ?? undefined,
+                    size:     v.size_bytes > 0 ? bytesToHuman(v.size_bytes) : null,
+                  }))}
+                  onRemoveSelected={async ids => {
+                    for (const id of ids) await api.dockerVolumeRemove(id)
+                    onRefresh?.()
+                  }}
                 />
               )}
               {showBuildCache && (
@@ -689,18 +760,10 @@ export default function OverviewTab({
                   color="danger"
                   label="Build cache"
                   size={buildCacheFree}
-                  onClick={() => setDockerTab('prune')}
+                  onNavigate={() => setDockerTab('prune')}
                 />
               )}
             </div>
-
-            <button className="cleanup-cta-full" onClick={() => setDockerTab('prune')}>
-              <span className="cleanup-cta-main">
-                <Trash2 size={14} />
-                Clean up ~{bytesToHuman(totalFreeBytes)} of space
-              </span>
-              <span className="cleanup-cta-sub">View breakdown and run safely in Prune tab</span>
-            </button>
           </>
         )}
       </div>
@@ -723,12 +786,9 @@ export default function OverviewTab({
               Live Activity
             </button>
           </div>
-          {secondsSincePoll !== null && (
-            <span className="overview-section-meta">{secondsSincePoll}s ago</span>
-          )}
           <button
             className="stats-refresh-btn"
-            onClick={pollStats}
+            onClick={onPollStats}
             disabled={statsLoading}
             title="Refresh stats"
           >

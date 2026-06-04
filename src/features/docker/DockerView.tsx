@@ -10,6 +10,7 @@ import clsx from 'clsx'
 import { useAppStore, type DockerTab } from '../../store/appStore'
 import { useDockerData } from './hooks'
 import * as api from './api'
+import type { ContainerStats } from './types'
 import OverviewTab    from './components/OverviewTab'
 import ImagesTab      from './components/ImagesTab'
 import ContainersTab  from './components/ContainersTab'
@@ -59,7 +60,49 @@ export default function DockerView() {
   const [starting, setStarting]       = useState(false)
   const [startError, setStartError]   = useState<string | null>(null)
 
-  const online   = status?.available ?? false
+  const online = status?.available ?? false
+
+  // ── Container stats — polled every 5 s whenever Docker is online ─────────────
+  // Kept here (not in OverviewTab) so history accumulates from the moment Docker
+  // is detected as running, regardless of which tab is active.
+  const [containerStats, setContainerStats] = useState<ContainerStats[]>([])
+  const [statsLoading,   setStatsLoading]   = useState(false)
+  const [statsError,     setStatsError]     = useState<string | null>(null)
+  const [statHistory,    setStatHistory]    = useState<Map<string, { cpu: number[]; mem: number[] }>>(() => new Map())
+
+  const pollStats = useCallback(() => {
+    if (!online) { setStatsLoading(false); return }
+    api.dockerStats()
+      .then(snaps => {
+        setContainerStats(snaps)
+        setStatsError(null)
+        setStatsLoading(false)
+        setStatHistory(prev => {
+          const next = new Map(prev)
+          const active = new Set(snaps.map(s => s.name))
+          for (const k of next.keys()) if (!active.has(k)) next.delete(k)
+          snaps.forEach(s => {
+            const h = next.get(s.name) ?? { cpu: [], mem: [] }
+            next.set(s.name, {
+              cpu: [...h.cpu.slice(-14), s.cpu_pct],
+              mem: [...h.mem.slice(-14), s.mem_used_bytes],
+            })
+          })
+          return next
+        })
+      })
+      .catch(e => { setStatsError(String(e)); setStatsLoading(false) })
+  }, [online]) // eslint-disable-line
+
+  useEffect(() => {
+    if (!online) { setStatsLoading(false); setContainerStats([]); setStatHistory(new Map()); return }
+    setStatsLoading(true)
+    setStatsError(null)
+    setStatHistory(new Map())
+    pollStats()
+    const id = setInterval(pollStats, 5000)
+    return () => clearInterval(id)
+  }, [online, composeTick]) // eslint-disable-line
   const subtitle = TAB_SUBTITLES[dockerTab] ?? ''
 
   // Ctrl+R / Cmd+R → Refresh
@@ -231,7 +274,7 @@ export default function DockerView() {
       {/* ── Tab content ──────────────────────────────────────────────── */}
       {(online || loading) && (
         <div className="docker-tab-content">
-          {dockerTab === 'overview'   && <OverviewTab df={df} containers={containers} images={images} volumes={volumes} status={status} loading={loading} refreshTick={composeTick} />}
+          {dockerTab === 'overview'   && <OverviewTab df={df} containers={containers} images={images} volumes={volumes} status={status} loading={loading} refreshTick={composeTick} onRefresh={refresh} containerStats={containerStats} statsLoading={statsLoading} statsError={statsError} statHistory={statHistory} onPollStats={pollStats} />}
           {dockerTab === 'images'     && <ImagesTab images={images} loading={loading} />}
           {dockerTab === 'containers' && <ContainersTab containers={containers} loading={loading} onRefresh={refreshContainers} />}
 
