@@ -2,14 +2,15 @@ import { useEffect, useState, useMemo } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { revealItemInDir, openUrl } from '@tauri-apps/plugin-opener'
 import {
-  FileText, Download, AlertCircle, FolderOpen, Trash2, Monitor, Terminal,
-  ChevronDown, Play, Square, RotateCcw, Wrench, FileKey, ExternalLink,
+  Download, AlertCircle, FolderOpen, Trash2, Monitor, Terminal,
+  ChevronDown, Play, Square, RotateCcw, Wrench, FileKey, ExternalLink, ArrowLeft,
 } from 'lucide-react'
 import clsx from 'clsx'
 import * as api from '../api'
 import { useAppStore } from '../../../store/appStore'
-import type { ComposeProject, ComposeBackupEntry } from '../types'
+import type { ComposeProject, ComposeBackupEntry, DockerContainer, ContainerStats, AppProjectMeta } from '../types'
 import { bytesToHuman, formatDate } from '../../../utils/format'
+import ComposePage from './ComposePage'
 
 // ── .env parser ───────────────────────────────────────────────────────────────
 
@@ -186,8 +187,23 @@ type LifecycleAction = typeof LIFECYCLE_ACTIONS[number]['id']
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }) {
+interface ComposeTabProps {
+  refreshTick?:   number
+  containers:     DockerContainer[]
+  containerStats: ContainerStats[]
+  statHistory:    Map<string, { cpu: number[]; mem: number[] }>
+}
+
+export default function ComposeTab({
+  refreshTick = 0, containers, containerStats, statHistory,
+}: ComposeTabProps) {
   const backupDir = useAppStore(s => s.backupDir)
+
+  // ── View mode: 'main' = overview page, 'project' = file detail ───────────
+  const [viewMode, setViewMode] = useState<'main' | 'project'>('main')
+
+  // ── Metadata ─────────────────────────────────────────────────────────────
+  const [metadata, setMetadata] = useState<Record<string, AppProjectMeta>>({})
 
   const [projects, setProjects]           = useState<ComposeProject[]>([])
   const [loading, setLoading]             = useState(true)
@@ -205,6 +221,8 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
 
   // Lifecycle controls
   const [lifecycleRunning, setLifecycleRunning] = useState<LifecycleAction | null>(null)
+  // For the main page: track which project + action is running
+  const [cardLifecycle, setCardLifecycle] = useState<{ project: string; action: string } | null>(null)
 
   // .env viewer
   const [envOpen, setEnvOpen]       = useState(false)
@@ -237,6 +255,24 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
 
   useEffect(() => { loadProjects() }, [refreshTick]) // eslint-disable-line
 
+  // ── Load metadata once on mount ──────────────────────────────────────────
+
+  useEffect(() => {
+    api.metadataLoad().then(setMetadata).catch(() => {})
+  }, [])
+
+  // ── React to "go to overview" signal from sidebar ────────────────────────
+
+  const composeShowOverview = useAppStore(s => s.composeShowOverview)
+
+  useEffect(() => {
+    if (!composeShowOverview) return
+    useAppStore.getState().setComposeShowOverview(false)
+    setViewMode('main')
+    setSelected(null)
+    useAppStore.getState().setComposeActiveProject(null)
+  }, [composeShowOverview])
+
   // ── Sync compose project list to sidebar nav ─────────────────────────────
 
   useEffect(() => {
@@ -256,10 +292,8 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
     if (composePreselect) {
       useAppStore.getState().setComposePreselect(null)
       const target = projects.find(p => p.name === composePreselect)
-      if (target) selectProject(target)
-      else if (!selected) selectProject(projects[0])
-    } else if (!selected) {
-      selectProject(projects[0])
+      if (target) { selectProject(target); setViewMode('project') }
+      // Don't auto-select first project on initial load — show overview instead
     }
   }, [projects, composePreselect]) // eslint-disable-line
 
@@ -278,6 +312,17 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
     setActiveFile(first)
     if (first) loadFile(first)
     if (backupDir) loadComposeBackups(project.name)
+    // Record recent_opened in metadata
+    const now = new Date().toISOString()
+    const current = metadata[project.name] ?? { favorite: false, tags: [], note: '', active_env: null, recent_opened: null, startup_times: [] }
+    const updated = { ...current, recent_opened: now }
+    setMetadata(prev => ({ ...prev, [project.name]: updated }))
+    api.metadataSaveProject(project.name, updated).catch(() => {})
+  }
+
+  const handleMetaChange = (name: string, meta: AppProjectMeta) => {
+    setMetadata(prev => ({ ...prev, [name]: meta }))
+    api.metadataSaveProject(name, meta).catch(() => {})
   }
 
   const loadFile = async (path: string) => {
@@ -404,6 +449,36 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
     } finally { setBackingUp(false) }
   }
 
+  // ── Card-level lifecycle (from main page cards) ──────────────────────────
+
+  const runCardLifecycle = async (project: ComposeProject, action: 'up' | 'down' | 'restart') => {
+    if (cardLifecycle) return
+    setCardLifecycle({ project: project.name, action })
+    const { addTerminalLine, setTerminalOpen } = useAppStore.getState()
+    setTerminalOpen(true)
+    const actionMap = { up: 'docker compose up -d', down: 'docker compose down', restart: 'docker compose restart' }
+    addTerminalLine(`─── ${actionMap[action]} (${project.name}) ───`, 'info')
+    const configFile = project.config_files[0] ?? ''
+
+    const unlistenLog = await listen<string>('docker-log', e => {
+      const type = e.payload.startsWith('$') ? 'cmd'
+        : e.payload.startsWith('[err]') ? 'stderr'
+        : 'stdout'
+      useAppStore.getState().addTerminalLine(e.payload, type)
+    })
+
+    try {
+      await api.dockerComposeAction(configFile, action)
+      useAppStore.getState().addTerminalLine('─── Done ───', 'success')
+    } catch (e) {
+      useAppStore.getState().addTerminalLine(`  ✗ ${String(e)}`, 'error')
+    } finally {
+      unlistenLog()
+      setCardLifecycle(null)
+      loadProjects()
+    }
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -415,27 +490,45 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
         </div>
       )}
 
-      {/* ── Empty / loading state ──────────────────────────────────────── */}
-      {loading && !selected && (
+      {/* ── Main overview page ───────────────────────────────────────────── */}
+      {viewMode === 'main' && !loading && (
+        <ComposePage
+          projects={projects}
+          containers={containers}
+          containerStats={containerStats}
+          statHistory={statHistory}
+          metadata={metadata}
+          onMetaChange={handleMetaChange}
+          onSelectProject={p => { selectProject(p); setViewMode('project') }}
+          onLifecycle={runCardLifecycle}
+          lifecycleRunning={cardLifecycle}
+        />
+      )}
+      {viewMode === 'main' && loading && (
         <div className="compose-viewer-placeholder">
           <span className="compose-placeholder-text">Loading projects…</span>
         </div>
       )}
-      {!loading && projects.length === 0 && !error && (
-        <div className="compose-viewer-placeholder">
-          <FileText size={32} className="compose-placeholder-icon" />
-          <span className="compose-placeholder-text">
-            No compose projects found — run <code>docker compose up</code> to get started.
-          </span>
-        </div>
-      )}
 
-      {/* ── File viewer ────────────────────────────────────────────────── */}
-      {selected && (
+      {/* ── Project detail view ───────────────────────────────────────────── */}
+      {viewMode === 'project' && selected && (
         <div className="compose-viewer">
 
           {/* ── Toolbar row ─────────────────────────────────────────────── */}
           <div className="compose-viewer-toolbar">
+
+            {/* Back to overview */}
+            <button
+              className="compose-back-btn"
+              onClick={() => {
+                setViewMode('main')
+                useAppStore.getState().setComposeActiveProject(null)
+              }}
+              title="Back to all projects"
+            >
+              <ArrowLeft size={12} />
+              <span className="compose-back-label">{selected.name}</span>
+            </button>
 
             {/* File selector */}
             <div className="compose-file-tabs">

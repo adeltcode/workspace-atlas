@@ -58,6 +58,9 @@ interface AppState {
   setComposeProjectsNav: (projects: Array<{ name: string; status: string }>) => void
   composeActiveProject: string | null
   setComposeActiveProject: (name: string | null) => void
+  // When true, ComposeTab should switch to main overview page (cleared after read)
+  composeShowOverview: boolean
+  setComposeShowOverview: (v: boolean) => void
 
   // ── Docker keep-list (persisted)
   dockerKeepList: string[]
@@ -135,6 +138,8 @@ export const useAppStore = create<AppState>()(
       setComposeProjectsNav:  (composeProjectsNav)  => set({ composeProjectsNav }),
       composeActiveProject:   null,
       setComposeActiveProject:(composeActiveProject) => set({ composeActiveProject }),
+      composeShowOverview:    false,
+      setComposeShowOverview: (composeShowOverview) => set({ composeShowOverview }),
 
       // ── Docker keep-list
       dockerKeepList: [],

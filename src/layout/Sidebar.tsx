@@ -48,6 +48,13 @@ export default function Sidebar() {
     useAppStore.getState().setComposePreselect(name)
   }
 
+  const goComposeOverview = () => {
+    setActiveView('docker')
+    setDockerTab('compose')
+    useAppStore.getState().setComposeShowOverview(true)
+    useAppStore.getState().setComposeActiveProject(null)
+  }
+
   const childBadge = (id: DockerTab): string | undefined => {
     if (!dockerBadges) return undefined
     if (id === 'images'     && dockerBadges.images > 0)  return String(dockerBadges.images)
@@ -90,6 +97,16 @@ export default function Sidebar() {
                         {/* Compose project grandchild items — only when Compose tab is active */}
                         {id === 'compose' && dockerTab === 'compose' && composeProjectsNav.length > 0 && (
                           <ul className="sidebar-grandchildren">
+                            {/* Overview item — always first */}
+                            <li>
+                              <button
+                                className={clsx('sidebar-grandchild-item', composeActiveProject === null && 'active')}
+                                onClick={goComposeOverview}
+                              >
+                                <span className="sidebar-compose-dot" style={{ background: 'var(--color-text-tertiary)', opacity: 0.5 }} />
+                                <span className="sidebar-grandchild-label">Overview</span>
+                              </button>
+                            </li>
                             {composeProjectsNav.map(p => {
                               const { dot, running, total } = composeStatusLabel(p.status)
                               const isActive = dockerTab === 'compose' && composeActiveProject === p.name
