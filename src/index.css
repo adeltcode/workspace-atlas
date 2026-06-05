@@ -3029,6 +3029,8 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
 .project-cards {
   display: flex;
   flex-direction: column;
+  max-height: 320px;
+  overflow-y: auto;
 }
 
 .project-card {
@@ -3846,7 +3848,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 .compose-project-tab.active {
   background: var(--color-accent-subtle);
-  border-color: rgba(108,113,255,0.3);
+  border-color: var(--color-accent-border);
   color: var(--color-accent);
 }
 .compose-tab-name {
@@ -4338,6 +4340,152 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 [data-theme="light"] .yaml-bool     { color: #7c3aed; }
 [data-theme="light"] .yaml-number   { color: #059669; }
 [data-theme="light"] .yaml-env      { color: #c2410c; }
+
+/* ── Clickable YAML values ──────────────────────────────────── */
+.yaml-port-link,
+.yaml-path-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+  transition: color var(--transition-fast);
+}
+.yaml-port-link:hover  { color: var(--color-accent); }
+.yaml-path-link:hover  { color: var(--color-success); }
+.yaml-port-icon,
+.yaml-path-icon {
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+  flex-shrink: 0;
+}
+.yaml-port-link:hover .yaml-port-icon,
+.yaml-path-link:hover .yaml-path-icon { opacity: 0.7; }
+
+/* ── Fraction badge in project pills ───────────────────────── */
+.compose-tab-fraction {
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  padding: 0px 5px;
+  border-radius: var(--radius-full);
+  line-height: 1.6;
+  flex-shrink: 0;
+}
+.compose-tab-fraction.frac--ok   { background: var(--color-success-subtle); color: var(--color-success); }
+.compose-tab-fraction.frac--warn { background: var(--color-warning-subtle); color: var(--color-warning); }
+.compose-tab-fraction.frac--off  { background: var(--color-bg-tertiary);    color: var(--color-text-tertiary); }
+
+/* ── Lifecycle action toolbar ───────────────────────────────── */
+.compose-lifecycle-btns {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.compose-lifecycle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  font-size: 11.5px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+.compose-lifecycle-btn:hover:not(:disabled) {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+  border-color: var(--color-border-strong);
+}
+.compose-lifecycle-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.compose-lifecycle-btn--success:hover:not(:disabled) { color: var(--color-success); border-color: color-mix(in srgb, var(--color-success) 35%, transparent); background: var(--color-success-subtle); }
+.compose-lifecycle-btn--danger:hover:not(:disabled)  { color: var(--color-danger);  border-color: var(--color-danger-border); background: var(--color-danger-subtle); }
+.compose-lifecycle-btn--warning:hover:not(:disabled) { color: var(--color-warning); border-color: color-mix(in srgb, var(--color-warning) 35%, transparent); background: var(--color-warning-subtle); }
+
+/* ── .env toggle button ─────────────────────────────────────── */
+.compose-env-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-tertiary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+.compose-env-toggle-btn:hover:not(:disabled) { background: var(--color-bg-hover); color: var(--color-text-primary); border-color: var(--color-border-strong); }
+.compose-env-toggle-btn.active { background: var(--color-warning-subtle); color: var(--color-warning); border-color: color-mix(in srgb, var(--color-warning) 35%, transparent); }
+.compose-env-toggle-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* ── .env accordion content ─────────────────────────────────── */
+.compose-env-accordion {
+  min-height: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+}
+
+.compose-backup-empty--error { color: var(--color-danger); }
+
+/* ── .env key-value table ───────────────────────────────────── */
+.env-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-family: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
+}
+.env-th {
+  padding: 5px 14px;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  border-bottom: 1px solid var(--color-border-light);
+}
+.env-row { transition: background var(--transition-fast); }
+.env-row:hover { background: var(--color-bg-hover); }
+.env-row:last-child .env-key,
+.env-row:last-child .env-val { border-bottom: none; }
+.env-key {
+  padding: 5px 14px;
+  color: #7dd3fc;
+  font-weight: 600;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--color-border-light);
+  vertical-align: top;
+  width: 30%;
+}
+.env-val {
+  padding: 5px 14px;
+  color: var(--color-text-primary);
+  word-break: break-all;
+  border-bottom: 1px solid var(--color-border-light);
+}
+.env-empty { color: var(--color-text-tertiary); font-style: italic; }
+
+[data-theme="light"] .env-key { color: #1d4ed8; }
 
 /* =============================================================
    Docker — Backup Tab (redesigned)

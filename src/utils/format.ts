@@ -2,17 +2,17 @@
  * Parse and classify a Docker Compose status string like "running(2), exited(1)".
  * Returns a human-readable label and a dot colour for status indicators.
  */
-export function composeStatusLabel(raw: string): { text: string; dot: 'running' | 'partial' | 'stopped' } {
+export function composeStatusLabel(raw: string): { text: string; dot: 'running' | 'partial' | 'stopped'; running: number; total: number } {
   const parts = raw.split(',').map(s => s.trim()).filter(Boolean).map(part => {
     const m = part.match(/^(\w+)\((\d+)\)$/)
     return m ? { state: m[1], count: parseInt(m[2], 10) } : { state: part, count: 1 }
   })
-  if (!parts.length) return { text: raw || 'unknown', dot: 'stopped' }
+  if (!parts.length) return { text: raw || 'unknown', dot: 'stopped', running: 0, total: 0 }
   const total   = parts.reduce((s, p) => s + p.count, 0)
   const running = parts.find(p => p.state === 'running')?.count ?? 0
   const text    = parts.map(p => `${p.count} ${p.state}`).join(', ')
   const dot     = running === 0 ? 'stopped' : running === total ? 'running' : 'partial'
-  return { text, dot }
+  return { text, dot, running, total }
 }
 
 export function bytesToHuman(b: number): string {

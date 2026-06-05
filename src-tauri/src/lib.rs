@@ -24,6 +24,7 @@ pub fn run() {
             docker::docker_networks,
             docker::docker_network_remove,
             docker::docker_compose_ls,
+            docker::docker_compose_action,
             docker::docker_stats,
             docker::read_file_content,
             docker::get_default_backup_dir,

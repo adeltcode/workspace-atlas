@@ -52,22 +52,6 @@ function buildTotalRow(df: DockerSystemDf): DiskUsageRow {
 
 // ── New helpers ───────────────────────────────────────────────────────────────
 
-function parseComposeCounts(status: string): { running: number; total: number } {
-  let running = 0, total = 0
-  for (const part of status.split(',').map(s => s.trim()).filter(Boolean)) {
-    const m = part.match(/^(\w+)\((\d+)\)$/)
-    if (m) {
-      const n = parseInt(m[2])
-      total += n
-      if (m[1] === 'running') running += n
-    } else {
-      total += 1
-      if (part === 'running') running += 1
-    }
-  }
-  return { running, total }
-}
-
 function projectContainerNames(projectName: string, containers: DockerContainer[], allProjectNames: string[]): string[] {
   const p1 = `${projectName}-`, p2 = `${projectName}_`
   return containers
@@ -84,16 +68,8 @@ function projectContainerNames(projectName: string, containers: DockerContainer[
     .map(c => c.name)
 }
 
-function projectMemBytes(names: string[], stats: ContainerStats[]): number {
-  return stats
-    .filter(s => names.includes(s.name))
-    .reduce((sum, s) => sum + s.mem_used_bytes, 0)
-}
-
-function projectCpuPct(names: string[], stats: ContainerStats[]): number {
-  return stats
-    .filter(s => names.includes(s.name))
-    .reduce((sum, s) => sum + s.cpu_pct, 0)
+function sumProjectStat(names: string[], stats: ContainerStats[], get: (s: ContainerStats) => number): number {
+  return stats.filter(s => names.includes(s.name)).reduce((sum, s) => sum + get(s), 0)
 }
 
 function extractHostPort(mapping: string): string {
@@ -139,8 +115,7 @@ interface LiveSeries {
 
 function padLeft(arr: number[], n: number): number[] {
   if (arr.length >= n) return arr.slice(-n)
-  const fill = arr.length > 0 ? arr[0] : 0
-  return [...Array(n - arr.length).fill(fill), ...arr]
+  return [...Array(n - arr.length).fill(0), ...arr]
 }
 
 const CH = 148
@@ -349,17 +324,16 @@ function LiveCharts({
     [containerStats],
   )
 
+  const chartColors = useMemo(() => getChartColors(), [theme])
+
   const series: LiveSeries[] = useMemo(
-    () => {
-      const colors = getChartColors()
-      return sorted.map((s, i) => ({
-        name:  s.name,
-        color: colors[i % colors.length],
-        cpu:   statHistory.get(s.name)?.cpu?.length ? statHistory.get(s.name)!.cpu : [s.cpu_pct],
-        mem:   statHistory.get(s.name)?.mem?.length ? statHistory.get(s.name)!.mem : [s.mem_used_bytes],
-      }))
-    },
-    [sorted, statHistory, theme], // eslint-disable-line — theme invalidates chart colors on toggle
+    () => sorted.map((s, i) => ({
+      name:  s.name,
+      color: chartColors[i % chartColors.length],
+      cpu:   statHistory.get(s.name)?.cpu?.length ? statHistory.get(s.name)!.cpu : [s.cpu_pct],
+      mem:   statHistory.get(s.name)?.mem?.length ? statHistory.get(s.name)!.mem : [s.mem_used_bytes],
+    })),
+    [sorted, statHistory, chartColors],
   )
 
   const maxRealPoints = useMemo(
@@ -530,11 +504,10 @@ function ProjectCard({
   allProjectNames: string[]
   onOpen:          () => void
 }) {
-  const { text, dot } = composeStatusLabel(project.status)
-  const { running, total } = parseComposeCounts(project.status)
+  const { text, dot, running, total } = composeStatusLabel(project.status)
   const names   = projectContainerNames(project.name, containers, allProjectNames)
-  const memUsed = projectMemBytes(names, containerStats)
-  const cpuUsed = projectCpuPct(names, containerStats)
+  const memUsed = sumProjectStat(names, containerStats, s => s.mem_used_bytes)
+  const cpuUsed = sumProjectStat(names, containerStats, s => s.cpu_pct)
   const ports = [...new Set(
     containers
       .filter(c => names.includes(c.name) && c.ports)
@@ -643,8 +616,10 @@ export default function OverviewTab({
     api.getBackupSize(backupDir).then(setBackupBytes).catch(() => setBackupBytes(0))
   }, [refreshTick, backupDir]) // eslint-disable-line
 
-  const topCpu = useMemo(() => [...containerStats].sort((a, b) => b.cpu_pct - a.cpu_pct).slice(0, 3), [containerStats])
-  const topMem = useMemo(() => [...containerStats].sort((a, b) => b.mem_used_bytes - a.mem_used_bytes).slice(0, 3), [containerStats])
+  const { topCpu, topMem } = useMemo(() => ({
+    topCpu: [...containerStats].sort((a, b) => b.cpu_pct - a.cpu_pct).slice(0, 3),
+    topMem: [...containerStats].sort((a, b) => b.mem_used_bytes - a.mem_used_bytes).slice(0, 3),
+  }), [containerStats])
 
   // ── Hero counts ───────────────────────────────────────────────────────────
   const runningCtrs = containers.filter(c => c.state === 'running').length
@@ -802,7 +777,7 @@ export default function OverviewTab({
             No compose projects found — create a compose.yaml file to manage multi-container apps.
           </p>
         ) : (
-          <div className="project-cards" style={{ maxHeight: 320, overflowY: 'auto' }}>
+          <div className="project-cards">
             {composeProjects.map(p => (
               <ProjectCard
                 key={p.name}
@@ -1051,17 +1026,15 @@ export default function OverviewTab({
       <div className="overview-section">
         <div className="overview-section-head overview-section-head--static">
           <span className="section-label" style={{ margin: 0 }}>Cleanup Opportunities</span>
-          {!loading && totalFreeBytes > 0 && (
+          {!loading && totalFreeBytes > 0 && <>
             <span className="overview-section-meta" style={{ marginLeft: 'auto' }}>
               ~{bytesToHuman(totalFreeBytes)} freeable
             </span>
-          )}
-          {!loading && totalFreeBytes > 0 && (
             <button className="overview-prune-btn" onClick={() => setDockerTab('prune')}>
               <Trash2 size={11} />
               Prune all
             </button>
-          )}
+          </>}
         </div>
 
         {loading ? (
@@ -1130,7 +1103,7 @@ export default function OverviewTab({
                   sublabel: c.status,
                 }))}
                 onRemoveSelected={async ids => {
-                  try { for (const id of ids) await api.dockerContainerAction(id, 'remove') }
+                  try { await Promise.all(ids.map(id => api.dockerContainerAction(id, 'remove'))) }
                   finally { onRefresh?.() }
                 }}
               />
@@ -1149,7 +1122,7 @@ export default function OverviewTab({
                   size:     v.size_bytes > 0 ? bytesToHuman(v.size_bytes) : null,
                 }))}
                 onRemoveSelected={async ids => {
-                  try { for (const id of ids) await api.dockerVolumeRemove(id) }
+                  try { await Promise.all(ids.map(id => api.dockerVolumeRemove(id))) }
                   finally { onRefresh?.() }
                 }}
               />

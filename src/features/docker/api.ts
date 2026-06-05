@@ -32,6 +32,8 @@ export const dockerNetworkRemove = (id: string) =>
   invoke<void>('docker_network_remove', { id })
 
 export const dockerComposeLs        = () => invoke<ComposeProject[]>('docker_compose_ls')
+export const dockerComposeAction    = (configFile: string, action: 'up' | 'down' | 'restart' | 'rebuild') =>
+  invoke<void>('docker_compose_action', { configFile, action })
 export const dockerStats            = () => invoke<ContainerStats[]>('docker_stats')
 export const readFileContent         = (path: string) => invoke<string>('read_file_content', { path })
 export const getDefaultBackupDir     = () => invoke<string>('get_default_backup_dir')

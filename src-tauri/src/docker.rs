@@ -670,7 +670,19 @@ fn get_networks_sync() -> Result<Vec<DockerNetwork>, String> {
 }
 
 /// Run a command and stream each stdout/stderr line as a "docker-log" event.
-fn run_streaming_sync(app: &tauri::AppHandle, mut cmd: Command) -> Result<(), String> {
+/// Stderr lines are prefixed with "[err] " so the frontend can colour them red.
+fn run_streaming_sync(app: &tauri::AppHandle, cmd: Command) -> Result<(), String> {
+    run_streaming_inner(app, cmd, true)
+}
+
+/// Like run_streaming_sync but does NOT prefix stderr with "[err] ".
+/// Use for `docker compose` commands, which write all progress output to stderr
+/// by design — those messages are informational, not errors.
+fn run_streaming_compose(app: &tauri::AppHandle, cmd: Command) -> Result<(), String> {
+    run_streaming_inner(app, cmd, false)
+}
+
+fn run_streaming_inner(app: &tauri::AppHandle, mut cmd: Command, tag_stderr: bool) -> Result<(), String> {
     let mut child = cmd
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -691,19 +703,20 @@ fn run_streaming_sync(app: &tauri::AppHandle, mut cmd: Command) -> Result<(), St
         thread::spawn(move || {
             BufReader::new(err).lines().flatten().for_each(|line| {
                 if !line.trim().is_empty() {
-                    stderr_app.emit("docker-log", format!("[err] {}", line)).ok();
+                    let payload = if tag_stderr {
+                        format!("[err] {}", line)
+                    } else {
+                        line
+                    };
+                    stderr_app.emit("docker-log", payload).ok();
                 }
             });
         })
     });
 
     child.wait().map_err(|e| e.to_string())?;
-    if let Some(h) = stdout_handle {
-        h.join().ok();
-    }
-    if let Some(h) = stderr_handle {
-        h.join().ok();
-    }
+    if let Some(h) = stdout_handle { h.join().ok(); }
+    if let Some(h) = stderr_handle { h.join().ok(); }
     Ok(())
 }
 
@@ -1347,7 +1360,7 @@ pub async fn docker_compose_ls() -> Result<Vec<ComposeProject>, String> {
             let config_str = v["ConfigFiles"].as_str().unwrap_or("");
             let config_files: Vec<String> = config_str
                 .split(',')
-                .map(|s| s.trim().to_string())
+                .map(|s| s.trim().trim_end_matches('/').trim_end_matches('\\').to_string())
                 .filter(|s| !s.is_empty())
                 .collect();
             ComposeProject {
@@ -1357,6 +1370,64 @@ pub async fn docker_compose_ls() -> Result<Vec<ComposeProject>, String> {
             }
         })
         .collect())
+}
+
+/// Run a docker compose lifecycle action against a specific config file,
+/// streaming output via `docker-log` events.
+///
+/// Handles three path origins:
+///   - Windows absolute (`C:\...`)  → `docker compose -f <path> <action>`
+///   - WSL mount (`/mnt/c/...`)     → convert to Windows path, then same
+///   - Pure WSL (`/home/...` etc.)  → `wsl docker compose -f <path> <action>`
+#[tauri::command]
+pub async fn docker_compose_action(
+    app: tauri::AppHandle,
+    config_file: String,
+    action: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let extra_args: &[&str] = match action.as_str() {
+            "up"      => &["up", "-d"],
+            "down"    => &["down"],
+            "restart" => &["restart"],
+            "rebuild" => &["up", "-d", "--build"],
+            other     => return Err(format!("Unknown compose action: {}", other)),
+        };
+
+        // Display the command as it will actually run
+        app.emit("docker-log",
+            format!("$ docker compose -f \"{}\" {}", &config_file, extra_args.join(" "))
+        ).ok();
+
+        if is_windows_absolute(&config_file) {
+            // Native Windows path (C:\...) — pass directly to Windows Docker CLI
+            let mut cmd = Command::new("docker");
+            cmd.args(["compose", "-f", &config_file]);
+            cmd.args(extra_args);
+            run_streaming_compose(&app, cmd)?;
+
+        } else if let Some(win_path) = wsl_mount_to_windows(&config_file) {
+            // WSL mount path (/mnt/c/...) — convert to Windows path
+            app.emit("docker-log", format!("# resolved to {}", &win_path)).ok();
+            let mut cmd = Command::new("docker");
+            cmd.args(["compose", "-f", &win_path]);
+            cmd.args(extra_args);
+            run_streaming_compose(&app, cmd)?;
+
+        } else {
+            // Pure WSL path (/home/..., /root/..., etc.) — run inside WSL
+            let mut cmd = Command::new("wsl");
+            cmd.arg("docker");
+            cmd.args(["compose", "-f", &config_file]);
+            cmd.args(extra_args);
+            run_streaming_compose(&app, cmd)?;
+        }
+
+        app.emit("docker-done", true).ok();
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Parse "12.34%" or "--" → f64. Returns 0.0 for dashes / parse failures.

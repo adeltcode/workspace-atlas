@@ -1,15 +1,38 @@
-import { useEffect, useState } from 'react'
-import { revealItemInDir } from '@tauri-apps/plugin-opener'
-import { FileText, Download, AlertCircle, FolderOpen, Trash2, Monitor, Terminal, ChevronDown } from 'lucide-react'
+import { useEffect, useState, useMemo } from 'react'
+import { listen } from '@tauri-apps/api/event'
+import { revealItemInDir, openUrl } from '@tauri-apps/plugin-opener'
+import {
+  FileText, Download, AlertCircle, FolderOpen, Trash2, Monitor, Terminal,
+  ChevronDown, Play, Square, RotateCcw, Wrench, FileKey, ExternalLink,
+} from 'lucide-react'
 import clsx from 'clsx'
 import * as api from '../api'
 import { useAppStore } from '../../../store/appStore'
 import type { ComposeProject, ComposeBackupEntry } from '../types'
 import { bytesToHuman, formatDate, composeStatusLabel } from '../../../utils/format'
 
+// ── .env parser ───────────────────────────────────────────────────────────────
+
+function parseEnvPairs(content: string): Array<{ key: string; value: string }> {
+  return content.split('\n')
+    .filter(line => { const t = line.trim(); return t && !t.startsWith('#') })
+    .map(line => {
+      const eq = line.indexOf('=')
+      if (eq === -1) return { key: line.trim(), value: '' }
+      return { key: line.slice(0, eq).trim(), value: line.slice(eq + 1) }
+    })
+}
+
 // ── YAML syntax highlighter ───────────────────────────────────────────────────
 
-function renderYamlValue(raw: string): React.ReactNode {
+// Matches: optional-ip:hostPort:containerPort[/proto]
+const PORT_RE = /^(?:[\d.]+:)?(\d+):\d+(?:\/(?:tcp|udp))?$/
+
+function renderYamlValue(
+  raw: string,
+  onOpenPort?: (port: string) => void,
+  onRevealPath?: (path: string) => void,
+): React.ReactNode {
   if (!raw) return null
   const val     = raw.trimEnd()
   const trimmed = val.trimStart()
@@ -21,6 +44,34 @@ function renderYamlValue(raw: string): React.ReactNode {
     const c = val.slice(val.length - trimmed.length + ci)
     return <><span className="yaml-value">{v}</span><span className="yaml-comment">{c}</span></>
   }
+
+  // Strip outer quotes for pattern matching
+  const stripped = trimmed.replace(/^['"]|['"]$/g, '')
+
+  // Clickable port mapping: "3000:3000", "127.0.0.1:8080:80/tcp"
+  if (onOpenPort) {
+    const pm = stripped.match(PORT_RE)
+    if (pm) {
+      return (
+        <button className="yaml-port-link" onClick={() => onOpenPort(pm[1])}>
+          <span className="yaml-string">{val}</span>
+          <ExternalLink size={9} className="yaml-port-icon" />
+        </button>
+      )
+    }
+  }
+
+  // Clickable relative volume path: ./app, ./app:/container
+  if (onRevealPath && (stripped.startsWith('./') || stripped.startsWith('../'))) {
+    const source = stripped.split(':')[0]
+    return (
+      <button className="yaml-path-link" onClick={() => onRevealPath(source)}>
+        <span className="yaml-value">{val}</span>
+        <FolderOpen size={9} className="yaml-path-icon" />
+      </button>
+    )
+  }
+
   if (trimmed.startsWith('"') || trimmed.startsWith("'"))
     return <span className="yaml-string">{val}</span>
   if (/^(true|false|null|yes|no|on|off)$/i.test(trimmed))
@@ -36,7 +87,13 @@ function renderYamlValue(raw: string): React.ReactNode {
   return <span className="yaml-value">{val}</span>
 }
 
-function YamlLine({ line }: { line: string }) {
+function YamlLine({
+  line, onOpenPort, onRevealPath,
+}: {
+  line:          string
+  onOpenPort?:   (port: string) => void
+  onRevealPath?: (path: string) => void
+}) {
   const trimmed = line.trimStart()
   const indent  = line.length - trimmed.length
   if (!trimmed) return <div className="yaml-line">&nbsp;</div>
@@ -51,7 +108,7 @@ function YamlLine({ line }: { line: string }) {
         <span>{pre}</span>
         <span className={depth === 0 ? 'yaml-key-root' : 'yaml-key'}>{key}</span>
         <span className="yaml-colon">{colon}</span>
-        {rest ? <> {renderYamlValue(rest)}</> : null}
+        {rest ? <> {renderYamlValue(rest, onOpenPort, onRevealPath)}</> : null}
       </div>
     )
   }
@@ -61,14 +118,20 @@ function YamlLine({ line }: { line: string }) {
     return (
       <div className="yaml-line">
         <span>{pre}</span><span className="yaml-dash">{dash}</span>
-        <span>{sp}</span>{renderYamlValue(rest)}
+        <span>{sp}</span>{renderYamlValue(rest, onOpenPort, onRevealPath)}
       </div>
     )
   }
   return <div className="yaml-line">{line}</div>
 }
 
-function YamlViewer({ content }: { content: string }) {
+function YamlViewer({
+  content, onOpenPort, onRevealPath,
+}: {
+  content:       string
+  onOpenPort?:   (port: string) => void
+  onRevealPath?: (path: string) => void
+}) {
   const lines = content.split('\n')
   if (lines[lines.length - 1] === '') lines.pop()
   return (
@@ -77,7 +140,9 @@ function YamlViewer({ content }: { content: string }) {
         {lines.map((_, i) => <span key={i}>{i + 1}</span>)}
       </div>
       <div className="compose-code-body">
-        {lines.map((line, i) => <YamlLine key={i} line={line} />)}
+        {lines.map((line, i) => (
+          <YamlLine key={i} line={line} onOpenPort={onOpenPort} onRevealPath={onRevealPath} />
+        ))}
       </div>
     </div>
   )
@@ -108,6 +173,17 @@ function PathOriginLine({ path }: { path: string }) {
   )
 }
 
+// ── Compose lifecycle actions ─────────────────────────────────────────────────
+
+const LIFECYCLE_ACTIONS = [
+  { id: 'up',      Icon: Play,      label: 'Up',      title: 'docker compose up -d',         color: 'success' },
+  { id: 'down',    Icon: Square,    label: 'Down',    title: 'docker compose down',           color: 'danger'  },
+  { id: 'restart', Icon: RotateCcw, label: 'Restart', title: 'docker compose restart',       color: 'default' },
+  { id: 'rebuild', Icon: Wrench,    label: 'Rebuild', title: 'docker compose up -d --build', color: 'warning' },
+] as const
+
+type LifecycleAction = typeof LIFECYCLE_ACTIONS[number]['id']
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }) {
@@ -126,6 +202,29 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
   const [backupOpen, setBackupOpen]         = useState(false)
   const [backingUp, setBackingUp]           = useState(false)
   const [backupMsg, setBackupMsg]           = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null)
+
+  // Lifecycle controls
+  const [lifecycleRunning, setLifecycleRunning] = useState<LifecycleAction | null>(null)
+
+  // .env viewer
+  const [envOpen, setEnvOpen]       = useState(false)
+  const [envContent, setEnvContent] = useState<string | null>(null)
+  const [envLoading, setEnvLoading] = useState(false)
+  const [envError, setEnvError]     = useState<string | null>(null)
+
+  // ── Computed ──────────────────────────────────────────────────────────────
+
+  const projectDir = useMemo(() => {
+    if (!activeFile) return ''
+    const i = Math.max(activeFile.lastIndexOf('/'), activeFile.lastIndexOf('\\'))
+    return i >= 0 ? activeFile.slice(0, i) : ''
+  }, [activeFile])
+
+  const envFilePath = useMemo(() => {
+    if (!projectDir) return ''
+    const sep = activeFile.includes('/') ? '/' : '\\'
+    return `${projectDir}${sep}.env`
+  }, [projectDir, activeFile])
 
   // ── Load projects ─────────────────────────────────────────────────────────
 
@@ -158,6 +257,9 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
     setFileContent(null)
     setFileError(null)
     setBackupMsg(null)
+    setEnvContent(null)
+    setEnvError(null)
+    setEnvOpen(false)
     const first = project.config_files[0] ?? ''
     setActiveFile(first)
     if (first) loadFile(first)
@@ -170,6 +272,78 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
     try { setFileContent(await api.readFileContent(path)) }
     catch (e) { setFileError(String(e)) }
     finally { setFileLoading(false) }
+  }
+
+  // ── .env loader ───────────────────────────────────────────────────────────
+
+  const toggleEnv = async () => {
+    if (envOpen) { setEnvOpen(false); return }
+    setEnvOpen(true)
+    if (envContent !== null || envLoading) return
+    if (!envFilePath) return
+    setEnvLoading(true); setEnvError(null)
+    try { setEnvContent(await api.readFileContent(envFilePath)) }
+    catch (e) {
+      const msg = String(e).toLowerCase()
+      // File-not-found is a normal case — show "no .env" message rather than an error
+      if (msg.includes('not found') || msg.includes('cannot access') || msg.includes('no such file')) {
+        setEnvContent('')
+      } else {
+        setEnvError(String(e))
+      }
+    }
+    finally { setEnvLoading(false) }
+  }
+
+  // ── YAML callbacks ────────────────────────────────────────────────────────
+
+  const handleOpenPort = (port: string) => {
+    openUrl(`http://localhost:${port}`).catch(() => {})
+  }
+
+  const handleRevealPath = (rel: string) => {
+    if (!projectDir) return
+    const sep = activeFile.includes('/') ? '/' : '\\'
+    const abs = `${projectDir}${sep}${rel.replace(/^\.\//, '').replace(/^\.\.\//, '../')}`
+    revealItemInDir(abs).catch(() => {})
+  }
+
+  // ── Lifecycle controls ────────────────────────────────────────────────────
+
+  const runComposeAction = async (action: LifecycleAction) => {
+    if (!activeFile || lifecycleRunning) return
+    setLifecycleRunning(action)
+    const { addTerminalLine, setTerminalOpen } = useAppStore.getState()
+    setTerminalOpen(true)
+    const actionDef = LIFECYCLE_ACTIONS.find(a => a.id === action)!
+    addTerminalLine(`─── ${actionDef.title} ───`, 'info')
+
+    const unlistenLog = await listen<string>('docker-log', e => {
+      const type = e.payload.startsWith('$') ? 'cmd'
+        : e.payload.startsWith('[err]') ? 'stderr'
+        : 'stdout'
+      useAppStore.getState().addTerminalLine(e.payload, type)
+    })
+
+    try {
+      await api.dockerComposeAction(activeFile, action)
+      useAppStore.getState().addTerminalLine('─── Done ───', 'success')
+    } catch (e) {
+      useAppStore.getState().addTerminalLine(`  ✗ ${String(e)}`, 'error')
+    } finally {
+      unlistenLog()
+      setLifecycleRunning(null)
+      // Refresh project list to reflect updated status
+      loadProjects().then(() => {
+        if (selected) {
+          setProjects(prev => {
+            const updated = prev.find(p => p.name === selected.name)
+            if (updated) setSelected(updated)
+            return prev
+          })
+        }
+      })
+    }
   }
 
   // ── Backup history ────────────────────────────────────────────────────────
@@ -236,17 +410,22 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
           </span>
         )}
         {projects.map(p => {
-          const { text: stText, dot } = composeStatusLabel(p.status)
+          const { dot, running, total } = composeStatusLabel(p.status)
           const isActive = selected?.name === p.name
           return (
             <button
               key={p.name}
               className={clsx('compose-project-tab', isActive && 'active')}
               onClick={() => selectProject(p)}
-              title={`${p.name} — ${stText}`}
+              title={`${p.name} — ${running}/${total} running`}
             >
               <span className={clsx('compose-status-dot', dot)} />
               <span className="compose-tab-name">{p.name}</span>
+              {total > 0 && (
+                <span className={clsx('compose-tab-fraction', dot === 'running' ? 'frac--ok' : dot === 'partial' ? 'frac--warn' : 'frac--off')}>
+                  {running}/{total}
+                </span>
+              )}
             </button>
           )
         })}
@@ -256,16 +435,16 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
       {selected ? (
         <div className="compose-viewer">
 
-          {/* ── Toolbar: path selector on left (replaces redundant file tabs) ── */}
+          {/* ── Toolbar row ─────────────────────────────────────────────── */}
           <div className="compose-viewer-toolbar">
 
-            {/* File selector — plain path display, one per config file */}
+            {/* File selector */}
             <div className="compose-file-tabs">
               {selected.config_files.map(f => (
                 <button
                   key={f}
                   className={clsx('compose-file-path-item', activeFile === f && 'active')}
-                  onClick={() => { setActiveFile(f); loadFile(f); setBackupMsg(null) }}
+                  onClick={() => { setActiveFile(f); loadFile(f); setBackupMsg(null); setEnvContent(null); setEnvOpen(false) }}
                   title={f}
                 >
                   <PathOriginLine path={f} />
@@ -274,7 +453,23 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
               ))}
             </div>
 
-            {/* Status + Run Backup — inline in toolbar, no extra row */}
+            {/* Lifecycle action buttons */}
+            <div className="compose-lifecycle-btns">
+              {LIFECYCLE_ACTIONS.map(({ id, Icon, label, title, color }) => (
+                <button
+                  key={id}
+                  className={clsx('compose-lifecycle-btn', `compose-lifecycle-btn--${color}`, lifecycleRunning === id && 'loading')}
+                  onClick={() => runComposeAction(id)}
+                  disabled={!!lifecycleRunning || !activeFile}
+                  title={title}
+                >
+                  <Icon size={11} className={lifecycleRunning === id ? 'spin' : ''} />
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Status + Backup + .env toggles */}
             <div className="compose-viewer-actions">
               {backupOpen && (
                 <>
@@ -306,10 +501,20 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
                 )}
                 <ChevronDown size={10} className={clsx('compose-backup-toggle-chevron', backupOpen && 'open')} />
               </button>
+              <button
+                className={clsx('compose-env-toggle-btn', envOpen && 'active')}
+                onClick={toggleEnv}
+                disabled={!envFilePath}
+                title={envFilePath ? `Toggle .env viewer (${envFilePath})` : 'No active file'}
+              >
+                <FileKey size={12} />
+                .env
+                <ChevronDown size={10} className={clsx('compose-backup-toggle-chevron', envOpen && 'open')} />
+              </button>
             </div>
           </div>
 
-          {/* ── Backup list — no head row, just entries ──────────────── */}
+          {/* ── Backup accordion ─────────────────────────────────────────── */}
           <div className={clsx('compose-accordion-wrap', backupOpen && 'open')}>
             <div className="compose-backup-accordion">
               {fileBackups.length === 0 ? (
@@ -337,7 +542,39 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
             </div>
           </div>
 
-          {/* ── File content ─────────────────────────────────────────── */}
+          {/* ── .env accordion ───────────────────────────────────────────── */}
+          <div className={clsx('compose-accordion-wrap', envOpen && 'open')}>
+            <div className="compose-env-accordion">
+              {envLoading && <p className="compose-backup-empty">Loading .env…</p>}
+              {envError  && <p className="compose-backup-empty compose-backup-empty--error">{envError}</p>}
+              {!envLoading && !envError && envContent === '' && (
+                <p className="compose-backup-empty">No .env file found in this project directory.</p>
+              )}
+              {!envLoading && !envError && envContent && (() => {
+                const pairs = parseEnvPairs(envContent)
+                return (
+                  <table className="env-table">
+                    <thead>
+                      <tr>
+                        <th className="env-th">Variable</th>
+                        <th className="env-th">Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pairs.map(({ key, value }) => (
+                        <tr key={key} className="env-row">
+                          <td className="env-key">{key}</td>
+                          <td className="env-val">{value || <span className="env-empty">(empty)</span>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )
+              })()}
+            </div>
+          </div>
+
+          {/* ── File content ─────────────────────────────────────────────── */}
           <div className="compose-viewer-body">
             {fileLoading && <div className="compose-viewer-state">Loading file…</div>}
             {fileError && (
@@ -345,7 +582,13 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
                 <AlertCircle size={14} />{fileError}
               </div>
             )}
-            {!fileLoading && fileContent !== null && <YamlViewer content={fileContent} />}
+            {!fileLoading && fileContent !== null && (
+              <YamlViewer
+                content={fileContent}
+                onOpenPort={handleOpenPort}
+                onRevealPath={handleRevealPath}
+              />
+            )}
           </div>
         </div>
       ) : (
