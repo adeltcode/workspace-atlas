@@ -452,6 +452,9 @@ ul, ol { list-style: none; }
  */
 .sidebar-child-item {
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
   width: 100%;
   padding: 5px 8px 5px 47px;
   border-radius: var(--radius-sm);
@@ -552,6 +555,9 @@ ul, ol { list-style: none; }
 /* Text starts at 71px  (47 + 24 = same 24px delta as child level) */
 .sidebar-grandchild-item {
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: 5px;
   width: 100%;
   padding: 5px 8px 5px 71px;  /* vertical padding matches child */
   border-radius: var(--radius-sm);
@@ -602,6 +608,46 @@ ul, ol { list-style: none; }
 .sidebar-grandchild-item.active::after {
   background: var(--color-accent);
 }
+
+/* ── Sidebar child/grandchild inline layout extras ──────────────────────── */
+
+/* Flex-child label fills available width */
+.sidebar-child-label     { flex: 1; }
+.sidebar-grandchild-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Count/badge pill on child items (images, containers, volumes) */
+.sidebar-child-badge {
+  font-size: 10px;
+  line-height: 1.6;
+  padding: 0 5px;
+  border-radius: var(--radius-full);
+  background: var(--chrome-surface);
+  color: var(--chrome-text-muted);
+  border: 1px solid var(--chrome-divider);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Compose project status dot (inside grandchild item) */
+.sidebar-compose-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.sidebar-compose-dot.running { background: var(--color-success); }
+.sidebar-compose-dot.partial { background: var(--color-warning); }
+.sidebar-compose-dot.stopped { background: var(--chrome-text-subtle); }
+
+/* running/total fraction beside project name */
+.sidebar-compose-frac {
+  font-size: 10px;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.sidebar-compose-frac.frac--ok   { color: var(--color-success); }
+.sidebar-compose-frac.frac--warn { color: var(--color-warning); }
+.sidebar-compose-frac.frac--off  { color: var(--chrome-text-subtle); }
 
 /* Footer — matches terminal-header height (32px) */
 .sidebar-footer {
@@ -1189,7 +1235,7 @@ ul, ol { list-style: none; }
 
 /* Modifier: reduces header bottom margin so tab strip sits closer */
 .docker-view .view-header {
-  margin-bottom: 0;
+  margin-bottom: 22px;
   padding-bottom: 18px;
 }
 

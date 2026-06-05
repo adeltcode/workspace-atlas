@@ -9,7 +9,7 @@ import clsx from 'clsx'
 import * as api from '../api'
 import { useAppStore } from '../../../store/appStore'
 import type { ComposeProject, ComposeBackupEntry } from '../types'
-import { bytesToHuman, formatDate, composeStatusLabel } from '../../../utils/format'
+import { bytesToHuman, formatDate } from '../../../utils/format'
 
 // ── .env parser ───────────────────────────────────────────────────────────────
 
@@ -237,23 +237,37 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
 
   useEffect(() => { loadProjects() }, [refreshTick]) // eslint-disable-line
 
-  // Auto-open on load — honour composePreselect if set by the overview panel
+  // ── Sync compose project list to sidebar nav ─────────────────────────────
+
   useEffect(() => {
-    if (projects.length === 0 || selected) return
-    const s = useAppStore.getState()
-    const name = s.composePreselect
-    if (name) {
-      s.setComposePreselect(null)
-      selectProject(projects.find(p => p.name === name) ?? projects[0])
-    } else {
+    useAppStore.getState().setComposeProjectsNav(
+      projects.map(p => ({ name: p.name, status: p.status }))
+    )
+  }, [projects])
+
+  // ── React to composePreselect from sidebar or overview panel ─────────────
+  // Runs on initial project load AND whenever composePreselect changes so that
+  // sidebar clicks work even when the compose tab is already mounted.
+
+  const composePreselect = useAppStore(s => s.composePreselect)
+
+  useEffect(() => {
+    if (projects.length === 0) return
+    if (composePreselect) {
+      useAppStore.getState().setComposePreselect(null)
+      const target = projects.find(p => p.name === composePreselect)
+      if (target) selectProject(target)
+      else if (!selected) selectProject(projects[0])
+    } else if (!selected) {
       selectProject(projects[0])
     }
-  }, [projects]) // eslint-disable-line
+  }, [projects, composePreselect]) // eslint-disable-line
 
   // ── Project selection ─────────────────────────────────────────────────────
 
   const selectProject = (project: ComposeProject) => {
     setSelected(project)
+    useAppStore.getState().setComposeActiveProject(project.name)
     setFileContent(null)
     setFileError(null)
     setBackupMsg(null)
@@ -401,38 +415,23 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
         </div>
       )}
 
-      {/* ── Horizontal project tab bar ─────────────────────────────────── */}
-      <div className="compose-project-tabs-bar">
-        {loading && <span className="compose-tabs-state">Loading…</span>}
-        {!loading && projects.length === 0 && !error && (
-          <span className="compose-tabs-state">
+      {/* ── Empty / loading state ──────────────────────────────────────── */}
+      {loading && !selected && (
+        <div className="compose-viewer-placeholder">
+          <span className="compose-placeholder-text">Loading projects…</span>
+        </div>
+      )}
+      {!loading && projects.length === 0 && !error && (
+        <div className="compose-viewer-placeholder">
+          <FileText size={32} className="compose-placeholder-icon" />
+          <span className="compose-placeholder-text">
             No compose projects found — run <code>docker compose up</code> to get started.
           </span>
-        )}
-        {projects.map(p => {
-          const { dot, running, total } = composeStatusLabel(p.status)
-          const isActive = selected?.name === p.name
-          return (
-            <button
-              key={p.name}
-              className={clsx('compose-project-tab', isActive && 'active')}
-              onClick={() => selectProject(p)}
-              title={`${p.name} — ${running}/${total} running`}
-            >
-              <span className={clsx('compose-status-dot', dot)} />
-              <span className="compose-tab-name">{p.name}</span>
-              {total > 0 && (
-                <span className={clsx('compose-tab-fraction', dot === 'running' ? 'frac--ok' : dot === 'partial' ? 'frac--warn' : 'frac--off')}>
-                  {running}/{total}
-                </span>
-              )}
-            </button>
-          )
-        })}
-      </div>
+        </div>
+      )}
 
       {/* ── File viewer ────────────────────────────────────────────────── */}
-      {selected ? (
+      {selected && (
         <div className="compose-viewer">
 
           {/* ── Toolbar row ─────────────────────────────────────────────── */}
@@ -590,11 +589,6 @@ export default function ComposeTab({ refreshTick = 0 }: { refreshTick?: number }
               />
             )}
           </div>
-        </div>
-      ) : (
-        <div className="compose-viewer-placeholder">
-          <FileText size={32} className="compose-placeholder-icon" />
-          <span className="compose-placeholder-text">Select a project to view its configuration</span>
         </div>
       )}
     </div>

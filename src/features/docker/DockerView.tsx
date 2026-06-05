@@ -1,8 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   Box, RefreshCw,
-  LayoutGrid, Layers, Boxes, Database, Network,
-  FileCode, Eraser, ScrollText,
   Play, ExternalLink, Download,
 } from 'lucide-react'
 import { openUrl } from '@tauri-apps/plugin-opener'
@@ -20,24 +18,7 @@ import ComposeTab     from './components/ComposeTab'
 import PruneTab       from './components/PruneTab'
 import LogTab         from './components/LogTab'
 
-// ── Tab definitions ────────────────────────────────────────────────────────────
-
-interface TabDef {
-  id:    DockerTab
-  label: string
-  icon:  React.ElementType
-}
-
-const DOCKER_TABS: TabDef[] = [
-  { id: 'overview',   label: 'Overview',    icon: LayoutGrid },
-  { id: 'images',     label: 'Images',      icon: Layers     },
-  { id: 'containers', label: 'Containers',  icon: Boxes      },
-  { id: 'volumes',    label: 'Volumes',     icon: Database   },
-  { id: 'networks',   label: 'Networks',    icon: Network    },
-  { id: 'compose',    label: 'Compose',     icon: FileCode   },
-  { id: 'prune',      label: 'Prune',       icon: Eraser     },
-  { id: 'log',        label: 'Log',         icon: ScrollText },
-]
+// ── Tab subtitles ──────────────────────────────────────────────────────────────
 
 const TAB_SUBTITLES: Partial<Record<DockerTab, string>> = {
   overview:   'Disk usage at a glance across images, containers, volumes, and build cache',
@@ -54,7 +35,6 @@ const TAB_SUBTITLES: Partial<Record<DockerTab, string>> = {
 
 export default function DockerView() {
   const dockerTab = useAppStore(s => s.dockerTab)
-  const setDockerTab = useAppStore(s => s.setDockerTab)
   const { status, df, images, containers, volumes, loading, error, refresh, refreshContainers, refreshVolumes } = useDockerData()
   const [composeTick, setComposeTick] = useState(0)
   const [starting, setStarting]       = useState(false)
@@ -136,21 +116,20 @@ export default function DockerView() {
     return () => window.removeEventListener('keydown', onKey)
   }, [handleRefresh])
 
-  // ── Compute tab badges ───────────────────────────────────────────────────────
-  const tabBadges: Partial<Record<DockerTab, string>> = {}
-  if (images.length) tabBadges['images'] = String(images.length)
-  if (containers.length) {
+  // ── Sync badges to store for sidebar nav ────────────────────────────────────
+  useEffect(() => {
     const running = containers.filter(c => c.state === 'running').length
-    tabBadges['containers'] = running > 0
-      ? `${running}/${containers.length}`
-      : String(containers.length)
-  }
-  if (volumes.length) {
-    const unused = volumes.filter(v => !v.in_use).length
-    tabBadges['volumes'] = unused > 0
-      ? `${volumes.length} · ${unused} unused`
-      : String(volumes.length)
-  }
+    const unused  = volumes.filter(v => !v.in_use).length
+    useAppStore.getState().setDockerBadges({
+      images:     images.length,
+      containers: containers.length
+        ? running > 0 ? `${running}/${containers.length}` : String(containers.length)
+        : '',
+      volumes: volumes.length
+        ? unused > 0 ? `${volumes.length} · ${unused} unused` : String(volumes.length)
+        : '',
+    })
+  }, [images.length, containers, volumes])
 
   return (
     <div className="view-container docker-view">
@@ -184,23 +163,6 @@ export default function DockerView() {
           <RefreshCw size={13} className={loading ? 'spin' : ''} />
           Refresh
         </button>
-      </div>
-
-      {/* ── In-content tab strip ──────────────────────────────────────── */}
-      <div className="docker-tab-strip">
-        {DOCKER_TABS.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            className={clsx('docker-tab-btn', dockerTab === id && 'active')}
-            onClick={() => setDockerTab(id)}
-          >
-            <Icon size={13} />
-            {label}
-            {tabBadges[id] && (
-              <span className="docker-tab-badge">{tabBadges[id]}</span>
-            )}
-          </button>
-        ))}
       </div>
 
       {/* ── Error / offline states ───────────────────────────────────── */}
@@ -287,7 +249,12 @@ export default function DockerView() {
           </div>
 
           {dockerTab === 'networks'   && <NetworksTab />}
-          {dockerTab === 'compose'    && <ComposeTab refreshTick={composeTick} />}
+
+          {/* ComposeTab stays mounted so it can update the sidebar's compose project list */}
+          <div className={dockerTab !== 'compose' ? 'tab-hidden' : undefined}>
+            <ComposeTab refreshTick={composeTick} />
+          </div>
+
           {dockerTab === 'prune'      && <PruneTab images={images} onDone={refresh} />}
           {dockerTab === 'log'        && <LogTab />}
         </div>

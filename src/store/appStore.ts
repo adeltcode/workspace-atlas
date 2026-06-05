@@ -51,6 +51,14 @@ interface AppState {
   setVolumesFilter:   (f: 'unused' | null) => void
   setComposePreselect: (name: string | null) => void
 
+  // ── Docker sidebar nav data (ephemeral — updated by DockerView / ComposeTab)
+  dockerBadges: { images: number; containers: string; volumes: string } | null
+  setDockerBadges: (b: { images: number; containers: string; volumes: string } | null) => void
+  composeProjectsNav: Array<{ name: string; status: string }>
+  setComposeProjectsNav: (projects: Array<{ name: string; status: string }>) => void
+  composeActiveProject: string | null
+  setComposeActiveProject: (name: string | null) => void
+
   // ── Docker keep-list (persisted)
   dockerKeepList: string[]
   addToKeepList: (id: string) => void
@@ -119,6 +127,14 @@ export const useAppStore = create<AppState>()(
       setImagesFilter:     (imagesFilter)     => set({ imagesFilter }),
       setVolumesFilter:    (volumesFilter)    => set({ volumesFilter }),
       setComposePreselect: (composePreselect) => set({ composePreselect }),
+
+      // ── Docker sidebar nav data (ephemeral)
+      dockerBadges:           null,
+      setDockerBadges:        (dockerBadges)        => set({ dockerBadges }),
+      composeProjectsNav:     [],
+      setComposeProjectsNav:  (composeProjectsNav)  => set({ composeProjectsNav }),
+      composeActiveProject:   null,
+      setComposeActiveProject:(composeActiveProject) => set({ composeActiveProject }),
 
       // ── Docker keep-list
       dockerKeepList: [],
