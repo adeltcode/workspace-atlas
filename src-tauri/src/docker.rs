@@ -69,6 +69,10 @@ pub struct DockerContainer {
     /// Days since the container was stopped. -1 means it is currently running.
     /// Parsed from the human-readable Status field ("Exited (0) 3 weeks ago").
     pub stopped_days: i64,
+    /// Docker Compose project name from com.docker.compose.project label, if any.
+    pub compose_project: Option<String>,
+    /// Docker Compose service name from com.docker.compose.service label, if any.
+    pub compose_service: Option<String>,
 }
 
 #[derive(serde::Serialize, Clone, Debug)]
@@ -291,6 +295,14 @@ fn get_running_containers_for_volume(volume_name: &str) -> Vec<String> {
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers — parsing
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Extract a single label value from a comma-separated `key=value,...` label string.
+fn parse_label(label_str: &str, key: &str) -> Option<String> {
+    label_str.split(',').find_map(|kv| {
+        let (k, val) = kv.split_once('=')?;
+        if k.trim() == key { Some(val.trim().to_string()) } else { None }
+    })
+}
 
 /// Returns the number of days since a container stopped, based on its Status
 /// string (e.g. "Exited (0) 3 weeks ago", "Exited (1) About a minute ago").
@@ -1043,6 +1055,10 @@ fn get_containers_sync() -> Result<Vec<DockerContainer>, String> {
         let status = v["Status"].as_str().unwrap_or("").to_string();
         let stopped_days = parse_stopped_days(&state, &status);
 
+        let label_str = v["Labels"].as_str().unwrap_or("");
+        let compose_project = parse_label(label_str, "com.docker.compose.project");
+        let compose_service = parse_label(label_str, "com.docker.compose.service");
+
         containers.push(DockerContainer {
             id: v["ID"].as_str().unwrap_or("").to_string(),
             name,
@@ -1052,6 +1068,8 @@ fn get_containers_sync() -> Result<Vec<DockerContainer>, String> {
             ports: v["Ports"].as_str().unwrap_or("").to_string(),
             created_since: v["RunningFor"].as_str().unwrap_or("").to_string(),
             stopped_days,
+            compose_project,
+            compose_service,
         });
     }
 
@@ -2202,4 +2220,78 @@ pub async fn pick_backup_folder() -> Option<String> {
     .await
     .ok()
     .flatten()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// App Metadata System — per-project metadata (favorites, tags, notes, etc.)
+// Stored as JSON in the Tauri app-data directory.
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Default)]
+pub struct AppProjectMeta {
+    #[serde(default)] pub favorite: bool,
+    #[serde(default)] pub tags: Vec<String>,
+    #[serde(default)] pub note: String,
+    #[serde(default)] pub active_env: Option<String>,
+    #[serde(default)] pub recent_opened: Option<String>,
+    #[serde(default)] pub startup_times: Vec<u64>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Default)]
+struct AppMetadataStore {
+    #[serde(default)]
+    projects: std::collections::HashMap<String, AppProjectMeta>,
+}
+
+fn metadata_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    use tauri::Manager;
+    let mut path = app.path()
+        .app_data_dir()
+        .map_err(|e| format!("Cannot resolve app data dir: {}", e))?;
+    path.push("compose_metadata.json");
+    Ok(path)
+}
+
+fn read_metadata(app: &tauri::AppHandle) -> AppMetadataStore {
+    metadata_path(app)
+        .ok()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn write_metadata(app: &tauri::AppHandle, store: &AppMetadataStore) -> Result<(), String> {
+    let path = metadata_path(app)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let json = serde_json::to_string_pretty(store).map_err(|e| e.to_string())?;
+    std::fs::write(&path, json).map_err(|e| e.to_string())
+}
+
+/// Load all project metadata as a map keyed by project name.
+#[tauri::command]
+pub async fn metadata_load(
+    app: tauri::AppHandle,
+) -> Result<std::collections::HashMap<String, AppProjectMeta>, String> {
+    let store = tauri::async_runtime::spawn_blocking(move || read_metadata(&app))
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(store.projects)
+}
+
+/// Persist one project's metadata entry.
+#[tauri::command]
+pub async fn metadata_save_project(
+    app: tauri::AppHandle,
+    name: String,
+    meta: AppProjectMeta,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut store = read_metadata(&app);
+        store.projects.insert(name, meta);
+        write_metadata(&app, &store)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }

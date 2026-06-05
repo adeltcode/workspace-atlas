@@ -5602,3 +5602,350 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   color: var(--color-success);
 }
 
+/* =============================================================
+   Compose — Back button (project detail view)
+   ============================================================= */
+
+.compose-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 5px;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+.compose-back-btn:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+  border-color: var(--color-border-strong);
+}
+.compose-back-label {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+/* =============================================================
+   Compose — Main overview page
+   ============================================================= */
+
+.compose-page {
+  padding: 0 32px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* ── Stats strip ── */
+.compose-stats-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  flex-wrap: wrap;
+}
+.compose-stat {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+}
+.compose-stat-sep {
+  width: 1px;
+  height: 14px;
+  background: var(--color-border);
+  flex-shrink: 0;
+}
+.compose-stat-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-primary);
+}
+.compose-stat--running { color: var(--color-success); }
+.compose-stat--partial { color: var(--color-warning); }
+.compose-stat--stopped { color: var(--color-text-tertiary); }
+.compose-stat-label  { color: var(--color-text-secondary); }
+.compose-stat--conflict {
+  color: var(--color-warning);
+  gap: 4px;
+}
+.compose-stat--conflict .compose-stat-label { color: var(--color-warning); opacity: 0.8; }
+
+/* ── Section headings ── */
+.compose-page-section { display: flex; flex-direction: column; gap: 10px; }
+.compose-page-section-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-warning);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ── Card grid ── */
+.compose-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+/* ── Project card ── */
+.compose-project-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+  min-height: 140px;
+}
+.compose-project-card:hover {
+  border-color: var(--color-border-strong);
+  background: var(--color-bg-tertiary);
+}
+.compose-project-card--stopped { opacity: 0.7; }
+
+.compose-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.compose-card-title-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+}
+.compose-card-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.compose-card-arrow {
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+.compose-card-title-btn:hover .compose-card-arrow { opacity: 1; }
+.compose-card-star {
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--color-text-tertiary);
+  display: flex;
+  align-items: center;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: color var(--transition-fast);
+}
+.compose-card-star:hover { color: var(--color-warning); }
+.compose-card-star.active { color: var(--color-warning); }
+
+/* ── Health row ── */
+.compose-card-health-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.compose-card-health-score {
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-width: 34px;
+  flex-shrink: 0;
+}
+.health--great { color: var(--color-success); }
+.health--warn  { color: var(--color-warning); }
+.health--bad   { color: var(--color-danger); }
+
+/* ── Service dots (small, denser than sidebar dots) ── */
+.compose-service-dots {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: 1;
+  flex-wrap: wrap;
+}
+.compose-service-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.compose-service-dot.dot--running    { background: color-mix(in srgb, var(--color-success) 70%, transparent); }
+.compose-service-dot.dot--restarting { background: color-mix(in srgb, var(--color-warning) 70%, transparent);
+  animation: pulse-amber 1.2s ease-in-out infinite; }
+.compose-service-dot.dot--stopped    { background: var(--color-bg-hover); border: 1px solid var(--color-border); }
+.compose-service-dots-empty { font-size: 10px; color: var(--color-text-tertiary); }
+@keyframes pulse-amber {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.compose-card-frac {
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+/* ── Meta row (resources + tags) ── */
+.compose-card-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: 16px;
+}
+.compose-card-resources {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.compose-card-resources svg { color: var(--color-text-tertiary); }
+.compose-card-tags {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.compose-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--color-accent-subtle);
+  color: var(--color-accent);
+  font-size: 9.5px;
+  font-weight: 500;
+  border: 1px solid var(--color-accent-border);
+}
+
+/* ── Port chips ── */
+.compose-card-ports {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.compose-port-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+.compose-port-chip:hover {
+  background: var(--color-accent-subtle);
+  color: var(--color-accent);
+  border-color: var(--color-accent-border);
+}
+.compose-port-chip.conflict {
+  color: var(--color-warning);
+  border-color: color-mix(in srgb, var(--color-warning) 35%, transparent);
+  background: var(--color-warning-subtle);
+  animation: pulse-amber 1.5s ease-in-out infinite;
+}
+
+/* ── Card action buttons ── */
+.compose-card-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: auto;
+  padding-top: 4px;
+  border-top: 1px solid var(--color-border-light);
+  flex-wrap: wrap;
+}
+.compose-card-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  font-size: 10.5px;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast), opacity var(--transition-fast);
+}
+.compose-card-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.compose-card-btn--up:hover:not(:disabled)      { color: var(--color-success); border-color: color-mix(in srgb, var(--color-success) 35%, transparent); background: var(--color-success-subtle); }
+.compose-card-btn--down:hover:not(:disabled)    { color: var(--color-danger);  border-color: var(--color-danger-border); background: var(--color-danger-subtle); }
+.compose-card-btn--restart:hover:not(:disabled) { color: var(--color-warning); border-color: color-mix(in srgb, var(--color-warning) 35%, transparent); background: var(--color-warning-subtle); }
+.compose-card-btn--detail {
+  margin-left: auto;
+  color: var(--color-accent);
+  border-color: var(--color-accent-border);
+  background: var(--color-accent-subtle);
+}
+.compose-card-btn--detail:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+
+/* ── Empty state ── */
+.compose-page-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 80px 32px;
+  text-align: center;
+}
+.compose-page-empty-icon { color: var(--color-text-tertiary); opacity: 0.35; }
+.compose-page-empty-text {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+.compose-page-empty-sub {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+.compose-page-empty-sub code {
+  background: var(--color-bg-tertiary);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+}
+

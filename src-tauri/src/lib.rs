@@ -38,6 +38,8 @@ pub fn run() {
             docker::docker_delete_backup,
             docker::transfer_backups,
             docker::pick_backup_folder,
+            docker::metadata_load,
+            docker::metadata_save_project,
             shell::shell_run,
             shell::shell_kill,
         ])

@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { DockerStatus, DiskStats, DockerSystemDf, DockerImage, DockerContainer, DockerVolume, DockerNetwork, ContainerStats, ComposeProject, VolumeBackupEntry, PrunePreview, TransferResult, ComposeBackupEntry } from './types'
+import type { DockerStatus, DiskStats, DockerSystemDf, DockerImage, DockerContainer, DockerVolume, DockerNetwork, ContainerStats, ComposeProject, VolumeBackupEntry, PrunePreview, TransferResult, ComposeBackupEntry, AppProjectMeta } from './types'
 
 export const dockerCheck          = () => invoke<DockerStatus>('docker_check')
 export const launchDockerDesktop  = () => invoke<void>('launch_docker_desktop')
@@ -50,6 +50,12 @@ export const dockerDeleteBackup = (backupDir: string, filename: string) =>
 
 export const pickBackupFolder = () =>
   invoke<string | null>('pick_backup_folder')
+
+export const metadataLoad = () =>
+  invoke<Record<string, AppProjectMeta>>('metadata_load')
+
+export const metadataSaveProject = (name: string, meta: AppProjectMeta) =>
+  invoke<void>('metadata_save_project', { name, meta })
 
 export const dockerPrunePreview = (level: number, keepList: string[]) =>
   invoke<PrunePreview>('docker_prune_preview', { level, keepList })

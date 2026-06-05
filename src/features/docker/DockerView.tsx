@@ -252,7 +252,12 @@ export default function DockerView() {
 
           {/* ComposeTab stays mounted so it can update the sidebar's compose project list */}
           <div className={dockerTab !== 'compose' ? 'tab-hidden' : undefined}>
-            <ComposeTab refreshTick={composeTick} />
+            <ComposeTab
+              refreshTick={composeTick}
+              containers={containers}
+              containerStats={containerStats}
+              statHistory={statHistory}
+            />
           </div>
 
           {dockerTab === 'prune'      && <PruneTab images={images} onDone={refresh} />}

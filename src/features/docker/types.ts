@@ -50,6 +50,19 @@ export interface DockerContainer {
   created_since: string
   /** Days since the container was stopped; -1 if currently running */
   stopped_days: number
+  /** Docker Compose project name from com.docker.compose.project label */
+  compose_project: string | null
+  /** Docker Compose service name from com.docker.compose.service label */
+  compose_service: string | null
+}
+
+export interface AppProjectMeta {
+  favorite: boolean
+  tags: string[]
+  note: string
+  active_env: string | null
+  recent_opened: string | null
+  startup_times: number[]
 }
 
 export interface DockerVolume {
