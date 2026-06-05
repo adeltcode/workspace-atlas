@@ -4,25 +4,18 @@ import { revealItemInDir, openUrl } from '@tauri-apps/plugin-opener'
 import {
   Download, AlertCircle, FolderOpen, Trash2, Monitor, Terminal,
   ChevronDown, Play, Square, RotateCcw, Wrench, FileKey, ExternalLink, ArrowLeft,
+  Pencil, Save, X, TerminalSquare, Info, RotateCcw as RestartIcon,
+  ExternalLink as OpenIdeIcon, CheckCircle, MoreHorizontal, FileCode2, ScrollText,
 } from 'lucide-react'
 import clsx from 'clsx'
 import * as api from '../api'
 import { useAppStore } from '../../../store/appStore'
-import type { ComposeProject, ComposeBackupEntry, DockerContainer, ContainerStats, AppProjectMeta } from '../types'
+import type { ComposeProject, ComposeBackupEntry, DockerContainer, ContainerStats, AppProjectMeta, DetectedFile, EditorInfo } from '../types'
 import { bytesToHuman, formatDate } from '../../../utils/format'
 import ComposePage from './ComposePage'
-
-// ── .env parser ───────────────────────────────────────────────────────────────
-
-function parseEnvPairs(content: string): Array<{ key: string; value: string }> {
-  return content.split('\n')
-    .filter(line => { const t = line.trim(); return t && !t.startsWith('#') })
-    .map(line => {
-      const eq = line.indexOf('=')
-      if (eq === -1) return { key: line.trim(), value: '' }
-      return { key: line.slice(0, eq).trim(), value: line.slice(eq + 1) }
-    })
-}
+import ComposeEnvTab from './ComposeEnvTab'
+import ComposeDockerfileViewer from './ComposeDockerfileViewer'
+import ComposeLogPanel from './ComposeLogPanel'
 
 // ── YAML syntax highlighter ───────────────────────────────────────────────────
 
@@ -185,6 +178,170 @@ const LIFECYCLE_ACTIONS = [
 
 type LifecycleAction = typeof LIFECYCLE_ACTIONS[number]['id']
 
+// ── Service table ─────────────────────────────────────────────────────────────
+
+interface ServiceTableProps {
+  project:          ComposeProject
+  containers:       DockerContainer[]
+  serviceAction:    { service: string; action: string } | null
+  onServiceAction:  (service: string, action: 'up' | 'stop' | 'restart') => void
+  onServiceLogs:    (service: string) => void
+  onShell:          (containerName: string) => void
+  onInspect:        (container: DockerContainer) => void
+}
+
+function ServiceTable({ project, containers, serviceAction, onServiceAction, onServiceLogs, onShell, onInspect }: ServiceTableProps) {
+  const rows = containers.filter(c => c.compose_project === project.name)
+  if (rows.length === 0) return null
+
+  return (
+    <div className="compose-service-section">
+      <div className="compose-service-section-title">Services</div>
+      <table className="compose-service-table">
+        <thead>
+          <tr className="compose-service-thead-row">
+            <th className="cst-th cst-th--service">Service</th>
+            <th className="cst-th cst-th--status">Status</th>
+            <th className="cst-th cst-th--container">Container</th>
+            <th className="cst-th cst-th--actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(c => {
+            const svc       = c.compose_service ?? c.name
+            const isRunning = c.state === 'running'
+            const isBusy    = serviceAction?.service === svc
+            return (
+              <tr key={c.id} className="compose-service-row">
+                <td className="cst-td cst-td--service">
+                  <span className={clsx('cst-dot',
+                    isRunning         ? 'cst-dot--running'
+                    : c.state === 'restarting' ? 'cst-dot--restarting'
+                    : 'cst-dot--stopped'
+                  )} />
+                  <span className="cst-service-name" title={svc}>{svc}</span>
+                </td>
+                <td className="cst-td">
+                  <span className={clsx('cst-state-badge',
+                    isRunning         ? 'cst-state--running'
+                    : c.state === 'restarting' ? 'cst-state--restarting'
+                    : 'cst-state--stopped'
+                  )}>
+                    {c.state}
+                  </span>
+                </td>
+                <td className="cst-td cst-td--container" title={c.name}>
+                  <span className="cst-container-name">{c.name}</span>
+                </td>
+                <td className="cst-td cst-td--actions">
+                  <div className="cst-actions">
+                    {isRunning ? (
+                      <>
+                        <button className="cst-btn cst-btn--stop" onClick={() => onServiceAction(svc, 'stop')} disabled={isBusy} title="docker compose stop">
+                          <Square size={10} /> Stop
+                        </button>
+                        <button className="cst-btn cst-btn--restart" onClick={() => onServiceAction(svc, 'restart')} disabled={isBusy} title="docker compose restart">
+                          <RestartIcon size={10} /> Restart
+                        </button>
+                        <button className="cst-btn" onClick={() => onServiceLogs(svc)} disabled={isBusy} title="Stream logs to terminal">
+                          <TerminalSquare size={10} /> Logs
+                        </button>
+                        <button className="cst-btn" onClick={() => onShell(c.name)} title="Open shell in container">
+                          <Terminal size={10} /> Shell
+                        </button>
+                      </>
+                    ) : (
+                      <button className="cst-btn cst-btn--start" onClick={() => onServiceAction(svc, 'up')} disabled={isBusy} title="docker compose up -d">
+                        <Play size={10} /> Start
+                      </button>
+                    )}
+                    <button className="cst-btn cst-btn--inspect" onClick={() => onInspect(c)} title="Inspect container">
+                      <Info size={10} /> Inspect
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ── Inspect drawer ────────────────────────────────────────────────────────────
+
+function InspectDrawer({ container, onClose }: { container: DockerContainer; onClose: () => void }) {
+  const portRe = /:(\d+)->/g
+  const hostPorts: string[] = []
+  let m: RegExpExecArray | null
+  while ((m = portRe.exec(container.ports)) !== null) {
+    if (m[1] !== '0') hostPorts.push(m[1])
+  }
+
+  return (
+    <div className="compose-inspect-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="compose-inspect-drawer">
+        <div className="compose-inspect-header">
+          <span className="compose-inspect-title">
+            {container.compose_service ?? container.name}
+          </span>
+          <button className="compose-inspect-close" onClick={onClose}><X size={13} /></button>
+        </div>
+        <dl className="compose-inspect-dl">
+          <dt>Image</dt>
+          <dd title={container.image}>{container.image}</dd>
+          <dt>State</dt>
+          <dd className={clsx(
+            container.state === 'running'    ? 'inspect-state--running'
+            : container.state === 'restarting' ? 'inspect-state--restarting'
+            : 'inspect-state--stopped'
+          )}>{container.state}</dd>
+          <dt>Status</dt>
+          <dd>{container.status}</dd>
+          {hostPorts.length > 0 && <>
+            <dt>Host ports</dt>
+            <dd>{hostPorts.map(p => `:${p}`).join('  ')}</dd>
+          </>}
+          <dt>Container</dt>
+          <dd title={container.name}>{container.name}</dd>
+          <dt>Running for</dt>
+          <dd>{container.created_since}</dd>
+        </dl>
+      </div>
+    </div>
+  )
+}
+
+// ── Wipe confirmation modal ───────────────────────────────────────────────────
+
+function WipeConfirmModal({ projectName, onConfirm, onCancel, running }: {
+  projectName: string; onConfirm: () => void; onCancel: () => void; running: boolean
+}) {
+  return (
+    <div className="compose-modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onCancel() }}>
+      <div className="compose-modal-box">
+        <h3 className="compose-modal-title">Wipe volumes for "{projectName}"?</h3>
+        <p className="compose-modal-body">
+          This permanently deletes all named volumes for this project — including database
+          data — and runs <code>docker compose down -v</code>. This cannot be undone.
+        </p>
+        <div className="compose-modal-actions">
+          <button className="btn-refresh" onClick={onCancel} disabled={running}>Cancel</button>
+          <button
+            className="compose-modal-btn-danger"
+            onClick={onConfirm}
+            disabled={running}
+          >
+            {running ? <RotateCcw size={11} className="spin" /> : <Trash2 size={11} />}
+            {running ? 'Running…' : 'Wipe & Down'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 interface ComposeTabProps {
@@ -224,11 +381,44 @@ export default function ComposeTab({
   // For the main page: track which project + action is running
   const [cardLifecycle, setCardLifecycle] = useState<{ project: string; action: string } | null>(null)
 
-  // .env viewer
-  const [envOpen, setEnvOpen]       = useState(false)
-  const [envContent, setEnvContent] = useState<string | null>(null)
-  const [envLoading, setEnvLoading] = useState(false)
-  const [envError, setEnvError]     = useState<string | null>(null)
+  // ── Inline editor ─────────────────────────────────────────────────────────
+  const [editMode, setEditMode]     = useState(false)
+  const [editDraft, setEditDraft]   = useState('')
+  const [editSaving, setEditSaving] = useState(false)
+
+  // ── Per-service controls ──────────────────────────────────────────────────
+  const [serviceAction, setServiceAction] = useState<{ service: string; action: string } | null>(null)
+  const [inspectContainer, setInspectContainer] = useState<DockerContainer | null>(null)
+
+  // ── Volume wipe ───────────────────────────────────────────────────────────
+  const [downDropOpen, setDownDropOpen]     = useState(false)
+  const [wipeConfirmOpen, setWipeConfirmOpen] = useState(false)
+  const [wipeRunning, setWipeRunning]         = useState(false)
+
+  // (legacy .env accordion state removed — .env is now a first-class tab)
+
+  // ── Detected extra project files (Dockerfiles, .env) ─────────────────────
+  const [projectFiles, setProjectFiles] = useState<DetectedFile[]>([])
+  // Cache of loaded file contents keyed by path
+  const [fileContents, setFileContents] = useState<Record<string, string>>({})
+
+  // ── Open in IDE ───────────────────────────────────────────────────────────
+  const preferredEditor = useAppStore(s => s.preferredEditor)
+  const setPreferredEditor = useAppStore(s => s.setPreferredEditor)
+  const [idePickerOpen, setIdePickerOpen] = useState(false)
+  const [detectedEditors, setDetectedEditors] = useState<EditorInfo[]>([])
+
+  // ── Metadata panel ────────────────────────────────────────────────────────
+  const [metaPanelOpen, setMetaPanelOpen] = useState(false)
+  const [metaTagInput, setMetaTagInput]   = useState('')
+
+  // ── Config validator ──────────────────────────────────────────────────────
+  const [validatorOpen,    setValidatorOpen]    = useState(false)
+  const [validatorRunning, setValidatorRunning] = useState(false)
+  const [validatorResult,  setValidatorResult]  = useState<{ yaml?: string; error?: string } | null>(null)
+
+  // ── Log panel ─────────────────────────────────────────────────────────────
+  const [logPanelOpen, setLogPanelOpen] = useState(false)
 
   // ── Computed ──────────────────────────────────────────────────────────────
 
@@ -238,11 +428,16 @@ export default function ComposeTab({
     return i >= 0 ? activeFile.slice(0, i) : ''
   }, [activeFile])
 
-  const envFilePath = useMemo(() => {
-    if (!projectDir) return ''
-    const sep = activeFile.includes('/') ? '/' : '\\'
-    return `${projectDir}${sep}.env`
-  }, [projectDir, activeFile])
+  // (envFilePath no longer used — .env is now a detected first-class tab)
+
+  // ── File type from active file path ──────────────────────────────────────
+
+  const fileType = useMemo((): 'compose' | 'env' | 'dockerfile' => {
+    const name = activeFile.split('/').pop()?.split('\\').pop() ?? ''
+    if (name === '.env' || name.startsWith('.env.')) return 'env'
+    if (name === 'Dockerfile' || name.startsWith('Dockerfile.') || name.endsWith('.dockerfile')) return 'dockerfile'
+    return 'compose'
+  }, [activeFile])
 
   // ── Load projects ─────────────────────────────────────────────────────────
 
@@ -259,6 +454,11 @@ export default function ComposeTab({
 
   useEffect(() => {
     api.metadataLoad().then(setMetadata).catch(() => {})
+  }, [])
+
+  // Detect editors in PATH once on mount
+  useEffect(() => {
+    api.detectEditors().then(setDetectedEditors).catch(() => {})
   }, [])
 
   // ── React to "go to overview" signal from sidebar ────────────────────────
@@ -305,9 +505,18 @@ export default function ComposeTab({
     setFileContent(null)
     setFileError(null)
     setBackupMsg(null)
-    setEnvContent(null)
-    setEnvError(null)
-    setEnvOpen(false)
+    setEditMode(false)
+    setInspectContainer(null)
+    setLogPanelOpen(false)
+    setValidatorOpen(false)
+    setMetaPanelOpen(false)
+    setProjectFiles([])
+    setFileContents({})
+    // Detect additional project files (Dockerfiles, .env)
+    const firstConfig = project.config_files[0]
+    if (firstConfig) {
+      api.detectComposeProjectFiles(firstConfig).then(setProjectFiles).catch(() => {})
+    }
     const first = project.config_files[0] ?? ''
     setActiveFile(first)
     if (first) loadFile(first)
@@ -325,33 +534,192 @@ export default function ComposeTab({
     api.metadataSaveProject(name, meta).catch(() => {})
   }
 
+  // ── Extra file loader (Dockerfiles, .env tabs) ────────────────────────────
+
+  const loadExtraFile = async (path: string) => {
+    if (fileContents[path] !== undefined) return
+    try {
+      const content = await api.readFileContent(path)
+      setFileContents(prev => ({ ...prev, [path]: content }))
+    } catch (e) {
+      setFileContents(prev => ({ ...prev, [path]: '' }))
+    }
+  }
+
+  // ── Open in IDE ───────────────────────────────────────────────────────────
+
+  const handleOpenInIde = async () => {
+    if (!activeFile) return
+    if (preferredEditor) {
+      await api.openInEditor(activeFile, preferredEditor.command).catch(e =>
+        useAppStore.getState().addTerminalLine(`  ✗ ${String(e)}`, 'error')
+      )
+    } else {
+      // Show picker on first use
+      if (detectedEditors.length === 0) {
+        await api.detectEditors().then(setDetectedEditors).catch(() => {})
+      }
+      setIdePickerOpen(true)
+    }
+  }
+
+  const handleEditorPick = async (editor: EditorInfo) => {
+    setPreferredEditor(editor)
+    setIdePickerOpen(false)
+    if (activeFile) {
+      await api.openInEditor(activeFile, editor.command).catch(e =>
+        useAppStore.getState().addTerminalLine(`  ✗ ${String(e)}`, 'error')
+      )
+    }
+  }
+
+  // ── Config validator ──────────────────────────────────────────────────────
+
+  const handleValidate = async () => {
+    if (!activeFile || validatorRunning) return
+    setValidatorRunning(true)
+    setValidatorResult(null)
+    setValidatorOpen(true)
+    try {
+      const yaml = await api.dockerComposeConfig(activeFile)
+      setValidatorResult({ yaml })
+    } catch (e) {
+      setValidatorResult({ error: String(e) })
+    } finally {
+      setValidatorRunning(false)
+    }
+  }
+
+  // ── Startup time tracking ─────────────────────────────────────────────────
+
+  const recordStartupTime = async (projectName: string, startMs: number) => {
+    // Poll until all containers for project are running (max 5 min)
+    const deadline = Date.now() + 5 * 60 * 1000
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 1500))
+      try {
+        const ctrs = await api.dockerContainers()
+        const projectCtrs = ctrs.filter(c => c.compose_project === projectName)
+        if (projectCtrs.length > 0 && projectCtrs.every(c => c.state === 'running')) {
+          const elapsed = Date.now() - startMs
+          const currentMeta = metadata[projectName] ?? { favorite: false, tags: [], note: '', active_env: null, recent_opened: null, startup_times: [] }
+          const updated = { ...currentMeta, startup_times: [...(currentMeta.startup_times ?? []).slice(-9), elapsed] }
+          setMetadata(prev => ({ ...prev, [projectName]: updated }))
+          api.metadataSaveProject(projectName, updated).catch(() => {})
+          return
+        }
+      } catch { break }
+    }
+  }
+
+  // ── Inline editor ─────────────────────────────────────────────────────────
+
+  const isModified = editMode && editDraft !== (fileContent ?? '')
+
+  const enterEditMode = () => {
+    setEditDraft(fileContent ?? '')
+    setEditMode(true)
+  }
+
+  const cancelEdit = () => {
+    setEditMode(false)
+  }
+
+  const handleSave = async () => {
+    if (!activeFile || editSaving) return
+    setEditSaving(true)
+    try {
+      await api.writeFileContent(activeFile, editDraft)
+      setFileContent(editDraft)
+      setEditMode(false)
+      useAppStore.getState().addTerminalLine(`  ✓ Saved ${activeFile}`, 'success')
+    } catch (e) {
+      useAppStore.getState().addTerminalLine(`  ✗ Save failed: ${String(e)}`, 'error')
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
+  // ── Per-service controls ──────────────────────────────────────────────────
+
+  const handleServiceAction = async (service: string, action: 'up' | 'stop' | 'restart') => {
+    if (!activeFile || serviceAction) return
+    setServiceAction({ service, action })
+    const { addTerminalLine, setTerminalOpen } = useAppStore.getState()
+    setTerminalOpen(true)
+    addTerminalLine(`─── docker compose ${action} ${service} ───`, 'info')
+    const unlistenLog = await listen<string>('docker-log', e => {
+      const type = e.payload.startsWith('$') ? 'cmd' : e.payload.startsWith('[err]') ? 'stderr' : 'stdout'
+      useAppStore.getState().addTerminalLine(e.payload, type)
+    })
+    try {
+      await api.dockerComposeServiceAction(activeFile, action, service)
+      useAppStore.getState().addTerminalLine('─── Done ───', 'success')
+    } catch (e) {
+      useAppStore.getState().addTerminalLine(`  ✗ ${String(e)}`, 'error')
+    } finally {
+      unlistenLog()
+      setServiceAction(null)
+      loadProjects()
+    }
+  }
+
+  const handleServiceLogs = async (service: string) => {
+    if (!activeFile) return
+    const { addTerminalLine, setTerminalOpen } = useAppStore.getState()
+    setTerminalOpen(true)
+    addTerminalLine(`─── logs: ${service} ───`, 'info')
+    const unlistenLog = await listen<string>('docker-log', e => {
+      useAppStore.getState().addTerminalLine(e.payload, 'stdout')
+    })
+    try {
+      await api.dockerComposeServiceLogs(activeFile, service)
+    } catch (e) {
+      useAppStore.getState().addTerminalLine(`  ✗ ${String(e)}`, 'error')
+    } finally {
+      unlistenLog()
+    }
+  }
+
+  const handleShell = async (containerName: string) => {
+    try {
+      await api.openContainerShell(containerName)
+    } catch (e) {
+      useAppStore.getState().addTerminalLine(`  ✗ Shell failed: ${String(e)}`, 'error')
+    }
+  }
+
+  // ── Volume wipe ───────────────────────────────────────────────────────────
+
+  const handleWipeDown = async () => {
+    if (!activeFile || wipeRunning) return
+    setWipeRunning(true)
+    const { addTerminalLine, setTerminalOpen } = useAppStore.getState()
+    setTerminalOpen(true)
+    addTerminalLine('─── docker compose down -v ───', 'info')
+    const unlistenLog = await listen<string>('docker-log', e => {
+      const type = e.payload.startsWith('$') ? 'cmd' : e.payload.startsWith('[err]') ? 'stderr' : 'stdout'
+      useAppStore.getState().addTerminalLine(e.payload, type)
+    })
+    try {
+      await api.dockerComposeAction(activeFile, 'down-volumes')
+      useAppStore.getState().addTerminalLine('─── Done ───', 'success')
+    } catch (e) {
+      useAppStore.getState().addTerminalLine(`  ✗ ${String(e)}`, 'error')
+    } finally {
+      unlistenLog()
+      setWipeRunning(false)
+      setWipeConfirmOpen(false)
+      loadProjects()
+    }
+  }
+
   const loadFile = async (path: string) => {
     if (!path) return
     setFileLoading(true); setFileError(null); setFileContent(null)
     try { setFileContent(await api.readFileContent(path)) }
     catch (e) { setFileError(String(e)) }
     finally { setFileLoading(false) }
-  }
-
-  // ── .env loader ───────────────────────────────────────────────────────────
-
-  const toggleEnv = async () => {
-    if (envOpen) { setEnvOpen(false); return }
-    setEnvOpen(true)
-    if (envContent !== null || envLoading) return
-    if (!envFilePath) return
-    setEnvLoading(true); setEnvError(null)
-    try { setEnvContent(await api.readFileContent(envFilePath)) }
-    catch (e) {
-      const msg = String(e).toLowerCase()
-      // File-not-found is a normal case — show "no .env" message rather than an error
-      if (msg.includes('not found') || msg.includes('cannot access') || msg.includes('no such file')) {
-        setEnvContent('')
-      } else {
-        setEnvError(String(e))
-      }
-    }
-    finally { setEnvLoading(false) }
   }
 
   // ── YAML callbacks ────────────────────────────────────────────────────────
@@ -384,9 +752,14 @@ export default function ComposeTab({
       useAppStore.getState().addTerminalLine(e.payload, type)
     })
 
+    const startMs = Date.now()
     try {
       await api.dockerComposeAction(activeFile, action)
       useAppStore.getState().addTerminalLine('─── Done ───', 'success')
+      // Kick off startup time tracking for Up/Rebuild actions
+      if ((action === 'up' || action === 'rebuild') && selected) {
+        recordStartupTime(selected.name, startMs)
+      }
     } catch (e) {
       useAppStore.getState().addTerminalLine(`  ✗ ${String(e)}`, 'error')
     } finally {
@@ -530,39 +903,173 @@ export default function ComposeTab({
               <span className="compose-back-label">{selected.name}</span>
             </button>
 
-            {/* File selector */}
+            {/* File selector — compose files + detected Dockerfiles + .env */}
             <div className="compose-file-tabs">
               {selected.config_files.map(f => (
                 <button
                   key={f}
                   className={clsx('compose-file-path-item', activeFile === f && 'active')}
-                  onClick={() => { setActiveFile(f); loadFile(f); setBackupMsg(null); setEnvContent(null); setEnvOpen(false) }}
+                  onClick={() => { setActiveFile(f); loadFile(f); setBackupMsg(null); setEditMode(false) }}
                   title={f}
                 >
                   <PathOriginLine path={f} />
-                  <span className="compose-file-path-text">{f}</span>
+                  <span className="compose-file-path-text">{f.split('/').pop()?.split('\\').pop()}</span>
+                  {activeFile === f && isModified && <span className="compose-modified-dot" title="Unsaved changes" />}
                 </button>
               ))}
+              {projectFiles.map(pf => {
+                const name = pf.path.split('/').pop()?.split('\\').pop() ?? pf.path
+                const isActive = activeFile === pf.path
+                return (
+                  <button
+                    key={pf.path}
+                    className={clsx('compose-file-path-item compose-file-path-item--extra', isActive && 'active')}
+                    onClick={() => {
+                      setActiveFile(pf.path)
+                      setEditMode(false)
+                      loadExtraFile(pf.path)
+                    }}
+                    title={pf.path}
+                  >
+                    {pf.kind === 'dockerfile'
+                      ? <FileCode2 size={11} style={{ color: '#60a5fa', flexShrink: 0 }} />
+                      : <FileKey size={11} style={{ color: '#f0a500', flexShrink: 0 }} />
+                    }
+                    <span className="compose-file-path-text">{name}</span>
+                  </button>
+                )
+              })}
             </div>
 
             {/* Lifecycle action buttons */}
             <div className="compose-lifecycle-btns">
-              {LIFECYCLE_ACTIONS.map(({ id, Icon, label, title, color }) => (
-                <button
-                  key={id}
-                  className={clsx('compose-lifecycle-btn', `compose-lifecycle-btn--${color}`, lifecycleRunning === id && 'loading')}
-                  onClick={() => runComposeAction(id)}
-                  disabled={!!lifecycleRunning || !activeFile}
-                  title={title}
-                >
-                  <Icon size={11} className={lifecycleRunning === id ? 'spin' : ''} />
-                  {label}
-                </button>
-              ))}
+              {LIFECYCLE_ACTIONS.map(({ id, Icon, label, title, color }) => {
+                const busy = !!lifecycleRunning || !activeFile || isModified
+                if (id === 'down') {
+                  return (
+                    <div key={id} className="compose-split-btn-wrap">
+                      <button
+                        className={clsx('compose-lifecycle-btn compose-split-btn-main', 'compose-lifecycle-btn--danger', lifecycleRunning === 'down' && 'loading')}
+                        onClick={() => runComposeAction('down')}
+                        disabled={busy}
+                        title="docker compose down"
+                      >
+                        <Square size={11} className={lifecycleRunning === 'down' ? 'spin' : ''} />
+                        Down
+                      </button>
+                      <button
+                        className={clsx('compose-split-btn-arrow', 'compose-lifecycle-btn--danger', downDropOpen && 'open')}
+                        onClick={() => setDownDropOpen(o => !o)}
+                        disabled={busy}
+                        title="More options"
+                      >
+                        <ChevronDown size={10} />
+                      </button>
+                      {downDropOpen && (
+                        <div className="compose-split-dropdown">
+                          <button
+                            className="compose-split-dropdown-item compose-split-dropdown-item--danger"
+                            onClick={() => { setDownDropOpen(false); setWipeConfirmOpen(true) }}
+                          >
+                            <Trash2 size={11} />
+                            Down + Wipe Volumes
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )
+                }
+                return (
+                  <button
+                    key={id}
+                    className={clsx('compose-lifecycle-btn', `compose-lifecycle-btn--${color}`, lifecycleRunning === id && 'loading')}
+                    onClick={() => runComposeAction(id)}
+                    disabled={busy}
+                    title={title}
+                  >
+                    <Icon size={11} className={lifecycleRunning === id ? 'spin' : ''} />
+                    {label}
+                  </button>
+                )
+              })}
             </div>
 
-            {/* Status + Backup + .env toggles */}
+            {/* Edit / Save / Cancel controls */}
+            <div className="compose-edit-controls">
+              {editMode ? (
+                <>
+                  <button
+                    className="compose-save-btn"
+                    onClick={handleSave}
+                    disabled={editSaving || !isModified}
+                    title="Save file"
+                  >
+                    <Save size={11} className={editSaving ? 'spin' : ''} />
+                    {editSaving ? 'Saving…' : 'Save'}
+                  </button>
+                  <button
+                    className="compose-cancel-edit-btn"
+                    onClick={cancelEdit}
+                    disabled={editSaving}
+                    title="Discard changes"
+                  >
+                    <X size={11} />
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button
+                  className="compose-edit-btn"
+                  onClick={enterEditMode}
+                  disabled={!fileContent || !!lifecycleRunning}
+                  title="Edit file"
+                >
+                  <Pencil size={11} />
+                  Edit
+                </button>
+              )}
+            </div>
+
+            {/* Action buttons */}
             <div className="compose-viewer-actions">
+              {/* Open in IDE */}
+              <button
+                className="compose-toolbar-action-btn"
+                onClick={handleOpenInIde}
+                disabled={!activeFile}
+                title={preferredEditor ? `Open in ${preferredEditor.name}` : 'Open in editor'}
+              >
+                <OpenIdeIcon size={11} />
+                {preferredEditor ? preferredEditor.name : 'Open'}
+              </button>
+              {/* Logs */}
+              <button
+                className={clsx('compose-toolbar-action-btn', logPanelOpen && 'active')}
+                onClick={() => setLogPanelOpen(o => !o)}
+                title="Open log panel"
+              >
+                <ScrollText size={11} />
+                Logs
+              </button>
+              {/* Validate */}
+              <button
+                className={clsx('compose-toolbar-action-btn', validatorOpen && 'active')}
+                onClick={handleValidate}
+                disabled={validatorRunning || !activeFile}
+                title="Run docker compose config"
+              >
+                <CheckCircle size={11} className={validatorRunning ? 'spin' : ''} />
+                Validate
+              </button>
+              {/* Metadata */}
+              <button
+                className={clsx('compose-toolbar-action-btn', metaPanelOpen && 'active')}
+                onClick={() => setMetaPanelOpen(o => !o)}
+                title="Project metadata"
+              >
+                <MoreHorizontal size={11} />
+              </button>
+              {/* Backup */}
               {backupOpen && (
                 <>
                   {backupMsg && (
@@ -587,21 +1094,10 @@ export default function ComposeTab({
                 title={fileBackups.length > 0 ? `${fileBackups.length} backup${fileBackups.length !== 1 ? 's' : ''} — click to manage` : 'Backup history and controls'}
               >
                 <Download size={12} />
-                Backup
                 {fileBackups.length > 0 && (
                   <span className="compose-backup-btn-count">{fileBackups.length}</span>
                 )}
                 <ChevronDown size={10} className={clsx('compose-backup-toggle-chevron', backupOpen && 'open')} />
-              </button>
-              <button
-                className={clsx('compose-env-toggle-btn', envOpen && 'active')}
-                onClick={toggleEnv}
-                disabled={!envFilePath}
-                title={envFilePath ? `Toggle .env viewer (${envFilePath})` : 'No active file'}
-              >
-                <FileKey size={12} />
-                .env
-                <ChevronDown size={10} className={clsx('compose-backup-toggle-chevron', envOpen && 'open')} />
               </button>
             </div>
           </div>
@@ -634,38 +1130,6 @@ export default function ComposeTab({
             </div>
           </div>
 
-          {/* ── .env accordion ───────────────────────────────────────────── */}
-          <div className={clsx('compose-accordion-wrap', envOpen && 'open')}>
-            <div className="compose-env-accordion">
-              {envLoading && <p className="compose-backup-empty">Loading .env…</p>}
-              {envError  && <p className="compose-backup-empty compose-backup-empty--error">{envError}</p>}
-              {!envLoading && !envError && envContent === '' && (
-                <p className="compose-backup-empty">No .env file found in this project directory.</p>
-              )}
-              {!envLoading && !envError && envContent && (() => {
-                const pairs = parseEnvPairs(envContent)
-                return (
-                  <table className="env-table">
-                    <thead>
-                      <tr>
-                        <th className="env-th">Variable</th>
-                        <th className="env-th">Value</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pairs.map(({ key, value }) => (
-                        <tr key={key} className="env-row">
-                          <td className="env-key">{key}</td>
-                          <td className="env-val">{value || <span className="env-empty">(empty)</span>}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )
-              })()}
-            </div>
-          </div>
-
           {/* ── File content ─────────────────────────────────────────────── */}
           <div className="compose-viewer-body">
             {fileLoading && <div className="compose-viewer-state">Loading file…</div>}
@@ -674,13 +1138,232 @@ export default function ComposeTab({
                 <AlertCircle size={14} />{fileError}
               </div>
             )}
-            {!fileLoading && fileContent !== null && (
-              <YamlViewer
-                content={fileContent}
-                onOpenPort={handleOpenPort}
-                onRevealPath={handleRevealPath}
-              />
+
+            {/* Compose file — YAML viewer or inline editor */}
+            {!fileLoading && fileType === 'compose' && fileContent !== null && !editMode && (
+              <YamlViewer content={fileContent} onOpenPort={handleOpenPort} onRevealPath={handleRevealPath} />
             )}
+            {!fileLoading && fileType === 'compose' && editMode && (
+              <div className="compose-editor-wrap">
+                <div className="compose-line-nums compose-line-nums--edit" aria-hidden>
+                  {editDraft.split('\n').map((_, i) => <span key={i}>{i + 1}</span>)}
+                </div>
+                <textarea
+                  className="compose-editor-textarea"
+                  value={editDraft}
+                  onChange={e => setEditDraft(e.target.value)}
+                  spellCheck={false}
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                />
+              </div>
+            )}
+
+            {/* .env file — first-class editor tab */}
+            {fileType === 'env' && activeFile && (
+              fileContents[activeFile] !== undefined ? (
+                <ComposeEnvTab
+                  filePath={activeFile}
+                  content={fileContents[activeFile]}
+                  yamlContent={fileContent ?? ''}
+                  onSaved={newContent => setFileContents(prev => ({ ...prev, [activeFile]: newContent }))}
+                />
+              ) : (
+                <div className="compose-viewer-state">Loading…</div>
+              )
+            )}
+
+            {/* Dockerfile — syntax viewer / editor */}
+            {fileType === 'dockerfile' && activeFile && (
+              fileContents[activeFile] !== undefined ? (
+                <ComposeDockerfileViewer
+                  filePath={activeFile}
+                  content={fileContents[activeFile]}
+                  onSaved={newContent => setFileContents(prev => ({ ...prev, [activeFile]: newContent }))}
+                />
+              ) : (
+                <div className="compose-viewer-state">Loading…</div>
+              )
+            )}
+          </div>
+
+          {/* ── Service table ─────────────────────────────────────────────── */}
+          {selected && (
+            <ServiceTable
+              project={selected}
+              containers={containers}
+              serviceAction={serviceAction}
+              onServiceAction={handleServiceAction}
+              onServiceLogs={handleServiceLogs}
+              onShell={handleShell}
+              onInspect={setInspectContainer}
+            />
+          )}
+
+          {/* ── Log panel ─────────────────────────────────────────────────── */}
+          {logPanelOpen && selected && (
+            <ComposeLogPanel
+              project={selected}
+              containers={containers}
+              configFile={selected.config_files[0] ?? ''}
+              onClose={() => setLogPanelOpen(false)}
+            />
+          )}
+
+          {/* ── Metadata panel ────────────────────────────────────────────── */}
+          {metaPanelOpen && selected && (() => {
+            const meta = metadata[selected.name] ?? { favorite: false, tags: [], note: '', active_env: null, recent_opened: null, startup_times: [] }
+            const saveMeta = (patch: Partial<AppProjectMeta>) => handleMetaChange(selected.name, { ...meta, ...patch })
+            return (
+              <div className="compose-meta-panel">
+                <div className="compose-meta-panel-header">
+                  <span className="compose-meta-panel-title">Project Metadata</span>
+                  <button className="compose-inspect-close" onClick={() => setMetaPanelOpen(false)}><X size={12} /></button>
+                </div>
+                <div className="compose-meta-panel-body">
+                  {/* Favorite toggle */}
+                  <div className="compose-meta-row">
+                    <span className="compose-meta-label">Favorite</span>
+                    <button
+                      className={clsx('compose-meta-favorite-btn', meta.favorite && 'active')}
+                      onClick={() => saveMeta({ favorite: !meta.favorite })}
+                    >
+                      {meta.favorite ? '★ Starred' : '☆ Star this project'}
+                    </button>
+                  </div>
+                  {/* Tags */}
+                  <div className="compose-meta-row compose-meta-row--col">
+                    <span className="compose-meta-label">Tags</span>
+                    <div className="compose-meta-tags">
+                      {meta.tags.map(tag => (
+                        <span key={tag} className="compose-tag-chip">
+                          {tag}
+                          <button className="compose-meta-tag-remove" onClick={() => saveMeta({ tags: meta.tags.filter(t => t !== tag) })}>
+                            <X size={8} />
+                          </button>
+                        </span>
+                      ))}
+                      <input
+                        className="compose-meta-tag-input"
+                        placeholder="Add tag…"
+                        value={metaTagInput}
+                        onChange={e => setMetaTagInput(e.target.value)}
+                        onKeyDown={e => {
+                          if ((e.key === 'Enter' || e.key === ',') && metaTagInput.trim()) {
+                            e.preventDefault()
+                            const tag = metaTagInput.trim().replace(/,/g, '')
+                            if (!meta.tags.includes(tag)) saveMeta({ tags: [...meta.tags, tag] })
+                            setMetaTagInput('')
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+                  {/* Notes */}
+                  <div className="compose-meta-row compose-meta-row--col">
+                    <span className="compose-meta-label">Notes</span>
+                    <textarea
+                      className="compose-meta-notes"
+                      value={meta.note}
+                      placeholder="Admin URLs, credentials hints, context…"
+                      onChange={e => saveMeta({ note: e.target.value })}
+                      rows={4}
+                    />
+                  </div>
+                  {/* Startup times */}
+                  {meta.startup_times && meta.startup_times.length > 0 && (
+                    <div className="compose-meta-row compose-meta-row--col">
+                      <span className="compose-meta-label">Startup times</span>
+                      <div className="compose-meta-startup-list">
+                        {meta.startup_times.slice(-5).reverse().map((ms, i) => (
+                          <span key={i} className="compose-meta-startup-item">
+                            {(ms / 1000).toFixed(1)}s
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* ── Config validator drawer ───────────────────────────────────── */}
+          {validatorOpen && (
+            <div className="compose-validator-drawer">
+              <div className="compose-meta-panel-header">
+                <span className="compose-meta-panel-title">
+                  {validatorRunning ? 'Validating…' : validatorResult?.error ? 'Validation errors' : 'Resolved config'}
+                </span>
+                <button className="compose-inspect-close" onClick={() => setValidatorOpen(false)}><X size={12} /></button>
+              </div>
+              <div className="compose-validator-body">
+                {validatorRunning && <div className="compose-viewer-state">Running docker compose config…</div>}
+                {!validatorRunning && validatorResult?.error && (
+                  <pre className="compose-validator-error">{validatorResult.error}</pre>
+                )}
+                {!validatorRunning && validatorResult?.yaml && (
+                  <div className="compose-code-wrap">
+                    <div className="compose-line-nums" aria-hidden>
+                      {validatorResult.yaml.split('\n').map((_, i) => <span key={i}>{i + 1}</span>)}
+                    </div>
+                    <div className="compose-code-body">
+                      {validatorResult.yaml.split('\n').map((line, i) => (
+                        <YamlLine key={i} line={line} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Inspect drawer ──────────────────────────────────────────────────── */}
+      {inspectContainer && (
+        <InspectDrawer container={inspectContainer} onClose={() => setInspectContainer(null)} />
+      )}
+
+      {/* ── Wipe confirmation modal ──────────────────────────────────────────── */}
+      {wipeConfirmOpen && selected && (
+        <WipeConfirmModal
+          projectName={selected.name}
+          onConfirm={handleWipeDown}
+          onCancel={() => setWipeConfirmOpen(false)}
+          running={wipeRunning}
+        />
+      )}
+
+      {/* ── IDE picker modal ─────────────────────────────────────────────────── */}
+      {idePickerOpen && (
+        <div className="compose-modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setIdePickerOpen(false) }}>
+          <div className="compose-modal-box" style={{ maxWidth: 340 }}>
+            <h3 className="compose-modal-title">Open in Editor</h3>
+            <p className="compose-modal-body" style={{ marginBottom: 12 }}>
+              Choose your preferred editor. This preference is saved and used for all future opens.
+            </p>
+            {detectedEditors.length === 0 ? (
+              <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+                No editors detected in PATH. Install VS Code, Cursor, or Sublime Text.
+              </p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {detectedEditors.map(ed => (
+                  <button
+                    key={ed.command}
+                    className="compose-ide-pick-btn"
+                    onClick={() => handleEditorPick(ed)}
+                  >
+                    {ed.name}
+                    <span className="compose-ide-pick-cmd">{ed.command}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="compose-modal-actions" style={{ marginTop: 16 }}>
+              <button className="btn-refresh" onClick={() => setIdePickerOpen(false)}>Cancel</button>
+            </div>
           </div>
         </div>
       )}

@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { DockerStatus, DiskStats, DockerSystemDf, DockerImage, DockerContainer, DockerVolume, DockerNetwork, ContainerStats, ComposeProject, VolumeBackupEntry, PrunePreview, TransferResult, ComposeBackupEntry, AppProjectMeta } from './types'
+import type { DockerStatus, DiskStats, DockerSystemDf, DockerImage, DockerContainer, DockerVolume, DockerNetwork, ContainerStats, ComposeProject, VolumeBackupEntry, PrunePreview, TransferResult, ComposeBackupEntry, AppProjectMeta, DetectedFile, EditorInfo } from './types'
 
 export const dockerCheck          = () => invoke<DockerStatus>('docker_check')
 export const launchDockerDesktop  = () => invoke<void>('launch_docker_desktop')
@@ -32,7 +32,7 @@ export const dockerNetworkRemove = (id: string) =>
   invoke<void>('docker_network_remove', { id })
 
 export const dockerComposeLs        = () => invoke<ComposeProject[]>('docker_compose_ls')
-export const dockerComposeAction    = (configFile: string, action: 'up' | 'down' | 'restart' | 'rebuild') =>
+export const dockerComposeAction    = (configFile: string, action: 'up' | 'down' | 'down-volumes' | 'restart' | 'rebuild') =>
   invoke<void>('docker_compose_action', { configFile, action })
 export const dockerStats            = () => invoke<ContainerStats[]>('docker_stats')
 export const readFileContent         = (path: string) => invoke<string>('read_file_content', { path })
@@ -56,6 +56,36 @@ export const metadataLoad = () =>
 
 export const metadataSaveProject = (name: string, meta: AppProjectMeta) =>
   invoke<void>('metadata_save_project', { name, meta })
+
+export const dockerComposeServiceAction = (configFile: string, action: string, service: string) =>
+  invoke<void>('docker_compose_service_action', { configFile, action, service })
+
+export const dockerComposeServiceLogs = (configFile: string, service: string) =>
+  invoke<void>('docker_compose_service_logs', { configFile, service })
+
+export const openContainerShell = (containerName: string) =>
+  invoke<void>('open_container_shell', { containerName })
+
+export const writeFileContent = (path: string, content: string) =>
+  invoke<void>('write_file_content', { path, content })
+
+export const detectComposeProjectFiles = (configFile: string) =>
+  invoke<DetectedFile[]>('detect_compose_project_files', { configFile })
+
+export const detectEditors = () =>
+  invoke<EditorInfo[]>('detect_editors')
+
+export const openInEditor = (path: string, editorCmd: string) =>
+  invoke<void>('open_in_editor', { path, editorCmd })
+
+export const dockerComposeConfig = (configFile: string) =>
+  invoke<string>('docker_compose_config', { configFile })
+
+export const composeLogsWatch = (configFile: string, services: string[]) =>
+  invoke<void>('compose_logs_watch', { configFile, services })
+
+export const composeLogsStop = () =>
+  invoke<void>('compose_logs_stop')
 
 export const dockerPrunePreview = (level: number, keepList: string[]) =>
   invoke<PrunePreview>('docker_prune_preview', { level, keepList })

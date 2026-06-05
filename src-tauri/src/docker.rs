@@ -1405,11 +1405,12 @@ pub async fn docker_compose_action(
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let extra_args: &[&str] = match action.as_str() {
-            "up"      => &["up", "-d"],
-            "down"    => &["down"],
-            "restart" => &["restart"],
-            "rebuild" => &["up", "-d", "--build"],
-            other     => return Err(format!("Unknown compose action: {}", other)),
+            "up"           => &["up", "-d"],
+            "down"         => &["down"],
+            "down-volumes" => &["down", "-v"],
+            "restart"      => &["restart"],
+            "rebuild"      => &["up", "-d", "--build"],
+            other          => return Err(format!("Unknown compose action: {}", other)),
         };
 
         // Display the command as it will actually run
@@ -1443,6 +1444,149 @@ pub async fn docker_compose_action(
 
         app.emit("docker-done", true).ok();
         Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Run a docker compose action against a single service, streaming via docker-log.
+/// Actions: "up" (up -d SERVICE), "stop", "restart".
+#[tauri::command]
+pub async fn docker_compose_service_action(
+    app: tauri::AppHandle,
+    config_file: String,
+    action: String,
+    service: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let base: &[&str] = match action.as_str() {
+            "up"      => &["up", "-d"],
+            "stop"    => &["stop"],
+            "restart" => &["restart"],
+            other     => return Err(format!("Unknown service action: {}", other)),
+        };
+
+        // Build final arg list: base_args + [service]
+        let mut extra: Vec<String> = base.iter().map(|s| s.to_string()).collect();
+        extra.push(service.clone());
+
+        app.emit("docker-log",
+            format!("$ docker compose -f \"{}\" {} {}", &config_file, base.join(" "), &service)
+        ).ok();
+
+        if is_windows_absolute(&config_file) {
+            let mut cmd = Command::new("docker");
+            cmd.args(["compose", "-f", &config_file]);
+            cmd.args(extra.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+            run_streaming_compose(&app, cmd)?;
+        } else if let Some(win_path) = wsl_mount_to_windows(&config_file) {
+            app.emit("docker-log", format!("# resolved to {}", &win_path)).ok();
+            let mut cmd = Command::new("docker");
+            cmd.args(["compose", "-f", &win_path]);
+            cmd.args(extra.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+            run_streaming_compose(&app, cmd)?;
+        } else {
+            let mut cmd = Command::new("wsl");
+            cmd.arg("docker");
+            cmd.args(["compose", "-f", &config_file]);
+            cmd.args(extra.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+            run_streaming_compose(&app, cmd)?;
+        }
+
+        app.emit("docker-done", true).ok();
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Stream the last 200 lines + follow of a single compose service's logs via docker-log.
+#[tauri::command]
+pub async fn docker_compose_service_logs(
+    app: tauri::AppHandle,
+    config_file: String,
+    service: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.emit("docker-log",
+            format!("$ docker compose logs --tail=200 -f {}", &service)
+        ).ok();
+
+        if is_windows_absolute(&config_file) {
+            let mut cmd = Command::new("docker");
+            cmd.args(["compose", "-f", &config_file, "logs", "--tail=200", "-f", &service]);
+            run_streaming_compose(&app, cmd)?;
+        } else if let Some(win_path) = wsl_mount_to_windows(&config_file) {
+            let mut cmd = Command::new("docker");
+            cmd.args(["compose", "-f", &win_path, "logs", "--tail=200", "-f", &service]);
+            run_streaming_compose(&app, cmd)?;
+        } else {
+            let mut cmd = Command::new("wsl");
+            cmd.args(["docker", "compose", "-f", &config_file, "logs", "--tail=200", "-f", &service]);
+            run_streaming_compose(&app, cmd)?;
+        }
+
+        app.emit("docker-done", true).ok();
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Open an interactive shell inside a running container in a new system terminal window.
+/// Tries `sh`; the user can switch shells manually if needed.
+#[tauri::command]
+pub async fn open_container_shell(container_name: String) -> Result<(), String> {
+    let docker_cmd = format!("docker exec -it {} sh", container_name);
+
+    // Try Windows Terminal first; fall back to a plain PowerShell window.
+    let wt = Command::new("wt")
+        .args(["--", "powershell.exe", "-NoExit", "-Command", &docker_cmd])
+        .spawn();
+
+    if wt.is_err() {
+        Command::new("cmd")
+            .args(["/c", "start", "powershell.exe", "-NoExit", "-Command", &docker_cmd])
+            .spawn()
+            .map_err(|e| format!("Failed to open terminal: {}", e))?;
+    }
+    Ok(())
+}
+
+/// Write text content to a file. Handles Windows, WSL-mount, and pure WSL paths.
+#[tauri::command]
+pub async fn write_file_content(path: String, content: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if is_windows_absolute(&path) {
+            std::fs::write(&path, content.as_bytes())
+                .map_err(|e| format!("Write error: {}", e))
+
+        } else if let Some(win_path) = wsl_mount_to_windows(&path) {
+            std::fs::write(&win_path, content.as_bytes())
+                .map_err(|e| format!("Write error: {}", e))
+
+        } else {
+            // Pure WSL path — pipe content through `wsl tee`
+            use std::io::Write as _;
+            let mut child = Command::new("wsl")
+                .args(["tee", &path])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|e| format!("WSL write failed: {}", e))?;
+
+            if let Some(mut stdin) = child.stdin.take() {
+                stdin.write_all(content.as_bytes())
+                    .map_err(|e| format!("Write error: {}", e))?;
+            }
+
+            let status = child.wait().map_err(|e| e.to_string())?;
+            if !status.success() {
+                return Err(format!("WSL write exited with status {}", status));
+            }
+            Ok(())
+        }
     })
     .await
     .map_err(|e| e.to_string())?
@@ -2294,4 +2438,283 @@ pub async fn metadata_save_project(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Project file detection — Dockerfiles and .env files in a compose project dir
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[derive(serde::Serialize, Clone)]
+pub struct DetectedFile {
+    pub path: String,
+    pub kind: String, // "dockerfile" | "env"
+}
+
+/// Scan the directory containing `config_file` for Dockerfiles and .env files.
+/// Handles Windows, WSL-mount, and pure-WSL paths.
+#[tauri::command]
+pub async fn detect_compose_project_files(config_file: String) -> Vec<DetectedFile> {
+    tauri::async_runtime::spawn_blocking(move || {
+        // Derive project dir from config_file path
+        let dir = if is_windows_absolute(&config_file) {
+            let p = std::path::Path::new(&config_file);
+            p.parent().map(|d| d.to_string_lossy().to_string()).unwrap_or_default()
+        } else if let Some(win) = wsl_mount_to_windows(&config_file) {
+            let p = std::path::Path::new(&win);
+            p.parent().map(|d| d.to_string_lossy().to_string()).unwrap_or_default()
+        } else {
+            // Pure WSL: use parent by splitting on '/'
+            let p = std::path::Path::new(&config_file);
+            p.parent().map(|d| d.to_string_lossy().to_string()).unwrap_or_default()
+        };
+
+        let mut results = Vec::new();
+
+        if is_windows_absolute(&config_file) || wsl_mount_to_windows(&config_file).is_some() {
+            // Windows-accessible path
+            if let Ok(entries) = std::fs::read_dir(&dir) {
+                let sep = if dir.contains('\\') { '\\' } else { '/' };
+                for entry in entries.flatten() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    let full = format!("{}{}{}", dir, sep, name);
+                    if name == "Dockerfile" || name.starts_with("Dockerfile.") || name.ends_with(".dockerfile") {
+                        results.push(DetectedFile { path: full, kind: "dockerfile".into() });
+                    } else if name == ".env" || (name.starts_with(".env.") && !name.ends_with(".example") && !name.ends_with(".sample")) {
+                        results.push(DetectedFile { path: full, kind: "env".into() });
+                    }
+                }
+            }
+        } else {
+            // Pure WSL — list via `wsl ls -1 <dir>`
+            let out = Command::new("wsl")
+                .args(["ls", "-1", &dir])
+                .output()
+                .unwrap_or_else(|_| std::process::Output {
+                    status: std::process::ExitStatus::default(),
+                    stdout: vec![],
+                    stderr: vec![],
+                });
+            let names: Vec<String> = String::from_utf8_lossy(&out.stdout)
+                .lines().map(|l| l.trim().to_string()).collect();
+            for name in names {
+                let full = format!("{}/{}", dir, name);
+                if name == "Dockerfile" || name.starts_with("Dockerfile.") || name.ends_with(".dockerfile") {
+                    results.push(DetectedFile { path: full, kind: "dockerfile".into() });
+                } else if name == ".env" || (name.starts_with(".env.") && !name.ends_with(".example") && !name.ends_with(".sample")) {
+                    results.push(DetectedFile { path: full, kind: "env".into() });
+                }
+            }
+        }
+
+        results
+    })
+    .await
+    .unwrap_or_default()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Editor detection — find code editors available in PATH
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[derive(serde::Serialize, Clone)]
+pub struct EditorInfo {
+    pub name:    String,
+    pub command: String,
+}
+
+fn is_in_path(cmd: &str) -> bool {
+    Command::new("where.exe")
+        .arg(cmd)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Detect code editors available in PATH on Windows.
+#[tauri::command]
+pub async fn detect_editors() -> Vec<EditorInfo> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let candidates = [
+            ("VS Code",     "code"),
+            ("Cursor",      "cursor"),
+            ("Sublime Text","subl"),
+            ("Notepad++",   "notepad++"),
+            ("Notepad",     "notepad"),
+        ];
+        candidates.iter()
+            .filter(|(_, cmd)| is_in_path(cmd))
+            .map(|(name, cmd)| EditorInfo { name: name.to_string(), command: cmd.to_string() })
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// Open a file in an external editor, detached from the app process.
+#[tauri::command]
+pub async fn open_in_editor(path: String, editor_cmd: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        Command::new(&editor_cmd)
+            .arg(&path)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("Failed to open '{}' with '{}': {}", path, editor_cmd, e))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Compose config validator — docker compose config
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Run `docker compose config` and return the resolved YAML string.
+/// On error, returns the stderr as the Err string.
+#[tauri::command]
+pub async fn docker_compose_config(config_file: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let output = if is_windows_absolute(&config_file) {
+            Command::new("docker")
+                .args(["compose", "-f", &config_file, "config"])
+                .output()
+        } else if let Some(win_path) = wsl_mount_to_windows(&config_file) {
+            Command::new("docker")
+                .args(["compose", "-f", &win_path, "config"])
+                .output()
+        } else {
+            Command::new("wsl")
+                .args(["docker", "compose", "-f", &config_file, "config"])
+                .output()
+        }
+        .map_err(|e| format!("Failed to run docker compose config: {}", e))?;
+
+        if output.status.success() {
+            String::from_utf8(output.stdout)
+                .map_err(|_| "Output contains non-UTF8 characters".to_string())
+        } else {
+            Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Log multiplexer — stream compose logs with Rust-side batching (75 ms)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Managed state holding the currently-running log stream process.
+pub struct ComposeLogState(pub std::sync::Arc<std::sync::Mutex<Option<std::process::Child>>>);
+
+/// Start streaming `docker compose logs -f [services...]` to the frontend via
+/// `compose-log-batch` events. Lines are buffered for 75 ms before emitting
+/// to prevent event channel saturation. Any previous stream is killed first.
+#[tauri::command]
+pub async fn compose_logs_watch(
+    app:         tauri::AppHandle,
+    state:       tauri::State<'_, ComposeLogState>,
+    config_file: String,
+    services:    Vec<String>,
+) -> Result<(), String> {
+    // Kill any previous stream
+    {
+        let mut guard = state.0.lock().unwrap();
+        if let Some(ref mut child) = *guard { child.kill().ok(); }
+        *guard = None;
+    }
+
+    let child_arc = state.0.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let svc_refs: Vec<&str> = services.iter().map(|s| s.as_str()).collect();
+
+        let mut child = if is_windows_absolute(&config_file) {
+            let mut cmd = Command::new("docker");
+            cmd.args(["compose", "-f", &config_file, "logs", "--tail=200", "-f"]);
+            cmd.args(&svc_refs);
+            cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()
+        } else if let Some(win_path) = wsl_mount_to_windows(&config_file) {
+            let mut cmd = Command::new("docker");
+            cmd.args(["compose", "-f", &win_path, "logs", "--tail=200", "-f"]);
+            cmd.args(&svc_refs);
+            cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()
+        } else {
+            let mut cmd = Command::new("wsl");
+            cmd.arg("docker");
+            cmd.args(["compose", "-f", &config_file, "logs", "--tail=200", "-f"]);
+            cmd.args(&svc_refs);
+            cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()
+        }
+        .map_err(|e| format!("Failed to start log stream: {}", e))?;
+
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+
+        // Store child so compose_logs_stop can kill it
+        *child_arc.lock().unwrap() = Some(child);
+
+        // Merge stdout + stderr into one channel via a shared sender
+        let (tx, rx) = std::sync::mpsc::channel::<String>();
+
+        let tx2 = tx.clone();
+        if let Some(out) = stdout {
+            thread::spawn(move || {
+                BufReader::new(out).lines().flatten().for_each(|l| { tx.send(l).ok(); });
+            });
+        }
+        if let Some(err) = stderr {
+            thread::spawn(move || {
+                BufReader::new(err).lines().flatten().for_each(|l| { tx2.send(l).ok(); });
+            });
+        }
+
+        // Batch reader: collect for 75 ms then emit
+        let mut buf: Vec<String> = Vec::new();
+        let mut last = std::time::Instant::now();
+
+        loop {
+            match rx.recv_timeout(std::time::Duration::from_millis(75)) {
+                Ok(line) => {
+                    buf.push(line);
+                    if buf.len() >= 100 || last.elapsed().as_millis() >= 75 {
+                        if !buf.is_empty() {
+                            app.emit("compose-log-batch", buf.clone()).ok();
+                            buf.clear();
+                        }
+                        last = std::time::Instant::now();
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    if !buf.is_empty() {
+                        app.emit("compose-log-batch", buf.clone()).ok();
+                        buf.clear();
+                    }
+                    last = std::time::Instant::now();
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    // Both reader threads exited — process ended
+                    if !buf.is_empty() {
+                        app.emit("compose-log-batch", buf.clone()).ok();
+                    }
+                    break;
+                }
+            }
+        }
+
+        app.emit("compose-log-done", true).ok();
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Stop the currently-running compose log stream.
+#[tauri::command]
+pub async fn compose_logs_stop(
+    state: tauri::State<'_, ComposeLogState>,
+) -> Result<(), String> {
+    let mut guard = state.0.lock().unwrap();
+    if let Some(ref mut child) = *guard { child.kill().ok(); }
+    *guard = None;
+    Ok(())
 }

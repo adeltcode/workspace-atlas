@@ -6,6 +6,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(shell::ShellState(std::sync::Arc::new(std::sync::Mutex::new(None))))
+        .manage(docker::ComposeLogState(std::sync::Arc::new(std::sync::Mutex::new(None))))
         .invoke_handler(tauri::generate_handler![
             docker::docker_check,
             docker::launch_docker_desktop,
@@ -25,6 +26,10 @@ pub fn run() {
             docker::docker_network_remove,
             docker::docker_compose_ls,
             docker::docker_compose_action,
+            docker::docker_compose_service_action,
+            docker::docker_compose_service_logs,
+            docker::open_container_shell,
+            docker::write_file_content,
             docker::docker_stats,
             docker::read_file_content,
             docker::get_default_backup_dir,
@@ -40,6 +45,12 @@ pub fn run() {
             docker::pick_backup_folder,
             docker::metadata_load,
             docker::metadata_save_project,
+            docker::detect_compose_project_files,
+            docker::detect_editors,
+            docker::open_in_editor,
+            docker::docker_compose_config,
+            docker::compose_logs_watch,
+            docker::compose_logs_stop,
             shell::shell_run,
             shell::shell_kill,
         ])

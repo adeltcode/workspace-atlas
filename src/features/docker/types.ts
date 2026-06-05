@@ -65,6 +65,16 @@ export interface AppProjectMeta {
   startup_times: number[]
 }
 
+export interface DetectedFile {
+  path: string
+  kind: 'dockerfile' | 'env'
+}
+
+export interface EditorInfo {
+  name: string
+  command: string
+}
+
 export interface DockerVolume {
   name: string
   driver: string

@@ -61,6 +61,9 @@ interface AppState {
   // When true, ComposeTab should switch to main overview page (cleared after read)
   composeShowOverview: boolean
   setComposeShowOverview: (v: boolean) => void
+  // Preferred external editor for "Open in IDE" (persisted)
+  preferredEditor: { name: string; command: string } | null
+  setPreferredEditor: (e: { name: string; command: string } | null) => void
 
   // ── Docker keep-list (persisted)
   dockerKeepList: string[]
@@ -140,6 +143,8 @@ export const useAppStore = create<AppState>()(
       setComposeActiveProject:(composeActiveProject) => set({ composeActiveProject }),
       composeShowOverview:    false,
       setComposeShowOverview: (composeShowOverview) => set({ composeShowOverview }),
+      preferredEditor:        null,
+      setPreferredEditor:     (preferredEditor) => set({ preferredEditor }),
 
       // ── Docker keep-list
       dockerKeepList: [],
@@ -187,14 +192,15 @@ export const useAppStore = create<AppState>()(
     {
       name: 'workspace-atlas-v1',
       partialize: (s) => ({
-        theme:          s.theme,
-        activeView:     s.activeView,
-        dockerTab:      s.dockerTab,
-        sidebarWidth:   s.sidebarWidth,
-        terminalHeight: s.terminalHeight,
-        backupDir:      s.backupDir,
-        dockerKeepList: s.dockerKeepList,
-        dockerLogs:     s.dockerLogs,
+        theme:           s.theme,
+        activeView:      s.activeView,
+        dockerTab:       s.dockerTab,
+        sidebarWidth:    s.sidebarWidth,
+        terminalHeight:  s.terminalHeight,
+        backupDir:       s.backupDir,
+        dockerKeepList:  s.dockerKeepList,
+        dockerLogs:      s.dockerLogs,
+        preferredEditor: s.preferredEditor,
       }),
       onRehydrateStorage: () => (state) => {
         if (state) {
