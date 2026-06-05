@@ -4,7 +4,7 @@ import { revealItemInDir, openUrl } from '@tauri-apps/plugin-opener'
 import {
   Download, AlertCircle, FolderOpen, Trash2, Monitor, Terminal,
   ChevronDown, Play, Square, RotateCcw, Wrench, FileKey, ExternalLink, ArrowLeft,
-  Pencil, Save, X, TerminalSquare, Info, RotateCcw as RestartIcon,
+  Pencil, Save, X, Info, RotateCcw as RestartIcon,
   ExternalLink as OpenIdeIcon, CheckCircle, MoreHorizontal, FileCode2, ScrollText,
 } from 'lucide-react'
 import clsx from 'clsx'
@@ -180,95 +180,6 @@ type LifecycleAction = typeof LIFECYCLE_ACTIONS[number]['id']
 
 // ── Service table ─────────────────────────────────────────────────────────────
 
-interface ServiceTableProps {
-  project:          ComposeProject
-  containers:       DockerContainer[]
-  serviceAction:    { service: string; action: string } | null
-  onServiceAction:  (service: string, action: 'up' | 'stop' | 'restart') => void
-  onServiceLogs:    (service: string) => void
-  onShell:          (containerName: string) => void
-  onInspect:        (container: DockerContainer) => void
-}
-
-function ServiceTable({ project, containers, serviceAction, onServiceAction, onServiceLogs, onShell, onInspect }: ServiceTableProps) {
-  const rows = containers.filter(c => c.compose_project === project.name)
-  if (rows.length === 0) return null
-
-  return (
-    <div className="compose-service-section">
-      <div className="compose-service-section-title">Services</div>
-      <table className="compose-service-table">
-        <thead>
-          <tr className="compose-service-thead-row">
-            <th className="cst-th cst-th--service">Service</th>
-            <th className="cst-th cst-th--status">Status</th>
-            <th className="cst-th cst-th--container">Container</th>
-            <th className="cst-th cst-th--actions">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(c => {
-            const svc       = c.compose_service ?? c.name
-            const isRunning = c.state === 'running'
-            const isBusy    = serviceAction?.service === svc
-            return (
-              <tr key={c.id} className="compose-service-row">
-                <td className="cst-td cst-td--service">
-                  <span className={clsx('cst-dot',
-                    isRunning         ? 'cst-dot--running'
-                    : c.state === 'restarting' ? 'cst-dot--restarting'
-                    : 'cst-dot--stopped'
-                  )} />
-                  <span className="cst-service-name" title={svc}>{svc}</span>
-                </td>
-                <td className="cst-td">
-                  <span className={clsx('cst-state-badge',
-                    isRunning         ? 'cst-state--running'
-                    : c.state === 'restarting' ? 'cst-state--restarting'
-                    : 'cst-state--stopped'
-                  )}>
-                    {c.state}
-                  </span>
-                </td>
-                <td className="cst-td cst-td--container" title={c.name}>
-                  <span className="cst-container-name">{c.name}</span>
-                </td>
-                <td className="cst-td cst-td--actions">
-                  <div className="cst-actions">
-                    {isRunning ? (
-                      <>
-                        <button className="cst-btn cst-btn--stop" onClick={() => onServiceAction(svc, 'stop')} disabled={isBusy} title="docker compose stop">
-                          <Square size={10} /> Stop
-                        </button>
-                        <button className="cst-btn cst-btn--restart" onClick={() => onServiceAction(svc, 'restart')} disabled={isBusy} title="docker compose restart">
-                          <RestartIcon size={10} /> Restart
-                        </button>
-                        <button className="cst-btn" onClick={() => onServiceLogs(svc)} disabled={isBusy} title="Stream logs to terminal">
-                          <TerminalSquare size={10} /> Logs
-                        </button>
-                        <button className="cst-btn" onClick={() => onShell(c.name)} title="Open shell in container">
-                          <Terminal size={10} /> Shell
-                        </button>
-                      </>
-                    ) : (
-                      <button className="cst-btn cst-btn--start" onClick={() => onServiceAction(svc, 'up')} disabled={isBusy} title="docker compose up -d">
-                        <Play size={10} /> Start
-                      </button>
-                    )}
-                    <button className="cst-btn cst-btn--inspect" onClick={() => onInspect(c)} title="Inspect container">
-                      <Info size={10} /> Inspect
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
 // ── Inspect drawer ────────────────────────────────────────────────────────────
 
 function InspectDrawer({ container, onClose }: { container: DockerContainer; onClose: () => void }) {
@@ -338,6 +249,63 @@ function WipeConfirmModal({ projectName, onConfirm, onCancel, running }: {
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── Service cards (sidebar, replaces table in project view) ───────────────────
+
+interface ServiceCardsProps {
+  project:         ComposeProject
+  containers:      DockerContainer[]
+  serviceAction:   { service: string; action: string } | null
+  onServiceAction: (service: string, action: 'up' | 'stop' | 'restart') => void
+  onOpenLogs:      (service: string) => void
+  onShell:         (containerName: string) => void
+  onInspect:       (container: DockerContainer) => void
+}
+
+function ServiceCards({ project, containers, serviceAction, onServiceAction, onOpenLogs, onShell, onInspect }: ServiceCardsProps) {
+  const rows = containers.filter(c => c.compose_project === project.name)
+  if (rows.length === 0) return null
+  return (
+    <div className="csc-list">
+      {rows.map(c => {
+        const svc     = c.compose_service ?? c.name
+        const isRunning = c.state === 'running'
+        const isBusy  = serviceAction?.service === svc
+        return (
+          <div key={c.id} className="csc-card">
+            <div className="csc-card-row">
+              <span className={clsx('cst-dot',
+                isRunning           ? 'cst-dot--running'
+                : c.state === 'restarting' ? 'cst-dot--restarting'
+                : 'cst-dot--stopped'
+              )} />
+              <span className="csc-name">{svc}</span>
+              <span className={clsx('cst-state-badge',
+                isRunning           ? 'cst-state--running'
+                : c.state === 'restarting' ? 'cst-state--restarting'
+                : 'cst-state--stopped'
+              )}>{c.state}</span>
+            </div>
+            <div className="csc-container-id" title={c.name}>{c.name}</div>
+            <div className="csc-actions">
+              {isRunning ? (
+                <>
+                  <button className="csc-btn csc-btn--stop"    onClick={() => onServiceAction(svc,'stop')}    disabled={isBusy} title="Stop"><Square size={11}/></button>
+                  <button className="csc-btn csc-btn--restart" onClick={() => onServiceAction(svc,'restart')} disabled={isBusy} title="Restart"><RestartIcon size={11}/></button>
+                  <button className="csc-btn"                  onClick={() => onOpenLogs(svc)}                title="Open logs"><ScrollText size={11}/></button>
+                  <button className="csc-btn"                  onClick={() => onShell(c.name)}               title="Open shell"><Terminal size={11}/></button>
+                </>
+              ) : (
+                <button className="csc-btn csc-btn--start" onClick={() => onServiceAction(svc,'up')} disabled={isBusy} title="Start"><Play size={11}/></button>
+              )}
+              <button className="csc-btn csc-btn--inspect" onClick={() => onInspect(c)} title="Inspect"><Info size={11}/></button>
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -664,23 +632,6 @@ export default function ComposeTab({
     }
   }
 
-  const handleServiceLogs = async (service: string) => {
-    if (!activeFile) return
-    const { addTerminalLine, setTerminalOpen } = useAppStore.getState()
-    setTerminalOpen(true)
-    addTerminalLine(`─── logs: ${service} ───`, 'info')
-    const unlistenLog = await listen<string>('docker-log', e => {
-      useAppStore.getState().addTerminalLine(e.payload, 'stdout')
-    })
-    try {
-      await api.dockerComposeServiceLogs(activeFile, service)
-    } catch (e) {
-      useAppStore.getState().addTerminalLine(`  ✗ ${String(e)}`, 'error')
-    } finally {
-      unlistenLog()
-    }
-  }
-
   const handleShell = async (containerName: string) => {
     try {
       await api.openContainerShell(containerName)
@@ -887,61 +838,17 @@ export default function ComposeTab({
       {viewMode === 'project' && selected && (
         <div className="compose-viewer">
 
-          {/* ── Toolbar row ─────────────────────────────────────────────── */}
-          <div className="compose-viewer-toolbar">
-
-            {/* Back to overview */}
+          {/* ── Top bar: back + lifecycle only ── */}
+          <div className="compose-project-topbar">
             <button
               className="compose-back-btn"
-              onClick={() => {
-                setViewMode('main')
-                useAppStore.getState().setComposeActiveProject(null)
-              }}
+              onClick={() => { setViewMode('main'); useAppStore.getState().setComposeActiveProject(null) }}
               title="Back to all projects"
             >
               <ArrowLeft size={12} />
               <span className="compose-back-label">{selected.name}</span>
             </button>
-
-            {/* File selector — compose files + detected Dockerfiles + .env */}
-            <div className="compose-file-tabs">
-              {selected.config_files.map(f => (
-                <button
-                  key={f}
-                  className={clsx('compose-file-path-item', activeFile === f && 'active')}
-                  onClick={() => { setActiveFile(f); loadFile(f); setBackupMsg(null); setEditMode(false) }}
-                  title={f}
-                >
-                  <PathOriginLine path={f} />
-                  <span className="compose-file-path-text">{f.split('/').pop()?.split('\\').pop()}</span>
-                  {activeFile === f && isModified && <span className="compose-modified-dot" title="Unsaved changes" />}
-                </button>
-              ))}
-              {projectFiles.map(pf => {
-                const name = pf.path.split('/').pop()?.split('\\').pop() ?? pf.path
-                const isActive = activeFile === pf.path
-                return (
-                  <button
-                    key={pf.path}
-                    className={clsx('compose-file-path-item compose-file-path-item--extra', isActive && 'active')}
-                    onClick={() => {
-                      setActiveFile(pf.path)
-                      setEditMode(false)
-                      loadExtraFile(pf.path)
-                    }}
-                    title={pf.path}
-                  >
-                    {pf.kind === 'dockerfile'
-                      ? <FileCode2 size={11} style={{ color: '#60a5fa', flexShrink: 0 }} />
-                      : <FileKey size={11} style={{ color: '#f0a500', flexShrink: 0 }} />
-                    }
-                    <span className="compose-file-path-text">{name}</span>
-                  </button>
-                )
-              })}
-            </div>
-
-            {/* Lifecycle action buttons */}
+            <div className="compose-topbar-spacer" />
             <div className="compose-lifecycle-btns">
               {LIFECYCLE_ACTIONS.map(({ id, Icon, label, title, color }) => {
                 const busy = !!lifecycleRunning || !activeFile || isModified
@@ -950,29 +857,21 @@ export default function ComposeTab({
                     <div key={id} className="compose-split-btn-wrap">
                       <button
                         className={clsx('compose-lifecycle-btn compose-split-btn-main', 'compose-lifecycle-btn--danger', lifecycleRunning === 'down' && 'loading')}
-                        onClick={() => runComposeAction('down')}
-                        disabled={busy}
-                        title="docker compose down"
+                        onClick={() => runComposeAction('down')} disabled={busy} title="docker compose down"
                       >
-                        <Square size={11} className={lifecycleRunning === 'down' ? 'spin' : ''} />
-                        Down
+                        <Square size={11} className={lifecycleRunning === 'down' ? 'spin' : ''} /> Down
                       </button>
                       <button
                         className={clsx('compose-split-btn-arrow', 'compose-lifecycle-btn--danger', downDropOpen && 'open')}
-                        onClick={() => setDownDropOpen(o => !o)}
-                        disabled={busy}
-                        title="More options"
+                        onClick={() => setDownDropOpen(o => !o)} disabled={busy} title="More options"
                       >
                         <ChevronDown size={10} />
                       </button>
                       {downDropOpen && (
                         <div className="compose-split-dropdown">
-                          <button
-                            className="compose-split-dropdown-item compose-split-dropdown-item--danger"
-                            onClick={() => { setDownDropOpen(false); setWipeConfirmOpen(true) }}
-                          >
-                            <Trash2 size={11} />
-                            Down + Wipe Volumes
+                          <button className="compose-split-dropdown-item compose-split-dropdown-item--danger"
+                            onClick={() => { setDownDropOpen(false); setWipeConfirmOpen(true) }}>
+                            <Trash2 size={11} /> Down + Wipe Volumes
                           </button>
                         </div>
                       )}
@@ -980,347 +879,302 @@ export default function ComposeTab({
                   )
                 }
                 return (
-                  <button
-                    key={id}
+                  <button key={id}
                     className={clsx('compose-lifecycle-btn', `compose-lifecycle-btn--${color}`, lifecycleRunning === id && 'loading')}
-                    onClick={() => runComposeAction(id)}
-                    disabled={busy}
-                    title={title}
+                    onClick={() => runComposeAction(id)} disabled={busy} title={title}
                   >
-                    <Icon size={11} className={lifecycleRunning === id ? 'spin' : ''} />
-                    {label}
+                    <Icon size={11} className={lifecycleRunning === id ? 'spin' : ''} /> {label}
                   </button>
                 )
               })}
             </div>
-
-            {/* Edit / Save / Cancel controls */}
-            <div className="compose-edit-controls">
-              {editMode ? (
-                <>
-                  <button
-                    className="compose-save-btn"
-                    onClick={handleSave}
-                    disabled={editSaving || !isModified}
-                    title="Save file"
-                  >
-                    <Save size={11} className={editSaving ? 'spin' : ''} />
-                    {editSaving ? 'Saving…' : 'Save'}
-                  </button>
-                  <button
-                    className="compose-cancel-edit-btn"
-                    onClick={cancelEdit}
-                    disabled={editSaving}
-                    title="Discard changes"
-                  >
-                    <X size={11} />
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button
-                  className="compose-edit-btn"
-                  onClick={enterEditMode}
-                  disabled={!fileContent || !!lifecycleRunning}
-                  title="Edit file"
-                >
-                  <Pencil size={11} />
-                  Edit
-                </button>
-              )}
-            </div>
-
-            {/* Action buttons */}
-            <div className="compose-viewer-actions">
-              {/* Open in IDE */}
-              <button
-                className="compose-toolbar-action-btn"
-                onClick={handleOpenInIde}
-                disabled={!activeFile}
-                title={preferredEditor ? `Open in ${preferredEditor.name}` : 'Open in editor'}
-              >
-                <OpenIdeIcon size={11} />
-                {preferredEditor ? preferredEditor.name : 'Open'}
-              </button>
-              {/* Logs */}
-              <button
-                className={clsx('compose-toolbar-action-btn', logPanelOpen && 'active')}
-                onClick={() => setLogPanelOpen(o => !o)}
-                title="Open log panel"
-              >
-                <ScrollText size={11} />
-                Logs
-              </button>
-              {/* Validate */}
-              <button
-                className={clsx('compose-toolbar-action-btn', validatorOpen && 'active')}
-                onClick={handleValidate}
-                disabled={validatorRunning || !activeFile}
-                title="Run docker compose config"
-              >
-                <CheckCircle size={11} className={validatorRunning ? 'spin' : ''} />
-                Validate
-              </button>
-              {/* Metadata */}
-              <button
-                className={clsx('compose-toolbar-action-btn', metaPanelOpen && 'active')}
-                onClick={() => setMetaPanelOpen(o => !o)}
-                title="Project metadata"
-              >
-                <MoreHorizontal size={11} />
-              </button>
-              {/* Backup */}
-              {backupOpen && (
-                <>
-                  {backupMsg && (
-                    <span className={clsx('compose-toolbar-status', backupMsg.type)}>
-                      {backupMsg.text}
-                    </span>
-                  )}
-                  <button
-                    className="compose-run-backup-btn"
-                    onClick={runBackup}
-                    disabled={backingUp || !backupDir || !selected}
-                    title={!backupDir ? 'Configure a backup directory in Settings first' : `Back up all files for '${selected?.name}'`}
-                  >
-                    <Download size={11} className={backingUp ? 'spin' : ''} />
-                    {backingUp ? 'Backing up…' : 'Run Backup'}
-                  </button>
-                </>
-              )}
-              <button
-                className={clsx('compose-backup-toggle-btn', backupOpen && 'active')}
-                onClick={() => setBackupOpen(o => !o)}
-                title={fileBackups.length > 0 ? `${fileBackups.length} backup${fileBackups.length !== 1 ? 's' : ''} — click to manage` : 'Backup history and controls'}
-              >
-                <Download size={12} />
-                {fileBackups.length > 0 && (
-                  <span className="compose-backup-btn-count">{fileBackups.length}</span>
-                )}
-                <ChevronDown size={10} className={clsx('compose-backup-toggle-chevron', backupOpen && 'open')} />
-              </button>
-            </div>
           </div>
 
-          {/* ── Backup accordion ─────────────────────────────────────────── */}
-          <div className={clsx('compose-accordion-wrap', backupOpen && 'open')}>
-            <div className="compose-backup-accordion">
-              {fileBackups.length === 0 ? (
-                <p className="compose-backup-empty">No backups yet for this file.</p>
-              ) : (
-                <ul className="compose-backup-list">
-                  {fileBackups.map(entry => (
-                    <li key={entry.filename} className="compose-backup-entry">
-                      <span className="compose-backup-entry-date">{formatDate(entry.created_at)}</span>
-                      <span className="compose-backup-entry-size">{bytesToHuman(entry.size_bytes)}</span>
-                      <span className="compose-backup-entry-file" title={entry.filename}>{entry.filename}</span>
-                      <div className="compose-backup-entry-actions">
-                        <button className="ctr-action-btn" onClick={() => revealItemInDir(entry.path).catch(() => {})} title="Open file location">
-                          <FolderOpen size={12} />
-                        </button>
-                        <button className="ctr-action-btn ctr-action-remove" onClick={() => handleDeleteBackup(entry)}
-                          disabled={deletingFile === entry.filename} title="Delete this backup">
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
+          {/* ── Two-column layout ── */}
+          <div className="compose-project-layout">
 
-          {/* ── File content ─────────────────────────────────────────────── */}
-          <div className="compose-viewer-body">
-            {fileLoading && <div className="compose-viewer-state">Loading file…</div>}
-            {fileError && (
-              <div className="compose-viewer-state compose-viewer-error">
-                <AlertCircle size={14} />{fileError}
-              </div>
-            )}
+            {/* ── LEFT: File editor ── */}
+            <div className="compose-project-left">
 
-            {/* Compose file — YAML viewer or inline editor */}
-            {!fileLoading && fileType === 'compose' && fileContent !== null && !editMode && (
-              <YamlViewer content={fileContent} onOpenPort={handleOpenPort} onRevealPath={handleRevealPath} />
-            )}
-            {!fileLoading && fileType === 'compose' && editMode && (
-              <div className="compose-editor-wrap">
-                <div className="compose-line-nums compose-line-nums--edit" aria-hidden>
-                  {editDraft.split('\n').map((_, i) => <span key={i}>{i + 1}</span>)}
-                </div>
-                <textarea
-                  className="compose-editor-textarea"
-                  value={editDraft}
-                  onChange={e => setEditDraft(e.target.value)}
-                  spellCheck={false}
-                  autoCapitalize="off"
-                  autoCorrect="off"
-                />
-              </div>
-            )}
-
-            {/* .env file — first-class editor tab */}
-            {fileType === 'env' && activeFile && (
-              fileContents[activeFile] !== undefined ? (
-                <ComposeEnvTab
-                  filePath={activeFile}
-                  content={fileContents[activeFile]}
-                  yamlContent={fileContent ?? ''}
-                  onSaved={newContent => setFileContents(prev => ({ ...prev, [activeFile]: newContent }))}
-                />
-              ) : (
-                <div className="compose-viewer-state">Loading…</div>
-              )
-            )}
-
-            {/* Dockerfile — syntax viewer / editor */}
-            {fileType === 'dockerfile' && activeFile && (
-              fileContents[activeFile] !== undefined ? (
-                <ComposeDockerfileViewer
-                  filePath={activeFile}
-                  content={fileContents[activeFile]}
-                  onSaved={newContent => setFileContents(prev => ({ ...prev, [activeFile]: newContent }))}
-                />
-              ) : (
-                <div className="compose-viewer-state">Loading…</div>
-              )
-            )}
-          </div>
-
-          {/* ── Service table ─────────────────────────────────────────────── */}
-          {selected && (
-            <ServiceTable
-              project={selected}
-              containers={containers}
-              serviceAction={serviceAction}
-              onServiceAction={handleServiceAction}
-              onServiceLogs={handleServiceLogs}
-              onShell={handleShell}
-              onInspect={setInspectContainer}
-            />
-          )}
-
-          {/* ── Log panel ─────────────────────────────────────────────────── */}
-          {logPanelOpen && selected && (
-            <ComposeLogPanel
-              project={selected}
-              containers={containers}
-              configFile={selected.config_files[0] ?? ''}
-              onClose={() => setLogPanelOpen(false)}
-            />
-          )}
-
-          {/* ── Metadata panel ────────────────────────────────────────────── */}
-          {metaPanelOpen && selected && (() => {
-            const meta = metadata[selected.name] ?? { favorite: false, tags: [], note: '', active_env: null, recent_opened: null, startup_times: [] }
-            const saveMeta = (patch: Partial<AppProjectMeta>) => handleMetaChange(selected.name, { ...meta, ...patch })
-            return (
-              <div className="compose-meta-panel">
-                <div className="compose-meta-panel-header">
-                  <span className="compose-meta-panel-title">Project Metadata</span>
-                  <button className="compose-inspect-close" onClick={() => setMetaPanelOpen(false)}><X size={12} /></button>
-                </div>
-                <div className="compose-meta-panel-body">
-                  {/* Favorite toggle */}
-                  <div className="compose-meta-row">
-                    <span className="compose-meta-label">Favorite</span>
-                    <button
-                      className={clsx('compose-meta-favorite-btn', meta.favorite && 'active')}
-                      onClick={() => saveMeta({ favorite: !meta.favorite })}
+              {/* Tab strip + edit controls */}
+              <div className="compose-left-header">
+                <div className="compose-file-tabs">
+                  {selected.config_files.map(f => (
+                    <button key={f}
+                      className={clsx('compose-file-path-item', activeFile === f && 'active')}
+                      onClick={() => { setActiveFile(f); loadFile(f); setBackupMsg(null); setEditMode(false) }}
+                      title={f}
                     >
-                      {meta.favorite ? '★ Starred' : '☆ Star this project'}
+                      <PathOriginLine path={f} />
+                      <span className="compose-file-path-text">{f.split('/').pop()?.split('\\').pop()}</span>
+                      {activeFile === f && isModified && <span className="compose-modified-dot" title="Unsaved changes" />}
                     </button>
-                  </div>
-                  {/* Tags */}
-                  <div className="compose-meta-row compose-meta-row--col">
-                    <span className="compose-meta-label">Tags</span>
-                    <div className="compose-meta-tags">
-                      {meta.tags.map(tag => (
-                        <span key={tag} className="compose-tag-chip">
-                          {tag}
-                          <button className="compose-meta-tag-remove" onClick={() => saveMeta({ tags: meta.tags.filter(t => t !== tag) })}>
-                            <X size={8} />
-                          </button>
-                        </span>
-                      ))}
-                      <input
-                        className="compose-meta-tag-input"
-                        placeholder="Add tag…"
-                        value={metaTagInput}
-                        onChange={e => setMetaTagInput(e.target.value)}
-                        onKeyDown={e => {
-                          if ((e.key === 'Enter' || e.key === ',') && metaTagInput.trim()) {
-                            e.preventDefault()
-                            const tag = metaTagInput.trim().replace(/,/g, '')
-                            if (!meta.tags.includes(tag)) saveMeta({ tags: [...meta.tags, tag] })
-                            setMetaTagInput('')
-                          }
-                        }}
-                      />
-                    </div>
-                  </div>
-                  {/* Notes */}
-                  <div className="compose-meta-row compose-meta-row--col">
-                    <span className="compose-meta-label">Notes</span>
-                    <textarea
-                      className="compose-meta-notes"
-                      value={meta.note}
-                      placeholder="Admin URLs, credentials hints, context…"
-                      onChange={e => saveMeta({ note: e.target.value })}
-                      rows={4}
-                    />
-                  </div>
-                  {/* Startup times */}
-                  {meta.startup_times && meta.startup_times.length > 0 && (
-                    <div className="compose-meta-row compose-meta-row--col">
-                      <span className="compose-meta-label">Startup times</span>
-                      <div className="compose-meta-startup-list">
-                        {meta.startup_times.slice(-5).reverse().map((ms, i) => (
-                          <span key={i} className="compose-meta-startup-item">
-                            {(ms / 1000).toFixed(1)}s
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                  ))}
+                  {projectFiles.map(pf => {
+                    const name = pf.path.split('/').pop()?.split('\\').pop() ?? pf.path
+                    const isActive = activeFile === pf.path
+                    return (
+                      <button key={pf.path}
+                        className={clsx('compose-file-path-item compose-file-path-item--extra', isActive && 'active')}
+                        onClick={() => { setActiveFile(pf.path); setEditMode(false); loadExtraFile(pf.path) }}
+                        title={pf.path}
+                      >
+                        {pf.kind === 'dockerfile'
+                          ? <FileCode2 size={11} style={{ color: '#60a5fa', flexShrink: 0 }} />
+                          : <FileKey size={11} style={{ color: '#f0a500', flexShrink: 0 }} />}
+                        <span className="compose-file-path-text">{name}</span>
+                      </button>
+                    )
+                  })}
                 </div>
-              </div>
-            )
-          })()}
-
-          {/* ── Config validator drawer ───────────────────────────────────── */}
-          {validatorOpen && (
-            <div className="compose-validator-drawer">
-              <div className="compose-meta-panel-header">
-                <span className="compose-meta-panel-title">
-                  {validatorRunning ? 'Validating…' : validatorResult?.error ? 'Validation errors' : 'Resolved config'}
-                </span>
-                <button className="compose-inspect-close" onClick={() => setValidatorOpen(false)}><X size={12} /></button>
-              </div>
-              <div className="compose-validator-body">
-                {validatorRunning && <div className="compose-viewer-state">Running docker compose config…</div>}
-                {!validatorRunning && validatorResult?.error && (
-                  <pre className="compose-validator-error">{validatorResult.error}</pre>
-                )}
-                {!validatorRunning && validatorResult?.yaml && (
-                  <div className="compose-code-wrap">
-                    <div className="compose-line-nums" aria-hidden>
-                      {validatorResult.yaml.split('\n').map((_, i) => <span key={i}>{i + 1}</span>)}
-                    </div>
-                    <div className="compose-code-body">
-                      {validatorResult.yaml.split('\n').map((line, i) => (
-                        <YamlLine key={i} line={line} />
-                      ))}
-                    </div>
+                {fileType === 'compose' && (
+                  <div className="compose-edit-controls">
+                    {editMode ? (
+                      <>
+                        <button className="compose-save-btn" onClick={handleSave} disabled={editSaving || !isModified} title="Save file">
+                          <Save size={11} className={editSaving ? 'spin' : ''} />
+                          {editSaving ? 'Saving…' : 'Save'}
+                        </button>
+                        <button className="compose-cancel-edit-btn" onClick={cancelEdit} disabled={editSaving} title="Discard changes">
+                          <X size={11} /> Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <button className="compose-edit-btn" onClick={enterEditMode} disabled={!fileContent || !!lifecycleRunning} title="Edit file">
+                        <Pencil size={11} /> Edit
+                      </button>
+                    )}
                   </div>
+                )}
+              </div>
+
+              {/* File content */}
+              <div className="compose-viewer-body">
+                {fileLoading && <div className="compose-viewer-state">Loading file…</div>}
+                {fileError && <div className="compose-viewer-state compose-viewer-error"><AlertCircle size={14} />{fileError}</div>}
+                {!fileLoading && fileType === 'compose' && fileContent !== null && !editMode && (
+                  <YamlViewer content={fileContent} onOpenPort={handleOpenPort} onRevealPath={handleRevealPath} />
+                )}
+                {!fileLoading && fileType === 'compose' && editMode && (
+                  <div className="compose-editor-wrap">
+                    <div className="compose-line-nums compose-line-nums--edit" aria-hidden>
+                      {editDraft.split('\n').map((_, i) => <span key={i}>{i + 1}</span>)}
+                    </div>
+                    <textarea className="compose-editor-textarea" value={editDraft}
+                      onChange={e => setEditDraft(e.target.value)} spellCheck={false} autoCapitalize="off" autoCorrect="off" />
+                  </div>
+                )}
+                {fileType === 'env' && activeFile && (
+                  fileContents[activeFile] !== undefined
+                    ? <ComposeEnvTab filePath={activeFile} content={fileContents[activeFile]} yamlContent={fileContent ?? ''}
+                        onSaved={newContent => setFileContents(prev => ({ ...prev, [activeFile]: newContent }))} />
+                    : <div className="compose-viewer-state">Loading…</div>
+                )}
+                {fileType === 'dockerfile' && activeFile && (
+                  fileContents[activeFile] !== undefined
+                    ? <ComposeDockerfileViewer filePath={activeFile} content={fileContents[activeFile]}
+                        onSaved={newContent => setFileContents(prev => ({ ...prev, [activeFile]: newContent }))} />
+                    : <div className="compose-viewer-state">Loading…</div>
                 )}
               </div>
             </div>
-          )}
+
+            {/* ── RIGHT: Sidebar ── */}
+            <div className="compose-project-right">
+
+              {/* Services */}
+              {containers.filter(c => c.compose_project === selected.name).length > 0 && (
+                <div className="compose-right-section">
+                  <div className="compose-right-section-title">Services</div>
+                  <ServiceCards
+                    project={selected}
+                    containers={containers}
+                    serviceAction={serviceAction}
+                    onServiceAction={handleServiceAction}
+                    onOpenLogs={_ => setLogPanelOpen(true)}
+                    onShell={handleShell}
+                    onInspect={setInspectContainer}
+                  />
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="compose-right-section">
+                <div className="compose-right-section-title">Actions</div>
+                <div className="compose-sidebar-tools">
+                  <button className="compose-sidebar-tool-btn" onClick={handleOpenInIde} disabled={!activeFile}
+                    title={preferredEditor ? `Open in ${preferredEditor.name}` : 'Open in editor'}>
+                    <OpenIdeIcon size={13} />
+                    <span className="compose-sidebar-tool-label">{preferredEditor ? preferredEditor.name : 'Open in IDE'}</span>
+                  </button>
+                  <button className={clsx('compose-sidebar-tool-btn', logPanelOpen && 'active')}
+                    onClick={() => setLogPanelOpen(o => !o)}>
+                    <ScrollText size={13} />
+                    <span className="compose-sidebar-tool-label">Logs</span>
+                    <ChevronDown size={10} className={clsx('compose-sidebar-tool-chevron', logPanelOpen && 'open')} />
+                  </button>
+                  <button className={clsx('compose-sidebar-tool-btn', validatorOpen && 'active')}
+                    onClick={handleValidate} disabled={validatorRunning || !activeFile} title="Run docker compose config">
+                    <CheckCircle size={13} className={validatorRunning ? 'spin' : ''} />
+                    <span className="compose-sidebar-tool-label">Validate Config</span>
+                  </button>
+                  <button className={clsx('compose-sidebar-tool-btn', metaPanelOpen && 'active')}
+                    onClick={() => setMetaPanelOpen(o => !o)} title="Project metadata">
+                    <MoreHorizontal size={13} />
+                    <span className="compose-sidebar-tool-label">Metadata</span>
+                    <ChevronDown size={10} className={clsx('compose-sidebar-tool-chevron', metaPanelOpen && 'open')} />
+                  </button>
+                  {backupDir && (
+                    <button className={clsx('compose-sidebar-tool-btn', backupOpen && 'active')}
+                      onClick={() => setBackupOpen(o => !o)}
+                      title={fileBackups.length > 0 ? `${fileBackups.length} backup${fileBackups.length !== 1 ? 's' : ''}` : 'Backup history'}>
+                      <Download size={13} />
+                      <span className="compose-sidebar-tool-label">Backup</span>
+                      {fileBackups.length > 0 && <span className="compose-backup-btn-count">{fileBackups.length}</span>}
+                      <ChevronDown size={10} className={clsx('compose-sidebar-tool-chevron', backupOpen && 'open')} />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Log panel - inline in sidebar */}
+              {logPanelOpen && selected && (
+                <div className="compose-sidebar-panel">
+                  <ComposeLogPanel project={selected} containers={containers}
+                    configFile={selected.config_files[0] ?? ''} onClose={() => setLogPanelOpen(false)} />
+                </div>
+              )}
+
+              {/* Validator - inline in sidebar */}
+              {validatorOpen && (
+                <div className="compose-sidebar-panel">
+                  <div className="compose-sidebar-panel-header">
+                    <span>{validatorRunning ? 'Validating…' : validatorResult?.error ? 'Validation errors' : 'Resolved config'}</span>
+                    <button className="compose-inspect-close" onClick={() => setValidatorOpen(false)}><X size={12} /></button>
+                  </div>
+                  <div className="compose-sidebar-panel-body">
+                    {validatorRunning && <div className="compose-viewer-state" style={{ fontSize: 11 }}>Running docker compose config…</div>}
+                    {!validatorRunning && validatorResult?.error && (
+                      <pre className="compose-validator-error" style={{ margin: 8, fontSize: 10.5 }}>{validatorResult.error}</pre>
+                    )}
+                    {!validatorRunning && validatorResult?.yaml && (
+                      <div className="compose-code-wrap" style={{ fontSize: 10.5 }}>
+                        <div className="compose-line-nums" aria-hidden>
+                          {validatorResult.yaml.split('\n').map((_, i) => <span key={i}>{i + 1}</span>)}
+                        </div>
+                        <div className="compose-code-body">
+                          {validatorResult.yaml.split('\n').map((line, i) => <YamlLine key={i} line={line} />)}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Metadata - inline in sidebar */}
+              {metaPanelOpen && selected && (() => {
+                const meta = metadata[selected.name] ?? { favorite: false, tags: [], note: '', active_env: null, recent_opened: null, startup_times: [] }
+                const saveMeta = (patch: Partial<AppProjectMeta>) => handleMetaChange(selected.name, { ...meta, ...patch })
+                return (
+                  <div className="compose-sidebar-panel">
+                    <div className="compose-sidebar-panel-header">
+                      <span>Metadata</span>
+                      <button className="compose-inspect-close" onClick={() => setMetaPanelOpen(false)}><X size={12} /></button>
+                    </div>
+                    <div className="compose-meta-panel-body">
+                      <div className="compose-meta-row">
+                        <span className="compose-meta-label">Favorite</span>
+                        <button className={clsx('compose-meta-favorite-btn', meta.favorite && 'active')}
+                          onClick={() => saveMeta({ favorite: !meta.favorite })}>
+                          {meta.favorite ? '★ Starred' : '☆ Star this project'}
+                        </button>
+                      </div>
+                      <div className="compose-meta-row compose-meta-row--col">
+                        <span className="compose-meta-label">Tags</span>
+                        <div className="compose-meta-tags">
+                          {meta.tags.map(tag => (
+                            <span key={tag} className="compose-tag-chip">{tag}
+                              <button className="compose-meta-tag-remove" onClick={() => saveMeta({ tags: meta.tags.filter(t => t !== tag) })}><X size={8} /></button>
+                            </span>
+                          ))}
+                          <input className="compose-meta-tag-input" placeholder="Add tag…" value={metaTagInput}
+                            onChange={e => setMetaTagInput(e.target.value)}
+                            onKeyDown={e => {
+                              if ((e.key === 'Enter' || e.key === ',') && metaTagInput.trim()) {
+                                e.preventDefault()
+                                const tag = metaTagInput.trim().replace(/,/g, '')
+                                if (!meta.tags.includes(tag)) saveMeta({ tags: [...meta.tags, tag] })
+                                setMetaTagInput('')
+                              }
+                            }} />
+                        </div>
+                      </div>
+                      <div className="compose-meta-row compose-meta-row--col">
+                        <span className="compose-meta-label">Notes</span>
+                        <textarea className="compose-meta-notes" value={meta.note}
+                          placeholder="Admin URLs, credentials hints, context…"
+                          onChange={e => saveMeta({ note: e.target.value })} rows={4} />
+                      </div>
+                      {meta.startup_times && meta.startup_times.length > 0 && (
+                        <div className="compose-meta-row compose-meta-row--col">
+                          <span className="compose-meta-label">Startup times</span>
+                          <div className="compose-meta-startup-list">
+                            {meta.startup_times.slice(-5).reverse().map((ms, i) => (
+                              <span key={i} className="compose-meta-startup-item">{(ms / 1000).toFixed(1)}s</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {/* Backup - inline in sidebar */}
+              {backupOpen && backupDir && (
+                <div className="compose-sidebar-panel">
+                  <div className="compose-sidebar-panel-header">
+                    <span>Backup</span>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      {backupMsg && <span className={clsx('compose-toolbar-status', backupMsg.type)} style={{ fontSize: 10.5 }}>{backupMsg.text}</span>}
+                      <button className="compose-run-backup-btn" onClick={runBackup} disabled={backingUp || !backupDir || !selected}>
+                        <Download size={11} className={backingUp ? 'spin' : ''} />
+                        {backingUp ? 'Backing up…' : 'Run Backup'}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="compose-sidebar-panel-body">
+                    <div className="compose-backup-accordion" style={{ border: 'none' }}>
+                      {fileBackups.length === 0
+                        ? <p className="compose-backup-empty">No backups yet for this file.</p>
+                        : (
+                          <ul className="compose-backup-list">
+                            {fileBackups.map(entry => (
+                              <li key={entry.filename} className="compose-backup-entry">
+                                <span className="compose-backup-entry-date">{formatDate(entry.created_at)}</span>
+                                <span className="compose-backup-entry-size">{bytesToHuman(entry.size_bytes)}</span>
+                                <span className="compose-backup-entry-file" title={entry.filename}>{entry.filename}</span>
+                                <div className="compose-backup-entry-actions">
+                                  <button className="ctr-action-btn" onClick={() => revealItemInDir(entry.path).catch(() => {})} title="Open file location"><FolderOpen size={12} /></button>
+                                  <button className="ctr-action-btn ctr-action-remove" onClick={() => handleDeleteBackup(entry)}
+                                    disabled={deletingFile === entry.filename} title="Delete this backup"><Trash2 size={12} /></button>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        )
+                      }
+                    </div>
+                  </div>
+                </div>
+              )}
+
+            </div>
+          </div>
         </div>
       )}
 
-      {/* ── Inspect drawer ──────────────────────────────────────────────────── */}
+            {/* ── Inspect drawer ──────────────────────────────────────────────────── */}
       {inspectContainer && (
         <InspectDrawer container={inspectContainer} onClose={() => setInspectContainer(null)} />
       )}

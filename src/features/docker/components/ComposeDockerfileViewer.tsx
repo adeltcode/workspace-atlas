@@ -93,7 +93,6 @@ export default function ComposeDockerfileViewer({ filePath, content, onSaved }: 
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Mini toolbar just for edit controls */}
       <div className="compose-dockerfile-toolbar">
-        <span className="compose-dockerfile-lang">Dockerfile</span>
         <div style={{ flex: 1 }} />
         {editMode ? (
           <>

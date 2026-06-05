@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import {
   Star, Tag, Play, Square, RotateCcw, ExternalLink,
-  AlertTriangle, Activity, Clock, ChevronRight,
+  AlertTriangle, Activity, Clock, ChevronRight, Plug,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { openUrl } from '@tauri-apps/plugin-opener'
@@ -281,7 +281,8 @@ function ProjectCard({
               onClick={() => openUrl(`http://localhost:${port}`).catch(() => {})}
               title={`Open http://localhost:${port}`}
             >
-              :{port}
+              <Plug size={9} />
+              {port}
               <ExternalLink size={8} />
             </button>
           ))}
@@ -321,9 +322,9 @@ function ProjectCard({
           className="compose-card-btn compose-card-btn--detail"
           onClick={onSelect}
           title="Open project"
+          style={{ marginLeft: 'auto' }}
         >
-          Open
-          <ChevronRight size={10} />
+          Open →
         </button>
       </div>
     </div>

@@ -3948,12 +3948,21 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .compose-viewer-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 7px 12px;
+  padding: 6px 12px;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-bg-secondary);
-  gap: 12px;
+  gap: 8px;
   flex-shrink: 0;
+  min-height: 40px;
+}
+
+/* Vertical separator between toolbar groups */
+.compose-toolbar-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--color-border);
+  flex-shrink: 0;
+  margin: 0 2px;
 }
 
 .compose-file-tabs {
@@ -3963,23 +3972,31 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   flex-wrap: wrap;
 }
 
-/* Plain path display — no border, no background, not button-looking */
+/* File tab items in the toolbar tab strip */
 .compose-file-path-item {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 6px;
+  padding: 4px 10px;
   border-radius: var(--radius-sm);
   background: transparent;
-  border: none;
+  border: 1px solid transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
   min-width: 0;
-  max-width: 100%;
-  transition: color var(--transition-fast);
+  max-width: 180px;
+  transition: color var(--transition-fast), background var(--transition-fast), border-color var(--transition-fast);
+  font-size: 11.5px;
 }
-.compose-file-path-item:hover { color: var(--color-text-secondary); }
-.compose-file-path-item.active { color: var(--color-text-primary); }
+.compose-file-path-item:hover {
+  color: var(--color-text-secondary);
+  background: var(--color-bg-hover);
+}
+.compose-file-path-item.active {
+  color: var(--color-text-primary);
+  background: var(--color-bg-tertiary);
+  border-color: var(--color-border);
+}
 
 /* Full path text — direction rtl so the filename end is always visible */
 .compose-file-path-text {
@@ -4432,7 +4449,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .compose-lifecycle-btns {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   flex-shrink: 0;
 }
 
@@ -4440,12 +4457,12 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 10px;
+  padding: 4px 11px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
   background: var(--color-bg-tertiary);
   color: var(--color-text-secondary);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   font-family: inherit;
   cursor: pointer;
@@ -5603,35 +5620,236 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 /* =============================================================
+   Compose — Two-column project layout
+   ============================================================= */
+
+.compose-project-topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.compose-topbar-spacer { flex: 1; min-width: 4px; }
+
+.compose-project-layout {
+  display: flex;
+  align-items: flex-start;
+}
+
+.compose-project-left {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--color-border);
+}
+
+.compose-left-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  row-gap: 4px;
+  min-height: 38px;
+}
+
+.compose-project-right {
+  width: 300px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  max-height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+@media (max-width: 860px) {
+  .compose-project-layout { flex-direction: column; }
+  .compose-project-right {
+    width: 100%;
+    position: static;
+    max-height: 420px;
+    border-top: 1px solid var(--color-border);
+  }
+}
+
+/* ── Right sidebar sections ── */
+.compose-right-section {
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+.compose-right-section-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 10px 12px 4px;
+}
+
+/* ── Service cards (sidebar) ── */
+.csc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 10px 10px;
+}
+.csc-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 10px;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  transition: border-color var(--transition-fast);
+}
+.csc-card:hover { border-color: var(--color-border-strong); }
+.csc-card-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.csc-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.csc-container-id {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.csc-actions { display: flex; gap: 4px; }
+.csc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+.csc-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.csc-btn:hover:not(:disabled) { background: var(--color-bg-hover); color: var(--color-text-primary); border-color: var(--color-border-strong); }
+.csc-btn--start:hover:not(:disabled)   { color: var(--color-success); border-color: color-mix(in srgb, var(--color-success) 35%, transparent); background: var(--color-success-subtle); }
+.csc-btn--stop:hover:not(:disabled)    { color: var(--color-danger);  border-color: var(--color-danger-border); background: var(--color-danger-subtle); }
+.csc-btn--restart:hover:not(:disabled) { color: var(--color-warning); border-color: color-mix(in srgb, var(--color-warning) 35%, transparent); background: var(--color-warning-subtle); }
+.csc-btn--inspect:hover:not(:disabled) { color: var(--color-accent);  border-color: var(--color-accent-border); background: var(--color-accent-subtle); }
+
+/* ── Sidebar tool list ── */
+.compose-sidebar-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px 8px;
+}
+.compose-sidebar-tool-btn {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+.compose-sidebar-tool-btn:hover:not(:disabled) { background: var(--color-bg-hover); color: var(--color-text-primary); }
+.compose-sidebar-tool-btn.active { background: color-mix(in srgb, var(--color-accent) 10%, transparent); color: var(--color-accent); border-color: var(--color-accent-border); }
+.compose-sidebar-tool-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.compose-sidebar-tool-label { flex: 1; }
+.compose-sidebar-tool-chevron { color: var(--color-text-tertiary); transition: transform var(--transition-fast); flex-shrink: 0; }
+.compose-sidebar-tool-chevron.open { transform: rotate(180deg); }
+
+/* ── Inline panels inside the sidebar ── */
+.compose-sidebar-panel {
+  border-top: 1px solid var(--color-border);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+.compose-sidebar-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border-light);
+  flex-shrink: 0;
+}
+.compose-sidebar-panel-body {
+  overflow-y: auto;
+  max-height: 320px;
+}
+/* Log panel inside sidebar — remove its own border, constrain height */
+.compose-sidebar-panel .log-panel {
+  border: none;
+  border-top: none;
+  max-height: 400px;
+}
+
+/* =============================================================
    Compose — Back button (project detail view)
    ============================================================= */
 
 .compose-back-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 8px 3px 5px;
+  gap: 4px;
+  padding: 4px 10px 4px 7px;
   background: transparent;
   border: 1px solid var(--color-border);
   border-radius: 5px;
   color: var(--color-text-secondary);
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
   transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
 }
 .compose-back-btn:hover {
-  background: var(--color-bg-hover);
-  color: var(--color-text-primary);
-  border-color: var(--color-border-strong);
+  background: var(--color-accent-subtle);
+  color: var(--color-accent);
+  border-color: var(--color-accent-border);
 }
 .compose-back-label {
-  max-width: 120px;
+  max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 /* =============================================================
@@ -5639,49 +5857,58 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
    ============================================================= */
 
 .compose-page {
-  padding: 0 32px 32px;
+  padding: 16px 24px 32px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
 }
 
 /* ── Stats strip ── */
 .compose-stats-strip {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
+  gap: 16px;
+  padding: 12px 20px;
   background: var(--color-bg-secondary);
   border: 1px solid var(--color-border);
+  border-bottom: 2px solid var(--color-border);
   border-radius: 8px;
   flex-wrap: wrap;
 }
 .compose-stat {
   display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11.5px;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
 }
 .compose-stat-sep {
   width: 1px;
-  height: 14px;
+  height: 18px;
   background: var(--color-border);
   flex-shrink: 0;
 }
 .compose-stat-value {
-  font-weight: 600;
+  font-size: 18px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
+  line-height: 1;
   color: var(--color-text-primary);
 }
 .compose-stat--running { color: var(--color-success); }
 .compose-stat--partial { color: var(--color-warning); }
 .compose-stat--stopped { color: var(--color-text-tertiary); }
-.compose-stat-label  { color: var(--color-text-secondary); }
+.compose-stat-label  {
+  font-size: 11.5px;
+  color: var(--color-text-secondary);
+  font-weight: 400;
+}
 .compose-stat--conflict {
   color: var(--color-warning);
-  gap: 4px;
+  gap: 5px;
+  align-items: center;
 }
-.compose-stat--conflict .compose-stat-label { color: var(--color-warning); opacity: 0.8; }
+.compose-stat--conflict .compose-stat-value { font-size: 15px; }
+.compose-stat--conflict .compose-stat-label { color: var(--color-warning); opacity: 0.85; }
 
 /* ── Section headings ── */
 .compose-page-section { display: flex; flex-direction: column; gap: 10px; }
@@ -5699,27 +5926,29 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 /* ── Card grid ── */
 .compose-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 14px;
 }
 
 /* ── Project card ── */
 .compose-project-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px 14px;
+  gap: 10px;
+  padding: 14px 16px;
   background: var(--color-bg-secondary);
   border: 1px solid var(--color-border);
   border-radius: 10px;
-  transition: border-color var(--transition-fast), background var(--transition-fast);
-  min-height: 140px;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
+  min-height: 160px;
 }
 .compose-project-card:hover {
   border-color: var(--color-border-strong);
   background: var(--color-bg-tertiary);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.18);
 }
-.compose-project-card--stopped { opacity: 0.7; }
+.compose-project-card--stopped { opacity: 0.65; }
 
 .compose-card-header {
   display: flex;
@@ -5738,7 +5967,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   min-width: 0;
 }
 .compose-card-name {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--color-text-primary);
   overflow: hidden;
@@ -5771,13 +6000,13 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .compose-card-health-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 .compose-card-health-score {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  min-width: 34px;
+  min-width: 38px;
   flex-shrink: 0;
 }
 .health--great { color: var(--color-success); }
@@ -5788,13 +6017,13 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .compose-service-dots {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   flex: 1;
   flex-wrap: wrap;
 }
 .compose-service-dot {
-  width: 7px;
-  height: 7px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   flex-shrink: 0;
 }
@@ -5826,11 +6055,11 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--color-text-secondary);
   font-variant-numeric: tabular-nums;
 }
-.compose-card-resources svg { color: var(--color-text-tertiary); }
+.compose-card-resources svg { color: var(--color-text-secondary); }
 .compose-card-tags {
   display: flex;
   align-items: center;
@@ -5853,21 +6082,22 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 /* ── Port chips ── */
 .compose-card-ports {
   display: flex;
-  gap: 4px;
+  gap: 5px;
   flex-wrap: wrap;
 }
 .compose-port-chip {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 2px 6px;
+  gap: 4px;
+  padding: 2px 7px;
   background: var(--color-bg-tertiary);
   border: 1px solid var(--color-border);
   border-radius: 4px;
-  font-size: 10px;
+  font-size: 10.5px;
   color: var(--color-text-secondary);
   cursor: pointer;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
   transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
 }
 .compose-port-chip:hover {
@@ -5885,11 +6115,12 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 /* ── Card action buttons ── */
 .compose-card-actions {
   display: flex;
-  gap: 4px;
+  gap: 5px;
   margin-top: auto;
-  padding-top: 4px;
-  border-top: 1px solid var(--color-border-light);
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
   flex-wrap: wrap;
+  align-items: center;
 }
 .compose-card-btn {
   display: inline-flex;
@@ -6109,17 +6340,20 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
    ============================================================= */
 
 .compose-service-section {
-  padding: 0 32px 24px;
+  padding: 0 24px 24px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 16px;
+  margin-top: 4px;
 }
 .compose-service-section-title {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 600;
   color: var(--color-text-tertiary);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
 }
 .compose-service-table {
   width: 100%;
@@ -6128,19 +6362,19 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 .compose-service-thead-row { border-bottom: 1px solid var(--color-border); }
 .cst-th {
-  padding: 4px 10px;
+  padding: 5px 12px;
   text-align: left;
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 600;
   color: var(--color-text-tertiary);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   white-space: nowrap;
 }
-.cst-th--service   { width: 22%; }
-.cst-th--status    { width: 12%; }
-.cst-th--container { width: 28%; }
-.cst-th--actions   { width: 38%; }
+.cst-th--service   { width: 20%; }
+.cst-th--status    { width: 14%; }
+.cst-th--container { width: 36%; }
+.cst-th--actions   { width: 30%; }
 
 .compose-service-row {
   border-bottom: 1px solid var(--color-border-light);
@@ -6150,11 +6384,11 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .compose-service-row:hover { background: var(--color-bg-hover); }
 
 .cst-td {
-  padding: 7px 10px;
+  padding: 8px 12px;
   vertical-align: middle;
 }
 .cst-td--service   { display: flex; align-items: center; gap: 6px; }
-.cst-td--container { max-width: 180px; }
+.cst-td--container { max-width: 220px; }
 .cst-container-name {
   display: block;
   overflow: hidden;
@@ -6197,15 +6431,15 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .cst-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
+  gap: 3px;
 }
+/* Icon-only action buttons in service table */
 .cst-btn {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 2px 7px;
-  border-radius: 4px;
+  justify-content: center;
+  padding: 5px 7px;
+  border-radius: 5px;
   border: 1px solid var(--color-border);
   background: var(--color-bg-tertiary);
   color: var(--color-text-secondary);
@@ -6213,6 +6447,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   cursor: pointer;
   transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .cst-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 .cst-btn:hover:not(:disabled) { background: var(--color-bg-hover); color: var(--color-text-primary); border-color: var(--color-border-strong); }
@@ -6369,13 +6604,14 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .compose-toolbar-action-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
+  gap: 5px;
+  padding: 4px 10px;
   border-radius: 5px;
   border: 1px solid var(--color-border);
   background: var(--color-bg-tertiary);
   color: var(--color-text-secondary);
-  font-size: 11px;
+  font-size: 11.5px;
+  font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
   transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
@@ -6477,9 +6713,11 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 16px;
+  padding: 5px 14px;
   border-bottom: 1px solid var(--color-border-light);
+  background: var(--color-bg-secondary);
   flex-shrink: 0;
+  min-height: 32px;
 }
 .compose-dockerfile-lang {
   font-size: 10px;
