@@ -257,6 +257,7 @@ export default function DockerView() {
               containers={containers}
               containerStats={containerStats}
               statHistory={statHistory}
+              onRefresh={refreshContainers}
             />
           </div>
 

@@ -5816,7 +5816,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 /* Log panel inside sidebar — remove its own border, constrain height */
 .compose-sidebar-panel .log-panel {
   border: none;
-  border-top: none;
   max-height: 400px;
 }
 

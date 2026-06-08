@@ -256,7 +256,6 @@ function WipeConfirmModal({ projectName, onConfirm, onCancel, running }: {
 // ── Service cards (sidebar, replaces table in project view) ───────────────────
 
 interface ServiceCardsProps {
-  project:         ComposeProject
   containers:      DockerContainer[]
   serviceAction:   { service: string; action: string } | null
   onServiceAction: (service: string, action: 'up' | 'stop' | 'restart') => void
@@ -265,29 +264,21 @@ interface ServiceCardsProps {
   onInspect:       (container: DockerContainer) => void
 }
 
-function ServiceCards({ project, containers, serviceAction, onServiceAction, onOpenLogs, onShell, onInspect }: ServiceCardsProps) {
-  const rows = containers.filter(c => c.compose_project === project.name)
-  if (rows.length === 0) return null
+function ServiceCards({ containers, serviceAction, onServiceAction, onOpenLogs, onShell, onInspect }: ServiceCardsProps) {
+  if (containers.length === 0) return null
   return (
     <div className="csc-list">
-      {rows.map(c => {
-        const svc     = c.compose_service ?? c.name
+      {containers.map(c => {
+        const svc       = c.compose_service ?? c.name
         const isRunning = c.state === 'running'
-        const isBusy  = serviceAction?.service === svc
+        const isBusy    = serviceAction?.service === svc
+        const stateKey  = isRunning ? 'running' : c.state === 'restarting' ? 'restarting' : 'stopped'
         return (
           <div key={c.id} className="csc-card">
             <div className="csc-card-row">
-              <span className={clsx('cst-dot',
-                isRunning           ? 'cst-dot--running'
-                : c.state === 'restarting' ? 'cst-dot--restarting'
-                : 'cst-dot--stopped'
-              )} />
+              <span className={clsx('cst-dot', `cst-dot--${stateKey}`)} />
               <span className="csc-name">{svc}</span>
-              <span className={clsx('cst-state-badge',
-                isRunning           ? 'cst-state--running'
-                : c.state === 'restarting' ? 'cst-state--restarting'
-                : 'cst-state--stopped'
-              )}>{c.state}</span>
+              <span className={clsx('cst-state-badge', `cst-state--${stateKey}`)}>{c.state}</span>
             </div>
             <div className="csc-container-id" title={c.name}>{c.name}</div>
             <div className="csc-actions">
@@ -317,10 +308,11 @@ interface ComposeTabProps {
   containers:     DockerContainer[]
   containerStats: ContainerStats[]
   statHistory:    Map<string, { cpu: number[]; mem: number[] }>
+  onRefresh?:     () => void
 }
 
 export default function ComposeTab({
-  refreshTick = 0, containers, containerStats, statHistory,
+  refreshTick = 0, containers, containerStats, statHistory, onRefresh,
 }: ComposeTabProps) {
   const backupDir = useAppStore(s => s.backupDir)
 
@@ -386,7 +378,8 @@ export default function ComposeTab({
   const [validatorResult,  setValidatorResult]  = useState<{ yaml?: string; error?: string } | null>(null)
 
   // ── Log panel ─────────────────────────────────────────────────────────────
-  const [logPanelOpen, setLogPanelOpen] = useState(false)
+  const [logPanelOpen,      setLogPanelOpen]      = useState(false)
+  const [logInitialService, setLogInitialService] = useState<string | null>(null)
 
   // ── Computed ──────────────────────────────────────────────────────────────
 
@@ -395,6 +388,11 @@ export default function ComposeTab({
     const i = Math.max(activeFile.lastIndexOf('/'), activeFile.lastIndexOf('\\'))
     return i >= 0 ? activeFile.slice(0, i) : ''
   }, [activeFile])
+
+  const projectContainers = useMemo(
+    () => selected ? containers.filter(c => c.compose_project === selected.name) : [],
+    [containers, selected]
+  )
 
   // (envFilePath no longer used — .env is now a detected first-class tab)
 
@@ -629,6 +627,7 @@ export default function ComposeTab({
       unlistenLog()
       setServiceAction(null)
       loadProjects()
+      onRefresh?.()
     }
   }
 
@@ -716,7 +715,8 @@ export default function ComposeTab({
     } finally {
       unlistenLog()
       setLifecycleRunning(null)
-      // Refresh project list to reflect updated status
+      // Refresh project list and container states to reflect updated status
+      onRefresh?.()
       loadProjects().then(() => {
         if (selected) {
           setProjects(prev => {
@@ -983,15 +983,14 @@ export default function ComposeTab({
             <div className="compose-project-right">
 
               {/* Services */}
-              {containers.filter(c => c.compose_project === selected.name).length > 0 && (
+              {projectContainers.length > 0 && (
                 <div className="compose-right-section">
                   <div className="compose-right-section-title">Services</div>
                   <ServiceCards
-                    project={selected}
-                    containers={containers}
+                    containers={projectContainers}
                     serviceAction={serviceAction}
                     onServiceAction={handleServiceAction}
-                    onOpenLogs={_ => setLogPanelOpen(true)}
+                    onOpenLogs={svc => { setLogInitialService(svc); setLogPanelOpen(true) }}
                     onShell={handleShell}
                     onInspect={setInspectContainer}
                   />
@@ -1008,7 +1007,7 @@ export default function ComposeTab({
                     <span className="compose-sidebar-tool-label">{preferredEditor ? preferredEditor.name : 'Open in IDE'}</span>
                   </button>
                   <button className={clsx('compose-sidebar-tool-btn', logPanelOpen && 'active')}
-                    onClick={() => setLogPanelOpen(o => !o)}>
+                    onClick={() => { setLogInitialService(null); setLogPanelOpen(o => !o) }}>
                     <ScrollText size={13} />
                     <span className="compose-sidebar-tool-label">Logs</span>
                     <ChevronDown size={10} className={clsx('compose-sidebar-tool-chevron', logPanelOpen && 'open')} />
@@ -1041,7 +1040,9 @@ export default function ComposeTab({
               {logPanelOpen && selected && (
                 <div className="compose-sidebar-panel">
                   <ComposeLogPanel project={selected} containers={containers}
-                    configFile={selected.config_files[0] ?? ''} onClose={() => setLogPanelOpen(false)} />
+                    configFile={selected.config_files[0] ?? ''}
+                    initialService={logInitialService ?? undefined}
+                    onClose={() => setLogPanelOpen(false)} />
                 </div>
               )}
 
@@ -1057,16 +1058,19 @@ export default function ComposeTab({
                     {!validatorRunning && validatorResult?.error && (
                       <pre className="compose-validator-error" style={{ margin: 8, fontSize: 10.5 }}>{validatorResult.error}</pre>
                     )}
-                    {!validatorRunning && validatorResult?.yaml && (
-                      <div className="compose-code-wrap" style={{ fontSize: 10.5 }}>
-                        <div className="compose-line-nums" aria-hidden>
-                          {validatorResult.yaml.split('\n').map((_, i) => <span key={i}>{i + 1}</span>)}
+                    {!validatorRunning && validatorResult?.yaml && (() => {
+                      const yamlLines = validatorResult.yaml.split('\n')
+                      return (
+                        <div className="compose-code-wrap" style={{ fontSize: 10.5 }}>
+                          <div className="compose-line-nums" aria-hidden>
+                            {yamlLines.map((_, i) => <span key={i}>{i + 1}</span>)}
+                          </div>
+                          <div className="compose-code-body">
+                            {yamlLines.map((line, i) => <YamlLine key={i} line={line} />)}
+                          </div>
                         </div>
-                        <div className="compose-code-body">
-                          {validatorResult.yaml.split('\n').map((line, i) => <YamlLine key={i} line={line} />)}
-                        </div>
-                      </div>
-                    )}
+                      )
+                    })()}
                   </div>
                 </div>
               )}
@@ -1131,7 +1135,7 @@ export default function ComposeTab({
               })()}
 
               {/* Backup - inline in sidebar */}
-              {backupOpen && backupDir && (
+              {backupOpen && (
                 <div className="compose-sidebar-panel">
                   <div className="compose-sidebar-panel-header">
                     <span>Backup</span>

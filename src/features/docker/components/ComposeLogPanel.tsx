@@ -6,13 +6,14 @@ import * as api from '../api'
 import type { ComposeProject, DockerContainer } from '../types'
 
 interface Props {
-  project:    ComposeProject
-  containers: DockerContainer[]
-  configFile: string
-  onClose:    () => void
+  project:         ComposeProject
+  containers:      DockerContainer[]
+  configFile:      string
+  initialService?: string
+  onClose:         () => void
 }
 
-export default function ComposeLogPanel({ project, containers, configFile, onClose }: Props) {
+export default function ComposeLogPanel({ project, containers, configFile, initialService, onClose }: Props) {
   // Services available for this project
   const services = [...new Set(
     containers
@@ -20,7 +21,9 @@ export default function ComposeLogPanel({ project, containers, configFile, onClo
       .map(c => c.compose_service!)
   )]
 
-  const [enabled,  setEnabled]  = useState<Set<string>>(() => new Set(services))
+  const [enabled,  setEnabled]  = useState<Set<string>>(() =>
+    initialService ? new Set([initialService]) : new Set(services)
+  )
   const [lines,    setLines]    = useState<string[]>([])
   const [paused,   setPaused]   = useState(false)
   const [search,   setSearch]   = useState('')
