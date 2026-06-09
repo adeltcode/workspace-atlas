@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react'
-import { Box, HardDrive, Package, Bot, ArrowRight, Cpu, MemoryStick } from 'lucide-react'
+import { Box, HardDrive, Package, Bot, ArrowRight, Cpu, MemoryStick, Activity } from 'lucide-react'
 import clsx from 'clsx'
-import { useAppStore, type View } from '../store/appStore'
+import { useAppStore, type View, type ActivityModule } from '../store/appStore'
 import { getSystemMetrics, type SystemMetrics } from '../features/system/api'
-import { bytesToHuman } from '../utils/format'
+import { bytesToHuman, timeAgo } from '../utils/format'
+
+const MODULE_ICON: Record<ActivityModule, typeof Box> = {
+  docker: Box, wsl: HardDrive, packages: Package, system: Activity,
+}
 
 const MODULES = [
   {
@@ -63,6 +67,7 @@ function MetricCard({ icon: Icon, label, pct, sub, color }: {
 
 export default function Dashboard() {
   const setActiveView = useAppStore(s => s.setActiveView)
+  const activityLog   = useAppStore(s => s.activityLog)
   const [metrics, setMetrics] = useState<SystemMetrics | null>(null)
 
   // Poll live system metrics every 2 s while the dashboard is mounted.
@@ -144,6 +149,28 @@ export default function Dashboard() {
           </button>
         ))}
       </div>
+
+      <section className="activity-section">
+        <p className="section-label">Recent activity</p>
+        {activityLog.length === 0 ? (
+          <p className="activity-empty">No recent activity yet. Operations you run will appear here.</p>
+        ) : (
+          <ul className="activity-list">
+            {activityLog.slice(0, 8).map(a => {
+              const Icon = MODULE_ICON[a.module]
+              return (
+                <li key={a.id} className="activity-row">
+                  <span className={clsx('activity-dot', `activity-dot--${a.outcome}`)} />
+                  <Icon size={13} className="activity-icon" />
+                  <span className="activity-action">{a.action}</span>
+                  {a.detail && <span className="activity-detail">{a.detail}</span>}
+                  <span className="activity-time">{timeAgo(a.ts)}</span>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </section>
 
       <div className="dashboard-notice">
         <span className="notice-dot" />

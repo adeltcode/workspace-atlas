@@ -15,7 +15,7 @@ const LEVELS = [
 type PruneState = 'idle' | 'previewing' | 'confirming' | 'running' | 'done'
 
 export default function PruneTab({ images: _images, onDone }: { images: DockerImage[]; onDone: () => void }) {
-  const { dockerKeepList, addDockerLog, addTerminalLine } = useAppStore()
+  const { dockerKeepList, addDockerLog, addTerminalLine, addActivity } = useAppStore()
 
   const [selectedLevel, setSelectedLevel] = useState<1 | 2 | 3>(1)
   const [pruneState, setPruneState]       = useState<PruneState>('idle')
@@ -72,6 +72,12 @@ export default function PruneTab({ images: _images, onDone }: { images: DockerIm
     }
 
     addDockerLog({ id: `${startTime}`, timestamp: startTime, level: selectedLevel, dry_run: false, lines, success } satisfies LogEntry)
+    addActivity({
+      module: 'docker',
+      action: `Prune — ${LEVELS[selectedLevel - 1].label}`,
+      outcome: success ? 'success' : 'failure',
+      detail: success && preview.reclaim_bytes > 0 ? `~${preview.reclaim_size} reclaimable` : undefined,
+    })
     setPruneState('done')
     setConfirmText('')
     onDone()

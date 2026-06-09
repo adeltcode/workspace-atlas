@@ -278,10 +278,12 @@ export default function BackupTab({
         addTerminalLine(`─── backing up: ${vol}`, 'info')
         setVolProgress(prev => ({ ...prev, [vol]: { ...prev[vol], status: 'running' } }))
         await api.dockerVolumeBackup(vol, backupDir)
+        useAppStore.getState().addActivity({ module: 'docker', action: 'Volume backup', outcome: 'success', detail: vol })
       }
       await loadBackups(backupDir)
     } catch (e) {
       addTerminalLine(`  ✗ ${String(e)}`, 'error')
+      useAppStore.getState().addActivity({ module: 'docker', action: 'Volume backup', outcome: 'failure', detail: String(e) })
     } finally {
       unlisten(); setIsBacking(false)
       setTimeout(() => setVolProgress({}), 3000)
@@ -309,8 +311,14 @@ export default function BackupTab({
         },
       }))
     })
-    try { await api.dockerVolumeRestore(entry.volume, entry.path) }
-    catch (e) { useAppStore.getState().addTerminalLine(`  ✗ ${String(e)}`, 'error') }
+    try {
+      await api.dockerVolumeRestore(entry.volume, entry.path)
+      useAppStore.getState().addActivity({ module: 'docker', action: 'Volume restore', outcome: 'success', detail: entry.volume })
+    }
+    catch (e) {
+      useAppStore.getState().addActivity({ module: 'docker', action: 'Volume restore', outcome: 'failure', detail: entry.volume })
+      useAppStore.getState().addTerminalLine(`  ✗ ${String(e)}`, 'error')
+    }
     finally {
       unlisten()
       setTimeout(() => setVolProgress(prev => { const n = { ...prev }; delete n[entry.volume]; return n }), 3000)

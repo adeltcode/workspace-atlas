@@ -9,6 +9,24 @@ export type DockerTab = 'overview' | 'images' | 'containers' | 'volumes' | 'netw
 
 const MAX_DOCKER_LOGS    = 10
 const MAX_TERMINAL_LINES = 500
+const MAX_ACTIVITY       = 50
+
+export type ActivityModule  = 'docker' | 'wsl' | 'packages' | 'system'
+export type ActivityOutcome = 'success' | 'failure' | 'dry-run' | 'info'
+
+/** One cross-module operation record for the unified activity log. Lightweight
+ *  by design — a human summary, not full command output (that lives in the
+ *  Terminal / Docker run-log). Every module appends to this. */
+export interface ActivityEntry {
+  id: string
+  ts: number
+  module: ActivityModule
+  /** Short action label, e.g. "Prune — Nuclear", "Volume backup". */
+  action: string
+  outcome: ActivityOutcome
+  /** Optional one-line detail, e.g. "~1.2 GB reclaimed". */
+  detail?: string
+}
 
 export interface DockerCache {
   status: DockerStatus
@@ -99,6 +117,11 @@ interface AppState {
   dockerLogs: LogEntry[]
   addDockerLog: (entry: LogEntry) => void
   clearDockerLogs: () => void
+
+  // ── Unified cross-module activity log (persisted)
+  activityLog: ActivityEntry[]
+  addActivity: (entry: Omit<ActivityEntry, 'id' | 'ts'>) => void
+  clearActivity: () => void
 
   // ── Docker data cache (ephemeral)
   dockerCache: DockerCache | null
@@ -213,6 +236,17 @@ export const useAppStore = create<AppState>()(
       addDockerLog:  (entry) => set((s) => ({ dockerLogs: [entry, ...s.dockerLogs].slice(0, MAX_DOCKER_LOGS) })),
       clearDockerLogs: () => set({ dockerLogs: [] }),
 
+      // ── Unified activity log
+      activityLog: [],
+      addActivity: (entry) =>
+        set((s) => ({
+          activityLog: [
+            { ...entry, id: `${++_lineId}`, ts: Date.now() },
+            ...s.activityLog,
+          ].slice(0, MAX_ACTIVITY),
+        })),
+      clearActivity: () => set({ activityLog: [] }),
+
       // ── Docker cache
       dockerCache: null,
       setDockerCache:   (cache) => set({ dockerCache: cache }),
@@ -260,6 +294,7 @@ export const useAppStore = create<AppState>()(
         backupDir:       s.backupDir,
         dockerKeepList:  s.dockerKeepList,
         dockerLogs:      s.dockerLogs,
+        activityLog:     s.activityLog,
         preferredEditor: s.preferredEditor,
         knownComposeProjects: s.knownComposeProjects,
       }),
