@@ -784,6 +784,72 @@ ul, ol { list-style: none; }
   margin-top: 6px;
 }
 
+/* ── System metrics (live CPU / RAM / disk) ───────────────────────────── */
+.sys-section {
+  margin-bottom: 28px;
+}
+
+.sys-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.sys-card {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+}
+
+.sys-card-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 10px;
+}
+
+.sys-card-icon { color: var(--color-text-tertiary); }
+
+.sys-card-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.sys-card-val {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.sys-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--color-bg-tertiary);
+  overflow: hidden;
+}
+
+.sys-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width var(--transition-slow);
+}
+
+.sys-bar--accent  { background: var(--color-accent); }
+.sys-bar--success { background: var(--color-success); }
+.sys-bar--warning { background: var(--color-warning); }
+
+.sys-card-sub {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
 .module-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);

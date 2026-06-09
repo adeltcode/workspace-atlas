@@ -1,5 +1,6 @@
 mod docker;
 mod shell;
+mod system;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -7,6 +8,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(shell::ShellState(std::sync::Arc::new(std::sync::Mutex::new(None))))
         .manage(docker::ComposeLogState(std::sync::Arc::new(std::sync::Mutex::new(None))))
+        .manage(system::SysState(std::sync::Mutex::new(sysinfo::System::new())))
         .invoke_handler(tauri::generate_handler![
             docker::docker_check,
             docker::launch_docker_desktop,
@@ -54,6 +56,7 @@ pub fn run() {
             docker::compose_logs_stop,
             shell::shell_run,
             shell::shell_kill,
+            system::get_system_metrics,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
