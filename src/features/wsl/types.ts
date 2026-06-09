@@ -85,3 +85,35 @@ export interface DistroExtras {
 export interface MigrateResult {
   backup_tar: string
 }
+
+export interface ServiceInit {
+  is_systemd: boolean
+  pid1: string
+  hint: string | null
+}
+
+export interface Service {
+  name: string
+  enabled_state: string
+  active_state: string
+  sub_state: string
+  description: string
+}
+
+export interface ServiceList {
+  init: ServiceInit
+  services: Service[]
+}
+
+export interface ServiceDetail {
+  id: string
+  description: string
+  load_state: string
+  active_state: string
+  sub_state: string
+  unit_file_state: string
+  fragment_path: string
+  main_pid: string
+  requires: string[]
+  after: string[]
+}

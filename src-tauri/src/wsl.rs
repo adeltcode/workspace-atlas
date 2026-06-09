@@ -1047,6 +1047,212 @@ pub async fn wsl_migrate_distro(
     .map_err(|e| e.to_string())?
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Startup manager (systemd services)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[derive(serde::Serialize, Clone, Default)]
+pub struct ServiceInit {
+    /// True when systemd is pid 1.
+    pub is_systemd: bool,
+    pub pid1: String,
+    /// Setup hint shown when systemd is not the init (None when it is).
+    pub hint: Option<String>,
+}
+
+#[derive(serde::Serialize, Clone, Default)]
+pub struct Service {
+    pub name: String,
+    /// enabled | disabled | static | masked | alias | generated | …
+    pub enabled_state: String,
+    /// active | inactive | failed | activating | …
+    pub active_state: String,
+    /// running | dead | exited | …
+    pub sub_state: String,
+    pub description: String,
+}
+
+#[derive(serde::Serialize, Clone, Default)]
+pub struct ServiceList {
+    pub init: ServiceInit,
+    pub services: Vec<Service>,
+}
+
+const SERVICES_SCRIPT: &str = r#"
+echo "pid1=$(ps -p 1 -o comm= 2>/dev/null)"
+if [ "$(ps -p 1 -o comm= 2>/dev/null)" = "systemd" ]; then
+  echo "@unitfiles"
+  systemctl list-unit-files --type=service --no-legend --no-pager 2>/dev/null
+  echo "@units"
+  systemctl list-units --type=service --all --no-legend --no-pager --plain 2>/dev/null
+fi
+"#;
+
+fn parse_services(out: &str) -> ServiceList {
+    use std::collections::HashMap;
+
+    #[derive(Default)]
+    enum Sec { #[default] Head, UnitFiles, Units }
+    let mut sec = Sec::Head;
+    let mut pid1 = String::new();
+    // name -> (active, sub, description)
+    let mut runtime: HashMap<String, (String, String, String)> = HashMap::new();
+    // (name, enabled_state) preserving order.
+    let mut files: Vec<(String, String)> = Vec::new();
+
+    for line in out.lines() {
+        let line = line.trim_end();
+        match line {
+            "@unitfiles" => { sec = Sec::UnitFiles; continue }
+            "@units" => { sec = Sec::Units; continue }
+            _ => {}
+        }
+        match sec {
+            Sec::Head => {
+                if let Some(v) = line.strip_prefix("pid1=") {
+                    pid1 = v.trim().to_string();
+                }
+            }
+            Sec::UnitFiles => {
+                let mut it = line.split_whitespace();
+                if let (Some(name), Some(state)) = (it.next(), it.next()) {
+                    files.push((name.to_string(), state.to_string()));
+                }
+            }
+            Sec::Units => {
+                let mut it = line.split_whitespace();
+                let name = it.next();
+                let _load = it.next();
+                let active = it.next();
+                let sub = it.next();
+                if let (Some(name), Some(active), Some(sub)) = (name, active, sub) {
+                    let desc = it.collect::<Vec<_>>().join(" ");
+                    runtime.insert(name.to_string(), (active.to_string(), sub.to_string(), desc));
+                }
+            }
+        }
+    }
+
+    let services = files
+        .into_iter()
+        .map(|(name, enabled_state)| {
+            let (active_state, sub_state, description) = runtime
+                .get(&name)
+                .cloned()
+                .unwrap_or_else(|| ("inactive".into(), "dead".into(), String::new()));
+            Service { name, enabled_state, active_state, sub_state, description }
+        })
+        .collect();
+
+    let is_systemd = pid1 == "systemd";
+    let hint = if is_systemd {
+        None
+    } else {
+        Some("systemd is not the init system. Add `[boot] systemd=true` to /etc/wsl.conf, then restart the distro.".to_string())
+    };
+
+    ServiceList { init: ServiceInit { is_systemd, pid1, hint }, services }
+}
+
+/// List a distro's systemd services (enabled + active state). Reads inside the
+/// distro, so it boots a stopped one — the caller gates on user intent.
+#[tauri::command]
+pub async fn wsl_list_services(distro: String) -> Result<ServiceList, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let out = run_in_distro(&distro, SERVICES_SCRIPT)?;
+        Ok(parse_services(&out))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[derive(serde::Serialize, Clone, Default)]
+pub struct ServiceDetail {
+    pub id: String,
+    pub description: String,
+    pub load_state: String,
+    pub active_state: String,
+    pub sub_state: String,
+    pub unit_file_state: String,
+    pub fragment_path: String,
+    pub main_pid: String,
+    pub requires: Vec<String>,
+    pub after: Vec<String>,
+}
+
+fn parse_service_detail(out: &str) -> ServiceDetail {
+    let mut d = ServiceDetail::default();
+    for line in out.lines() {
+        let Some((k, v)) = line.split_once('=') else { continue };
+        let v = v.trim();
+        let split = |s: &str| s.split_whitespace().map(|x| x.to_string()).collect::<Vec<_>>();
+        match k {
+            "Id" => d.id = v.to_string(),
+            "Description" => d.description = v.to_string(),
+            "LoadState" => d.load_state = v.to_string(),
+            "ActiveState" => d.active_state = v.to_string(),
+            "SubState" => d.sub_state = v.to_string(),
+            "UnitFileState" => d.unit_file_state = v.to_string(),
+            "FragmentPath" => d.fragment_path = v.to_string(),
+            "MainPID" => d.main_pid = v.to_string(),
+            "Requires" => d.requires = split(v),
+            "After" => d.after = split(v),
+            _ => {}
+        }
+    }
+    d
+}
+
+/// Detailed status for one service (dependencies, paths, PID).
+#[tauri::command]
+pub async fn wsl_service_detail(distro: String, service: String) -> Result<ServiceDetail, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let script = format!(
+            "systemctl show {} -p Id,Description,LoadState,ActiveState,SubState,UnitFileState,FragmentPath,MainPID,Requires,After 2>/dev/null",
+            shell_quote(&service)
+        );
+        let out = run_in_distro(&distro, &script)?;
+        Ok(parse_service_detail(&out))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Single-quote a string for safe embedding in a bash command.
+fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// Enable or disable a service (`systemctl enable|disable`). Mutating —
+/// the UI confirms first.
+#[tauri::command]
+pub async fn wsl_service_set(
+    app: tauri::AppHandle,
+    distro: String,
+    service: String,
+    enable: bool,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let verb = if enable { "enable" } else { "disable" };
+        emit_line(&app, format!("$ wsl -d {} -u root systemctl {} {}", distro, verb, service), false);
+        // No `2>&1`: systemctl writes its symlink notice to stderr even on success,
+        // which run_in_distro discards; on failure it surfaces stderr as the error.
+        let script = format!("systemctl {} {}", verb, shell_quote(&service));
+        match run_in_distro(&distro, &script) {
+            Ok(_) => {
+                emit_line(&app, format!("  ✓ {}d {}", verb, service), false);
+                Ok(())
+            }
+            Err(e) => {
+                emit_line(&app, format!("  ✗ {}", e), true);
+                Err(e)
+            }
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Minimal byte formatter for terminal lines (mirrors the frontend's bytesToHuman).
 fn bytes_human(b: u64) -> String {
     if b >= 1_000_000_000 {
@@ -1253,6 +1459,42 @@ docker=5
         assert_eq!(e.uptime_secs, 43232);
         assert_eq!(e.package_manager, "dpkg");
         assert_eq!(e.package_count, 1463);
+    }
+
+    #[test]
+    fn parses_services_join() {
+        let sample = "pid1=systemd\n@unitfiles\nssh.service disabled enabled\naccounts-daemon.service enabled enabled\napt-daily.service static -\n@units\naccounts-daemon.service loaded active running Accounts Service\napt-daily.service loaded inactive dead Daily apt download activities\n";
+        let list = parse_services(sample);
+        assert!(list.init.is_systemd);
+        assert!(list.init.hint.is_none());
+        assert_eq!(list.services.len(), 3);
+        let ssh = list.services.iter().find(|s| s.name == "ssh.service").unwrap();
+        assert_eq!(ssh.enabled_state, "disabled");
+        // ssh has no runtime entry → defaults.
+        assert_eq!(ssh.active_state, "inactive");
+        assert_eq!(ssh.sub_state, "dead");
+        let acct = list.services.iter().find(|s| s.name == "accounts-daemon.service").unwrap();
+        assert_eq!(acct.active_state, "active");
+        assert_eq!(acct.sub_state, "running");
+        assert_eq!(acct.description, "Accounts Service");
+    }
+
+    #[test]
+    fn parses_services_non_systemd() {
+        let list = parse_services("pid1=init\n");
+        assert!(!list.init.is_systemd);
+        assert!(list.init.hint.is_some());
+        assert!(list.services.is_empty());
+    }
+
+    #[test]
+    fn parses_service_detail_deps() {
+        let sample = "Id=ssh.service\nRequires=system.slice sysinit.target\nAfter=network.target basic.target\nDescription=OpenBSD Secure Shell server\nActiveState=inactive\nUnitFileState=disabled\nMainPID=0\n";
+        let d = parse_service_detail(sample);
+        assert_eq!(d.id, "ssh.service");
+        assert_eq!(d.requires, vec!["system.slice", "sysinit.target"]);
+        assert_eq!(d.after.len(), 2);
+        assert_eq!(d.unit_file_state, "disabled");
     }
 
     #[test]

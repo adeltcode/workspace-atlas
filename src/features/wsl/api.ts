@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { WslStatus, WslDistro, WslConfig, OptimizeResult, ExportResult, WslConfigBackup, DistroMetrics, DistroExtras, MigrateResult } from './types'
+import type { WslStatus, WslDistro, WslConfig, OptimizeResult, ExportResult, WslConfigBackup, DistroMetrics, DistroExtras, MigrateResult, ServiceList, ServiceDetail } from './types'
 
 export const wslCheck       = () => invoke<WslStatus>('wsl_check')
 export const wslListDistros = () => invoke<WslDistro[]>('wsl_list_distros')
@@ -10,6 +10,12 @@ export const wslCloneDistro = (source: string, newName: string, installDir: stri
   invoke<void>('wsl_clone_distro', { source, newName, installDir })
 export const wslMigrateDistro = (distro: string, newDir: string, wasDefault: boolean) =>
   invoke<MigrateResult>('wsl_migrate_distro', { distro, newDir, wasDefault })
+
+export const wslListServices  = (distro: string) => invoke<ServiceList>('wsl_list_services', { distro })
+export const wslServiceDetail = (distro: string, service: string) =>
+  invoke<ServiceDetail>('wsl_service_detail', { distro, service })
+export const wslServiceSet    = (distro: string, service: string, enable: boolean) =>
+  invoke<void>('wsl_service_set', { distro, service, enable })
 
 export const readWslConfig  = () => invoke<WslConfig>('read_wslconfig')
 export const writeWslConfig = (content: string) => invoke<void>('write_wslconfig', { content })
