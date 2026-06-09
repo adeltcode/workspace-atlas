@@ -144,7 +144,7 @@ export default function WslConfigTab({ runningNames, onAfterShutdown }: {
         <div className="modal-overlay">
           <div className="modal">
             <div className="modal-header">
-              <div className="modal-icon-wrap danger"><AlertTriangle size={16} /></div>
+              <div className="modal-icon-wrap warning"><AlertTriangle size={16} /></div>
               <h2 className="modal-title">Restart WSL?</h2>
             </div>
             <p className="modal-body">
@@ -155,7 +155,7 @@ export default function WslConfigTab({ runningNames, onAfterShutdown }: {
             </p>
             <div className="modal-actions">
               <button className="btn-secondary" onClick={() => setConfirmRestart(false)}>Cancel</button>
-              <button className="btn-filled btn-filled--danger" onClick={restart}>Shut down WSL</button>
+              <button className="btn-filled btn-filled--accent" onClick={restart}>Shut down WSL</button>
             </div>
           </div>
         </div>

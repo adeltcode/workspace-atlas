@@ -183,8 +183,6 @@ export default function WslView() {
       {available && tab === 'distros' && distros.length > 0 && (
         <>
           <div className="wsl-summary">
-            <span>{distros.length} distribution{distros.length !== 1 ? 's' : ''}</span>
-            <span className="wsl-summary-sep">·</span>
             <span>{bytesToHuman(totalVhd)} total on disk</span>
             <button className="btn-secondary wsl-import-btn" onClick={() => { setImportErr(null); setShowImport(true) }}>
               <Upload size={13} /> Import distro
@@ -238,20 +236,16 @@ export default function WslView() {
                     {exportName === d.name ? 'Exporting…' : 'Export'}
                   </button>
                   {d.version === 2 && d.vhd_path && (
-                    <>
-                      <button
-                        className="btn-secondary wsl-optimize-btn"
-                        onClick={() => setConfirmOpt(d)}
-                        disabled={optName !== null || exportName !== null}
-                        title="Compact the virtual disk (requires admin)"
-                      >
-                        <Zap size={12} />
-                        {optName === d.name ? 'Optimizing…' : 'Optimize'}
-                      </button>
-                      <span className="wsl-optimize-shield" title="Requires administrator approval">
-                        <ShieldAlert size={12} />
-                      </span>
-                    </>
+                    <button
+                      className="btn-secondary wsl-optimize-btn"
+                      onClick={() => setConfirmOpt(d)}
+                      disabled={optName !== null || exportName !== null}
+                      title="Compact the virtual disk — requires administrator approval"
+                    >
+                      <Zap size={12} />
+                      {optName === d.name ? 'Optimizing…' : 'Optimize'}
+                      <ShieldAlert size={11} className="btn-admin-badge" />
+                    </button>
                   )}
                 </div>
 
@@ -286,7 +280,7 @@ export default function WslView() {
         <div className="modal-overlay">
           <div className="modal">
             <div className="modal-header">
-              <div className="modal-icon-wrap danger"><ShieldAlert size={16} /></div>
+              <div className="modal-icon-wrap warning"><ShieldAlert size={16} /></div>
               <h2 className="modal-title">Optimize {confirmOpt.name}?</h2>
             </div>
             <p className="modal-body">

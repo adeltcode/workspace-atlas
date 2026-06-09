@@ -44,10 +44,20 @@ const MODULES = [
   },
 ] as const
 
+type BarColor = 'accent' | 'success' | 'warning' | 'danger'
+
+/** Colour a saturation gauge by severity: neutral until it gets full, then
+ *  amber, then red. Keeps colour meaningful instead of merely categorical. */
+function levelColor(pct: number): BarColor {
+  if (pct >= 90) return 'danger'
+  if (pct >= 75) return 'warning'
+  return 'accent'
+}
+
 /** A labelled usage bar (CPU, memory, or a disk). */
 function MetricCard({ icon: Icon, label, pct, sub, color }: {
   icon: typeof Cpu; label: string; pct: number | null; sub?: string
-  color: 'accent' | 'success' | 'warning'
+  color: BarColor
 }) {
   const width = pct === null ? 0 : Math.min(100, Math.max(0, pct))
   return (
@@ -100,6 +110,7 @@ export default function Dashboard() {
             icon={Cpu}
             label="CPU"
             pct={metrics ? metrics.cpu_pct : null}
+            sub={metrics ? `${metrics.cpu_count} logical cores` : undefined}
             color="accent"
           />
           <MetricCard
@@ -107,7 +118,7 @@ export default function Dashboard() {
             label="Memory"
             pct={memPct}
             sub={metrics ? `${bytesToHuman(metrics.mem_used_bytes)} / ${bytesToHuman(metrics.mem_total_bytes)}` : undefined}
-            color="success"
+            color={memPct === null ? 'accent' : levelColor(memPct)}
           />
           {(metrics?.disks ?? []).map(d => {
             const used = d.total_bytes - d.free_bytes
@@ -119,7 +130,7 @@ export default function Dashboard() {
                 label={d.mount.replace(/\\$/, '')}
                 pct={pct}
                 sub={`${bytesToHuman(d.free_bytes)} free of ${bytesToHuman(d.total_bytes)}`}
-                color="warning"
+                color={pct === null ? 'accent' : levelColor(pct)}
               />
             )
           })}

@@ -10,6 +10,8 @@ export interface DiskInfo {
 export interface SystemMetrics {
   /** Global CPU usage since the previous poll (0–100). */
   cpu_pct: number
+  /** Number of logical CPUs. */
+  cpu_count: number
   mem_used_bytes: number
   mem_total_bytes: number
   disks: DiskInfo[]

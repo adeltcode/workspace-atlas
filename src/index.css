@@ -791,7 +791,9 @@ ul, ol { list-style: none; }
 
 .sys-metrics {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  /* minmax(178px) lets all five gauges (CPU, memory, and up to three disks)
+     sit on one row at the default window width instead of orphaning the last. */
+  grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
   gap: 12px;
   margin-top: 12px;
 }
@@ -842,6 +844,7 @@ ul, ol { list-style: none; }
 .sys-bar--accent  { background: var(--color-accent); }
 .sys-bar--success { background: var(--color-success); }
 .sys-bar--warning { background: var(--color-warning); }
+.sys-bar--danger  { background: var(--color-danger); }
 
 .sys-card-sub {
   margin-top: 8px;
@@ -1261,7 +1264,14 @@ ul, ol { list-style: none; }
 .btn-filled--warning { background: var(--color-warning); }
 .btn-filled--danger  { background: var(--color-danger); }
 .btn-filled:hover:not(:disabled) { filter: brightness(1.1); }
-.btn-filled:disabled { opacity: 0.5; cursor: not-allowed; }
+/* Disabled filled buttons read as clearly inert — a neutral grey, not a faded
+   primary colour that still looks clickable. */
+.btn-filled:disabled {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-tertiary);
+  cursor: not-allowed;
+  filter: none;
+}
 
 .btn-icon {
   display: flex; align-items: center; justify-content: center;
@@ -2171,7 +2181,8 @@ ul, ol { list-style: none; }
   justify-content: center;
   flex-shrink: 0;
 }
-.modal-icon-wrap.danger { background: var(--color-danger-subtle); color: var(--color-danger); }
+.modal-icon-wrap.danger  { background: var(--color-danger-subtle); color: var(--color-danger); }
+.modal-icon-wrap.warning { background: var(--color-warning-subtle); color: var(--color-warning); }
 
 /* =============================================================
    Global interactive polish
@@ -7704,7 +7715,9 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   margin-top: 12px;
 }
 .wsl-optimize-btn { padding: 6px 12px; font-size: 12px; }
-.wsl-optimize-shield { color: var(--color-warning); display: inline-flex; }
+/* Admin-required indicator folded into the button, so the meaning is attached
+   to the action rather than floating beside it as a bare glyph. */
+.btn-admin-badge { color: var(--color-warning); margin-left: 2px; }
 
 .wsl-opt-progress {
   margin-top: 10px;
