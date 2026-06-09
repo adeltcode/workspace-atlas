@@ -1,19 +1,28 @@
 import { useCallback, useEffect, useState } from 'react'
-import { HardDrive, RefreshCw, FolderOpen, Star, Disc3, Boxes, Settings2 } from 'lucide-react'
+import { HardDrive, RefreshCw, FolderOpen, Star, Disc3, Boxes, Settings2, Zap, ShieldAlert } from 'lucide-react'
 import clsx from 'clsx'
+import { useAppStore } from '../store/appStore'
 import * as api from '../features/wsl/api'
-import type { WslStatus, WslDistro } from '../features/wsl/types'
+import type { WslStatus, WslDistro, OptimizeResult } from '../features/wsl/types'
 import { bytesToHuman } from '../utils/format'
 import WslConfigTab from '../features/wsl/components/WslConfigTab'
 
 type WslTab = 'distros' | 'config'
 
 export default function WslView() {
+  const addActivity = useAppStore(s => s.addActivity)
+
   const [status, setStatus]   = useState<WslStatus | null>(null)
   const [distros, setDistros] = useState<WslDistro[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState<string | null>(null)
   const [tab, setTab]         = useState<WslTab>('distros')
+
+  // ── VHD optimization (per distro) ────────────────────────────────────────
+  const [confirmOpt, setConfirmOpt] = useState<WslDistro | null>(null)
+  const [optName, setOptName]       = useState<string | null>(null)
+  const [optResults, setOptResults] = useState<Record<string, OptimizeResult>>({})
+  const [optError, setOptError]     = useState<Record<string, string>>({})
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -34,6 +43,23 @@ export default function WslView() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  const runOptimize = async (d: WslDistro) => {
+    setConfirmOpt(null)
+    setOptName(d.name)
+    setOptError(prev => { const n = { ...prev }; delete n[d.name]; return n })
+    try {
+      const r = await api.wslOptimizeVhd(d.vhd_path)
+      setOptResults(prev => ({ ...prev, [d.name]: r }))
+      addActivity({ module: 'wsl', action: `Optimized ${d.name}`, outcome: 'success', detail: `reclaimed ${bytesToHuman(r.reclaimed_bytes)}` })
+      await load()
+    } catch (e) {
+      setOptError(prev => ({ ...prev, [d.name]: String(e) }))
+      addActivity({ module: 'wsl', action: `Optimized ${d.name}`, outcome: 'failure', detail: String(e) })
+    } finally {
+      setOptName(null)
+    }
+  }
 
   const available  = status?.available ?? false
   const totalVhd   = distros.reduce((sum, d) => sum + d.vhd_size_bytes, 0)
@@ -150,10 +176,66 @@ export default function WslView() {
                     <span className="wsl-distro-path-text">{d.vhd_path}</span>
                   </button>
                 )}
+
+                {d.version === 2 && d.vhd_path && (
+                  <div className="wsl-distro-actions">
+                    <button
+                      className="btn-secondary wsl-optimize-btn"
+                      onClick={() => setConfirmOpt(d)}
+                      disabled={optName !== null}
+                      title="Compact the virtual disk (requires admin)"
+                    >
+                      <Zap size={12} />
+                      {optName === d.name ? 'Optimizing…' : 'Optimize'}
+                    </button>
+                    <span className="wsl-optimize-shield" title="Requires administrator approval">
+                      <ShieldAlert size={12} />
+                    </span>
+                  </div>
+                )}
+
+                {optName === d.name && (
+                  <p className="wsl-opt-progress">Approve the UAC prompt to compact the disk…</p>
+                )}
+                {optResults[d.name] && optName !== d.name && (
+                  <p className="wsl-opt-result">
+                    Reclaimed {bytesToHuman(optResults[d.name].reclaimed_bytes)}
+                    <span className="wsl-opt-delta">
+                      {' '}({bytesToHuman(optResults[d.name].before_bytes)} → {bytesToHuman(optResults[d.name].after_bytes)} · {optResults[d.name].method})
+                    </span>
+                  </p>
+                )}
+                {optError[d.name] && optName !== d.name && (
+                  <p className="wsl-opt-error">{optError[d.name]}</p>
+                )}
               </div>
             ))}
           </div>
         </>
+      )}
+
+      {confirmOpt && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-header">
+              <div className="modal-icon-wrap danger"><ShieldAlert size={16} /></div>
+              <h2 className="modal-title">Optimize {confirmOpt.name}?</h2>
+            </div>
+            <p className="modal-body">
+              This compacts <code>ext4.vhdx</code> to reclaim unused space. It shuts down
+              <strong> all WSL distributions</strong> and requires <strong>administrator approval</strong>.
+              {runningCnt > 0
+                ? <> Running now: <strong>{distros.filter(d => d.running).map(d => d.name).join(', ')}</strong>.</>
+                : ' No distributions are currently running.'}
+            </p>
+            <div className="modal-actions">
+              <button className="btn-secondary" onClick={() => setConfirmOpt(null)}>Cancel</button>
+              <button className="btn-filled btn-filled--accent" onClick={() => runOptimize(confirmOpt)}>
+                <Zap size={13} /> Optimize
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

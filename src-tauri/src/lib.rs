@@ -66,6 +66,7 @@ pub fn run() {
             wsl::read_wslconfig,
             wsl::write_wslconfig,
             wsl::wsl_shutdown,
+            wsl::wsl_optimize_vhd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

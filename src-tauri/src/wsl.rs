@@ -1,5 +1,18 @@
 use std::process::Command;
 
+use tauri::Emitter;
+
+/// Emitted as a `shell-out` event so the bottom terminal shows the real commands.
+#[derive(serde::Serialize, Clone)]
+struct ShellOut {
+    text: String,
+    stderr: bool,
+}
+
+fn emit_line(app: &tauri::AppHandle, text: impl Into<String>, stderr: bool) {
+    app.emit("shell-out", ShellOut { text: text.into(), stderr }).ok();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
@@ -79,6 +92,158 @@ pub async fn wsl_shutdown() -> Result<(), String> {
         Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
     }
 }
+
+#[derive(serde::Serialize, Clone)]
+pub struct OptimizeResult {
+    pub before_bytes: u64,
+    pub after_bytes: u64,
+    pub reclaimed_bytes: u64,
+    /// Which backend ran: "Optimize-VHD" (Hyper-V) or "diskpart".
+    pub method: String,
+}
+
+/// Escape a string for embedding inside a single-quoted PowerShell literal.
+fn ps_single_quote(s: &str) -> String {
+    s.replace('\'', "''")
+}
+
+/// Compact a distro's ext4.vhdx, reclaiming unused space. Requires admin, so a
+/// single elevated PowerShell child is spawned via UAC (the app stays
+/// unprivileged). The child shuts WSL down, then prefers `Optimize-VHD -Mode
+/// Full` and falls back to `diskpart compact vdisk` on editions without Hyper-V.
+///
+/// The before/after sizes are measured by the unprivileged parent (the VHD is
+/// user-readable); the elevated child only reports success/failure and method
+/// via a temp file, since output cannot cross the integrity boundary.
+#[tauri::command]
+pub async fn wsl_optimize_vhd(
+    app: tauri::AppHandle,
+    vhd_path: String,
+) -> Result<OptimizeResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let before = std::fs::metadata(&vhd_path)
+            .map(|m| m.len())
+            .map_err(|e| format!("Cannot read VHD '{}': {}", vhd_path, e))?;
+
+        let tmp = std::env::temp_dir();
+        let script_path = tmp.join("atlas_wsl_optimize.ps1");
+        let result_path = tmp.join("atlas_wsl_optimize_result.txt");
+        let script_str = script_path.to_string_lossy().to_string();
+        let result_str = result_path.to_string_lossy().to_string();
+
+        // Stale result from a previous run would be misread — remove it first.
+        std::fs::remove_file(&result_path).ok();
+
+        // Inner script runs elevated. Placeholders avoid format! brace-escaping.
+        let inner = INNER_OPTIMIZE_PS
+            .replace("__VHD__", &ps_single_quote(&vhd_path))
+            .replace("__OUT__", &ps_single_quote(&result_str));
+        std::fs::write(&script_path, inner)
+            .map_err(|e| format!("Cannot write optimize script: {}", e))?;
+
+        emit_line(&app, format!("# Optimizing {} — administrator approval required", vhd_path), false);
+        emit_line(&app, "$ wsl --shutdown", false);
+
+        // Outer (unprivileged) launches the elevated child and waits for it.
+        let outer = format!(
+            "try {{ $p = Start-Process powershell -Verb RunAs -Wait -PassThru -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File \"{}\"'; exit $p.ExitCode }} catch {{ exit 1223 }}",
+            ps_single_quote(&script_str)
+        );
+
+        let status = Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &outer])
+            .status()
+            .map_err(|e| format!("Failed to request elevation: {}", e))?;
+
+        std::fs::remove_file(&script_path).ok();
+
+        if status.code() == Some(1223) {
+            emit_line(&app, "  ✗ administrator access was cancelled", true);
+            return Err("Administrator access was cancelled.".to_string());
+        }
+
+        let result = std::fs::read_to_string(&result_path).unwrap_or_default();
+        std::fs::remove_file(&result_path).ok();
+
+        if let Some(err) = result.lines().find_map(|l| l.strip_prefix("error=")) {
+            emit_line(&app, format!("  ✗ {}", err.trim()), true);
+            return Err(err.trim().to_string());
+        }
+
+        let method = result
+            .lines()
+            .find_map(|l| l.strip_prefix("method="))
+            .map(|s| s.trim().to_string())
+            .ok_or_else(|| "Optimization did not complete (no result was reported).".to_string())?;
+
+        let after = std::fs::metadata(&vhd_path).map(|m| m.len()).unwrap_or(before);
+        let reclaimed = before.saturating_sub(after);
+
+        let cmd = if method == "Optimize-VHD" {
+            format!("Optimize-VHD -Path \"{}\" -Mode Full", vhd_path)
+        } else {
+            format!("diskpart: select/attach/compact/detach \"{}\"", vhd_path)
+        };
+        emit_line(&app, format!("$ {}", cmd), false);
+        emit_line(
+            &app,
+            format!(
+                "  ✓ reclaimed {} ({} → {})",
+                bytes_human(reclaimed),
+                bytes_human(before),
+                bytes_human(after)
+            ),
+            false,
+        );
+
+        Ok(OptimizeResult { before_bytes: before, after_bytes: after, reclaimed_bytes: reclaimed, method })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Minimal byte formatter for terminal lines (mirrors the frontend's bytesToHuman).
+fn bytes_human(b: u64) -> String {
+    if b >= 1_000_000_000 {
+        format!("{:.2} GB", b as f64 / 1e9)
+    } else if b >= 1_000_000 {
+        format!("{:.1} MB", b as f64 / 1e6)
+    } else if b >= 1_000 {
+        format!("{:.0} kB", b as f64 / 1e3)
+    } else {
+        format!("{} B", b)
+    }
+}
+
+const INNER_OPTIMIZE_PS: &str = r#"$ErrorActionPreference='Stop'
+$vhd='__VHD__'
+$out='__OUT__'
+try {
+  wsl.exe --shutdown
+  Start-Sleep -Seconds 2
+  if (Get-Command Optimize-VHD -ErrorAction SilentlyContinue) {
+    Optimize-VHD -Path $vhd -Mode Full
+    'method=Optimize-VHD' | Out-File -FilePath $out -Encoding utf8
+  } else {
+    $lines = @(
+      'select vdisk file="' + $vhd + '"',
+      'attach vdisk readonly',
+      'compact vdisk',
+      'detach vdisk',
+      'exit'
+    )
+    $dpFile = [System.IO.Path]::GetTempFileName()
+    $lines | Out-File -FilePath $dpFile -Encoding ascii
+    $r = & diskpart /s $dpFile 2>&1 | Out-String
+    Remove-Item $dpFile -Force
+    if ($LASTEXITCODE -ne 0) { throw ('diskpart failed: ' + $r) }
+    'method=diskpart' | Out-File -FilePath $out -Encoding utf8
+  }
+} catch {
+  ('error=' + $_.Exception.Message) | Out-File -FilePath $out -Encoding utf8
+  exit 1
+}
+"#;
 
 /// Report whether WSL is installed (is `wsl.exe` resolvable on PATH).
 #[tauri::command]

@@ -7696,3 +7696,34 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   color: var(--color-text-tertiary);
 }
 
+/* ── WSL VHD optimize ─────────────────────────────────────────────────── */
+.wsl-distro-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.wsl-optimize-btn { padding: 6px 12px; font-size: 12px; }
+.wsl-optimize-shield { color: var(--color-warning); display: inline-flex; }
+
+.wsl-opt-progress {
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--color-accent-hover);
+}
+.wsl-opt-result {
+  margin-top: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-success);
+}
+.wsl-opt-delta {
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+}
+.wsl-opt-error {
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--color-danger);
+}
+

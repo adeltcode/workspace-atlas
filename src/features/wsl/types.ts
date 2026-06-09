@@ -20,3 +20,11 @@ export interface WslConfig {
   content: string
   exists: boolean
 }
+
+export interface OptimizeResult {
+  before_bytes: number
+  after_bytes: number
+  reclaimed_bytes: number
+  /** "Optimize-VHD" or "diskpart". */
+  method: string
+}
