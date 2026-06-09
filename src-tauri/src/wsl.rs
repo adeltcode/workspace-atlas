@@ -1,4 +1,4 @@
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use tauri::Emitter;
 
@@ -76,6 +76,255 @@ pub async fn read_wslconfig() -> Result<WslConfig, String> {
 pub async fn write_wslconfig(content: String) -> Result<(), String> {
     let path = wslconfig_path()?;
     std::fs::write(&path, content).map_err(|e| format!("Cannot write .wslconfig: {}", e))
+}
+
+// ── .wslconfig backup / restore ────────────────────────────────────────────────
+
+#[derive(serde::Serialize, Clone)]
+pub struct WslConfigBackup {
+    pub filename: String,
+    pub path: String,
+    pub size_bytes: u64,
+    /// Unix timestamp (seconds), parsed from the filename.
+    pub created_at: i64,
+}
+
+fn wslconfig_backup_dir(root: &str) -> String {
+    format!("{}/wsl/wslconfig", root.replace('\\', "/"))
+}
+
+/// List `.wslconfig` backups under `{root}/wsl/wslconfig`, most-recent first.
+fn list_wslconfig_backups_sync(root: &str) -> Vec<WslConfigBackup> {
+    let dir = wslconfig_backup_dir(root);
+    let mut out: Vec<WslConfigBackup> = match std::fs::read_dir(&dir) {
+        Ok(rd) => rd
+            .flatten()
+            .filter_map(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                let ts = name.strip_prefix("wslconfig_")?.strip_suffix(".conf")?;
+                let created_at = ts.parse::<i64>().ok()?;
+                let size_bytes = e.metadata().map(|m| m.len()).unwrap_or(0);
+                Some(WslConfigBackup {
+                    filename: name,
+                    path: e.path().to_string_lossy().to_string(),
+                    size_bytes,
+                    created_at,
+                })
+            })
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+    out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    out
+}
+
+/// Snapshot the current `.wslconfig` to `{root}/wsl/wslconfig/wslconfig_{ts}.conf`.
+/// Skips writing a duplicate if the newest backup is byte-identical. Keeps the 20
+/// most recent. Errors if `.wslconfig` does not exist yet.
+#[tauri::command]
+pub async fn wslconfig_backup(backup_dir: String) -> Result<WslConfigBackup, String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let src = wslconfig_path()?;
+    let content = std::fs::read_to_string(&src)
+        .map_err(|e| format!("Cannot read .wslconfig: {}", e))?;
+
+    // De-dup against the most recent backup.
+    let existing = list_wslconfig_backups_sync(&backup_dir);
+    if let Some(latest) = existing.first() {
+        if std::fs::read_to_string(&latest.path).ok().as_deref() == Some(content.as_str()) {
+            return Ok(latest.clone());
+        }
+    }
+
+    let dir = wslconfig_backup_dir(&backup_dir);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Cannot create backup dir: {}", e))?;
+
+    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+    let filename = format!("wslconfig_{}.conf", ts);
+    let path = format!("{}/{}", dir, filename);
+    std::fs::write(&path, &content).map_err(|e| format!("Cannot write backup: {}", e))?;
+
+    // Prune to the 20 most recent.
+    for stale in list_wslconfig_backups_sync(&backup_dir).into_iter().skip(20) {
+        std::fs::remove_file(&stale.path).ok();
+    }
+
+    Ok(WslConfigBackup {
+        filename,
+        path,
+        size_bytes: content.len() as u64,
+        created_at: ts as i64,
+    })
+}
+
+/// List all `.wslconfig` backups, most-recent first.
+#[tauri::command]
+pub async fn wslconfig_list_backups(backup_dir: String) -> Result<Vec<WslConfigBackup>, String> {
+    Ok(list_wslconfig_backups_sync(&backup_dir))
+}
+
+/// Restore a backup over `.wslconfig`, returning the restored content so the UI
+/// can refresh. Changes take effect after `wsl --shutdown`.
+#[tauri::command]
+pub async fn wslconfig_restore(backup_path: String) -> Result<String, String> {
+    let dest = wslconfig_path()?;
+    let content = std::fs::read_to_string(&backup_path)
+        .map_err(|e| format!("Cannot read backup: {}", e))?;
+    std::fs::write(&dest, &content).map_err(|e| format!("Cannot write .wslconfig: {}", e))?;
+    Ok(content)
+}
+
+/// Delete a single `.wslconfig` backup.
+#[tauri::command]
+pub async fn wslconfig_delete_backup(backup_path: String) -> Result<(), String> {
+    if std::path::Path::new(&backup_path).exists() {
+        std::fs::remove_file(&backup_path)
+            .map_err(|e| format!("Cannot delete backup: {}", e))?;
+    }
+    Ok(())
+}
+
+// ── /etc/wsl.conf (per-distro) read / write / backup / restore ──────────────────
+//
+// wsl.conf lives inside the distro's Linux filesystem. Reading boots the distro;
+// writing needs root inside it (`wsl -u root tee`) — no Windows UAC. WSL_UTF8
+// keeps output readable.
+
+/// Read `/etc/wsl.conf` from a distro. A missing file is reported, not an error.
+#[tauri::command]
+pub async fn read_wsl_conf(distro: String) -> Result<WslConfig, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let display_path = format!("\\\\wsl.localhost\\{}\\etc\\wsl.conf", distro);
+        let out = Command::new("wsl")
+            .env("WSL_UTF8", "1")
+            .args(["-d", &distro, "-u", "root", "cat", "/etc/wsl.conf"])
+            .output()
+            .map_err(|e| format!("Failed to read wsl.conf: {}", e))?;
+        if out.status.success() {
+            Ok(WslConfig { path: display_path, content: String::from_utf8_lossy(&out.stdout).to_string(), exists: true })
+        } else {
+            // Missing file (or unreadable) — present an empty editor.
+            Ok(WslConfig { path: display_path, content: String::new(), exists: false })
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Write `/etc/wsl.conf` inside a distro as root. Takes effect after `wsl --shutdown`.
+#[tauri::command]
+pub async fn write_wsl_conf(distro: String, content: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        use std::io::Write as _;
+        let mut child = Command::new("wsl")
+            .env("WSL_UTF8", "1")
+            .args(["-d", &distro, "-u", "root", "tee", "/etc/wsl.conf"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Failed to write wsl.conf: {}", e))?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(content.as_bytes()).map_err(|e| format!("Write error: {}", e))?;
+        }
+        let out = child.wait_with_output().map_err(|e| e.to_string())?;
+        if out.status.success() {
+            Ok(())
+        } else {
+            Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Filesystem-safe form of a distro name for use in a backup filename.
+fn safe_name(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '_') { c } else { '_' })
+        .collect()
+}
+
+fn wslconf_backup_dir(root: &str) -> String {
+    format!("{}/wsl/wslconf", root.replace('\\', "/"))
+}
+
+fn list_wslconf_backups_sync(root: &str, distro: &str) -> Vec<WslConfigBackup> {
+    let dir = wslconf_backup_dir(root);
+    let prefix = format!("{}_", safe_name(distro));
+    let mut out: Vec<WslConfigBackup> = match std::fs::read_dir(&dir) {
+        Ok(rd) => rd
+            .flatten()
+            .filter_map(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                let ts = name.strip_prefix(&prefix)?.strip_suffix(".conf")?;
+                let created_at = ts.parse::<i64>().ok()?;
+                let size_bytes = e.metadata().map(|m| m.len()).unwrap_or(0);
+                Some(WslConfigBackup { filename: name, path: e.path().to_string_lossy().to_string(), size_bytes, created_at })
+            })
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+    out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    out
+}
+
+/// Snapshot a distro's `/etc/wsl.conf` to `{root}/wsl/wslconf/{distro}_{ts}.conf`.
+/// De-dups against the newest backup; keeps the 20 most recent per distro.
+#[tauri::command]
+pub async fn wsl_conf_backup(distro: String, backup_dir: String) -> Result<WslConfigBackup, String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let current = read_wsl_conf(distro.clone()).await?;
+    if !current.exists {
+        return Err("No wsl.conf to back up yet.".to_string());
+    }
+
+    let existing = list_wslconf_backups_sync(&backup_dir, &distro);
+    if let Some(latest) = existing.first() {
+        if std::fs::read_to_string(&latest.path).ok().as_deref() == Some(current.content.as_str()) {
+            return Ok(latest.clone());
+        }
+    }
+
+    let dir = wslconf_backup_dir(&backup_dir);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Cannot create backup dir: {}", e))?;
+    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+    let filename = format!("{}_{}.conf", safe_name(&distro), ts);
+    let path = format!("{}/{}", dir, filename);
+    std::fs::write(&path, &current.content).map_err(|e| format!("Cannot write backup: {}", e))?;
+
+    for stale in list_wslconf_backups_sync(&backup_dir, &distro).into_iter().skip(20) {
+        std::fs::remove_file(&stale.path).ok();
+    }
+
+    Ok(WslConfigBackup { filename, path, size_bytes: current.content.len() as u64, created_at: ts as i64 })
+}
+
+/// List a distro's wsl.conf backups, most-recent first.
+#[tauri::command]
+pub async fn wsl_conf_list_backups(distro: String, backup_dir: String) -> Result<Vec<WslConfigBackup>, String> {
+    Ok(list_wslconf_backups_sync(&backup_dir, &distro))
+}
+
+/// Restore a backup into a distro's `/etc/wsl.conf`, returning the restored content.
+#[tauri::command]
+pub async fn wsl_conf_restore(distro: String, backup_path: String) -> Result<String, String> {
+    let content = std::fs::read_to_string(&backup_path)
+        .map_err(|e| format!("Cannot read backup: {}", e))?;
+    write_wsl_conf(distro, content.clone()).await?;
+    Ok(content)
+}
+
+/// Delete a single wsl.conf backup.
+#[tauri::command]
+pub async fn wsl_conf_delete_backup(backup_path: String) -> Result<(), String> {
+    if std::path::Path::new(&backup_path).exists() {
+        std::fs::remove_file(&backup_path)
+            .map_err(|e| format!("Cannot delete backup: {}", e))?;
+    }
+    Ok(())
 }
 
 /// Shut down all running distros (`wsl --shutdown`) so .wslconfig changes apply.

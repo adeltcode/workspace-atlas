@@ -33,3 +33,11 @@ export interface ExportResult {
   path: string
   size_bytes: number
 }
+
+export interface WslConfigBackup {
+  filename: string
+  path: string
+  size_bytes: number
+  /** Unix timestamp (seconds). */
+  created_at: number
+}

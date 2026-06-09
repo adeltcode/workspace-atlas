@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
-import { HardDrive, RefreshCw, FolderOpen, Star, Disc3, Boxes, Settings2, Zap, ShieldAlert, Download, Upload, X } from 'lucide-react'
+import { HardDrive, RefreshCw, FolderOpen, Star, Disc3, Boxes, Settings2, FileCog, Zap, ShieldAlert, Download, Upload, X } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../store/appStore'
 import * as api from '../features/wsl/api'
 import type { WslStatus, WslDistro, OptimizeResult } from '../features/wsl/types'
 import { bytesToHuman } from '../utils/format'
 import WslConfigTab from '../features/wsl/components/WslConfigTab'
+import WslConfTab from '../features/wsl/components/WslConfTab'
 
-type WslTab = 'distros' | 'config'
+type WslTab = 'distros' | 'config' | 'conf'
 
 export default function WslView() {
   const addActivity = useAppStore(s => s.addActivity)
@@ -164,11 +165,22 @@ export default function WslView() {
           <button className={clsx('wsl-tab', tab === 'config' && 'active')} onClick={() => setTab('config')}>
             <Settings2 size={13} /> .wslconfig
           </button>
+          <button className={clsx('wsl-tab', tab === 'conf' && 'active')} onClick={() => setTab('conf')}>
+            <FileCog size={13} /> wsl.conf
+          </button>
         </div>
       )}
 
       {available && tab === 'config' && (
         <WslConfigTab
+          runningNames={distros.filter(d => d.running).map(d => d.name)}
+          onAfterShutdown={load}
+        />
+      )}
+
+      {available && tab === 'conf' && (
+        <WslConfTab
+          distros={distros}
           runningNames={distros.filter(d => d.running).map(d => d.name)}
           onAfterShutdown={load}
         />
