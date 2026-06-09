@@ -1,4 +1,4 @@
-import { LayoutDashboard, Box, HardDrive, Package, Bot, Settings } from 'lucide-react'
+import { LayoutDashboard, Box, HardDrive, Package, Bot, Settings, FileText, FileCode2, FileKey } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore, type View, type DockerTab } from '../store/appStore'
 import { composeStatusLabel } from '../utils/format'
@@ -36,6 +36,8 @@ export default function Sidebar() {
   const dockerBadges         = useAppStore(s => s.dockerBadges)
   const composeProjectsNav   = useAppStore(s => s.composeProjectsNav)
   const composeActiveProject = useAppStore(s => s.composeActiveProject)
+  const composeFilesNav      = useAppStore(s => s.composeFilesNav)
+  const composeActiveFilePath = useAppStore(s => s.composeActiveFilePath)
 
   const goDockerTab = (id: DockerTab) => {
     setActiveView('docker')
@@ -53,6 +55,12 @@ export default function Sidebar() {
     setDockerTab('compose')
     useAppStore.getState().setComposeShowOverview(true)
     useAppStore.getState().setComposeActiveProject(null)
+  }
+
+  const openComposeFile = (path: string) => {
+    setActiveView('docker')
+    setDockerTab('compose')
+    useAppStore.getState().setComposeFileSelect(path)
   }
 
   const childBadge = (id: DockerTab): string | undefined => {
@@ -130,6 +138,28 @@ export default function Sidebar() {
                                       </span>
                                     )}
                                   </button>
+
+                                  {/* Project files — sidebar menu in place of editor tabs */}
+                                  {isActive && composeFilesNav.length > 0 && (
+                                    <ul className="sidebar-files">
+                                      {composeFilesNav.map(f => (
+                                        <li key={f.path}>
+                                          <button
+                                            className={clsx('sidebar-file-item', composeActiveFilePath === f.path && 'active')}
+                                            onClick={() => openComposeFile(f.path)}
+                                            title={f.path}
+                                          >
+                                            <span className="sidebar-file-icon">
+                                              {f.kind === 'dockerfile' ? <FileCode2 size={12} />
+                                                : f.kind === 'env' ? <FileKey size={12} />
+                                                : <FileText size={12} />}
+                                            </span>
+                                            <span className="sidebar-file-label">{f.label}</span>
+                                          </button>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
                                 </li>
                               )
                             })}

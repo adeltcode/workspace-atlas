@@ -1,9 +1,9 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { revealItemInDir, openUrl } from '@tauri-apps/plugin-opener'
 import {
   Download, AlertCircle, FolderOpen, Trash2, Monitor, Terminal,
-  ChevronDown, Play, Square, RotateCcw, Wrench, FileKey, ExternalLink, ArrowLeft,
+  ChevronDown, Play, Square, RotateCcw, Wrench, FileKey, ExternalLink, ArrowLeft, Plug,
   Pencil, Save, X, Info, RotateCcw as RestartIcon,
   ExternalLink as OpenIdeIcon, CheckCircle, MoreHorizontal, FileCode2, ScrollText,
 } from 'lucide-react'
@@ -14,13 +14,36 @@ import type { ComposeProject, ComposeBackupEntry, DockerContainer, ContainerStat
 import { bytesToHuman, formatDate } from '../../../utils/format'
 import ComposePage from './ComposePage'
 import ComposeEnvTab from './ComposeEnvTab'
-import ComposeDockerfileViewer from './ComposeDockerfileViewer'
-import ComposeLogPanel from './ComposeLogPanel'
+import ComposeDockerfileViewer, { DockerfileLine } from './ComposeDockerfileViewer'
+import CodeOverlayEditor from './CodeOverlayEditor'
 
 // ── YAML syntax highlighter ───────────────────────────────────────────────────
 
 // Matches: optional-ip:hostPort:containerPort[/proto]
 const PORT_RE = /^(?:[\d.]+:)?(\d+):\d+(?:\/(?:tcp|udp))?$/
+
+// Label a detected file relative to the compose project dir, so nested files
+// like ./nginx/Dockerfile and ./php/Dockerfile are distinguishable in the tabs.
+function relLabel(path: string, baseDir: string): string {
+  const np = path.replace(/\\/g, '/')
+  const nb = baseDir.replace(/\\/g, '/').replace(/\/$/, '')
+  if (nb && np.toLowerCase().startsWith(nb.toLowerCase() + '/')) return np.slice(nb.length + 1)
+  return np.split('/').pop() ?? path
+}
+
+// Host ports published by the running containers in a project (deduped, in order)
+function runningHostPorts(containers: DockerContainer[]): string[] {
+  const ports = new Set<string>()
+  for (const c of containers) {
+    if (c.state !== 'running' || !c.ports) continue
+    const re = /:(\d+)->/g
+    let m: RegExpExecArray | null
+    while ((m = re.exec(c.ports)) !== null) {
+      if (m[1] !== '0') ports.add(m[1])
+    }
+  }
+  return [...ports]
+}
 
 function renderYamlValue(
   raw: string,
@@ -82,11 +105,12 @@ function renderYamlValue(
 }
 
 function YamlLine({
-  line, onOpenPort, onRevealPath,
+  line, onOpenPort, onRevealPath, onOpenDockerfile,
 }: {
-  line:          string
-  onOpenPort?:   (port: string) => void
-  onRevealPath?: (path: string) => void
+  line:             string
+  onOpenPort?:      (port: string) => void
+  onRevealPath?:    (path: string) => void
+  onOpenDockerfile?:(value: string) => void
 }) {
   const trimmed = line.trimStart()
   const indent  = line.length - trimmed.length
@@ -97,12 +121,20 @@ function YamlLine({
   if (km) {
     const [, pre, key, colon, rest] = km
     const depth = Math.floor(indent / 2)
+    const isDockerfileRef = key === 'dockerfile' && !!onOpenDockerfile && rest.trim() !== ''
     return (
       <div className="yaml-line">
         <span>{pre}</span>
         <span className={depth === 0 ? 'yaml-key-root' : 'yaml-key'}>{key}</span>
         <span className="yaml-colon">{colon}</span>
-        {rest ? <> {renderYamlValue(rest, onOpenPort, onRevealPath)}</> : null}
+        {rest
+          ? (isDockerfileRef
+              ? <> <button className="yaml-path-link" onClick={() => onOpenDockerfile!(rest)} title="Open this Dockerfile">
+                  <span className="yaml-value">{rest.trim()}</span>
+                  <FileCode2 size={9} className="yaml-path-icon" />
+                </button></>
+              : <> {renderYamlValue(rest, onOpenPort, onRevealPath)}</>)
+          : null}
       </div>
     )
   }
@@ -120,11 +152,12 @@ function YamlLine({
 }
 
 function YamlViewer({
-  content, onOpenPort, onRevealPath,
+  content, onOpenPort, onRevealPath, onOpenDockerfile,
 }: {
-  content:       string
-  onOpenPort?:   (port: string) => void
-  onRevealPath?: (path: string) => void
+  content:          string
+  onOpenPort?:      (port: string) => void
+  onRevealPath?:    (path: string) => void
+  onOpenDockerfile?:(value: string) => void
 }) {
   const lines = content.split('\n')
   if (lines[lines.length - 1] === '') lines.pop()
@@ -135,10 +168,83 @@ function YamlViewer({
       </div>
       <div className="compose-code-body">
         {lines.map((line, i) => (
-          <YamlLine key={i} line={line} onOpenPort={onOpenPort} onRevealPath={onRevealPath} />
+          <YamlLine key={i} line={line} onOpenPort={onOpenPort} onRevealPath={onRevealPath} onOpenDockerfile={onOpenDockerfile} />
         ))}
       </div>
     </div>
+  )
+}
+
+// ── Dockerfile reference parsing (match detected files to the compose file) ──
+
+// Resolve a build context + dockerfile into a normalized project-relative path,
+// e.g. context "." + dockerfile "./nginx/Dockerfile" → "nginx/dockerfile".
+function refRelFrom(context: string, dockerfile: string): string {
+  const parts: string[] = []
+  const push = (seg: string) => {
+    for (const s of seg.replace(/\\/g, '/').split('/')) {
+      if (!s || s === '.') continue
+      if (s === '..') { parts.pop(); continue }
+      parts.push(s)
+    }
+  }
+  push(context); push(dockerfile)
+  return parts.join('/').toLowerCase()
+}
+
+// Extract the Dockerfiles a compose file actually builds, as project-relative refs.
+function parseDockerfileRefs(yaml: string): string[] {
+  const lines = yaml.split('\n')
+  const clean = (s: string) => s.replace(/\s+#.*$/, '').trim().replace(/^['"]|['"]$/g, '')
+  const refs: string[] = []
+  let i = 0
+  while (i < lines.length) {
+    const m = lines[i].match(/^(\s*)build\s*:(.*)$/)
+    if (!m) { i++; continue }
+    const indent = m[1].length
+    const inline = clean(m[2])
+    if (inline) { refs.push(refRelFrom(inline, 'Dockerfile')); i++; continue }
+    // Block form — scan deeper-indented context/dockerfile keys
+    let context = '.', dockerfile = 'Dockerfile'
+    i++
+    while (i < lines.length) {
+      const l = lines[i]
+      if (l.trim() === '') { i++; continue }
+      const childIndent = l.length - l.trimStart().length
+      if (childIndent <= indent) break
+      const cm = l.match(/^\s*context\s*:\s*(.+)$/)
+      const dm = l.match(/^\s*dockerfile\s*:\s*(.+)$/)
+      if (cm) context = clean(cm[1])
+      if (dm) dockerfile = clean(dm[1])
+      i++
+    }
+    refs.push(refRelFrom(context, dockerfile))
+  }
+  return refs
+}
+
+// Does a detected Dockerfile path correspond to one of the compose refs?
+// Anchors on the project dir name so a bare "Dockerfile" ref matches the root
+// one rather than a nested nginx/Dockerfile. Format-agnostic (suffix compare).
+function dockerfileMatchesRefs(path: string, refRels: string[], dirName: string): boolean {
+  const np = path.replace(/\\/g, '/').toLowerCase()
+  return refRels.some(rel => {
+    if (!rel) return false
+    if (dirName && np.endsWith(`/${dirName}/${rel}`)) return true
+    return rel.includes('/') && np.endsWith(`/${rel}`)
+  })
+}
+
+// Editable YAML with live syntax highlighting (highlighted layer behind a
+// transparent textarea — see CodeOverlayEditor). Keeps the view ⇄ edit
+// transition visually seamless.
+function YamlEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <CodeOverlayEditor
+      value={value}
+      onChange={onChange}
+      renderLine={(line, i) => <YamlLine key={i} line={line} />}
+    />
   )
 }
 
@@ -274,7 +380,7 @@ function ServiceCards({ containers, serviceAction, onServiceAction, onOpenLogs, 
         const isBusy    = serviceAction?.service === svc
         const stateKey  = isRunning ? 'running' : c.state === 'restarting' ? 'restarting' : 'stopped'
         return (
-          <div key={c.id} className="csc-card">
+          <div key={c.id} className={clsx('csc-card', `csc-card--${stateKey}`)}>
             <div className="csc-card-row">
               <span className={clsx('cst-dot', `cst-dot--${stateKey}`)} />
               <span className="csc-name">{svc}</span>
@@ -315,6 +421,7 @@ export default function ComposeTab({
   refreshTick = 0, containers, containerStats, statHistory, onRefresh,
 }: ComposeTabProps) {
   const backupDir = useAppStore(s => s.backupDir)
+  const dockerTab = useAppStore(s => s.dockerTab) // re-measure editor fill when this tab becomes active
 
   // ── View mode: 'main' = overview page, 'project' = file detail ───────────
   const [viewMode, setViewMode] = useState<'main' | 'project'>('main')
@@ -345,6 +452,9 @@ export default function ComposeTab({
   const [editMode, setEditMode]     = useState(false)
   const [editDraft, setEditDraft]   = useState('')
   const [editSaving, setEditSaving] = useState(false)
+
+  // Editor body — measured to fill exactly down to the terminal (see effect below)
+  const viewerBodyRef = useRef<HTMLDivElement>(null)
 
   // ── Per-service controls ──────────────────────────────────────────────────
   const [serviceAction, setServiceAction] = useState<{ service: string; action: string } | null>(null)
@@ -377,9 +487,19 @@ export default function ComposeTab({
   const [validatorRunning, setValidatorRunning] = useState(false)
   const [validatorResult,  setValidatorResult]  = useState<{ yaml?: string; error?: string } | null>(null)
 
-  // ── Log panel ─────────────────────────────────────────────────────────────
-  const [logPanelOpen,      setLogPanelOpen]      = useState(false)
-  const [logInitialService, setLogInitialService] = useState<string | null>(null)
+  // ── Logs — routed to the bottom Terminal panel's "Logs" tab ────────────────
+  const composeLogContext = useAppStore(s => s.composeLogContext)
+  const terminalTab       = useAppStore(s => s.terminalTab)
+
+  const openLogs = (service: string | null) => {
+    if (!selected) return
+    useAppStore.getState().openComposeLogs({
+      project:        selected,
+      containers,
+      configFile:     selected.config_files[0] ?? '',
+      initialService: service,
+    })
+  }
 
   // ── Computed ──────────────────────────────────────────────────────────────
 
@@ -393,6 +513,141 @@ export default function ComposeTab({
     () => selected ? containers.filter(c => c.compose_project === selected.name) : [],
     [containers, selected]
   )
+
+  // Project-level status summary shown in the detail header
+  const runningCount = projectContainers.filter(c => c.state === 'running').length
+  const totalCount   = projectContainers.length
+  const projState: 'none' | 'running' | 'partial' | 'stopped' =
+    totalCount === 0     ? 'none'
+    : runningCount === 0 ? 'stopped'
+    : runningCount === totalCount ? 'running'
+    : 'partial'
+  const headerPorts = useMemo(() => runningHostPorts(projectContainers).slice(0, 6), [projectContainers])
+
+  // Directory holding the compose file — used to label nested project files
+  const composeBaseDir = useMemo(() => {
+    const f = selected?.config_files[0] ?? ''
+    const i = Math.max(f.lastIndexOf('/'), f.lastIndexOf('\\'))
+    return i >= 0 ? f.slice(0, i) : ''
+  }, [selected])
+  const composeDirName = useMemo(
+    () => composeBaseDir.replace(/\\/g, '/').replace(/\/+$/, '').split('/').pop()?.toLowerCase() ?? '',
+    [composeBaseDir]
+  )
+
+  // Dockerfiles the compose file actually builds — used to filter detected files
+  // (the recursive scan can turn up Dockerfiles that aren't part of this project)
+  const referencedRefs = useMemo(() => parseDockerfileRefs(fileContent ?? ''), [fileContent])
+  const visibleProjectFiles = useMemo(
+    () => projectFiles.filter(pf =>
+      pf.kind !== 'dockerfile' || dockerfileMatchesRefs(pf.path, referencedRefs, composeDirName)
+    ),
+    [projectFiles, referencedRefs, composeDirName]
+  )
+
+  // Open the Dockerfile referenced on a `dockerfile:` line as a tab
+  const handleOpenDockerfileRef = (raw: string) => {
+    const v = raw.replace(/\s+#.*$/, '').trim().replace(/^['"]|['"]$/g, '')
+    if (!v) return
+    const rel = refRelFrom('.', v)
+    const match = visibleProjectFiles.find(pf =>
+      pf.kind === 'dockerfile' && dockerfileMatchesRefs(pf.path, [rel], composeDirName)
+    )
+    if (match) {
+      setActiveFile(match.path); setEditMode(false); loadExtraFile(match.path)
+      return
+    }
+    // Fallback — resolve relative to the compose dir (preserve case) and open
+    if (!composeBaseDir) return
+    const sep = composeBaseDir.includes('\\') ? '\\' : '/'
+    const abs = `${composeBaseDir.replace(/[/\\]+$/, '')}${sep}${v.replace(/^\.\//, '').replace(/\//g, sep)}`
+    setProjectFiles(prev => prev.some(p => p.path === abs) ? prev : [...prev, { path: abs, kind: 'dockerfile' }])
+    setActiveFile(abs); setEditMode(false); loadExtraFile(abs)
+  }
+
+  // Size the editor body to fill exactly down to the terminal panel. Measured
+  // from the live layout (not a 100vh guess) because the bottom terminal's
+  // height is variable, so a fixed offset always leaves a gap or overshoots.
+  useEffect(() => {
+    if (viewMode !== 'project') return
+    const el = viewerBodyRef.current
+    if (!el) return
+    const recompute = () => {
+      try {
+        // Skip while hidden — ComposeTab stays mounted under display:none on
+        // other docker tabs, and measuring then yields zeros.
+        if (!el.offsetParent) return
+        // Distance from the body's top to the bottom of the (definite-height)
+        // scrolling main panel, in the panel's content space so it's independent
+        // of scroll. Set as a definite height so the editor fills exactly and
+        // scrolls internally past it.
+        const mp = el.closest('.main-panel') as HTMLElement | null
+        if (!mp) return
+        const mpRect = mp.getBoundingClientRect()
+        const elTopInContent = el.getBoundingClientRect().top - mpRect.top + mp.scrollTop
+        const avail = Math.floor(mp.clientHeight - elTopInContent)
+        el.style.height = avail > 120 ? `${avail}px` : ''
+      } catch { /* layout not ready — a later tick will catch it */ }
+    }
+    recompute()
+    // Re-measure across a few ticks: fonts/sticky sidebar/late layout can shift
+    // the body's top after the first paint.
+    const raf = requestAnimationFrame(recompute)
+    const timers = [setTimeout(recompute, 60), setTimeout(recompute, 250)]
+    const ro = new ResizeObserver(recompute)
+    const mainPanel = el.closest('.main-panel')
+    if (mainPanel) ro.observe(mainPanel)
+    ro.observe(document.documentElement) // window/terminal resize
+    window.addEventListener('resize', recompute)
+    return () => {
+      cancelAnimationFrame(raf)
+      timers.forEach(clearTimeout)
+      ro.disconnect()
+      window.removeEventListener('resize', recompute)
+    }
+  }, [viewMode, selected, activeFile, editMode, fileContent, dockerTab])
+
+  // ── Sidebar file menu integration (files live in the sidebar, not as tabs) ──
+
+  const composeFileSelect = useAppStore(s => s.composeFileSelect)
+
+  // Open a file by path — handles both config files and detected extra files
+  const openFile = (path: string) => {
+    if (!path || path === activeFile) return
+    setActiveFile(path)
+    setEditMode(false)
+    setBackupMsg(null)
+    if (selected?.config_files.includes(path)) loadFile(path)
+    else loadExtraFile(path)
+  }
+
+  // Publish the active project's files so the sidebar can render them as a menu
+  useEffect(() => {
+    if (viewMode !== 'project' || !selected) {
+      useAppStore.getState().setComposeFilesNav([])
+      return
+    }
+    useAppStore.getState().setComposeFilesNav([
+      ...selected.config_files.map(f => ({ path: f, label: relLabel(f, composeBaseDir), kind: 'compose' as const })),
+      ...visibleProjectFiles.map(pf => ({
+        path: pf.path,
+        label: relLabel(pf.path, composeBaseDir),
+        kind: (pf.kind === 'env' ? 'env' : 'dockerfile') as 'dockerfile' | 'env',
+      })),
+    ])
+  }, [viewMode, selected, visibleProjectFiles, composeBaseDir])
+
+  // Publish which file is active so the sidebar can highlight it
+  useEffect(() => {
+    useAppStore.getState().setComposeActiveFilePath(viewMode === 'project' ? (activeFile || null) : null)
+  }, [viewMode, activeFile])
+
+  // React to a sidebar file click
+  useEffect(() => {
+    if (!composeFileSelect) return
+    useAppStore.getState().setComposeFileSelect(null)
+    openFile(composeFileSelect)
+  }, [composeFileSelect]) // eslint-disable-line
 
   // (envFilePath no longer used — .env is now a detected first-class tab)
 
@@ -473,7 +728,7 @@ export default function ComposeTab({
     setBackupMsg(null)
     setEditMode(false)
     setInspectContainer(null)
-    setLogPanelOpen(false)
+    useAppStore.getState().closeComposeLogs() // drop stale logs from the previous project
     setValidatorOpen(false)
     setMetaPanelOpen(false)
     setProjectFiles([])
@@ -578,12 +833,16 @@ export default function ComposeTab({
     }
   }
 
-  // ── Inline editor ─────────────────────────────────────────────────────────
+  // ── Inline editor (handles compose + Dockerfile; .env edits live in its tab) ─
 
-  const isModified = editMode && editDraft !== (fileContent ?? '')
+  // Content being edited: compose uses fileContent; other text files use the cache.
+  const editableContent = fileType === 'compose' ? (fileContent ?? '') : (fileContents[activeFile] ?? '')
+  const fileLoaded      = fileType === 'compose' ? fileContent !== null : fileContents[activeFile] !== undefined
+  const isEditableType  = fileType === 'compose' || fileType === 'dockerfile'
+  const isModified = editMode && editDraft !== editableContent
 
   const enterEditMode = () => {
-    setEditDraft(fileContent ?? '')
+    setEditDraft(editableContent)
     setEditMode(true)
   }
 
@@ -596,7 +855,8 @@ export default function ComposeTab({
     setEditSaving(true)
     try {
       await api.writeFileContent(activeFile, editDraft)
-      setFileContent(editDraft)
+      if (fileType === 'compose') setFileContent(editDraft)
+      else setFileContents(prev => ({ ...prev, [activeFile]: editDraft }))
       setEditMode(false)
       useAppStore.getState().addTerminalLine(`  ✓ Saved ${activeFile}`, 'success')
     } catch (e) {
@@ -838,16 +1098,42 @@ export default function ComposeTab({
       {viewMode === 'project' && selected && (
         <div className="compose-viewer">
 
-          {/* ── Top bar: back + lifecycle only ── */}
+          {/* ── Top bar: project identity + ports + lifecycle ── */}
           <div className="compose-project-topbar">
             <button
-              className="compose-back-btn"
+              className="compose-back-btn compose-back-btn--icon"
               onClick={() => { setViewMode('main'); useAppStore.getState().setComposeActiveProject(null) }}
               title="Back to all projects"
+              aria-label="Back to all projects"
             >
-              <ArrowLeft size={12} />
-              <span className="compose-back-label">{selected.name}</span>
+              <ArrowLeft size={14} />
             </button>
+
+            <div className="compose-proj-id">
+              <span className={clsx('compose-proj-status-dot', `compose-proj-status-dot--${projState}`)} />
+              <h2 className="compose-proj-name" title={selected.name}>{selected.name}</h2>
+              {totalCount > 0 && (
+                <span className={clsx('compose-proj-health', `compose-proj-health--${projState}`)}>
+                  {runningCount}/{totalCount} running
+                </span>
+              )}
+            </div>
+
+            {headerPorts.length > 0 && (
+              <div className="compose-proj-ports">
+                {headerPorts.map(port => (
+                  <button
+                    key={port}
+                    className="compose-port-chip"
+                    onClick={() => openUrl(`http://localhost:${port}`).catch(() => {})}
+                    title={`Open http://localhost:${port}`}
+                  >
+                    <Plug size={9} />{port}<ExternalLink size={8} />
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="compose-topbar-spacer" />
             <div className="compose-lifecycle-btns">
               {LIFECYCLE_ACTIONS.map(({ id, Icon, label, title, color }) => {
@@ -880,7 +1166,9 @@ export default function ComposeTab({
                 }
                 return (
                   <button key={id}
-                    className={clsx('compose-lifecycle-btn', `compose-lifecycle-btn--${color}`, lifecycleRunning === id && 'loading')}
+                    className={clsx('compose-lifecycle-btn',
+                      id === 'up' && runningCount === 0 ? 'compose-lifecycle-btn--primary' : `compose-lifecycle-btn--${color}`,
+                      lifecycleRunning === id && 'loading')}
                     onClick={() => runComposeAction(id)} disabled={busy} title={title}
                   >
                     <Icon size={11} className={lifecycleRunning === id ? 'spin' : ''} /> {label}
@@ -896,73 +1184,56 @@ export default function ComposeTab({
             {/* ── LEFT: File editor ── */}
             <div className="compose-project-left">
 
-              {/* Tab strip + edit controls */}
+              {/* Active-file label + edit controls (files are picked in the sidebar) */}
               <div className="compose-left-header">
-                <div className="compose-file-tabs">
-                  {selected.config_files.map(f => (
-                    <button key={f}
-                      className={clsx('compose-file-path-item', activeFile === f && 'active')}
-                      onClick={() => { setActiveFile(f); loadFile(f); setBackupMsg(null); setEditMode(false) }}
-                      title={f}
-                    >
-                      <PathOriginLine path={f} />
-                      <span className="compose-file-path-text">{f.split('/').pop()?.split('\\').pop()}</span>
-                      {activeFile === f && isModified && <span className="compose-modified-dot" title="Unsaved changes" />}
+                <div className="compose-active-file" title={activeFile}>
+                  {fileType === 'dockerfile'
+                    ? <FileCode2 size={12} style={{ color: '#60a5fa', flexShrink: 0 }} />
+                    : fileType === 'env'
+                      ? <FileKey size={12} style={{ color: '#f0a500', flexShrink: 0 }} />
+                      : <PathOriginLine path={activeFile} />}
+                  <span className="compose-active-file-name">{relLabel(activeFile, composeBaseDir)}</span>
+                  {isModified && <span className="compose-modified-dot" title="Unsaved changes" />}
+                </div>
+                <div className="compose-edit-controls">
+                  {isEditableType && (editMode ? (
+                    <>
+                      <button className="compose-save-btn" onClick={handleSave} disabled={editSaving || !isModified} title="Save file">
+                        <Save size={11} className={editSaving ? 'spin' : ''} />
+                        {editSaving ? 'Saving…' : 'Save'}
+                      </button>
+                      <button className="compose-cancel-edit-btn" onClick={cancelEdit} disabled={editSaving} title="Discard changes">
+                        <X size={11} /> Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <button className="compose-edit-btn" onClick={enterEditMode} disabled={!fileLoaded || !!lifecycleRunning} title="Edit file">
+                      <Pencil size={11} /> Edit
                     </button>
                   ))}
-                  {projectFiles.map(pf => {
-                    const name = pf.path.split('/').pop()?.split('\\').pop() ?? pf.path
-                    const isActive = activeFile === pf.path
-                    return (
-                      <button key={pf.path}
-                        className={clsx('compose-file-path-item compose-file-path-item--extra', isActive && 'active')}
-                        onClick={() => { setActiveFile(pf.path); setEditMode(false); loadExtraFile(pf.path) }}
-                        title={pf.path}
-                      >
-                        {pf.kind === 'dockerfile'
-                          ? <FileCode2 size={11} style={{ color: '#60a5fa', flexShrink: 0 }} />
-                          : <FileKey size={11} style={{ color: '#f0a500', flexShrink: 0 }} />}
-                        <span className="compose-file-path-text">{name}</span>
-                      </button>
-                    )
-                  })}
+                  <button className="compose-edit-btn compose-open-ide-btn" onClick={handleOpenInIde} disabled={!activeFile}
+                    title={preferredEditor ? `Open in ${preferredEditor.name}` : 'Open in editor'}>
+                    <OpenIdeIcon size={11} />
+                    {preferredEditor ? preferredEditor.name : 'Open in'}
+                  </button>
+                  <button className="compose-edit-btn" onClick={() => activeFile &&
+                      api.revealPath(activeFile).catch(e => useAppStore.getState().addTerminalLine(`  ✗ ${String(e)}`, 'error'))}
+                    disabled={!activeFile} title="Open file location in Explorer">
+                    <FolderOpen size={11} /> Reveal
+                  </button>
                 </div>
-                {fileType === 'compose' && (
-                  <div className="compose-edit-controls">
-                    {editMode ? (
-                      <>
-                        <button className="compose-save-btn" onClick={handleSave} disabled={editSaving || !isModified} title="Save file">
-                          <Save size={11} className={editSaving ? 'spin' : ''} />
-                          {editSaving ? 'Saving…' : 'Save'}
-                        </button>
-                        <button className="compose-cancel-edit-btn" onClick={cancelEdit} disabled={editSaving} title="Discard changes">
-                          <X size={11} /> Cancel
-                        </button>
-                      </>
-                    ) : (
-                      <button className="compose-edit-btn" onClick={enterEditMode} disabled={!fileContent || !!lifecycleRunning} title="Edit file">
-                        <Pencil size={11} /> Edit
-                      </button>
-                    )}
-                  </div>
-                )}
               </div>
 
               {/* File content */}
-              <div className="compose-viewer-body">
+              <div className="compose-viewer-body" ref={viewerBodyRef}>
                 {fileLoading && <div className="compose-viewer-state">Loading file…</div>}
                 {fileError && <div className="compose-viewer-state compose-viewer-error"><AlertCircle size={14} />{fileError}</div>}
                 {!fileLoading && fileType === 'compose' && fileContent !== null && !editMode && (
-                  <YamlViewer content={fileContent} onOpenPort={handleOpenPort} onRevealPath={handleRevealPath} />
+                  <YamlViewer content={fileContent} onOpenPort={handleOpenPort} onRevealPath={handleRevealPath}
+                    onOpenDockerfile={handleOpenDockerfileRef} />
                 )}
                 {!fileLoading && fileType === 'compose' && editMode && (
-                  <div className="compose-editor-wrap">
-                    <div className="compose-line-nums compose-line-nums--edit" aria-hidden>
-                      {editDraft.split('\n').map((_, i) => <span key={i}>{i + 1}</span>)}
-                    </div>
-                    <textarea className="compose-editor-textarea" value={editDraft}
-                      onChange={e => setEditDraft(e.target.value)} spellCheck={false} autoCapitalize="off" autoCorrect="off" />
-                  </div>
+                  <YamlEditor value={editDraft} onChange={setEditDraft} />
                 )}
                 {fileType === 'env' && activeFile && (
                   fileContents[activeFile] !== undefined
@@ -971,10 +1242,12 @@ export default function ComposeTab({
                     : <div className="compose-viewer-state">Loading…</div>
                 )}
                 {fileType === 'dockerfile' && activeFile && (
-                  fileContents[activeFile] !== undefined
-                    ? <ComposeDockerfileViewer filePath={activeFile} content={fileContents[activeFile]}
-                        onSaved={newContent => setFileContents(prev => ({ ...prev, [activeFile]: newContent }))} />
-                    : <div className="compose-viewer-state">Loading…</div>
+                  fileContents[activeFile] === undefined
+                    ? <div className="compose-viewer-state">Loading…</div>
+                    : editMode
+                      ? <CodeOverlayEditor value={editDraft} onChange={setEditDraft}
+                          renderLine={(l, i) => <DockerfileLine key={i} line={l} />} />
+                      : <ComposeDockerfileViewer content={fileContents[activeFile]} />
                 )}
               </div>
             </div>
@@ -985,12 +1258,15 @@ export default function ComposeTab({
               {/* Services */}
               {projectContainers.length > 0 && (
                 <div className="compose-right-section">
-                  <div className="compose-right-section-title">Services</div>
+                  <div className="compose-right-section-title">
+                    <span>Services</span>
+                    <span className="compose-section-count">{runningCount}/{totalCount}</span>
+                  </div>
                   <ServiceCards
                     containers={projectContainers}
                     serviceAction={serviceAction}
                     onServiceAction={handleServiceAction}
-                    onOpenLogs={svc => { setLogInitialService(svc); setLogPanelOpen(true) }}
+                    onOpenLogs={svc => openLogs(svc)}
                     onShell={handleShell}
                     onInspect={setInspectContainer}
                   />
@@ -1001,16 +1277,13 @@ export default function ComposeTab({
               <div className="compose-right-section">
                 <div className="compose-right-section-title">Actions</div>
                 <div className="compose-sidebar-tools">
-                  <button className="compose-sidebar-tool-btn" onClick={handleOpenInIde} disabled={!activeFile}
-                    title={preferredEditor ? `Open in ${preferredEditor.name}` : 'Open in editor'}>
-                    <OpenIdeIcon size={13} />
-                    <span className="compose-sidebar-tool-label">{preferredEditor ? preferredEditor.name : 'Open in IDE'}</span>
-                  </button>
-                  <button className={clsx('compose-sidebar-tool-btn', logPanelOpen && 'active')}
-                    onClick={() => { setLogInitialService(null); setLogPanelOpen(o => !o) }}>
+                  <button
+                    className={clsx('compose-sidebar-tool-btn',
+                      terminalTab === 'logs' && composeLogContext?.project.name === selected.name && 'active')}
+                    onClick={() => openLogs(null)} title="Stream logs in the terminal panel">
                     <ScrollText size={13} />
                     <span className="compose-sidebar-tool-label">Logs</span>
-                    <ChevronDown size={10} className={clsx('compose-sidebar-tool-chevron', logPanelOpen && 'open')} />
+                    <ExternalLink size={11} className="compose-sidebar-tool-chevron" />
                   </button>
                   <button className={clsx('compose-sidebar-tool-btn', validatorOpen && 'active')}
                     onClick={handleValidate} disabled={validatorRunning || !activeFile} title="Run docker compose config">
@@ -1035,16 +1308,6 @@ export default function ComposeTab({
                   )}
                 </div>
               </div>
-
-              {/* Log panel - inline in sidebar */}
-              {logPanelOpen && selected && (
-                <div className="compose-sidebar-panel">
-                  <ComposeLogPanel project={selected} containers={containers}
-                    configFile={selected.config_files[0] ?? ''}
-                    initialService={logInitialService ?? undefined}
-                    onClose={() => setLogPanelOpen(false)} />
-                </div>
-              )}
 
               {/* Validator - inline in sidebar */}
               {validatorOpen && (

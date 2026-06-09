@@ -1,7 +1,4 @@
-import { useState } from 'react'
-import { Pencil, Save, X } from 'lucide-react'
-import * as api from '../api'
-import { useAppStore } from '../../../store/appStore'
+import type { ReactNode } from 'react'
 
 // ── Dockerfile syntax highlighter ─────────────────────────────────────────────
 
@@ -10,7 +7,7 @@ const INSTRUCTIONS = new Set([
   'CMD','ENTRYPOINT','USER','VOLUME','HEALTHCHECK','SHELL','STOPSIGNAL','ONBUILD','MAINTAINER',
 ])
 
-function DockerfileLine({ line }: { line: string }) {
+export function DockerfileLine({ line }: { line: string }) {
   const trimmed = line.trimStart()
 
   if (!trimmed) return <div className="yaml-line">&nbsp;</div>
@@ -40,7 +37,7 @@ function DockerfileLine({ line }: { line: string }) {
   return <div className="yaml-line">{line}</div>
 }
 
-function renderDockerArg(text: string): React.ReactNode {
+function renderDockerArg(text: string): ReactNode {
   // Highlight ${VAR} and $VAR references
   if (!text.includes('$')) return <span>{text}</span>
   const parts = text.split(/(\$\{[^}]+\}|\$[A-Z_a-z][A-Z0-9_a-z]*)/g)
@@ -55,88 +52,25 @@ function renderDockerArg(text: string): React.ReactNode {
   )
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+// ── View-only component (editing is owned by ComposeTab so the Edit/Save
+//    controls live in the shared toolbar, consistent with the compose view) ────
 
 interface Props {
-  filePath: string
-  content:  string
-  onSaved:  (newContent: string) => void
+  content: string
 }
 
-export default function ComposeDockerfileViewer({ filePath, content, onSaved }: Props) {
-  const [editMode, setEditMode] = useState(false)
-  const [draft,    setDraft]    = useState('')
-  const [saving,   setSaving]   = useState(false)
-
-  const isModified = editMode && draft !== content
-
-  const enterEdit = () => { setDraft(content); setEditMode(true) }
-  const cancelEdit = () => setEditMode(false)
-
-  const handleSave = async () => {
-    if (!filePath || saving) return
-    setSaving(true)
-    try {
-      await api.writeFileContent(filePath, draft)
-      onSaved(draft)
-      setEditMode(false)
-      useAppStore.getState().addTerminalLine(`  ✓ Saved ${filePath}`, 'success')
-    } catch (e) {
-      useAppStore.getState().addTerminalLine(`  ✗ Save failed: ${String(e)}`, 'error')
-    } finally { setSaving(false) }
-  }
-
+export default function ComposeDockerfileViewer({ content }: Props) {
   const lines = content.split('\n')
   if (lines[lines.length - 1] === '') lines.pop()
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Mini toolbar just for edit controls */}
-      <div className="compose-dockerfile-toolbar">
-        <div style={{ flex: 1 }} />
-        {editMode ? (
-          <>
-            <button className="compose-save-btn" onClick={handleSave} disabled={saving || !isModified}>
-              <Save size={11} className={saving ? 'spin' : ''} />
-              {saving ? 'Saving…' : 'Save'}
-            </button>
-            <button className="compose-cancel-edit-btn" onClick={cancelEdit} disabled={saving}>
-              <X size={11} /> Cancel
-            </button>
-          </>
-        ) : (
-          <button className="compose-edit-btn" onClick={enterEdit}>
-            <Pencil size={11} /> Edit
-          </button>
-        )}
-        {isModified && <span className="compose-modified-dot" title="Unsaved changes" />}
+    <div className="compose-code-wrap">
+      <div className="compose-line-nums" aria-hidden>
+        {lines.map((_, i) => <span key={i}>{i + 1}</span>)}
       </div>
-
-      {/* Content area */}
-      {!editMode ? (
-        <div className="compose-code-wrap" style={{ flex: 1 }}>
-          <div className="compose-line-nums" aria-hidden>
-            {lines.map((_, i) => <span key={i}>{i + 1}</span>)}
-          </div>
-          <div className="compose-code-body">
-            {lines.map((line, i) => <DockerfileLine key={i} line={line} />)}
-          </div>
-        </div>
-      ) : (
-        <div className="compose-editor-wrap" style={{ flex: 1 }}>
-          <div className="compose-line-nums" aria-hidden>
-            {draft.split('\n').map((_, i) => <span key={i}>{i + 1}</span>)}
-          </div>
-          <textarea
-            className="compose-editor-textarea"
-            value={draft}
-            onChange={e => setDraft(e.target.value)}
-            spellCheck={false}
-            autoCapitalize="off"
-            autoCorrect="off"
-          />
-        </div>
-      )}
+      <div className="compose-code-body">
+        {lines.map((line, i) => <DockerfileLine key={i} line={line} />)}
+      </div>
     </div>
   )
 }

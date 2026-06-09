@@ -615,6 +615,69 @@ ul, ol { list-style: none; }
 .sidebar-child-label     { flex: 1; }
 .sidebar-grandchild-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* ── 4th level: a project's files (great-grandchildren), +24px deeper ── */
+.sidebar-files {
+  position: relative;
+  margin: 1px 0 6px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  list-style: none;
+}
+.sidebar-files::before {
+  content: '';
+  position: absolute;
+  left: 71px;   /* 47 + 24 */
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(
+    to bottom,
+    var(--chrome-divider) 0%,
+    var(--chrome-divider) calc(100% - 14px),
+    transparent 100%
+  );
+  pointer-events: none;
+}
+.sidebar-file-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 8px 4px 95px;   /* 71 + 24 */
+  border-radius: var(--radius-sm);
+  color: var(--chrome-text-subtle);
+  font-size: 11.5px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.sidebar-file-item:hover { background: var(--chrome-surface); color: var(--chrome-text-muted); }
+.sidebar-file-item.active { background: rgba(108,113,255,0.1); color: var(--chrome-text); }
+.sidebar-file-item::before {
+  content: '';
+  position: absolute;
+  left: 72px;   /* 48 + 24 */
+  top: 0;
+  bottom: 50%;
+  width: 13px;
+  border-left: 1px solid var(--chrome-divider);
+  border-bottom: 1px solid var(--chrome-divider);
+  border-bottom-left-radius: 5px;
+  pointer-events: none;
+}
+.sidebar-file-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--chrome-text-subtle);
+}
+.sidebar-file-item.active .sidebar-file-icon { color: var(--color-accent); }
+.sidebar-file-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* Count/badge pill on child items (images, containers, volumes) */
 .sidebar-child-badge {
   font-size: 10px;
@@ -693,6 +756,9 @@ ul, ol { list-style: none; }
   overflow-y: auto;
   background: var(--color-bg-primary);
   min-height: 0;
+  /* Reserve the scrollbar's space at all times so content doesn't shift
+     horizontally when the scrollbar appears/disappears between views. */
+  scrollbar-gutter: stable;
 }
 
 /* =============================================================
@@ -2057,6 +2123,71 @@ button:focus-visible {
 }
 
 .rotate-180 { transform: rotate(180deg); }
+
+/* ── Terminal tab bar (shell / compose logs) ── */
+.terminal-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  height: 100%;
+  min-width: 0;
+  flex-shrink: 1;
+}
+.terminal-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  height: 100%;
+  max-width: 260px;
+  border: none;
+  background: transparent;
+  color: var(--chrome-text-subtle);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color var(--transition-fast), background var(--transition-fast), border-color var(--transition-fast);
+}
+.terminal-tab:hover { color: var(--chrome-text-muted); background: var(--chrome-surface-hover); }
+.terminal-tab.active {
+  color: var(--chrome-text);
+  border-bottom-color: var(--color-accent);
+}
+.terminal-tab-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.terminal-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  color: var(--chrome-text-subtle);
+  flex-shrink: 0;
+}
+.terminal-tab-close:hover { background: var(--chrome-surface-hover); color: var(--color-danger); }
+
+/* Empty strip between tabs and controls — click to expand/collapse */
+.terminal-header-grip { flex: 1; align-self: stretch; cursor: pointer; min-width: 8px; }
+
+/* Tab bodies */
+.terminal-shell { flex: 1; min-height: 0; flex-direction: column; }
+.terminal-logs-host { flex: 1; min-height: 0; }
+.terminal-logs-host .log-panel {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  width: 100%;
+  border-top: none;
+  background: transparent;
+}
 
 .terminal-body {
   flex: 1;
@@ -3969,8 +4100,18 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   display: flex;
   gap: 2px;
   flex: 1;
-  flex-wrap: wrap;
+  min-width: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
 }
+.compose-file-tabs::-webkit-scrollbar { height: 6px; }
+.compose-file-tabs::-webkit-scrollbar-track { background: transparent; }
+.compose-file-tabs::-webkit-scrollbar-thumb { background: var(--color-border-strong); border-radius: 3px; }
+/* Tabs keep their width and scroll horizontally instead of wrapping/squishing */
+.compose-file-tabs > .compose-file-path-item { flex-shrink: 0; }
 
 /* File tab items in the toolbar tab strip */
 .compose-file-path-item {
@@ -4267,9 +4408,16 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 [data-theme="light"] .path-badge--wsl { background: rgba(194,65,12,0.08); color: #c2410c; border-color: rgba(194,65,12,0.2); }
 
 .compose-viewer-body {
-  /* grows to natural height — window provides vertical scroll */
-  overflow-x: auto; /* horizontal scroll only for wide lines */
+  /* Pre-paint fallback; ComposeTab measures and sets an exact pixel height so
+     the editor reaches precisely the terminal panel and scrolls internally past
+     it. The fallback avoids a flash before that runs. */
+  min-height: calc(100vh - 260px);
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
 }
+/* The active viewer/editor stretches to fill the measured height (gutter incl.) */
+.compose-viewer-body > * { flex: 1 1 auto; min-height: 0; }
 
 .compose-viewer-state {
   display: flex;
@@ -4480,6 +4628,24 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .compose-lifecycle-btn--danger:hover:not(:disabled)  { color: var(--color-danger);  border-color: var(--color-danger-border); background: var(--color-danger-subtle); }
 .compose-lifecycle-btn--warning:hover:not(:disabled) { color: var(--color-warning); border-color: color-mix(in srgb, var(--color-warning) 35%, transparent); background: var(--color-warning-subtle); }
 
+/* Always-on semantic tint so the toolbar reads at a glance (intensifies on hover above) */
+.compose-lifecycle-btn--success { color: color-mix(in srgb, var(--color-success) 62%, var(--color-text-secondary)); }
+.compose-lifecycle-btn--danger  { color: color-mix(in srgb, var(--color-danger) 58%, var(--color-text-secondary)); }
+.compose-lifecycle-btn--warning { color: color-mix(in srgb, var(--color-warning) 62%, var(--color-text-secondary)); }
+
+/* Primary call-to-action: filled "Up" when nothing is running */
+.compose-lifecycle-btn--primary {
+  color: #fff;
+  background: var(--color-success);
+  border-color: var(--color-success);
+  font-weight: 600;
+}
+.compose-lifecycle-btn--primary:hover:not(:disabled) {
+  color: #fff;
+  background: color-mix(in srgb, var(--color-success) 88%, #000);
+  border-color: var(--color-success);
+}
+
 /* ── .env toggle button ─────────────────────────────────────── */
 .compose-env-toggle-btn {
   display: inline-flex;
@@ -4540,12 +4706,38 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   vertical-align: top;
   width: 30%;
 }
+.env-key {
+  /* layout for the name + optional sensitive lock */
+}
+.env-key-name { font-weight: 600; }
+.env-sensitive-icon {
+  margin-left: 6px;
+  color: var(--color-warning);
+  vertical-align: middle;
+  flex-shrink: 0;
+}
 .env-val {
   padding: 5px 14px;
   color: var(--color-text-primary);
   word-break: break-all;
   border-bottom: 1px solid var(--color-border-light);
 }
+.env-val-text { vertical-align: middle; }
+.env-reveal-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 8px;
+  padding: 2px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  border-radius: 4px;
+  cursor: pointer;
+  vertical-align: middle;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+.env-reveal-btn:hover { color: var(--color-accent); background: var(--color-bg-hover); }
 .env-empty { color: var(--color-text-tertiary); font-style: italic; }
 
 [data-theme="light"] .env-key { color: #1d4ed8; }
@@ -5636,6 +5828,56 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 .compose-topbar-spacer { flex: 1; min-width: 4px; }
 
+/* ── Project identity (detail header) ── */
+.compose-project-topbar .compose-back-btn--icon {
+  padding: 5px;
+  flex-shrink: 0;
+}
+.compose-proj-id {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.compose-proj-status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.compose-proj-status-dot--running { background: var(--color-success); box-shadow: 0 0 0 3px var(--color-success-subtle); }
+.compose-proj-status-dot--partial { background: var(--color-warning); box-shadow: 0 0 0 3px var(--color-warning-subtle); animation: pulse-amber 1.5s ease-in-out infinite; }
+.compose-proj-status-dot--stopped,
+.compose-proj-status-dot--none    { background: var(--color-text-tertiary); }
+.compose-proj-name {
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--color-text-primary);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+.compose-proj-health {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: var(--radius-full);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.compose-proj-health--running { color: var(--color-success); background: var(--color-success-subtle); }
+.compose-proj-health--partial { color: var(--color-warning); background: var(--color-warning-subtle); }
+.compose-proj-health--stopped { color: var(--color-text-secondary); background: var(--color-bg-tertiary); }
+.compose-proj-ports {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
 .compose-project-layout {
   display: flex;
   align-items: flex-start;
@@ -5653,17 +5895,34 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 5px 8px;
+  padding: 5px 10px;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-bg-secondary);
   flex-shrink: 0;
-  flex-wrap: wrap;
-  row-gap: 4px;
+  flex-wrap: nowrap;
   min-height: 38px;
 }
 
+/* Active-file label (files are now chosen from the sidebar, not tabs) */
+.compose-active-file {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.compose-active-file-name {
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 11.5px;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
 .compose-project-right {
-  width: 300px;
+  width: 340px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -5672,6 +5931,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   max-height: 100vh;
   overflow-y: auto;
   overflow-x: hidden;
+  scrollbar-gutter: stable;
 }
 
 @media (max-width: 860px) {
@@ -5690,12 +5950,23 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   flex-shrink: 0;
 }
 .compose-right-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-size: 10px;
   font-weight: 600;
   color: var(--color-text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   padding: 10px 12px 4px;
+}
+.compose-section-count {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  letter-spacing: 0;
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── Service cards (sidebar) ── */
@@ -5716,6 +5987,9 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   transition: border-color var(--transition-fast);
 }
 .csc-card:hover { border-color: var(--color-border-strong); }
+.csc-card--running    { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--color-success) 60%, transparent); }
+.csc-card--restarting { box-shadow: inset 2px 0 0 var(--color-warning); }
+.csc-card--stopped    { box-shadow: inset 2px 0 0 var(--color-border-strong); }
 .csc-card-row {
   display: flex;
   align-items: center;
@@ -5816,7 +6090,16 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 /* Log panel inside sidebar — remove its own border, constrain height */
 .compose-sidebar-panel .log-panel {
   border: none;
-  max-height: 400px;
+  max-height: 460px;
+}
+/* Compose log lines: break at sensible boundaries with a hanging indent so
+   wrapped continuation lines sit under the message, not the service prefix. */
+.log-panel-body .log-line {
+  white-space: pre-wrap;
+  word-break: normal;
+  overflow-wrap: anywhere;
+  padding-left: 1.1em;
+  text-indent: -1.1em;
 }
 
 /* =============================================================
@@ -6192,6 +6475,8 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .compose-line-nums--edit {
   /* Reuse existing line-nums styles; no change needed — same font + sizing */
 }
+/* Plain textarea editor (Dockerfile / .env) — typography matched to the
+   read-only viewer so switching into edit mode no longer shifts the text. */
 .compose-editor-textarea {
   flex: 1;
   resize: none;
@@ -6199,14 +6484,63 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   outline: none;
   background: transparent;
   color: var(--color-text-primary);
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  line-height: 1.65;
-  padding: 0 16px 0 12px;
+  font-family: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  padding: 14px 16px;
   white-space: pre;
   overflow-wrap: normal;
   overflow-x: auto;
   tab-size: 2;
+}
+
+/* ── YAML editor: live syntax highlight behind a transparent textarea ── */
+.compose-code-wrap--edit { position: relative; flex: 1 1 auto; min-height: 0; }
+.compose-editor-overlay {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+}
+/* Highlight layer — same box as .compose-code-body, taken out of flow and
+   scroll-mirrored from the textarea on top. */
+.compose-editor-highlight {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  tab-size: 2;
+}
+/* Transparent textarea overlay — text is invisible (the highlight shows
+   through), only the caret and selection render. Typography MUST match
+   .compose-code-wrap / .compose-code-body exactly for the caret to line up. */
+.compose-overlay-textarea {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border: none;
+  outline: none;
+  resize: none;
+  display: block;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--color-text-primary);
+  font-family: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  padding: 14px 16px;
+  white-space: pre;
+  overflow: auto;
+  tab-size: 2;
+  box-sizing: border-box;
+}
+.compose-overlay-textarea::selection {
+  background: color-mix(in srgb, var(--color-accent) 32%, transparent);
+  color: transparent;
 }
 
 .compose-modified-dot {

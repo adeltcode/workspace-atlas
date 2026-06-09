@@ -1,10 +1,17 @@
 import { useState, useMemo } from 'react'
-import { Eye, EyeOff, Save, Pencil, X } from 'lucide-react'
+import { Eye, EyeOff, Save, Pencil, X, Lock } from 'lucide-react'
 import clsx from 'clsx'
 import * as api from '../api'
 import { useAppStore } from '../../../store/appStore'
 
 interface EnvPair { key: string; value: string; line: string }
+
+// Keys that look secret stay masked even in "Show all" mode; they can only be
+// revealed one at a time. Conservative substring match on the key name.
+const SENSITIVE_RE = /pass|secret|token|priv|cred|auth|salt|signature|api[_-]?key|access[_-]?key|_key$|^key$|cert|dsn/i
+function isSensitiveKey(key: string): boolean {
+  return SENSITIVE_RE.test(key)
+}
 
 function parseEnv(content: string): EnvPair[] {
   return content.split('\n').map(line => {
@@ -34,9 +41,18 @@ interface Props {
 
 export default function ComposeEnvTab({ filePath, content, yamlContent, onSaved }: Props) {
   const [masked,   setMasked]   = useState(true)
+  const [revealed, setRevealed] = useState<Set<string>>(new Set()) // per-row overrides
   const [editMode, setEditMode] = useState(false)
   const [draft,    setDraft]    = useState('')
   const [saving,   setSaving]   = useState(false)
+
+  // Toggling "Hide all" also clears any individually-revealed rows.
+  const toggleMaskAll = () => setMasked(m => { if (!m) setRevealed(new Set()); return !m })
+  const toggleReveal  = (k: string) => setRevealed(prev => {
+    const next = new Set(prev)
+    if (next.has(k)) next.delete(k); else next.add(k)
+    return next
+  })
 
   const pairs    = useMemo(() => parseEnv(content), [content])
   const yamlRefs = useMemo(() => extractYamlVarRefs(yamlContent), [yamlContent])
@@ -65,11 +81,11 @@ export default function ComposeEnvTab({ filePath, content, yamlContent, onSaved 
       <div className="env-tab-toolbar">
         <button
           className={clsx('env-mask-btn', !masked && 'unmasked')}
-          onClick={() => setMasked(m => !m)}
-          title={masked ? 'Show values' : 'Mask values'}
+          onClick={toggleMaskAll}
+          title={masked ? 'Show non-sensitive values' : 'Hide all values'}
         >
           {masked ? <Eye size={12} /> : <EyeOff size={12} />}
-          {masked ? 'Show' : 'Hide'}
+          {masked ? 'Show all' : 'Hide all'}
         </button>
         <span className="env-tab-count">{pairs.length} variable{pairs.length !== 1 ? 's' : ''}</span>
         <div style={{ flex: 1 }} />
@@ -108,14 +124,32 @@ export default function ComposeEnvTab({ filePath, content, yamlContent, onSaved 
               <tbody>
                 {pairs.map(({ key, value }) => {
                   const usedInYaml = yamlRefs.has(key)
+                  const sensitive  = isSensitiveKey(key)
+                  const isRevealed = revealed.has(key)
+                  const shown      = isRevealed || (!masked && !sensitive)
                   return (
                     <tr key={key} className={clsx('env-row', !usedInYaml && 'env-row--unused')}>
-                      <td className="env-key">{key}</td>
+                      <td className="env-key">
+                        <span className="env-key-name">{key}</span>
+                        {sensitive && <Lock size={10} className="env-sensitive-icon" />}
+                      </td>
                       <td className="env-val">
-                        {masked
-                          ? <span className="env-masked">{'•'.repeat(Math.min(value.length || 8, 16))}</span>
-                          : value || <span className="env-empty">(empty)</span>
-                        }
+                        <span className="env-val-text">
+                          {shown
+                            ? (value || <span className="env-empty">(empty)</span>)
+                            : <span className="env-masked">{'•'.repeat(Math.min(value.length || 8, 16))}</span>
+                          }
+                        </span>
+                        {value !== '' && (
+                          <button
+                            className="env-reveal-btn"
+                            onClick={() => toggleReveal(key)}
+                            title={isRevealed ? 'Hide this value' : 'Reveal this value'}
+                            aria-label={isRevealed ? 'Hide this value' : 'Reveal this value'}
+                          >
+                            {isRevealed ? <EyeOff size={11} /> : <Eye size={11} />}
+                          </button>
+                        )}
                       </td>
                       <td className="env-td--status">
                         {usedInYaml

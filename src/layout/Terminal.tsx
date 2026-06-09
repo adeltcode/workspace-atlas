@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
-import { TerminalSquare, X, Trash2, ChevronDown, Square } from 'lucide-react'
+import { TerminalSquare, X, Trash2, ChevronDown, Square, ScrollText } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../store/appStore'
+import ComposeLogPanel from '../features/docker/components/ComposeLogPanel'
 
 type ShellOut  = { text: string; stderr: boolean }
 type ShellDone = { exit_code: number }
@@ -13,6 +14,16 @@ const MAX_HISTORY = 100
 export default function Terminal() {
   const { terminalLines, terminalOpen, clearTerminal, toggleTerminal, setTerminalOpen, terminalHeight } =
     useAppStore()
+
+  // ── Terminal tabs: shell vs. compose logs ───────────────────────────────────
+  const terminalTab       = useAppStore(s => s.terminalTab)
+  const setTerminalTab    = useAppStore(s => s.setTerminalTab)
+  const composeLogContext = useAppStore(s => s.composeLogContext)
+  const closeComposeLogs  = useAppStore(s => s.closeComposeLogs)
+
+  // Fall back to the shell tab if the logs context has been cleared
+  const activeTab: 'shell' | 'logs' =
+    terminalTab === 'logs' && composeLogContext ? 'logs' : 'shell'
 
   const bodyRef  = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -171,18 +182,44 @@ export default function Terminal() {
       style={terminalOpen ? { height: terminalHeight } : undefined}
       onKeyDown={handlePanelKeyDown}
     >
-      {/* Header */}
-      <div className="terminal-header" onClick={toggleTerminal}>
-        <div className="terminal-header-left">
-          <TerminalSquare size={13} className="terminal-header-icon" />
-          <span className="terminal-title">Terminal</span>
-          {terminalLines.length > 0 && (
-            <span className="terminal-line-count">{terminalLines.length}</span>
+      {/* Header: tab bar + controls */}
+      <div className="terminal-header">
+        <div className="terminal-tabs" onClick={e => e.stopPropagation()}>
+          <button
+            className={clsx('terminal-tab', activeTab === 'shell' && 'active')}
+            onClick={() => { setTerminalTab('shell'); if (!terminalOpen) setTerminalOpen(true) }}
+          >
+            <TerminalSquare size={12} />
+            <span className="terminal-tab-label">Terminal</span>
+            {terminalLines.length > 0 && (
+              <span className="terminal-line-count">{terminalLines.length}</span>
+            )}
+            {running && <span className="terminal-running-badge">running</span>}
+          </button>
+          {composeLogContext && (
+            <button
+              className={clsx('terminal-tab', activeTab === 'logs' && 'active')}
+              onClick={() => { setTerminalTab('logs'); if (!terminalOpen) setTerminalOpen(true) }}
+              title={`Logs — ${composeLogContext.project.name}`}
+            >
+              <ScrollText size={12} />
+              <span className="terminal-tab-label">Logs — {composeLogContext.project.name}</span>
+              <span
+                className="terminal-tab-close"
+                onClick={e => { e.stopPropagation(); closeComposeLogs() }}
+                title="Close logs"
+              >
+                <X size={11} />
+              </span>
+            </button>
           )}
-          {running && <span className="terminal-running-badge">running</span>}
         </div>
+
+        {/* Empty strip — click to expand / collapse the panel */}
+        <div className="terminal-header-grip" onClick={toggleTerminal} />
+
         <div className="terminal-header-right" onClick={e => e.stopPropagation()}>
-          {running && (
+          {activeTab === 'shell' && running && (
             <button
               className="terminal-btn terminal-kill-btn"
               onClick={killCommand}
@@ -191,7 +228,7 @@ export default function Terminal() {
               <Square size={10} />
             </button>
           )}
-          {terminalLines.length > 0 && (
+          {activeTab === 'shell' && terminalLines.length > 0 && (
             <button className="terminal-btn" onClick={clearTerminal} title="Clear terminal">
               <Trash2 size={12} />
             </button>
@@ -208,38 +245,55 @@ export default function Terminal() {
 
       {terminalOpen && (
         <>
-          {/* Output — user-select: text so lines can be selected and copied */}
-          <div className="terminal-body" ref={bodyRef} tabIndex={-1}>
-            {terminalLines.length === 0
-              ? (
-                <span className="terminal-empty">
-                  Type a command below, or run a Docker operation to see output here.
-                </span>
-              )
-              : terminalLines.map(line => (
-                <div key={line.id} className={clsx('terminal-line', `tl-${line.type}`)}>
-                  <span className="tl-text">{line.text}</span>
-                </div>
-              ))
-            }
+          {/* Shell tab — hidden (not unmounted) while the logs tab is active */}
+          <div className="terminal-shell" style={{ display: activeTab === 'shell' ? 'flex' : 'none' }}>
+            {/* Output — user-select: text so lines can be selected and copied */}
+            <div className="terminal-body" ref={bodyRef} tabIndex={-1}>
+              {terminalLines.length === 0
+                ? (
+                  <span className="terminal-empty">
+                    Type a command below, or run a Docker operation to see output here.
+                  </span>
+                )
+                : terminalLines.map(line => (
+                  <div key={line.id} className={clsx('terminal-line', `tl-${line.type}`)}>
+                    <span className="tl-text">{line.text}</span>
+                  </div>
+                ))
+              }
+            </div>
+
+            <div className={clsx('terminal-input-row', running && 'terminal-input-row--busy')}>
+              <span className="terminal-prompt">{running ? '⟳' : '❯'}</span>
+              <input
+                ref={inputRef}
+                className="terminal-input"
+                value={input}
+                onChange={e => { setInput(e.target.value); histIdxRef.current = -1 }}
+                onKeyDown={handleKeyDown}
+                placeholder={running ? 'Running… (Ctrl+C or ■ to stop)' : 'Enter command  (↑↓ history)'}
+                disabled={running}
+                spellCheck={false}
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+              />
+            </div>
           </div>
 
-          <div className={clsx('terminal-input-row', running && 'terminal-input-row--busy')}>
-            <span className="terminal-prompt">{running ? '⟳' : '❯'}</span>
-            <input
-              ref={inputRef}
-              className="terminal-input"
-              value={input}
-              onChange={e => { setInput(e.target.value); histIdxRef.current = -1 }}
-              onKeyDown={handleKeyDown}
-              placeholder={running ? 'Running… (Ctrl+C or ■ to stop)' : 'Enter command  (↑↓ history)'}
-              disabled={running}
-              spellCheck={false}
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-            />
-          </div>
+          {/* Logs tab — kept mounted while a project's log context exists so the
+              streamed buffer survives switching back to the shell tab. */}
+          {composeLogContext && (
+            <div className="terminal-logs-host" style={{ display: activeTab === 'logs' ? 'flex' : 'none' }}>
+              <ComposeLogPanel
+                project={composeLogContext.project}
+                containers={composeLogContext.containers}
+                configFile={composeLogContext.configFile}
+                initialService={composeLogContext.initialService ?? undefined}
+                onClose={closeComposeLogs}
+              />
+            </div>
+          )}
         </>
       )}
     </div>

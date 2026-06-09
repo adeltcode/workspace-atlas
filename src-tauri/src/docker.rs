@@ -238,6 +238,30 @@ fn wsl_mount_to_windows(path: &str) -> Option<String> {
     Some(format!("{}:\\{}", drive.to_ascii_uppercase(), win_rest))
 }
 
+/// Resolve any path to a Windows-openable form: native Windows paths pass
+/// through, `/mnt/<drive>` maps directly, and a pure-WSL path (e.g.
+/// `/home/me/proj`) is converted to its `\\wsl.localhost\<distro>\…` UNC form
+/// via `wslpath -w` (default distro). Returns the input unchanged on failure.
+fn to_windows_path(path: &str) -> String {
+    if is_windows_absolute(path) {
+        return path.to_string();
+    }
+    if let Some(win) = wsl_mount_to_windows(path) {
+        return win;
+    }
+    if path.starts_with('/') {
+        if let Ok(out) = Command::new("wsl").args(["wslpath", "-w", path]).output() {
+            if out.status.success() {
+                let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if !s.is_empty() {
+                    return s;
+                }
+            }
+        }
+    }
+    path.to_string()
+}
+
 /// Read a file that lives inside WSL via `wsl cat`. Capped at `max_bytes`.
 fn read_via_wsl(path: &str, max_bytes: usize) -> Result<Vec<u8>, String> {
     let output = Command::new("wsl")
@@ -2450,11 +2474,54 @@ pub struct DetectedFile {
     pub kind: String, // "dockerfile" | "env"
 }
 
+// Directories never worth scanning for project Dockerfiles.
+fn is_noise_dir(name: &str) -> bool {
+    matches!(name,
+        "node_modules" | ".git" | ".svn" | ".hg" | "vendor" | "dist" | "build"
+        | "target" | "__pycache__" | ".next" | ".nuxt" | ".cache" | ".venv"
+        | "venv" | "coverage" | ".idea" | ".vscode" | "bin" | "obj"
+    )
+}
+
+fn is_dockerfile_name(name: &str) -> bool {
+    name == "Dockerfile" || name.starts_with("Dockerfile.") || name.ends_with(".dockerfile")
+}
+
+fn is_env_name(name: &str) -> bool {
+    name == ".env"
+        || (name.starts_with(".env.") && !name.ends_with(".example") && !name.ends_with(".sample"))
+}
+
+// Recursively collect Dockerfiles under `dir` (depth-limited, skipping noise dirs)
+// for Windows-accessible paths.
+fn scan_dockerfiles_win(dir: &std::path::Path, depth: usize, max_depth: usize, out: &mut Vec<DetectedFile>) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        if is_dir {
+            if depth < max_depth && !is_noise_dir(&name) {
+                scan_dockerfiles_win(&entry.path(), depth + 1, max_depth, out);
+            }
+        } else if is_dockerfile_name(&name) {
+            out.push(DetectedFile { path: entry.path().to_string_lossy().to_string(), kind: "dockerfile".into() });
+        }
+    }
+}
+
 /// Scan the directory containing `config_file` for Dockerfiles and .env files.
-/// Handles Windows, WSL-mount, and pure-WSL paths.
+/// Dockerfiles are found recursively (depth-limited) so files referenced from
+/// subdirectories — e.g. ./nginx/Dockerfile, ./php/Dockerfile — are detected,
+/// not only ones sitting next to the compose file. .env is matched at the root
+/// only. Handles Windows, WSL-mount, and pure-WSL paths.
 #[tauri::command]
 pub async fn detect_compose_project_files(config_file: String) -> Vec<DetectedFile> {
     tauri::async_runtime::spawn_blocking(move || {
+        const MAX_DEPTH: usize = 3;
+
         // Derive project dir from config_file path
         let dir = if is_windows_absolute(&config_file) {
             let p = std::path::Path::new(&config_file);
@@ -2468,25 +2535,44 @@ pub async fn detect_compose_project_files(config_file: String) -> Vec<DetectedFi
             p.parent().map(|d| d.to_string_lossy().to_string()).unwrap_or_default()
         };
 
-        let mut results = Vec::new();
+        let mut results: Vec<DetectedFile> = Vec::new();
 
         if is_windows_absolute(&config_file) || wsl_mount_to_windows(&config_file).is_some() {
-            // Windows-accessible path
-            if let Ok(entries) = std::fs::read_dir(&dir) {
+            // Windows-accessible path — recurse for Dockerfiles, root-only for .env
+            let base = std::path::Path::new(&dir);
+            scan_dockerfiles_win(base, 0, MAX_DEPTH, &mut results);
+            if let Ok(entries) = std::fs::read_dir(base) {
                 let sep = if dir.contains('\\') { '\\' } else { '/' };
                 for entry in entries.flatten() {
                     let name = entry.file_name().to_string_lossy().to_string();
-                    let full = format!("{}{}{}", dir, sep, name);
-                    if name == "Dockerfile" || name.starts_with("Dockerfile.") || name.ends_with(".dockerfile") {
-                        results.push(DetectedFile { path: full, kind: "dockerfile".into() });
-                    } else if name == ".env" || (name.starts_with(".env.") && !name.ends_with(".example") && !name.ends_with(".sample")) {
-                        results.push(DetectedFile { path: full, kind: "env".into() });
+                    if is_env_name(&name) {
+                        results.push(DetectedFile { path: format!("{}{}{}", dir, sep, name), kind: "env".into() });
                     }
                 }
             }
         } else {
-            // Pure WSL — list via `wsl ls -1 <dir>`
+            // Pure WSL — recursive `find` for Dockerfiles, root `ls` for .env
+            let safe_dir = dir.replace('\'', "'\\''");
+            let find_cmd = format!(
+                "find '{}' -maxdepth {} \\( -name node_modules -o -name .git -o -name vendor -o -name target -o -name dist -o -name build \\) -prune -o -type f \\( -name Dockerfile -o -name 'Dockerfile.*' -o -name '*.dockerfile' \\) -print 2>/dev/null",
+                safe_dir, MAX_DEPTH
+            );
             let out = Command::new("wsl")
+                .args(["bash", "-lc", &find_cmd])
+                .output()
+                .unwrap_or_else(|_| std::process::Output {
+                    status: std::process::ExitStatus::default(),
+                    stdout: vec![],
+                    stderr: vec![],
+                });
+            for line in String::from_utf8_lossy(&out.stdout).lines() {
+                let p = line.trim();
+                if !p.is_empty() {
+                    results.push(DetectedFile { path: p.to_string(), kind: "dockerfile".into() });
+                }
+            }
+            // .env at the project root
+            let lsout = Command::new("wsl")
                 .args(["ls", "-1", &dir])
                 .output()
                 .unwrap_or_else(|_| std::process::Output {
@@ -2494,17 +2580,17 @@ pub async fn detect_compose_project_files(config_file: String) -> Vec<DetectedFi
                     stdout: vec![],
                     stderr: vec![],
                 });
-            let names: Vec<String> = String::from_utf8_lossy(&out.stdout)
-                .lines().map(|l| l.trim().to_string()).collect();
-            for name in names {
-                let full = format!("{}/{}", dir, name);
-                if name == "Dockerfile" || name.starts_with("Dockerfile.") || name.ends_with(".dockerfile") {
-                    results.push(DetectedFile { path: full, kind: "dockerfile".into() });
-                } else if name == ".env" || (name.starts_with(".env.") && !name.ends_with(".example") && !name.ends_with(".sample")) {
-                    results.push(DetectedFile { path: full, kind: "env".into() });
+            for name in String::from_utf8_lossy(&lsout.stdout).lines().map(|l| l.trim()) {
+                if is_env_name(name) {
+                    results.push(DetectedFile { path: format!("{}/{}", dir, name), kind: "env".into() });
                 }
             }
         }
+
+        // De-dupe by path, then order Dockerfiles before .env (and by path within each)
+        results.sort_by(|a, b| a.path.cmp(&b.path));
+        results.dedup_by(|a, b| a.path == b.path);
+        results.sort_by(|a, b| a.kind.cmp(&b.kind).then_with(|| a.path.cmp(&b.path)));
 
         results
     })
@@ -2551,14 +2637,53 @@ pub async fn detect_editors() -> Vec<EditorInfo> {
 }
 
 /// Open a file in an external editor, detached from the app process.
+///
+/// Two Windows pitfalls handled here:
+///  1. Editor CLIs like VS Code's `code` are `.cmd` shims — `Command::new("code")`
+///     fails with "is not a valid Win32 application" because the loader only
+///     auto-appends `.exe`. Going through `cmd /C` lets PATHEXT resolve the shim.
+///  2. A pure-WSL path (`/home/…`) means nothing to a Windows editor, so it is
+///     first converted to its `\\wsl.localhost\…` UNC form.
 #[tauri::command]
 pub async fn open_in_editor(path: String, editor_cmd: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        Command::new(&editor_cmd)
-            .arg(&path)
-            .spawn()
+        let win_path = to_windows_path(&path);
+        let mut c = Command::new("cmd");
+        c.args(["/C", &editor_cmd, &win_path]);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            c.creation_flags(0x0800_0000); // CREATE_NO_WINDOW — no flashing console
+        }
+        c.spawn()
             .map(|_| ())
-            .map_err(|e| format!("Failed to open '{}' with '{}': {}", path, editor_cmd, e))
+            .map_err(|e| format!("Failed to open '{}' with '{}': {}", win_path, editor_cmd, e))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Reveal a file in Windows Explorer (selecting it), converting WSL paths to
+/// their UNC form first so `/home/…` files open correctly.
+#[tauri::command]
+pub async fn reveal_path(path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let win = to_windows_path(&path);
+        let mut c = Command::new("explorer");
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            c.raw_arg(format!("/select,\"{}\"", win));
+        }
+        #[cfg(not(windows))]
+        {
+            c.arg(format!("/select,{}", win));
+        }
+        // explorer.exe returns a non-zero exit code even on success, so we only
+        // surface a spawn failure.
+        c.spawn()
+            .map(|_| ())
+            .map_err(|e| format!("Failed to reveal '{}': {}", win, e))
     })
     .await
     .map_err(|e| e.to_string())?

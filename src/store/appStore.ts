@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { LogEntry, DockerStatus, DockerSystemDf, DockerImage, DockerContainer, DockerVolume } from '../features/docker/types'
+import type { LogEntry, DockerStatus, DockerSystemDf, DockerImage, DockerContainer, DockerVolume, ComposeProject } from '../features/docker/types'
 import type { TerminalLine } from '../types/terminal'
 
 export type View      = 'dashboard' | 'docker' | 'wsl' | 'packages' | 'automation' | 'settings'
@@ -17,6 +17,16 @@ export interface DockerCache {
   containers: DockerContainer[]
   volumes: DockerVolume[]
   fetchedAt: number
+}
+
+// Context handed to the bottom Terminal panel's "Logs" tab when the user opens
+// compose logs for a project. Carries everything ComposeLogPanel needs so the
+// wide bottom panel can stream logs independently of the Compose view.
+export interface ComposeLogContext {
+  project:        ComposeProject
+  containers:     DockerContainer[]
+  configFile:     string
+  initialService: string | null
 }
 
 interface AppState {
@@ -58,6 +68,15 @@ interface AppState {
   setComposeProjectsNav: (projects: Array<{ name: string; status: string }>) => void
   composeActiveProject: string | null
   setComposeActiveProject: (name: string | null) => void
+  // Active project's files, shown as a child menu in the sidebar (replaces the
+  // in-editor file tabs). Published by ComposeTab.
+  composeFilesNav: Array<{ path: string; label: string; kind: 'compose' | 'dockerfile' | 'env' }>
+  setComposeFilesNav: (files: Array<{ path: string; label: string; kind: 'compose' | 'dockerfile' | 'env' }>) => void
+  composeActiveFilePath: string | null
+  setComposeActiveFilePath: (p: string | null) => void
+  // Sidebar → ComposeTab: open this file path (cleared after read)
+  composeFileSelect: string | null
+  setComposeFileSelect: (p: string | null) => void
   // When true, ComposeTab should switch to main overview page (cleared after read)
   composeShowOverview: boolean
   setComposeShowOverview: (v: boolean) => void
@@ -88,6 +107,13 @@ interface AppState {
   clearTerminal: () => void
   setTerminalOpen: (open: boolean) => void
   toggleTerminal: () => void
+
+  // ── Terminal tabs + compose log routing (ephemeral)
+  terminalTab: 'shell' | 'logs'
+  setTerminalTab: (tab: 'shell' | 'logs') => void
+  composeLogContext: ComposeLogContext | null
+  openComposeLogs: (ctx: ComposeLogContext) => void
+  closeComposeLogs: () => void
 }
 
 function getSystemTheme(): Theme {
@@ -141,6 +167,12 @@ export const useAppStore = create<AppState>()(
       setComposeProjectsNav:  (composeProjectsNav)  => set({ composeProjectsNav }),
       composeActiveProject:   null,
       setComposeActiveProject:(composeActiveProject) => set({ composeActiveProject }),
+      composeFilesNav:        [],
+      setComposeFilesNav:     (composeFilesNav) => set({ composeFilesNav }),
+      composeActiveFilePath:  null,
+      setComposeActiveFilePath: (composeActiveFilePath) => set({ composeActiveFilePath }),
+      composeFileSelect:      null,
+      setComposeFileSelect:   (composeFileSelect) => set({ composeFileSelect }),
       composeShowOverview:    false,
       setComposeShowOverview: (composeShowOverview) => set({ composeShowOverview }),
       preferredEditor:        null,
@@ -188,6 +220,15 @@ export const useAppStore = create<AppState>()(
       clearTerminal:   () => set({ terminalLines: [] }),
       setTerminalOpen: (open) => set({ terminalOpen: open }),
       toggleTerminal:  () => set((s) => ({ terminalOpen: !s.terminalOpen })),
+
+      // ── Terminal tabs + compose log routing (ephemeral)
+      terminalTab: 'shell',
+      setTerminalTab: (terminalTab) => set({ terminalTab }),
+      composeLogContext: null,
+      openComposeLogs: (composeLogContext) =>
+        set({ composeLogContext, terminalTab: 'logs', terminalOpen: true }),
+      closeComposeLogs: () =>
+        set({ composeLogContext: null, terminalTab: 'shell' }),
     }),
     {
       name: 'workspace-atlas-v1',

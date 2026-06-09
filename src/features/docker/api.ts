@@ -78,6 +78,9 @@ export const detectEditors = () =>
 export const openInEditor = (path: string, editorCmd: string) =>
   invoke<void>('open_in_editor', { path, editorCmd })
 
+export const revealPath = (path: string) =>
+  invoke<void>('reveal_path', { path })
+
 export const dockerComposeConfig = (configFile: string) =>
   invoke<string>('docker_compose_config', { configFile })
 

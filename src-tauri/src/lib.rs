@@ -48,6 +48,7 @@ pub fn run() {
             docker::detect_compose_project_files,
             docker::detect_editors,
             docker::open_in_editor,
+            docker::reveal_path,
             docker::docker_compose_config,
             docker::compose_logs_watch,
             docker::compose_logs_stop,

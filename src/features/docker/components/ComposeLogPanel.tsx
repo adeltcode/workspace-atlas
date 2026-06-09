@@ -31,7 +31,7 @@ export default function ComposeLogPanel({ project, containers, configFile, initi
 
   const pausedRef    = useRef(false)
   const bufferRef    = useRef<string[]>([])
-  const bottomRef    = useRef<HTMLDivElement>(null)
+  const bodyRef      = useRef<HTMLDivElement>(null)
 
   pausedRef.current = paused
 
@@ -64,10 +64,12 @@ export default function ComposeLogPanel({ project, containers, configFile, initi
     return () => { unlisten?.() }
   }, [])
 
-  // Auto-scroll to bottom when not searching
+  // Pin to the bottom when not searching. Sets scrollTop directly (no smooth
+  // behavior) so opening the panel lands at the latest line instantly — no
+  // top-to-bottom scroll animation, and it never scrolls the page.
   useEffect(() => {
-    if (!search && !paused) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (!search && !paused && bodyRef.current) {
+      bodyRef.current.scrollTop = bodyRef.current.scrollHeight
     }
   }, [lines, search, paused])
 
@@ -153,7 +155,7 @@ export default function ComposeLogPanel({ project, containers, configFile, initi
       </div>
 
       {/* Log output */}
-      <div className="log-panel-body">
+      <div className="log-panel-body" ref={bodyRef}>
         {visibleLines.length === 0 && !watching && (
           <span className="log-empty">No log lines yet.</span>
         )}
@@ -175,7 +177,6 @@ export default function ComposeLogPanel({ project, containers, configFile, initi
             {bufferRef.current.length} lines buffered — click Resume to show
           </div>
         )}
-        <div ref={bottomRef} />
       </div>
     </div>
   )
