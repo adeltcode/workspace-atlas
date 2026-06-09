@@ -7827,7 +7827,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wsl-distros-row { cursor: pointer; }
 .wsl-distros-row:hover td { background: var(--color-bg-hover); }
 .wsl-distros-row--selected td { background: var(--color-accent-subtle); }
-.wsl-distros-chevron { color: var(--color-text-tertiary); text-align: center; vertical-align: middle; }
+.wsl-distros-chevron { color: var(--color-text-tertiary); text-align: center; vertical-align: middle; cursor: pointer; }
 .wsl-distros-detail-row td { background: var(--color-bg-tertiary); padding: 0; }
 .wsl-distros-detail {
   display: flex;
@@ -7835,17 +7835,103 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   gap: 10px;
   padding: 12px 16px 14px;
 }
-
-/* ── Dashboard live status line ─────────────────────────────────────────── */
-.wsl-dash-statusline {
-  display: flex;
+.wsl-distros-actions-head { text-align: right; }
+.wsl-distros-actions-cell { text-align: right; white-space: nowrap; }
+.wsl-row-icon {
+  display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 7px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-secondary);
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-left: 2px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
 }
+.wsl-row-icon:hover { background: var(--color-bg-hover); color: var(--color-text-primary); border-color: var(--color-border); }
+.wsl-row-icon--active { background: var(--color-accent-subtle); color: var(--color-accent); border-color: var(--color-accent); }
+
+/* ── Switcher dropdown option contrast (native <select> popup) ──────────── */
+.wsl-switcher-select option,
+.wslconf-distro-select option {
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+}
+
+/* ── Info affordance ────────────────────────────────────────────────────── */
+.wsl-info {
+  color: var(--color-text-tertiary);
+  cursor: help;
+  flex-shrink: 0;
+}
+.wsl-info:hover { color: var(--color-text-secondary); }
+
+/* ── Live pill (section header) ─────────────────────────────────────────── */
+.wsl-live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 10px;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Resource trend charts ──────────────────────────────────────────────── */
+.wsl-trends {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 14px;
+}
+@media (max-width: 720px) { .wsl-trends { grid-template-columns: 1fr; } }
+.wsl-trend {
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-secondary);
+  padding: 8px 10px;
+}
+.wsl-trend-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 6px; }
+.wsl-trend-label { font-size: 11px; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.03em; }
+.wsl-trend-val { font-size: 13px; font-weight: 700; color: var(--color-text-primary); }
+.wsl-trend-svg { display: block; width: 100%; height: 48px; }
+.wsl-trend-note { margin-top: 8px; font-size: 11px; color: var(--color-text-tertiary); }
+
+/* ── Resource limits table ──────────────────────────────────────────────── */
+.wsl-limits-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.wsl-limits-table th {
+  text-align: left;
+  padding: 4px 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-tertiary);
+  border-bottom: 1px solid var(--color-border-light);
+}
+.wsl-limits-table th:not(:first-child) { text-align: right; }
+.wsl-limits-table td { padding: 6px 8px; color: var(--color-text-secondary); border-bottom: 1px solid var(--color-border-light); }
+.wsl-limits-table td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+.wsl-limits-table tr:last-child td { border-bottom: none; }
+.wsl-limit-default { color: var(--color-text-tertiary); }
+.wsl-limit-actual-cell { color: var(--color-text-primary); font-weight: 600; }
+
+.wsl-net-sub { color: var(--color-text-tertiary); font-size: 10.5px; }
+
+/* ── Optimize dry-run estimate ──────────────────────────────────────────── */
+.wsl-estimate {
+  margin: 4px 0 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-secondary);
+  padding: 8px 12px;
+}
+.wsl-estimate-row { display: flex; justify-content: space-between; gap: 12px; font-size: 12.5px; padding: 3px 0; color: var(--color-text-secondary); }
+.wsl-estimate-row strong { color: var(--color-text-primary); font-variant-numeric: tabular-nums; }
+.wsl-estimate-row--accent { border-top: 1px solid var(--color-border-light); margin-top: 3px; padding-top: 6px; }
+.wsl-estimate-row--accent strong { color: var(--color-accent); }
+.wsl-estimate-note { margin: 4px 0; font-size: 12px; color: var(--color-text-tertiary); }
 
 .wslconf-context {
   margin: 0 0 12px;

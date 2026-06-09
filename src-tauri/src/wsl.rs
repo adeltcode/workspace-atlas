@@ -921,10 +921,17 @@ pub struct DistroExtras {
     /// dpkg | rpm | apk | pacman | unknown
     pub package_manager: String,
     pub uptime_secs: u64,
+    /// Used / total bytes of the distro's root ext4 filesystem (from `df`). The
+    /// gap between this and the VHD file size is the optimize dry-run estimate.
+    pub disk_used_bytes: u64,
+    pub disk_total_bytes: u64,
 }
 
 const EXTRAS_SCRIPT: &str = r#"
 echo "uptime=$(cut -d' ' -f1 /proc/uptime 2>/dev/null)"
+DF=$(df -B1 --output=used,size / 2>/dev/null | tail -1)
+[ -z "$DF" ] && DF=$(df -kP / 2>/dev/null | tail -1 | awk '{print $3*1024" "$2*1024}')
+echo "df=$DF"
 if command -v dpkg-query >/dev/null 2>&1; then echo "pm=dpkg"; echo "count=$(dpkg-query -f '.\n' -W 2>/dev/null | wc -l)"
 elif command -v rpm >/dev/null 2>&1; then echo "pm=rpm"; echo "count=$(rpm -qa 2>/dev/null | wc -l)"
 elif command -v apk >/dev/null 2>&1; then echo "pm=apk"; echo "count=$(apk info 2>/dev/null | wc -l)"
@@ -936,14 +943,52 @@ fn parse_distro_extras(out: &str) -> DistroExtras {
     let mut e = DistroExtras::default();
     for line in out.lines() {
         let Some((k, v)) = line.trim().split_once('=') else { continue };
+        let v = v.trim();
         match k {
-            "uptime" => e.uptime_secs = v.trim().parse::<f64>().map(|f| f as u64).unwrap_or(0),
-            "pm" => e.package_manager = v.trim().to_string(),
-            "count" => e.package_count = v.trim().parse().unwrap_or(0),
+            "uptime" => e.uptime_secs = v.parse::<f64>().map(|f| f as u64).unwrap_or(0),
+            "pm" => e.package_manager = v.to_string(),
+            "count" => e.package_count = v.parse().unwrap_or(0),
+            "df" => {
+                let mut p = v.split_whitespace();
+                e.disk_used_bytes = p.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+                e.disk_total_bytes = p.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+            }
             _ => {}
         }
     }
     e
+}
+
+/// Open an interactive shell into a distro. Prefers Windows Terminal; falls back
+/// to a console window. Detached — the GUI does not wait on it.
+#[tauri::command]
+pub async fn wsl_open_terminal(app: tauri::AppHandle, distro: String) -> Result<(), String> {
+    emit_line(&app, format!("$ wt wsl -d {}", distro), false);
+    if Command::new("wt.exe").args(["wsl.exe", "-d", &distro]).spawn().is_ok() {
+        return Ok(());
+    }
+    // No Windows Terminal — open a classic console window instead.
+    Command::new("cmd")
+        .args(["/c", "start", "", "wsl.exe", "-d", &distro])
+        .spawn()
+        .map_err(|e| {
+            emit_line(&app, format!("  ✗ {}", e), true);
+            format!("Failed to open terminal: {}", e)
+        })?;
+    Ok(())
+}
+
+/// Open a distro's Linux filesystem in Explorer via the `\\wsl.localhost` share.
+#[tauri::command]
+pub async fn wsl_open_distro_folder(app: tauri::AppHandle, distro: String) -> Result<(), String> {
+    let path = format!("\\\\wsl.localhost\\{}", distro);
+    emit_line(&app, format!("$ explorer \"{}\"", path), false);
+    // explorer.exe returns a non-zero exit code even on success, so don't check it.
+    Command::new("explorer.exe")
+        .arg(&path)
+        .spawn()
+        .map_err(|e| format!("Failed to open folder: {}", e))?;
+    Ok(())
 }
 
 /// Package count + manager + uptime for the comparison table. Reads inside the
@@ -1688,10 +1733,12 @@ docker=5
 
     #[test]
     fn parses_distro_extras() {
-        let e = parse_distro_extras("uptime=43232.99\npm=dpkg\ncount=1463\n");
+        let e = parse_distro_extras("uptime=43232.99\ndf=28321128448 1081101176832\npm=dpkg\ncount=1463\n");
         assert_eq!(e.uptime_secs, 43232);
         assert_eq!(e.package_manager, "dpkg");
         assert_eq!(e.package_count, 1463);
+        assert_eq!(e.disk_used_bytes, 28321128448);
+        assert_eq!(e.disk_total_bytes, 1081101176832);
     }
 
     #[test]

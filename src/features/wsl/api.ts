@@ -5,6 +5,8 @@ export const wslCheck       = () => invoke<WslStatus>('wsl_check')
 export const wslListDistros = () => invoke<WslDistro[]>('wsl_list_distros')
 export const wslDistroMetrics = (distro: string) => invoke<DistroMetrics>('wsl_distro_metrics', { distro })
 export const wslDistroExtras  = (distro: string) => invoke<DistroExtras>('wsl_distro_extras', { distro })
+export const wslOpenTerminal     = (distro: string) => invoke<void>('wsl_open_terminal', { distro })
+export const wslOpenDistroFolder = (distro: string) => invoke<void>('wsl_open_distro_folder', { distro })
 export const wslTerminateDistro = (distro: string) => invoke<void>('wsl_terminate_distro', { distro })
 export const wslCloneDistro = (source: string, newName: string, installDir: string, version: number) =>
   invoke<void>('wsl_clone_distro', { source, newName, installDir, version })

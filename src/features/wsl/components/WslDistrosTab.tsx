@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import clsx from 'clsx'
 import {
   Star, FolderOpen, Download, Zap, ShieldAlert, RotateCw, Copy, FolderInput,
-  Upload, X, ChevronRight, ChevronDown,
+  Upload, X, ChevronRight, ChevronDown, Terminal, MoreHorizontal,
 } from 'lucide-react'
 import { useAppStore } from '../../../store/appStore'
 import * as api from '../api'
@@ -164,9 +164,12 @@ export default function WslDistrosTab({ distros, loading, onReload }: {
 
   const totalVhd = distros.reduce((sum, d) => sum + d.vhd_size_bytes, 0)
 
-  const toggleRow = (d: WslDistro) => {
-    setSelected(d.name)
-    setExpanded(prev => (prev === d.name ? null : d.name))
+  const openTerminal = (d: WslDistro) => {
+    api.wslOpenTerminal(d.name).catch(() => {})
+    addActivity({ module: 'wsl', action: `Opened terminal · ${d.name}`, outcome: 'info' })
+  }
+  const openFolder = (d: WslDistro) => {
+    api.wslOpenDistroFolder(d.name).catch(() => {})
   }
 
   if (!loading && distros.length === 0) {
@@ -197,6 +200,7 @@ export default function WslDistrosTab({ distros, loading, onReload }: {
               <th className="wsl-compare-num">VHD size</th>
               <th className="wsl-compare-num">Packages</th>
               <th className="wsl-compare-num">Uptime</th>
+              <th className="wsl-distros-actions-head">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -220,8 +224,11 @@ export default function WslDistrosTab({ distros, loading, onReload }: {
                   exportInfo={exportInfo[d.name]}
                   exportErrText={exportErr[d.name]}
                   migrateInfo={migrateInfo[d.name]}
-                  onToggle={() => toggleRow(d)}
+                  onSelect={() => setSelected(d.name)}
+                  onToggleExpand={() => setExpanded(prev => (prev === d.name ? null : d.name))}
                   onScan={() => loadExtras(d.name)}
+                  onTerminal={() => openTerminal(d)}
+                  onFolder={() => openFolder(d)}
                   onExport={() => runExport(d)}
                   onOptimize={() => setConfirmOpt(d)}
                   onRestart={() => setConfirmRestart(d)}
@@ -245,6 +252,20 @@ export default function WslDistrosTab({ distros, loading, onReload }: {
             This compacts <code>ext4.vhdx</code> to reclaim unused space. It shuts down
             <strong> all WSL distributions</strong> and requires <strong>administrator approval</strong>.
           </p>
+          {(() => {
+            const x = extras[confirmOpt.name]
+            if (!x || x.disk_used_bytes === 0) {
+              return <p className="wsl-estimate-note">Reclaim estimate unavailable — scan the distro on the Distributions table first.</p>
+            }
+            const est = Math.max(0, confirmOpt.vhd_size_bytes - x.disk_used_bytes)
+            return (
+              <div className="wsl-estimate">
+                <div className="wsl-estimate-row"><span>VHD file on Windows</span><strong>{bytesToHuman(confirmOpt.vhd_size_bytes)}</strong></div>
+                <div className="wsl-estimate-row"><span>Actually used inside</span><strong>{bytesToHuman(x.disk_used_bytes)}</strong></div>
+                <div className="wsl-estimate-row wsl-estimate-row--accent"><span>Estimated reclaimable</span><strong>≈ {bytesToHuman(est)}</strong></div>
+              </div>
+            )
+          })()}
           <div className="modal-actions">
             <button className="btn-secondary" onClick={() => setConfirmOpt(null)}>Cancel</button>
             <button className="btn-filled btn-filled--accent" onClick={() => runOptimize(confirmOpt)}>
@@ -360,7 +381,7 @@ export default function WslDistrosTab({ distros, loading, onReload }: {
 function DistroRow({
   d, x, scanning, isOpen, isSelected, busy, optName, exportName, busyAction,
   optResult, optErr, exportInfo, exportErrText, migrateInfo,
-  onToggle, onScan, onExport, onOptimize, onRestart, onClone, onMigrate, onReveal,
+  onSelect, onToggleExpand, onScan, onTerminal, onFolder, onExport, onOptimize, onRestart, onClone, onMigrate, onReveal,
 }: {
   d: WslDistro
   x?: DistroExtras
@@ -376,8 +397,11 @@ function DistroRow({
   exportInfo?: string
   exportErrText?: string
   migrateInfo?: string
-  onToggle: () => void
+  onSelect: () => void
+  onToggleExpand: () => void
   onScan: () => void
+  onTerminal: () => void
+  onFolder: () => void
   onExport: () => void
   onOptimize: () => void
   onRestart: () => void
@@ -385,10 +409,11 @@ function DistroRow({
   onMigrate: () => void
   onReveal: () => void
 }) {
+  const stop = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); fn() }
   return (
     <>
-      <tr className={clsx('wsl-distros-row', isSelected && 'wsl-distros-row--selected')} onClick={onToggle}>
-        <td className="wsl-distros-chevron">
+      <tr className={clsx('wsl-distros-row', isSelected && 'wsl-distros-row--selected')} onClick={onSelect}>
+        <td className="wsl-distros-chevron" onClick={stop(onToggleExpand)} title={isOpen ? 'Hide actions' : 'Show actions'}>
           {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         </td>
         <td>
@@ -410,10 +435,21 @@ function DistroRow({
             : <button className="wsl-scan-btn" onClick={onScan} title="Reads inside the distro — starts it if stopped">Scan</button>}
         </td>
         <td className="wsl-compare-num">{x ? formatDuration(x.uptime_secs) : scanning ? '…' : '—'}</td>
+        <td className="wsl-distros-actions-cell" onClick={e => e.stopPropagation()}>
+          <button className="wsl-row-icon" onClick={stop(onTerminal)} title="Open a terminal in this distro">
+            <Terminal size={14} />
+          </button>
+          <button className="wsl-row-icon" onClick={stop(onFolder)} title="Open the distro’s files in Explorer (\\wsl.localhost)">
+            <FolderOpen size={14} />
+          </button>
+          <button className={clsx('wsl-row-icon', isOpen && 'wsl-row-icon--active')} onClick={stop(onToggleExpand)} title="More actions">
+            <MoreHorizontal size={14} />
+          </button>
+        </td>
       </tr>
       {isOpen && (
         <tr className="wsl-distros-detail-row">
-          <td colSpan={7}>
+          <td colSpan={8}>
             <div className="wsl-distros-detail">
               {d.vhd_path && (
                 <button className="wsl-distro-path" onClick={onReveal} title="Reveal ext4.vhdx in Explorer">

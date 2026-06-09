@@ -80,6 +80,8 @@ export interface DistroExtras {
   /** dpkg | rpm | apk | pacman | unknown */
   package_manager: string
   uptime_secs: number
+  disk_used_bytes: number
+  disk_total_bytes: number
 }
 
 export interface MigrateResult {
