@@ -620,13 +620,9 @@ fn get_volume_sizes_sync() -> std::collections::HashMap<String, u64> {
         }
     };
 
-    // Try to parse as NDJSON (each line is a JSON object from the Go template)
-    // If the output is plain text instead, fall back to the text parser
+    // `--format` is unreliable with `-v` across Docker versions, so the output is
+    // parsed as plain text in both the primary and fallback paths.
     let text = String::from_utf8_lossy(&output.stdout);
-    if text.trim_start().starts_with('{') {
-        // Each line is {"Name":..., "Size":...} — not the standard output format
-        // Docker doesn't support --format with -v in all versions; use text parser
-    }
     parse_volume_sizes_text(&text)
 }
 
@@ -1164,10 +1160,7 @@ fn get_volumes_sync() -> Result<Vec<DockerVolume>, String> {
         };
 
         let label_str = v["Labels"].as_str().unwrap_or("");
-        let compose_project = label_str.split(',').find_map(|kv| {
-            let (k, val) = kv.split_once('=')?;
-            if k.trim() == "com.docker.compose.project" { Some(val.trim().to_string()) } else { None }
-        });
+        let compose_project = parse_label(label_str, "com.docker.compose.project");
 
         volumes.push(DockerVolume {
             in_use,
@@ -1911,7 +1904,7 @@ pub async fn docker_volume_backup(
         "docker run --rm --volume {}:/source:ro --volume {}:/backup alpine tar czf /backup/{} -C /source .",
         vol, docker_vol_dir, filename
     );
-    emit_bp(&app, vol, &format!("Creating archive…"), 50, false, None, None, Some(archive_cmd));
+    emit_bp(&app, vol, "Creating archive…", 50, false, None, None, Some(archive_cmd));
 
     let archive_result = Command::new("docker")
         .args([
@@ -2842,4 +2835,118 @@ pub async fn compose_logs_stop(
     if let Some(ref mut child) = *guard { child.kill().ok(); }
     *guard = None;
     Ok(())
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tests — pure parsers only (no Docker, WSL, or filesystem access)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_size_bytes_handles_each_unit() {
+        assert_eq!(parse_size_bytes("2.54GB"), 2_540_000_000);
+        assert_eq!(parse_size_bytes("187MB"), 187_000_000);
+        assert_eq!(parse_size_bytes("145.3kB"), 145_300);
+        assert_eq!(parse_size_bytes("512B"), 512);
+        assert_eq!(parse_size_bytes("0B"), 0);
+        assert_eq!(parse_size_bytes(""), 0);
+    }
+
+    #[test]
+    fn bytes_to_human_picks_the_right_scale() {
+        assert_eq!(bytes_to_human(2_540_000_000), "2.54 GB");
+        assert_eq!(bytes_to_human(187_000_000), "187.0 MB");
+        assert_eq!(bytes_to_human(145_300), "145 kB");
+        assert_eq!(bytes_to_human(512), "512 B");
+    }
+
+    #[test]
+    fn split_df_line_keeps_multiword_columns_and_percentages() {
+        let cols = split_df_line("Local Volumes   3    2    1.5GB   500MB (33%)");
+        assert_eq!(cols, vec!["Local Volumes", "3", "2", "1.5GB", "500MB (33%)"]);
+    }
+
+    #[test]
+    fn parse_stopped_days_reads_status_string() {
+        assert_eq!(parse_stopped_days("running", "Up 2 days"), -1);
+        assert_eq!(parse_stopped_days("dead", ""), 999);
+        assert_eq!(parse_stopped_days("exited", "Exited (0) 3 weeks ago"), 21);
+        assert_eq!(parse_stopped_days("exited", "Exited (1) 2 months ago"), 60);
+        assert_eq!(parse_stopped_days("exited", "Exited (0) 5 minutes ago"), 0);
+    }
+
+    #[test]
+    fn parse_age_days_approximates_units() {
+        assert_eq!(parse_age_days("3 weeks ago"), 21);
+        assert_eq!(parse_age_days("2 months ago"), 60);
+        assert_eq!(parse_age_days("5 hours ago"), 0);
+        assert_eq!(parse_age_days("1 year ago"), 365);
+        assert_eq!(parse_age_days(""), 0);
+    }
+
+    #[test]
+    fn parse_iec_bytes_handles_binary_and_si_suffixes() {
+        assert_eq!(parse_iec_bytes("512KiB"), 524_288);
+        assert_eq!(parse_iec_bytes("1MiB"), 1_048_576);
+        assert_eq!(parse_iec_bytes("23.5MiB"), 24_641_536);
+        assert_eq!(parse_iec_bytes("128B"), 128);
+        assert_eq!(parse_iec_bytes("1.5GB"), 1_500_000_000);
+    }
+
+    #[test]
+    fn parse_mem_usage_splits_used_and_limit() {
+        assert_eq!(parse_mem_usage("100MiB / 2GiB"), (104_857_600, 2_147_483_648));
+    }
+
+    #[test]
+    fn ts_to_datetime_str_formats_utc() {
+        assert_eq!(ts_to_datetime_str(0), "1970-01-01_00-00");
+        assert_eq!(ts_to_datetime_str(86_400), "1970-01-02_00-00");
+        assert_eq!(ts_to_datetime_str(3_661), "1970-01-01_01-01");
+    }
+
+    #[test]
+    fn is_leap_year_follows_gregorian_rules() {
+        assert!(is_leap_year(2000));
+        assert!(is_leap_year(2024));
+        assert!(!is_leap_year(1900));
+        assert!(!is_leap_year(2023));
+    }
+
+    #[test]
+    fn is_windows_absolute_detects_drive_letters() {
+        assert!(is_windows_absolute("C:\\Users"));
+        assert!(is_windows_absolute("C:/Users"));
+        assert!(!is_windows_absolute("/home/me"));
+        assert!(!is_windows_absolute("relative"));
+        assert!(!is_windows_absolute("1:/x"));
+    }
+
+    #[test]
+    fn wsl_mount_to_windows_maps_only_mnt_paths() {
+        assert_eq!(wsl_mount_to_windows("/mnt/c/Users/foo").as_deref(), Some("C:\\Users\\foo"));
+        assert_eq!(wsl_mount_to_windows("/mnt/d/data").as_deref(), Some("D:\\data"));
+        assert_eq!(wsl_mount_to_windows("/mnt/c").as_deref(), Some("C:\\"));
+        assert_eq!(wsl_mount_to_windows("/home/me"), None);
+        assert_eq!(wsl_mount_to_windows("C:\\x"), None);
+    }
+
+    #[test]
+    fn parse_label_extracts_value_by_key() {
+        let labels = "com.docker.compose.project=myapp,com.docker.compose.service=web";
+        assert_eq!(parse_label(labels, "com.docker.compose.project").as_deref(), Some("myapp"));
+        assert_eq!(parse_label(labels, "com.docker.compose.service").as_deref(), Some("web"));
+        assert_eq!(parse_label(labels, "missing"), None);
+    }
+
+    #[test]
+    fn parse_pct_handles_dashes_and_values() {
+        assert!((parse_pct("12.34%") - 12.34).abs() < 1e-9);
+        assert_eq!(parse_pct("--"), 0.0);
+        assert_eq!(parse_pct("N/A"), 0.0);
+        assert_eq!(parse_pct("0%"), 0.0);
+    }
 }
