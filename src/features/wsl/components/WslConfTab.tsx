@@ -3,9 +3,7 @@ import { useAppStore } from '../../../store/appStore'
 import * as api from '../api'
 import { getDefaultBackupDir } from '../../docker/api'
 import { WSLCONF_SECTIONS } from '../ini'
-import { useDistroSelection } from '../hooks'
 import IniConfigEditor, { type IniBackend } from './IniConfigEditor'
-import DistroSelect from './DistroSelect'
 import type { WslDistro } from '../types'
 
 const TEMPLATE = `# Per-distro settings for /etc/wsl.conf.
@@ -22,8 +20,8 @@ export default function WslConfTab({ distros, runningNames, onAfterShutdown }: {
 }) {
   const backupDir    = useAppStore(s => s.backupDir)
   const setBackupDir = useAppStore(s => s.setBackupDir)
-
-  const [distro, setDistro] = useDistroSelection(distros)
+  // The active distro is the global selection (switched from the view-header).
+  const distro       = useAppStore(s => s.wslSelectedDistro) ?? ''
 
   useEffect(() => {
     if (!backupDir) getDefaultBackupDir().then(setBackupDir).catch(() => {})
@@ -44,13 +42,9 @@ export default function WslConfTab({ distros, runningNames, onAfterShutdown }: {
 
   return (
     <div className="wslconf">
-      <DistroSelect
-        distros={distros}
-        value={distro}
-        onChange={setDistro}
-        note={<>Editing <code>/etc/wsl.conf</code> inside this distro (writes as root)</>}
-      />
-
+      <p className="wslconf-context">
+        Editing <code>/etc/wsl.conf</code> inside <strong>{distro}</strong> (writes as root). Switch distro from the header.
+      </p>
       {distro && (
         <IniConfigEditor
           label={`wsl.conf · ${distro}`}

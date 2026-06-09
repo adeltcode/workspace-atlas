@@ -3,7 +3,6 @@ import clsx from 'clsx'
 import { ChevronDown, ChevronRight, Play, RefreshCw, Search, ShieldAlert, Settings2 } from 'lucide-react'
 import { useAppStore } from '../../../store/appStore'
 import * as api from '../api'
-import DistroSelect from './DistroSelect'
 import type { WslDistro, ServiceList, Service, ServiceDetail } from '../types'
 
 type Filter = 'all' | 'enabled' | 'disabled' | 'running' | 'failed'
@@ -135,13 +134,12 @@ function ServiceRow({ distro, svc, onToggle }: {
   )
 }
 
-export default function WslStartupTab({ distros, selected, onSelect, onGoToConf }: {
+export default function WslStartupTab({ distros, onGoToConf }: {
   distros: WslDistro[]
-  selected: string
-  onSelect: (name: string) => void
   onGoToConf: () => void
 }) {
   const addActivity = useAppStore(s => s.addActivity)
+  const selected    = useAppStore(s => s.wslSelectedDistro) ?? ''
 
   const [data, setData]       = useState<ServiceList | null>(null)
   const [loading, setLoading] = useState(false)
@@ -214,8 +212,6 @@ export default function WslStartupTab({ distros, selected, onSelect, onGoToConf 
 
   return (
     <div className="wsl-startup">
-      <DistroSelect distros={distros} value={selected} onChange={onSelect} />
-
       {!ready && (
         <div className="offline-card" style={{ marginTop: 16 }}>
           <p className="offline-title">{selected} is stopped</p>

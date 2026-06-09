@@ -6,6 +6,16 @@ import type { TerminalLine } from '../types/terminal'
 export type View      = 'dashboard' | 'docker' | 'wsl' | 'packages' | 'automation' | 'settings'
 export type Theme     = 'dark' | 'light'
 export type DockerTab = 'overview' | 'images' | 'containers' | 'volumes' | 'networks' | 'compose' | 'backup-volumes' | 'backup-compose' | 'prune' | 'log'
+export type WslTab    = 'dashboard' | 'distros' | 'startup' | 'performance' | 'config'
+export type WslConfigSub = 'wslconfig' | 'conf'
+
+/** Lightweight distro entry for the sidebar grandchild list. */
+export interface WslDistroNav {
+  name: string
+  running: boolean
+  is_default: boolean
+  version: number
+}
 
 const MAX_DOCKER_LOGS    = 10
 const MAX_TERMINAL_LINES = 500
@@ -56,6 +66,18 @@ interface AppState {
   toggleTheme: () => void
   setActiveView: (view: View) => void
   setDockerTab: (tab: DockerTab) => void
+
+  // ── WSL navigation (wslTab/configSub/selected persisted; nav+badges ephemeral)
+  wslTab: WslTab
+  wslConfigSub: WslConfigSub
+  wslSelectedDistro: string | null
+  setWslTab: (tab: WslTab) => void
+  setWslConfigSub: (sub: WslConfigSub) => void
+  setWslSelectedDistro: (name: string | null) => void
+  wslDistrosNav: WslDistroNav[]
+  setWslDistrosNav: (distros: WslDistroNav[]) => void
+  wslBadges: { distros: string } | null
+  setWslBadges: (b: { distros: string } | null) => void
 
   // ── Layout sizes (persisted)
   sidebarWidth: number
@@ -170,6 +192,18 @@ export const useAppStore = create<AppState>()(
       toggleTheme:   () => { const next = get().theme === 'dark' ? 'light' : 'dark'; applyTheme(next); set({ theme: next }) },
       setActiveView: (view) => set({ activeView: view }),
       setDockerTab:  (dockerTab) => set({ dockerTab }),
+
+      // ── WSL navigation
+      wslTab:            'dashboard',
+      wslConfigSub:      'wslconfig',
+      wslSelectedDistro: null,
+      setWslTab:            (wslTab) => set({ wslTab }),
+      setWslConfigSub:      (wslConfigSub) => set({ wslConfigSub }),
+      setWslSelectedDistro: (wslSelectedDistro) => set({ wslSelectedDistro }),
+      wslDistrosNav:        [],
+      setWslDistrosNav:     (wslDistrosNav) => set({ wslDistrosNav }),
+      wslBadges:            null,
+      setWslBadges:         (wslBadges) => set({ wslBadges }),
 
       // ── Layout sizes (sidebarWidth 0 = auto/fit-content)
       sidebarWidth:  0,
@@ -305,6 +339,9 @@ export const useAppStore = create<AppState>()(
         theme:           s.theme,
         activeView:      s.activeView,
         dockerTab:       s.dockerTab,
+        wslTab:          s.wslTab,
+        wslConfigSub:    s.wslConfigSub,
+        wslSelectedDistro: s.wslSelectedDistro,
         sidebarWidth:    s.sidebarWidth,
         terminalHeight:  s.terminalHeight,
         backupDir:       s.backupDir,

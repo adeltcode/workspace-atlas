@@ -21,9 +21,9 @@ const MODULES = [
   {
     view: 'wsl' as View,
     icon: HardDrive,
-    title: 'WSL2 Optimizer',
-    description: 'Compact VHD files, manage distro config, and reclaim gigabytes with before/after deltas.',
-    tags: ['Compact VHD', 'Distros', '.wslconfig'],
+    title: 'WSL',
+    description: 'Monitor distros live, manage systemd services, benchmark startup, and compact or migrate VHDs.',
+    tags: ['Dashboard', 'Distros', 'Startup', 'Performance'],
     color: 'success',
   },
   {

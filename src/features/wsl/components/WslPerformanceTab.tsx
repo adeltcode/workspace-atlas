@@ -3,7 +3,6 @@ import clsx from 'clsx'
 import { Timer, Gauge, Play, ShieldAlert, Lightbulb } from 'lucide-react'
 import { useAppStore } from '../../../store/appStore'
 import * as api from '../api'
-import DistroSelect from './DistroSelect'
 import type { WslDistro, ShellProfile } from '../types'
 
 /** Format a duration given in seconds as ms or s. */
@@ -15,11 +14,8 @@ function fmtMs(ms: number): string {
   return ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${ms} ms`
 }
 
-export default function WslPerformanceTab({ distros, selected, onSelect }: {
-  distros: WslDistro[]
-  selected: string
-  onSelect: (name: string) => void
-}) {
+export default function WslPerformanceTab({ distros }: { distros: WslDistro[] }) {
+  const selected = useAppStore(s => s.wslSelectedDistro) ?? ''
   const addActivity      = useAppStore(s => s.addActivity)
   const benchmarks       = useAppStore(s => s.wslBenchmarks)
   const addWslBenchmark  = useAppStore(s => s.addWslBenchmark)
@@ -76,8 +72,6 @@ export default function WslPerformanceTab({ distros, selected, onSelect }: {
 
   return (
     <div className="wsl-perf">
-      <DistroSelect distros={distros} value={selected} onChange={onSelect} />
-
       <div className="wsl-perf-cols">
         {/* ── Cold-boot benchmark ──────────────────────────────────────── */}
         <div className="overview-section" style={{ margin: 0 }}>

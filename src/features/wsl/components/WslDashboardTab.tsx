@@ -3,6 +3,7 @@ import clsx from 'clsx'
 import {
   Cpu, MemoryStick, HardDrive, ArrowDownUp, Activity, Boxes, Play, RefreshCw, Network,
 } from 'lucide-react'
+import { useAppStore } from '../../../store/appStore'
 import * as api from '../api'
 import { readWslConfig } from '../api'
 import { getIniValue } from '../ini'
@@ -83,11 +84,8 @@ function LimitRow({ label, limit, actual }: { label: string; limit?: string; act
   )
 }
 
-export default function WslDashboardTab({ distros, selected, onSelect }: {
-  distros: WslDistro[]
-  selected: string
-  onSelect: (name: string) => void
-}) {
+export default function WslDashboardTab({ distros }: { distros: WslDistro[] }) {
+  const selected = useAppStore(s => s.wslSelectedDistro) ?? ''
   const [metrics, setMetrics] = useState<DistroMetrics | null>(null)
   const [error, setError]     = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -154,7 +152,15 @@ export default function WslDashboardTab({ distros, selected, onSelect }: {
 
   return (
     <div className="wsl-dashboard">
-      <DistroSelectInline distros={distros} value={selected} onChange={onSelect} polling={polling} loading={loading} onRefresh={() => load(true)} />
+      {polling && (
+        <div className="wsl-dash-statusline">
+          <span className="wsl-live-dot" />
+          <span className="wsl-live-text">Live · auto-refreshing every 10s</span>
+          <button className="btn-icon" onClick={() => load(true)} disabled={loading} title="Refresh now" style={{ marginLeft: 'auto' }}>
+            <RefreshCw size={12} className={loading ? 'spin' : ''} />
+          </button>
+        </div>
+      )}
 
       {!polling && (
         <div className="offline-card" style={{ marginTop: 16 }}>
@@ -296,38 +302,26 @@ export default function WslDashboardTab({ distros, selected, onSelect }: {
       )}
 
       {polling && !metrics && !error && (
-        <p className="empty-state" style={{ marginTop: 24 }}>Loading metrics…</p>
+        <DashboardSkeleton />
       )}
     </div>
   )
 }
 
-/** Distro selector with a live/refresh affordance, specific to the dashboard. */
-function DistroSelectInline({ distros, value, onChange, polling, loading, onRefresh }: {
-  distros: WslDistro[]
-  value: string
-  onChange: (name: string) => void
-  polling: boolean
-  loading: boolean
-  onRefresh: () => void
-}) {
+/** Loading placeholder that reserves the gauge + columns layout so switching to
+ *  this tab does not shift the page while metrics load. */
+function DashboardSkeleton() {
   return (
-    <div className="wslconf-distro-bar">
-      <select className="wslconf-distro-select" value={value} onChange={e => onChange(e.target.value)}>
-        {distros.map(d => (
-          <option key={d.name} value={d.name}>
-            {d.name}{d.is_default ? ' (default)' : ''}{d.running ? '' : ' — stopped'}
-          </option>
+    <div style={{ marginTop: 16 }}>
+      <div className="sys-metrics">
+        {[0, 1, 2, 3].map(i => (
+          <div key={i} className="sys-card">
+            <div className="sk-line w-16" style={{ height: 10 }} />
+            <div className="sk-line" style={{ height: 6, marginTop: 12 }} />
+            <div className="sk-line w-24" style={{ height: 9, marginTop: 8 }} />
+          </div>
         ))}
-      </select>
-      {polling && (
-        <>
-          <span className="wsl-live-dot" /> <span className="wsl-live-text">live · every 10s</span>
-          <button className="btn-icon" onClick={onRefresh} disabled={loading} title="Refresh now" style={{ marginLeft: 'auto' }}>
-            <RefreshCw size={12} className={loading ? 'spin' : ''} />
-          </button>
-        </>
-      )}
+      </div>
     </div>
   )
 }

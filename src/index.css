@@ -7568,7 +7568,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wsl-scan-btn:hover { border-color: var(--color-accent); color: var(--color-text-primary); }
 
 /* ── WSL startup manager (services) ─────────────────────────────────────── */
-.wsl-startup { margin-top: 4px; }
+.wsl-startup { margin-top: 0; }
 .wsl-svc-toolbar {
   display: flex;
   align-items: center;
@@ -7773,30 +7773,86 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 /* ── WSL tabs + .wslconfig editor ─────────────────────────────────────── */
-.wsl-tabs {
-  display: flex;
-  gap: 4px;
-  margin: 18px 0 6px;
-  border-bottom: 1px solid var(--color-border);
-}
-.wsl-tab {
+/* Tab content wrapper — consistent top rhythm regardless of which tab renders. */
+.wsl-tab-content { margin-top: 20px; }
+
+/* ── Header active-distro switcher ──────────────────────────────────────── */
+.wsl-distro-switcher {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 14px;
+  height: 26px;
+  padding: 0 8px;
+  margin-left: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
+}
+.wsl-distro-switcher:hover { border-color: var(--color-accent); }
+.wsl-switcher-icon { color: var(--color-text-tertiary); flex-shrink: 0; }
+.wsl-switcher-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.wsl-switcher-dot.running { background: var(--color-success); }
+.wsl-switcher-dot.stopped { background: var(--color-text-tertiary); }
+.wsl-switcher-select {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--color-text-primary);
   font-size: 12.5px;
   font-weight: 600;
-  color: var(--color-text-tertiary);
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
+  font-family: inherit;
+  padding-right: 16px;
   cursor: pointer;
-  transition: color var(--transition-fast), border-color var(--transition-fast);
+  outline: none;
+  max-width: 200px;
 }
-.wsl-tab:hover { color: var(--color-text-secondary); }
-.wsl-tab.active {
-  color: var(--color-text-primary);
-  border-bottom-color: var(--color-accent);
+.wsl-switcher-caret {
+  position: absolute;
+  right: 7px;
+  color: var(--color-text-tertiary);
+  pointer-events: none;
 }
+
+/* ── Distributions tab (consolidated table) ─────────────────────────────── */
+.wsl-distros-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.wsl-distros-total { font-size: 12.5px; color: var(--color-text-secondary); }
+.wsl-distros-table { table-layout: auto; }
+.wsl-distros-row { cursor: pointer; }
+.wsl-distros-row:hover td { background: var(--color-bg-hover); }
+.wsl-distros-row--selected td { background: var(--color-accent-subtle); }
+.wsl-distros-chevron { color: var(--color-text-tertiary); text-align: center; vertical-align: middle; }
+.wsl-distros-detail-row td { background: var(--color-bg-tertiary); padding: 0; }
+.wsl-distros-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px 14px;
+}
+
+/* ── Dashboard live status line ─────────────────────────────────────────── */
+.wsl-dash-statusline {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
+}
+
+.wslconf-context {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+.wslconf-context code { font-family: var(--font-mono); color: var(--color-text-secondary); }
 
 .wslcfg { margin-top: 16px; }
 
@@ -7952,7 +8008,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 /* ── WSL dashboard ──────────────────────────────────────────────────────── */
-.wsl-dashboard { margin-top: 4px; }
+.wsl-dashboard { margin-top: 0; }
 .wsl-live-dot {
   width: 8px; height: 8px; border-radius: 50%;
   background: var(--color-success);
@@ -8024,7 +8080,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wsl-limits-note code { font-family: var(--font-mono); }
 
 /* ── WSL performance analyzer ───────────────────────────────────────────── */
-.wsl-perf { margin-top: 4px; }
+.wsl-perf { margin-top: 0; }
 .wsl-perf-cols {
   display: grid;
   grid-template-columns: 1fr 1.3fr;

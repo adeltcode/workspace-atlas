@@ -1,15 +1,31 @@
-import { useEffect, useState } from 'react'
-import type { WslDistro } from './types'
+import { useCallback, useEffect, useState } from 'react'
+import * as api from './api'
+import type { WslStatus, WslDistro } from './types'
 
-/** Track a selected distro name, defaulting to the default distro (or the first)
- *  once the list loads, and re-selecting if the current choice disappears. */
-export function useDistroSelection(distros: WslDistro[]) {
-  const [selected, setSelected] = useState('')
-  useEffect(() => {
-    if (distros.length === 0) return
-    if (!selected || !distros.some(d => d.name === selected)) {
-      setSelected((distros.find(d => d.is_default) ?? distros[0]).name)
+/** Hoisted WSL data source (status + distro list), mirroring Docker's
+ *  useDockerData: fetched once at the view level and shared across tabs so
+ *  switching tabs never refetches. `reload` re-runs the probe. */
+export function useWslData() {
+  const [status, setStatus]   = useState<WslStatus | null>(null)
+  const [distros, setDistros] = useState<WslDistro[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError]     = useState<string | null>(null)
+
+  const reload = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const st = await api.wslCheck()
+      setStatus(st)
+      setDistros(st.available ? await api.wslListDistros() : [])
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setLoading(false)
     }
-  }, [distros, selected])
-  return [selected, setSelected] as const
+  }, [])
+
+  useEffect(() => { reload() }, [reload])
+
+  return { status, distros, loading, error, reload }
 }
