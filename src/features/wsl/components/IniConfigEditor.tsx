@@ -140,7 +140,7 @@ export default function IniConfigEditor({
       await backend.save(text)
       setOriginal(text)
       setExists(true)
-      addTerminalLine(`  ✓ saved ${path}`, 'success')
+      // The backend emits the command + result to the terminal (no black box).
       addActivity({ module: 'wsl', action: `Edited ${label}`, outcome: 'success' })
       setStatus({ type: 'success', text: 'Saved. Restart WSL to apply changes.' })
     } catch (e) {
@@ -159,7 +159,6 @@ export default function IniConfigEditor({
     try {
       if (dirty) { await backend.save(text); setOriginal(text); setExists(true) }
       const entry = await backend.createBackup()
-      addTerminalLine(`  ✓ backed up ${label} → ${entry.filename}`, 'success')
       addActivity({ module: 'wsl', action: `Backed up ${label}`, outcome: 'success' })
       setStatus({ type: 'success', text: `Backed up as ${entry.filename}` })
       await loadBackups()
@@ -179,7 +178,6 @@ export default function IniConfigEditor({
       setText(content)
       setOriginal(content)
       setExists(true)
-      addTerminalLine(`  ✓ restored ${label} from ${entry.filename}`, 'success')
       addActivity({ module: 'wsl', action: `Restored ${label}`, outcome: 'success' })
       setStatus({ type: 'success', text: 'Restored. Restart WSL to apply changes.' })
     } catch (e) {
