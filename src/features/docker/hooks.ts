@@ -118,10 +118,12 @@ export function useDockerData() {
       const ctrData = await api.dockerContainers()
       addTerminalLine(`  ✓ ${ctrData.length} container(s)`, 'success')
       setContainers(ctrData)
-      // Keep cache in sync so the next full refresh doesn't undo this
+      // Keep cache in sync so the next full refresh doesn't undo this.
+      // Preserve the original fetchedAt — only containers were refreshed, so the
+      // freshness window for images/df/volumes must not be extended.
       const st = useAppStore.getState()
       if (st.dockerCache) {
-        st.setDockerCache({ ...st.dockerCache, containers: ctrData, fetchedAt: Date.now() })
+        st.setDockerCache({ ...st.dockerCache, containers: ctrData })
       }
     } catch (e) {
       addTerminalLine(`  ✗ ${String(e)}`, 'error')
@@ -139,9 +141,10 @@ export function useDockerData() {
       const volData = await api.dockerVolumes()
       addTerminalLine(`  ✓ ${volData.length} volume(s)`, 'success')
       setVolumes(volData)
+      // Preserve the original fetchedAt — only volumes were refreshed here.
       const st = useAppStore.getState()
       if (st.dockerCache) {
-        st.setDockerCache({ ...st.dockerCache, volumes: volData, fetchedAt: Date.now() })
+        st.setDockerCache({ ...st.dockerCache, volumes: volData })
       }
     } catch (e) {
       addTerminalLine(`  ✗ ${String(e)}`, 'error')
