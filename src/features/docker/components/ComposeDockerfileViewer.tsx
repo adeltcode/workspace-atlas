@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, type ReactNode } from 'react'
 
 // ── Dockerfile syntax highlighter ─────────────────────────────────────────────
 
@@ -56,19 +56,31 @@ function renderDockerArg(text: string): ReactNode {
 //    controls live in the shared toolbar, consistent with the compose view) ────
 
 interface Props {
-  content: string
+  content:           string
+  initialScrollTop?: number
+  onScrollTop?:      (top: number) => void
 }
 
-export default function ComposeDockerfileViewer({ content }: Props) {
+export default function ComposeDockerfileViewer({ content, initialScrollTop = 0, onScrollTop }: Props) {
   const numsRef = useRef<HTMLDivElement>(null)
   const areaRef = useRef<HTMLDivElement>(null)
   const lines = content.split('\n')
   if (lines[lines.length - 1] === '') lines.pop()
 
   const syncScroll = () => {
-    if (areaRef.current && numsRef.current)
-      numsRef.current.scrollTop = areaRef.current.scrollTop
+    const area = areaRef.current
+    if (!area) return
+    if (numsRef.current) numsRef.current.scrollTop = area.scrollTop
+    onScrollTop?.(area.scrollTop)
   }
+
+  // Restore the scroll position from the previous mode before paint.
+  useLayoutEffect(() => {
+    const area = areaRef.current
+    if (!area) return
+    area.scrollTop = initialScrollTop
+    if (numsRef.current) numsRef.current.scrollTop = area.scrollTop
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="compose-code-wrap">

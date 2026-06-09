@@ -1,12 +1,16 @@
-import { useRef } from 'react'
+import { useLayoutEffect, useRef } from 'react'
 
 interface Props {
-  value:      string
-  onChange:   (v: string) => void
-  renderLine: (line: string, index: number) => React.ReactNode
+  value:            string
+  onChange:         (v: string) => void
+  renderLine:       (line: string, index: number) => React.ReactNode
+  initialScrollTop?: number
+  onScrollTop?:     (top: number) => void
 }
 
-export default function CodeOverlayEditor({ value, onChange, renderLine }: Props) {
+export default function CodeOverlayEditor({
+  value, onChange, renderLine, initialScrollTop = 0, onScrollTop,
+}: Props) {
   const taRef   = useRef<HTMLTextAreaElement>(null)
   const preRef  = useRef<HTMLDivElement>(null)
   const numsRef = useRef<HTMLDivElement>(null)
@@ -23,7 +27,18 @@ export default function CodeOverlayEditor({ value, onChange, renderLine }: Props
     if (ta && nums) {
       nums.scrollTop = ta.scrollTop
     }
+    if (ta) onScrollTop?.(ta.scrollTop)
   }
+
+  // Restore the scroll position handed in from the previous mode before paint,
+  // so toggling read-only ⇄ edit keeps the user at the same place in the file.
+  useLayoutEffect(() => {
+    const ta = taRef.current
+    if (!ta) return
+    ta.scrollTop = initialScrollTop
+    if (preRef.current)  preRef.current.scrollTop  = ta.scrollTop
+    if (numsRef.current) numsRef.current.scrollTop = ta.scrollTop
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="compose-code-wrap compose-code-wrap--edit">

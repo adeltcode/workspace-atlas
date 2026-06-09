@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from 'react'
+import { useEffect, useLayoutEffect, useState, useMemo, useRef } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { revealItemInDir, openUrl } from '@tauri-apps/plugin-opener'
 import {
@@ -30,6 +30,32 @@ function relLabel(path: string, baseDir: string): string {
   if (nb && np.toLowerCase().startsWith(nb.toLowerCase() + '/')) return np.slice(nb.length + 1)
   return np.split('/').pop() ?? path
 }
+
+// Directory holding a path, and that directory's lowercased leaf name.
+function dirOf(p: string): string {
+  const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'))
+  return i >= 0 ? p.slice(0, i) : ''
+}
+function dirNameOf(p: string): string {
+  return dirOf(p).replace(/\\/g, '/').replace(/\/+$/, '').split('/').pop()?.toLowerCase() ?? ''
+}
+
+// The sidebar file menu for a project: its compose config files followed by the
+// already-filtered detected extras (referenced Dockerfiles and .env files).
+type FileNav = { path: string; label: string; kind: 'compose' | 'dockerfile' | 'env' }
+function buildFileNav(project: ComposeProject, extras: DetectedFile[]): FileNav[] {
+  const baseDir = dirOf(project.config_files[0] ?? '')
+  return [
+    ...project.config_files.map(f => ({ path: f, label: relLabel(f, baseDir), kind: 'compose' as const })),
+    ...extras.map(pf => ({
+      path:  pf.path,
+      label: relLabel(pf.path, baseDir),
+      kind:  (pf.kind === 'env' ? 'env' : 'dockerfile') as 'dockerfile' | 'env',
+    })),
+  ]
+}
+
+const EMPTY_FILES: DetectedFile[] = []
 
 // Host ports published by the running containers in a project (deduped, in order)
 function runningHostPorts(containers: DockerContainer[]): string[] {
@@ -152,12 +178,14 @@ function YamlLine({
 }
 
 function YamlViewer({
-  content, onOpenPort, onRevealPath, onOpenDockerfile,
+  content, onOpenPort, onRevealPath, onOpenDockerfile, initialScrollTop = 0, onScrollTop,
 }: {
-  content:          string
-  onOpenPort?:      (port: string) => void
-  onRevealPath?:    (path: string) => void
-  onOpenDockerfile?:(value: string) => void
+  content:           string
+  onOpenPort?:       (port: string) => void
+  onRevealPath?:     (path: string) => void
+  onOpenDockerfile?: (value: string) => void
+  initialScrollTop?: number
+  onScrollTop?:      (top: number) => void
 }) {
   const numsRef = useRef<HTMLDivElement>(null)
   const areaRef = useRef<HTMLDivElement>(null)
@@ -165,9 +193,19 @@ function YamlViewer({
   if (lines[lines.length - 1] === '') lines.pop()
 
   const syncScroll = () => {
-    if (areaRef.current && numsRef.current)
-      numsRef.current.scrollTop = areaRef.current.scrollTop
+    const area = areaRef.current
+    if (!area) return
+    if (numsRef.current) numsRef.current.scrollTop = area.scrollTop
+    onScrollTop?.(area.scrollTop)
   }
+
+  // Restore the scroll position from the previous mode before paint.
+  useLayoutEffect(() => {
+    const area = areaRef.current
+    if (!area) return
+    area.scrollTop = initialScrollTop
+    if (numsRef.current) numsRef.current.scrollTop = area.scrollTop
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="compose-code-wrap">
@@ -248,12 +286,17 @@ function dockerfileMatchesRefs(path: string, refRels: string[], dirName: string)
 // Editable YAML with live syntax highlighting (highlighted layer behind a
 // transparent textarea — see CodeOverlayEditor). Keeps the view ⇄ edit
 // transition visually seamless.
-function YamlEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function YamlEditor({ value, onChange, initialScrollTop, onScrollTop }: {
+  value: string; onChange: (v: string) => void
+  initialScrollTop?: number; onScrollTop?: (top: number) => void
+}) {
   return (
     <CodeOverlayEditor
       value={value}
       onChange={onChange}
       renderLine={(line, i) => <YamlLine key={i} line={line} />}
+      initialScrollTop={initialScrollTop}
+      onScrollTop={onScrollTop}
     />
   )
 }
@@ -461,6 +504,10 @@ export default function ComposeTab({
   const [editMode, setEditMode]     = useState(false)
   const [editDraft, setEditDraft]   = useState('')
   const [editSaving, setEditSaving] = useState(false)
+  // Last scroll position per file, so toggling read-only ⇄ edit (and switching
+  // between files) keeps the user at the same place in the document.
+  const scrollByFile = useRef<Record<string, number>>({})
+  const rememberScroll = (top: number) => { scrollByFile.current[activeFile] = top }
 
   // ── Per-service controls ──────────────────────────────────────────────────
   const [serviceAction, setServiceAction] = useState<{ service: string; action: string } | null>(null)
@@ -473,8 +520,13 @@ export default function ComposeTab({
 
   // (legacy .env accordion state removed — .env is now a first-class tab)
 
-  // ── Detected extra project files (Dockerfiles, .env) ─────────────────────
-  const [projectFiles, setProjectFiles] = useState<DetectedFile[]>([])
+  // ── Detected extra project files (Dockerfiles, .env), filtered to those the
+  //    compose file references and cached per project. Built once and preloaded
+  //    so the sidebar file menu is instant and never flickers as content loads.
+  const [filesByProject, setFilesByProject] = useState<Record<string, DetectedFile[]>>({})
+  // Projects whose detection is in flight, so the preload and a user-select
+  // never run detection for the same project at once.
+  const detectingRef = useRef<Set<string>>(new Set())
   // Cache of loaded file contents keyed by path
   const [fileContents, setFileContents] = useState<Record<string, string>>({})
 
@@ -531,25 +583,12 @@ export default function ComposeTab({
   const headerPorts = useMemo(() => runningHostPorts(projectContainers).slice(0, 6), [projectContainers])
 
   // Directory holding the compose file — used to label nested project files
-  const composeBaseDir = useMemo(() => {
-    const f = selected?.config_files[0] ?? ''
-    const i = Math.max(f.lastIndexOf('/'), f.lastIndexOf('\\'))
-    return i >= 0 ? f.slice(0, i) : ''
-  }, [selected])
-  const composeDirName = useMemo(
-    () => composeBaseDir.replace(/\\/g, '/').replace(/\/+$/, '').split('/').pop()?.toLowerCase() ?? '',
-    [composeBaseDir]
-  )
+  const composeBaseDir = useMemo(() => dirOf(selected?.config_files[0] ?? ''), [selected])
+  const composeDirName = useMemo(() => dirNameOf(selected?.config_files[0] ?? ''), [selected])
 
-  // Dockerfiles the compose file actually builds — used to filter detected files
-  // (the recursive scan can turn up Dockerfiles that aren't part of this project)
-  const referencedRefs = useMemo(() => parseDockerfileRefs(fileContent ?? ''), [fileContent])
-  const visibleProjectFiles = useMemo(
-    () => projectFiles.filter(pf =>
-      pf.kind !== 'dockerfile' || dockerfileMatchesRefs(pf.path, referencedRefs, composeDirName)
-    ),
-    [projectFiles, referencedRefs, composeDirName]
-  )
+  // The selected project's referenced Dockerfiles / .env files, straight from
+  // the preloaded cache — stable, so the sidebar menu never flickers.
+  const visibleProjectFiles = filesByProject[selected?.name ?? ''] ?? EMPTY_FILES
 
   // Open the Dockerfile referenced on a `dockerfile:` line as a tab
   const handleOpenDockerfileRef = (raw: string) => {
@@ -564,10 +603,14 @@ export default function ComposeTab({
       return
     }
     // Fallback — resolve relative to the compose dir (preserve case) and open
-    if (!composeBaseDir) return
+    if (!composeBaseDir || !selected) return
     const sep = composeBaseDir.includes('\\') ? '\\' : '/'
     const abs = `${composeBaseDir.replace(/[/\\]+$/, '')}${sep}${v.replace(/^\.\//, '').replace(/\//g, sep)}`
-    setProjectFiles(prev => prev.some(p => p.path === abs) ? prev : [...prev, { path: abs, kind: 'dockerfile' }])
+    setFilesByProject(prev => {
+      const cur = prev[selected.name] ?? []
+      if (cur.some(p => p.path === abs)) return prev
+      return { ...prev, [selected.name]: [...cur, { path: abs, kind: 'dockerfile' }] }
+    })
     setActiveFile(abs); setEditMode(false); loadExtraFile(abs)
   }
 
@@ -575,9 +618,11 @@ export default function ComposeTab({
 
   const composeFileSelect = useAppStore(s => s.composeFileSelect)
 
-  // Open a file by path — handles both config files and detected extra files
+  // Open a file by path — handles both config files and detected extra files.
+  // Re-selecting the active file is a no-op unless it failed to load, in which
+  // case clicking it again retries.
   const openFile = (path: string) => {
-    if (!path || path === activeFile) return
+    if (!path || (path === activeFile && !fileError)) return
     setActiveFile(path)
     setEditMode(false)
     setBackupMsg(null)
@@ -591,15 +636,8 @@ export default function ComposeTab({
       useAppStore.getState().setComposeFilesNav([])
       return
     }
-    useAppStore.getState().setComposeFilesNav([
-      ...selected.config_files.map(f => ({ path: f, label: relLabel(f, composeBaseDir), kind: 'compose' as const })),
-      ...visibleProjectFiles.map(pf => ({
-        path: pf.path,
-        label: relLabel(pf.path, composeBaseDir),
-        kind: (pf.kind === 'env' ? 'env' : 'dockerfile') as 'dockerfile' | 'env',
-      })),
-    ])
-  }, [viewMode, selected, visibleProjectFiles, composeBaseDir])
+    useAppStore.getState().setComposeFilesNav(buildFileNav(selected, visibleProjectFiles))
+  }, [viewMode, selected, visibleProjectFiles])
 
   // Publish which file is active so the sidebar can highlight it
   useEffect(() => {
@@ -624,6 +662,33 @@ export default function ComposeTab({
     return 'compose'
   }, [activeFile])
 
+  // ── Project file detection (cached + preloaded) ──────────────────────────
+  // Detect a project's extra files and filter to the Dockerfiles its compose
+  // file references, then cache the result. Skips work if already cached. On
+  // failure (e.g. WSL busy) it leaves the entry uncached so a later select
+  // retries, rather than caching an empty menu.
+  const ensureProjectFiles = async (project: ComposeProject, force = false) => {
+    if (detectingRef.current.has(project.name)) return
+    if (!force && filesByProject[project.name] !== undefined) return
+    const firstConfig = project.config_files[0] ?? ''
+    if (!firstConfig) { setFilesByProject(prev => ({ ...prev, [project.name]: [] })); return }
+    detectingRef.current.add(project.name)
+    try {
+      const dirName = dirNameOf(firstConfig)
+      const detected    = await api.detectComposeProjectFiles(firstConfig)
+      const composeText = await api.readFileContent(firstConfig)
+      const refs = parseDockerfileRefs(composeText)
+      const visible = detected.filter(pf =>
+        pf.kind !== 'dockerfile' || dockerfileMatchesRefs(pf.path, refs, dirName)
+      )
+      setFilesByProject(prev => ({ ...prev, [project.name]: visible }))
+    } catch {
+      /* leave uncached — a later select will retry */
+    } finally {
+      detectingRef.current.delete(project.name)
+    }
+  }
+
   // ── Load projects ─────────────────────────────────────────────────────────
 
   const loadProjects = async () => {
@@ -634,6 +699,20 @@ export default function ComposeTab({
   }
 
   useEffect(() => { loadProjects() }, [refreshTick]) // eslint-disable-line
+
+  // Preload every project's file menu so opening one shows its Dockerfiles and
+  // .env files instantly. Done one project at a time so we never spawn a burst
+  // of concurrent `wsl` reads (which can fail, especially during WSL cold-start).
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      for (const p of projects) {
+        if (cancelled) break
+        await ensureProjectFiles(p)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [projects]) // eslint-disable-line
 
   // ── Load metadata once on mount ──────────────────────────────────────────
 
@@ -691,9 +770,9 @@ export default function ComposeTab({
     // content that is already on screen — that re-render is the visible flicker.
     if (selected?.name === project.name) return
 
-    // Clear the previous project's file menu so the sidebar never shows stale
-    // files under the newly-active project for a render.
-    useAppStore.getState().setComposeFilesNav([])
+    // Publish the new project's file menu in the same render as setSelected, from
+    // the preloaded cache, so the sidebar never shows an empty or stale menu.
+    useAppStore.getState().setComposeFilesNav(buildFileNav(project, filesByProject[project.name] ?? EMPTY_FILES))
     setSelected(project)
     setFileContent(null)
     setFileError(null)
@@ -703,13 +782,8 @@ export default function ComposeTab({
     useAppStore.getState().closeComposeLogs() // drop stale logs from the previous project
     setValidatorOpen(false)
     setMetaPanelOpen(false)
-    setProjectFiles([])
     setFileContents({})
-    // Detect additional project files (Dockerfiles, .env)
-    const firstConfig = project.config_files[0]
-    if (firstConfig) {
-      api.detectComposeProjectFiles(firstConfig).then(setProjectFiles).catch(() => {})
-    }
+    ensureProjectFiles(project) // refresh the cache if this project was not preloaded
     const first = project.config_files[0] ?? ''
     setActiveFile(first)
     if (first) loadFile(first)
@@ -811,10 +885,13 @@ export default function ComposeTab({
   const editableContent = fileType === 'compose' ? (fileContent ?? '') : (fileContents[activeFile] ?? '')
   const fileLoaded      = fileType === 'compose' ? fileContent !== null : fileContents[activeFile] !== undefined
   const isEditableType  = fileType === 'compose' || fileType === 'dockerfile'
-  const isModified = editMode && editDraft !== editableContent
+  // Drop the file's trailing newline for editing so the editor shows the same
+  // line count as the read-only viewer (which also hides it). Re-added on save.
+  const editBaseline = editableContent.replace(/\n$/, '')
+  const isModified = editMode && editDraft !== editBaseline
 
   const enterEditMode = () => {
-    setEditDraft(editableContent)
+    setEditDraft(editBaseline)
     setEditMode(true)
   }
 
@@ -826,9 +903,16 @@ export default function ComposeTab({
     if (!activeFile || editSaving) return
     setEditSaving(true)
     try {
-      await api.writeFileContent(activeFile, editDraft)
-      if (fileType === 'compose') setFileContent(editDraft)
-      else setFileContents(prev => ({ ...prev, [activeFile]: editDraft }))
+      // Re-add the trailing newline that was dropped for editing, if the file
+      // had one, so saving doesn't strip the file's final newline.
+      const toWrite = editableContent.endsWith('\n') ? editDraft + '\n' : editDraft
+      await api.writeFileContent(activeFile, toWrite)
+      if (fileType === 'compose') {
+        setFileContent(toWrite)
+        if (selected) ensureProjectFiles(selected, true) // build refs may have changed
+      } else {
+        setFileContents(prev => ({ ...prev, [activeFile]: toWrite }))
+      }
       setEditMode(false)
       useAppStore.getState().addTerminalLine(`  ✓ Saved ${activeFile}`, 'success')
     } catch (e) {
@@ -1201,11 +1285,13 @@ export default function ComposeTab({
                 {fileLoading && <div className="compose-viewer-state">Loading file…</div>}
                 {fileError && <div className="compose-viewer-state compose-viewer-error"><AlertCircle size={14} />{fileError}</div>}
                 {!fileLoading && fileType === 'compose' && fileContent !== null && !editMode && (
-                  <YamlViewer content={fileContent} onOpenPort={handleOpenPort} onRevealPath={handleRevealPath}
-                    onOpenDockerfile={handleOpenDockerfileRef} />
+                  <YamlViewer key={activeFile} content={fileContent} onOpenPort={handleOpenPort} onRevealPath={handleRevealPath}
+                    onOpenDockerfile={handleOpenDockerfileRef}
+                    initialScrollTop={scrollByFile.current[activeFile] ?? 0} onScrollTop={rememberScroll} />
                 )}
                 {!fileLoading && fileType === 'compose' && editMode && (
-                  <YamlEditor value={editDraft} onChange={setEditDraft} />
+                  <YamlEditor key={activeFile} value={editDraft} onChange={setEditDraft}
+                    initialScrollTop={scrollByFile.current[activeFile] ?? 0} onScrollTop={rememberScroll} />
                 )}
                 {fileType === 'env' && activeFile && (
                   fileContents[activeFile] !== undefined
@@ -1217,9 +1303,11 @@ export default function ComposeTab({
                   fileContents[activeFile] === undefined
                     ? <div className="compose-viewer-state">Loading…</div>
                     : editMode
-                      ? <CodeOverlayEditor value={editDraft} onChange={setEditDraft}
-                          renderLine={(l, i) => <DockerfileLine key={i} line={l} />} />
-                      : <ComposeDockerfileViewer content={fileContents[activeFile]} />
+                      ? <CodeOverlayEditor key={activeFile} value={editDraft} onChange={setEditDraft}
+                          renderLine={(l, i) => <DockerfileLine key={i} line={l} />}
+                          initialScrollTop={scrollByFile.current[activeFile] ?? 0} onScrollTop={rememberScroll} />
+                      : <ComposeDockerfileViewer key={activeFile} content={fileContents[activeFile]}
+                          initialScrollTop={scrollByFile.current[activeFile] ?? 0} onScrollTop={rememberScroll} />
                 )}
               </div>
             </div>
