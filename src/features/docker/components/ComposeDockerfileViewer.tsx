@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 
 // ── Dockerfile syntax highlighter ─────────────────────────────────────────────
 
@@ -60,16 +60,25 @@ interface Props {
 }
 
 export default function ComposeDockerfileViewer({ content }: Props) {
+  const numsRef = useRef<HTMLDivElement>(null)
+  const areaRef = useRef<HTMLDivElement>(null)
   const lines = content.split('\n')
   if (lines[lines.length - 1] === '') lines.pop()
 
+  const syncScroll = () => {
+    if (areaRef.current && numsRef.current)
+      numsRef.current.scrollTop = areaRef.current.scrollTop
+  }
+
   return (
     <div className="compose-code-wrap">
-      <div className="compose-line-nums" aria-hidden>
+      <div className="compose-line-nums" aria-hidden ref={numsRef}>
         {lines.map((_, i) => <span key={i}>{i + 1}</span>)}
       </div>
-      <div className="compose-code-body">
-        {lines.map((line, i) => <DockerfileLine key={i} line={line} />)}
+      <div className="compose-code-area" ref={areaRef} onScroll={syncScroll}>
+        <div className="compose-code-body">
+          {lines.map((line, i) => <DockerfileLine key={i} line={line} />)}
+        </div>
       </div>
     </div>
   )

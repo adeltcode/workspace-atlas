@@ -12,7 +12,7 @@ type ShellDone = { exit_code: number }
 const MAX_HISTORY = 100
 
 export default function Terminal() {
-  const { terminalLines, terminalOpen, clearTerminal, toggleTerminal, setTerminalOpen, terminalHeight } =
+  const { terminalLines, terminalOpen, clearTerminal, toggleTerminal, setTerminalOpen } =
     useAppStore()
 
   // ── Terminal tabs: shell vs. compose logs ───────────────────────────────────
@@ -179,7 +179,6 @@ export default function Terminal() {
   return (
     <div
       className={clsx('terminal-panel', terminalOpen && 'open')}
-      style={terminalOpen ? { height: terminalHeight } : undefined}
       onKeyDown={handlePanelKeyDown}
     >
       {/* Header: tab bar + controls */}

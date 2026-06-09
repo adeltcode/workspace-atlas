@@ -11,9 +11,10 @@ const TERMINAL_MIN = 100
 const TERMINAL_MAX = 600
 
 export default function App() {
-  const theme        = useAppStore(s => s.theme)
-  const terminalOpen = useAppStore(s => s.terminalOpen)
-  const sidebarWidth = useAppStore(s => s.sidebarWidth)
+  const theme          = useAppStore(s => s.theme)
+  const terminalOpen   = useAppStore(s => s.terminalOpen)
+  const terminalHeight = useAppStore(s => s.terminalHeight)
+  const sidebarWidth   = useAppStore(s => s.sidebarWidth)
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -42,26 +43,25 @@ export default function App() {
     document.addEventListener('mouseup', onUp)
   }
 
-  // ── Terminal resize — direct DOM write during drag, store only on release ─
+  // ── Terminal resize — drive the --terminal-height var during drag, store on release ─
+  // The terminal (absolute) and its resize handle both read --terminal-height,
+  // so updating that one variable moves them together.
   const onTerminalResize = (e: React.MouseEvent) => {
     e.preventDefault()
-    const startY     = e.clientY
-    const startH     = useAppStore.getState().terminalHeight
-    const terminalEl = document.querySelector<HTMLElement>('.terminal-panel')
-    if (!terminalEl) return
-    let current = startH
+    const startY  = e.clientY
+    const startH  = useAppStore.getState().terminalHeight
+    const content = e.currentTarget.parentElement as HTMLElement   // .app-content
+    let current   = startH
 
-    // Kill the CSS height transition for the duration of the drag —
-    // without this, every pixel move triggers a 0.3s animation causing lag.
-    terminalEl.style.transition = 'none'
+    content.classList.add('resizing-terminal')                     // disable height transition
 
     const onMove = (mv: MouseEvent) => {
       current = Math.max(TERMINAL_MIN, Math.min(TERMINAL_MAX, startH + startY - mv.clientY))
-      terminalEl.style.height = `${current}px`
+      content.style.setProperty('--terminal-height', `${current}px`)
     }
     const onUp = () => {
-      useAppStore.getState().setTerminalHeight(current)           // persist on release
-      terminalEl.style.transition = ''                           // restore transition
+      useAppStore.getState().setTerminalHeight(current)            // persist on release
+      content.classList.remove('resizing-terminal')
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
     }
@@ -80,7 +80,10 @@ export default function App() {
       >
         <Sidebar />
         <div className="sidebar-resize-handle" onMouseDown={onSidebarResize} />
-        <div className="app-content">
+        <div
+          className="app-content"
+          style={{ '--terminal-height': `${terminalHeight}px` } as React.CSSProperties}
+        >
           <MainPanel />
           {terminalOpen && (
             <div className="terminal-resize-handle" onMouseDown={onTerminalResize} />

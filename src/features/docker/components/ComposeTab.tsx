@@ -159,17 +159,27 @@ function YamlViewer({
   onRevealPath?:    (path: string) => void
   onOpenDockerfile?:(value: string) => void
 }) {
+  const numsRef = useRef<HTMLDivElement>(null)
+  const areaRef = useRef<HTMLDivElement>(null)
   const lines = content.split('\n')
   if (lines[lines.length - 1] === '') lines.pop()
+
+  const syncScroll = () => {
+    if (areaRef.current && numsRef.current)
+      numsRef.current.scrollTop = areaRef.current.scrollTop
+  }
+
   return (
     <div className="compose-code-wrap">
-      <div className="compose-line-nums" aria-hidden>
+      <div className="compose-line-nums" aria-hidden ref={numsRef}>
         {lines.map((_, i) => <span key={i}>{i + 1}</span>)}
       </div>
-      <div className="compose-code-body">
-        {lines.map((line, i) => (
-          <YamlLine key={i} line={line} onOpenPort={onOpenPort} onRevealPath={onRevealPath} onOpenDockerfile={onOpenDockerfile} />
-        ))}
+      <div className="compose-code-area" ref={areaRef} onScroll={syncScroll}>
+        <div className="compose-code-body">
+          {lines.map((line, i) => (
+            <YamlLine key={i} line={line} onOpenPort={onOpenPort} onRevealPath={onRevealPath} onOpenDockerfile={onOpenDockerfile} />
+          ))}
+        </div>
       </div>
     </div>
   )
@@ -421,7 +431,6 @@ export default function ComposeTab({
   refreshTick = 0, containers, containerStats, statHistory, onRefresh,
 }: ComposeTabProps) {
   const backupDir = useAppStore(s => s.backupDir)
-  const dockerTab = useAppStore(s => s.dockerTab) // re-measure editor fill when this tab becomes active
 
   // ── View mode: 'main' = overview page, 'project' = file detail ───────────
   const [viewMode, setViewMode] = useState<'main' | 'project'>('main')
@@ -452,9 +461,6 @@ export default function ComposeTab({
   const [editMode, setEditMode]     = useState(false)
   const [editDraft, setEditDraft]   = useState('')
   const [editSaving, setEditSaving] = useState(false)
-
-  // Editor body — measured to fill exactly down to the terminal (see effect below)
-  const viewerBodyRef = useRef<HTMLDivElement>(null)
 
   // ── Per-service controls ──────────────────────────────────────────────────
   const [serviceAction, setServiceAction] = useState<{ service: string; action: string } | null>(null)
@@ -565,48 +571,6 @@ export default function ComposeTab({
     setActiveFile(abs); setEditMode(false); loadExtraFile(abs)
   }
 
-  // Size the editor body to fill exactly down to the terminal panel. Measured
-  // from the live layout (not a 100vh guess) because the bottom terminal's
-  // height is variable, so a fixed offset always leaves a gap or overshoots.
-  useEffect(() => {
-    if (viewMode !== 'project') return
-    const el = viewerBodyRef.current
-    if (!el) return
-    const recompute = () => {
-      try {
-        // Skip while hidden — ComposeTab stays mounted under display:none on
-        // other docker tabs, and measuring then yields zeros.
-        if (!el.offsetParent) return
-        // Distance from the body's top to the bottom of the (definite-height)
-        // scrolling main panel, in the panel's content space so it's independent
-        // of scroll. Set as a definite height so the editor fills exactly and
-        // scrolls internally past it.
-        const mp = el.closest('.main-panel') as HTMLElement | null
-        if (!mp) return
-        const mpRect = mp.getBoundingClientRect()
-        const elTopInContent = el.getBoundingClientRect().top - mpRect.top + mp.scrollTop
-        const avail = Math.floor(mp.clientHeight - elTopInContent)
-        el.style.height = avail > 120 ? `${avail}px` : ''
-      } catch { /* layout not ready — a later tick will catch it */ }
-    }
-    recompute()
-    // Re-measure across a few ticks: fonts/sticky sidebar/late layout can shift
-    // the body's top after the first paint.
-    const raf = requestAnimationFrame(recompute)
-    const timers = [setTimeout(recompute, 60), setTimeout(recompute, 250)]
-    const ro = new ResizeObserver(recompute)
-    const mainPanel = el.closest('.main-panel')
-    if (mainPanel) ro.observe(mainPanel)
-    ro.observe(document.documentElement) // window/terminal resize
-    window.addEventListener('resize', recompute)
-    return () => {
-      cancelAnimationFrame(raf)
-      timers.forEach(clearTimeout)
-      ro.disconnect()
-      window.removeEventListener('resize', recompute)
-    }
-  }, [viewMode, selected, activeFile, editMode, fileContent, dockerTab])
-
   // ── Sidebar file menu integration (files live in the sidebar, not as tabs) ──
 
   const composeFileSelect = useAppStore(s => s.composeFileSelect)
@@ -713,7 +677,7 @@ export default function ComposeTab({
     if (composePreselect) {
       useAppStore.getState().setComposePreselect(null)
       const target = projects.find(p => p.name === composePreselect)
-      if (target) { selectProject(target); setViewMode('project') }
+      if (target) selectProject(target)
       // Don't auto-select first project on initial load — show overview instead
     }
   }, [projects, composePreselect]) // eslint-disable-line
@@ -721,8 +685,16 @@ export default function ComposeTab({
   // ── Project selection ─────────────────────────────────────────────────────
 
   const selectProject = (project: ComposeProject) => {
-    setSelected(project)
+    setViewMode('project')
     useAppStore.getState().setComposeActiveProject(project.name)
+    // Re-selecting the project that's already open must not tear down and reload
+    // content that is already on screen — that re-render is the visible flicker.
+    if (selected?.name === project.name) return
+
+    // Clear the previous project's file menu so the sidebar never shows stale
+    // files under the newly-active project for a render.
+    useAppStore.getState().setComposeFilesNav([])
+    setSelected(project)
     setFileContent(null)
     setFileError(null)
     setBackupMsg(null)
@@ -1083,7 +1055,7 @@ export default function ComposeTab({
           statHistory={statHistory}
           metadata={metadata}
           onMetaChange={handleMetaChange}
-          onSelectProject={p => { selectProject(p); setViewMode('project') }}
+          onSelectProject={selectProject}
           onLifecycle={runCardLifecycle}
           lifecycleRunning={cardLifecycle}
         />
@@ -1225,7 +1197,7 @@ export default function ComposeTab({
               </div>
 
               {/* File content */}
-              <div className="compose-viewer-body" ref={viewerBodyRef}>
+              <div className="compose-viewer-body">
                 {fileLoading && <div className="compose-viewer-state">Loading file…</div>}
                 {fileError && <div className="compose-viewer-state compose-viewer-error"><AlertCircle size={14} />{fileError}</div>}
                 {!fileLoading && fileType === 'compose' && fileContent !== null && !editMode && (

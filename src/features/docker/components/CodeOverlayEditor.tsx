@@ -3,35 +3,31 @@ import { useRef } from 'react'
 interface Props {
   value:      string
   onChange:   (v: string) => void
-  /** Render one highlighted line for the layer behind the textarea. */
   renderLine: (line: string, index: number) => React.ReactNode
 }
 
-/**
- * Editable code with live syntax highlighting: a highlighted layer rendered
- * behind a transparent textarea. Both share identical typography/padding (via
- * the .compose-editor-* CSS) so the caret lines up exactly with the colored
- * text; the textarea's scroll is mirrored onto the highlight layer.
- *
- * Reused by the YAML editor and the Dockerfile editor — only `renderLine`
- * differs.
- */
 export default function CodeOverlayEditor({ value, onChange, renderLine }: Props) {
-  const taRef  = useRef<HTMLTextAreaElement>(null)
-  const preRef = useRef<HTMLDivElement>(null)
-  const lines  = value.split('\n')
+  const taRef   = useRef<HTMLTextAreaElement>(null)
+  const preRef  = useRef<HTMLDivElement>(null)
+  const numsRef = useRef<HTMLDivElement>(null)
+  const lines   = value.split('\n')
 
   const syncScroll = () => {
-    const ta = taRef.current, pre = preRef.current
+    const ta   = taRef.current
+    const pre  = preRef.current
+    const nums = numsRef.current
     if (ta && pre) {
       pre.scrollTop  = ta.scrollTop
       pre.scrollLeft = ta.scrollLeft
+    }
+    if (ta && nums) {
+      nums.scrollTop = ta.scrollTop
     }
   }
 
   return (
     <div className="compose-code-wrap compose-code-wrap--edit">
-      <div className="compose-line-nums" aria-hidden>
+      <div className="compose-line-nums" aria-hidden ref={numsRef}>
         {lines.map((_, i) => <span key={i}>{i + 1}</span>)}
       </div>
       <div className="compose-editor-overlay">

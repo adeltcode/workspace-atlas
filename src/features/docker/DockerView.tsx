@@ -251,7 +251,7 @@ export default function DockerView() {
           {dockerTab === 'networks'   && <NetworksTab />}
 
           {/* ComposeTab stays mounted so it can update the sidebar's compose project list */}
-          <div className={dockerTab !== 'compose' ? 'tab-hidden' : undefined}>
+          <div className={clsx('docker-pane-fill', dockerTab !== 'compose' && 'tab-hidden')}>
             <ComposeTab
               refreshTick={composeTick}
               containers={containers}

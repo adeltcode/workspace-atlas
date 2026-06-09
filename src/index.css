@@ -215,13 +215,15 @@ ul, ol { list-style: none; }
   overflow: hidden;
 }
 
-/* Content column: main panel + terminal stacked vertically */
+/* Content column: main panel fills it; the terminal floats over the bottom
+   (position: absolute) so it never enters the main panel's height calc. */
 .app-content {
   display: flex;
   flex-direction: column;
   flex: 1;
   overflow: hidden;
   min-width: 0;
+  position: relative;
 }
 
 /* =============================================================
@@ -1299,10 +1301,27 @@ ul, ol { list-style: none; }
    Docker — In-content tab strip
    ============================================================= */
 
+/* Docker view fills the main panel so the compose project page can size its
+   columns with flexbox (no JS height measurement). */
+.docker-view {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.docker-tab-content {
+  flex: 1;
+  min-height: 0;
+}
+/* Keep-alive wrapper around ComposeTab — fills the tab content area. */
+.docker-pane-fill {
+  height: 100%;
+}
+
 /* Modifier: reduces header bottom margin so tab strip sits closer */
 .docker-view .view-header {
   margin-bottom: 22px;
   padding-bottom: 18px;
+  flex-shrink: 0;
 }
 
 /* Tab strip — bleeds to view-container edges (padding: 28px 32px) */
@@ -2035,8 +2054,14 @@ button:focus-visible {
 /* =============================================================
    Global Terminal panel
    ============================================================= */
+/* Floats over the bottom of the content column so the main panel keeps 100%
+   height regardless of the terminal's size. Prep for a detachable terminal. */
 .terminal-panel {
-  flex-shrink: 0;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
   background: var(--color-terminal-bg);
   border-top: 1px solid var(--chrome-divider);
   display: flex;
@@ -2048,6 +2073,11 @@ button:focus-visible {
 
 .terminal-panel.open {
   height: var(--terminal-height);
+}
+
+/* No height animation while dragging the resize handle. */
+.app-content.resizing-terminal .terminal-panel {
+  transition: none;
 }
 
 .terminal-header {
@@ -2390,13 +2420,17 @@ button:focus-visible {
   background: rgba(108,113,255,0.35);
 }
 
+/* Sits on the terminal's top edge. The terminal is absolute, so this is too. */
 .terminal-resize-handle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--terminal-height);
   height: 4px;
-  flex-shrink: 0;
   cursor: row-resize;
   background: transparent;
   transition: background var(--transition-fast);
-  z-index: 10;
+  z-index: 21;
 }
 .terminal-resize-handle:hover {
   background: rgba(108,113,255,0.3);
@@ -3982,6 +4016,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
    Docker — Compose Tab
    ============================================================= */
 .compose-tab {
+  height: 100%;
   display: flex;
   flex-direction: column;
   /* Bleed to view-container edges (32px padding on each side) */
@@ -4070,10 +4105,12 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 
 /* ── Viewer area ────────────────────────────────────────────── */
 .compose-viewer {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--color-bg-primary);
-  /* no overflow hidden — content grows to its natural height */
+  overflow: hidden;
 }
 
 .compose-viewer-toolbar {
@@ -4408,15 +4445,12 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 [data-theme="light"] .path-badge--wsl { background: rgba(194,65,12,0.08); color: #c2410c; border-color: rgba(194,65,12,0.2); }
 
 .compose-viewer-body {
-  /* Pre-paint fallback; ComposeTab measures and sets an exact pixel height so
-     the editor reaches precisely the terminal panel and scrolls internally past
-     it. The fallback avoids a flash before that runs. */
-  min-height: calc(100vh - 260px);
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow: auto;
+  overflow: hidden;
 }
-/* The active viewer/editor stretches to fill the measured height (gutter incl.) */
 .compose-viewer-body > * { flex: 1 1 auto; min-height: 0; }
 
 .compose-viewer-state {
@@ -4455,6 +4489,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   line-height: 1.7;
   background: var(--color-bg-primary);
   user-select: text;
+  overflow: hidden;
 }
 
 .compose-line-nums {
@@ -4470,13 +4505,22 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   background: var(--color-bg-secondary);
   min-width: 44px;
   flex-shrink: 0;
+  overflow: hidden;
 }
 .compose-line-nums span { display: block; }
+
+/* Scroll container for read-only code content; line-nums are outside it
+   and scroll-synced via JS so they stay pinned during horizontal scroll. */
+.compose-code-area {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+}
 
 .compose-code-body {
   padding: 14px 16px;
   flex: 1;
-  overflow-x: auto;
+  overflow: visible;
   white-space: pre;
 }
 
@@ -5879,13 +5923,16 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 .compose-project-layout {
+  flex: 1;
+  min-height: 0;
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
 }
 
 .compose-project-left {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--color-border);
@@ -5924,11 +5971,9 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .compose-project-right {
   width: 340px;
   flex-shrink: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  position: sticky;
-  top: 0;
-  max-height: 100vh;
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-gutter: stable;
@@ -5938,7 +5983,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   .compose-project-layout { flex-direction: column; }
   .compose-project-right {
     width: 100%;
-    position: static;
     max-height: 420px;
     border-top: 1px solid var(--color-border);
   }
@@ -6084,7 +6128,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   flex-shrink: 0;
 }
 .compose-sidebar-panel-body {
-  overflow-y: auto;
+  overflow: auto;
   max-height: 320px;
 }
 /* Log panel inside sidebar — remove its own border, constrain height */
@@ -6495,7 +6539,9 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 /* ── YAML editor: live syntax highlight behind a transparent textarea ── */
-.compose-code-wrap--edit { position: relative; flex: 1 1 auto; min-height: 0; }
+.compose-code-wrap--edit { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; }
+/* Line numbers are clipped to the visible area and scroll-synced from JS */
+.compose-code-wrap--edit .compose-line-nums { overflow: hidden; }
 .compose-editor-overlay {
   position: relative;
   flex: 1;
