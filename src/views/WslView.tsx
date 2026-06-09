@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useState } from 'react'
-import { HardDrive, RefreshCw, FolderOpen, Star, Disc3 } from 'lucide-react'
+import { HardDrive, RefreshCw, FolderOpen, Star, Disc3, Boxes, Settings2 } from 'lucide-react'
 import clsx from 'clsx'
 import * as api from '../features/wsl/api'
 import type { WslStatus, WslDistro } from '../features/wsl/types'
 import { bytesToHuman } from '../utils/format'
+import WslConfigTab from '../features/wsl/components/WslConfigTab'
+
+type WslTab = 'distros' | 'config'
 
 export default function WslView() {
   const [status, setStatus]   = useState<WslStatus | null>(null)
   const [distros, setDistros] = useState<WslDistro[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState<string | null>(null)
+  const [tab, setTab]         = useState<WslTab>('distros')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -79,13 +83,31 @@ export default function WslView() {
         </div>
       )}
 
-      {available && !loading && distros.length === 0 && (
+      {available && (
+        <div className="wsl-tabs">
+          <button className={clsx('wsl-tab', tab === 'distros' && 'active')} onClick={() => setTab('distros')}>
+            <Boxes size={13} /> Distributions
+          </button>
+          <button className={clsx('wsl-tab', tab === 'config' && 'active')} onClick={() => setTab('config')}>
+            <Settings2 size={13} /> .wslconfig
+          </button>
+        </div>
+      )}
+
+      {available && tab === 'config' && (
+        <WslConfigTab
+          runningNames={distros.filter(d => d.running).map(d => d.name)}
+          onAfterShutdown={load}
+        />
+      )}
+
+      {available && tab === 'distros' && !loading && distros.length === 0 && (
         <p className="empty-state" style={{ marginTop: 24 }}>
           WSL is installed but no distributions were found. Install one with <code>wsl --install -d Ubuntu</code>.
         </p>
       )}
 
-      {available && distros.length > 0 && (
+      {available && tab === 'distros' && distros.length > 0 && (
         <>
           <div className="wsl-summary">
             <span>{distros.length} distribution{distros.length !== 1 ? 's' : ''}</span>

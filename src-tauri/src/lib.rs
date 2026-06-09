@@ -63,6 +63,9 @@ pub fn run() {
             config::import_config,
             wsl::wsl_check,
             wsl::wsl_list_distros,
+            wsl::read_wslconfig,
+            wsl::write_wslconfig,
+            wsl::wsl_shutdown,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

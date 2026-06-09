@@ -14,3 +14,9 @@ export interface WslDistro {
   vhd_path: string
   vhd_size_bytes: number
 }
+
+export interface WslConfig {
+  path: string
+  content: string
+  exists: boolean
+}

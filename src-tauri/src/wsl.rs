@@ -26,9 +26,59 @@ pub struct WslDistro {
     pub vhd_size_bytes: u64,
 }
 
+#[derive(serde::Serialize, Clone)]
+pub struct WslConfig {
+    /// Full path to %USERPROFILE%\.wslconfig.
+    pub path: String,
+    pub content: String,
+    /// False when the file does not exist yet (content is then empty).
+    pub exists: bool,
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Commands
 // ─────────────────────────────────────────────────────────────────────────────
+
+fn wslconfig_path() -> Result<String, String> {
+    let home = std::env::var("USERPROFILE").map_err(|_| "USERPROFILE is not set".to_string())?;
+    Ok(format!("{}\\.wslconfig", home))
+}
+
+/// Read %USERPROFILE%\.wslconfig. A missing file is not an error — it returns
+/// `exists: false` with empty content so the UI can offer a template.
+#[tauri::command]
+pub async fn read_wslconfig() -> Result<WslConfig, String> {
+    let path = wslconfig_path()?;
+    match std::fs::read_to_string(&path) {
+        Ok(content) => Ok(WslConfig { path, content, exists: true }),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            Ok(WslConfig { path, content: String::new(), exists: false })
+        }
+        Err(e) => Err(format!("Cannot read .wslconfig: {}", e)),
+    }
+}
+
+/// Write %USERPROFILE%\.wslconfig. Changes take effect after `wsl --shutdown`.
+#[tauri::command]
+pub async fn write_wslconfig(content: String) -> Result<(), String> {
+    let path = wslconfig_path()?;
+    std::fs::write(&path, content).map_err(|e| format!("Cannot write .wslconfig: {}", e))
+}
+
+/// Shut down all running distros (`wsl --shutdown`) so .wslconfig changes apply.
+/// Not elevated, but stops every running distro — the UI warns first.
+#[tauri::command]
+pub async fn wsl_shutdown() -> Result<(), String> {
+    let out = Command::new("wsl")
+        .arg("--shutdown")
+        .output()
+        .map_err(|e| format!("Failed to run wsl --shutdown: {}", e))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+    }
+}
 
 /// Report whether WSL is installed (is `wsl.exe` resolvable on PATH).
 #[tauri::command]
