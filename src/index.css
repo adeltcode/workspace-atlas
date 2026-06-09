@@ -7835,6 +7835,11 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   gap: 10px;
   padding: 12px 16px 14px;
 }
+/* Group the action buttons as a toolbar attached to the row, not floating. */
+.wsl-distros-detail .wsl-distro-actions {
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border-light);
+}
 .wsl-distros-actions-head { text-align: right; }
 .wsl-distros-actions-cell { text-align: right; white-space: nowrap; }
 .wsl-row-icon {
@@ -7878,25 +7883,15 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   color: var(--color-text-tertiary);
 }
 
-/* ── Resource trend charts ──────────────────────────────────────────────── */
-.wsl-trends {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-  margin-top: 14px;
-}
-@media (max-width: 720px) { .wsl-trends { grid-template-columns: 1fr; } }
-.wsl-trend {
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg-secondary);
-  padding: 8px 10px;
-}
-.wsl-trend-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 6px; }
-.wsl-trend-label { font-size: 11px; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.03em; }
-.wsl-trend-val { font-size: 13px; font-weight: 700; color: var(--color-text-primary); }
-.wsl-trend-svg { display: block; width: 100%; height: 48px; }
-.wsl-trend-note { margin-top: 8px; font-size: 11px; color: var(--color-text-tertiary); }
+/* ── Gauge trend sparkline ──────────────────────────────────────────────── */
+.wsl-spark { display: block; width: 100%; height: 26px; margin-top: 8px; }
+.wsl-spark--empty { background: var(--color-bg-tertiary); border-radius: 3px; opacity: 0.4; }
+.wsl-spark-area { fill: var(--color-accent); fill-opacity: 0.15; }
+.wsl-spark-line { stroke: var(--color-accent); stroke-width: 1.5; }
+
+/* Sub-labels in the WSL gauges carry real data — lift them above tertiary so
+   they meet contrast for body text. */
+.wsl-dashboard .sys-card-sub { color: var(--color-text-secondary); }
 
 /* ── Resource limits table ──────────────────────────────────────────────── */
 .wsl-limits-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }

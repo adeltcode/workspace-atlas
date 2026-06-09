@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import clsx from 'clsx'
 import {
-  Cpu, MemoryStick, HardDrive, ArrowDownUp, Activity, Boxes, Play, RefreshCw, Network, Info, Skull, Clock,
+  Cpu, MemoryStick, HardDrive, ArrowDownUp, Activity, Boxes, Play, Network, Info, Skull, Clock,
 } from 'lucide-react'
 import { useAppStore } from '../../../store/appStore'
 import * as api from '../api'
@@ -36,7 +36,29 @@ function InfoDot({ tip }: { tip: string }) {
   return <span className="wsl-info" title={tip}><Info size={11} /></span>
 }
 
-function Gauge({ icon: Icon, label, pct, value, sub, color, tip }: {
+/** Compact trend sparkline for a gauge card. Auto-scales Y to the data (with a
+ *  floor) so low-but-varying utilisation still reads as a shape, not a flat
+ *  line glued to the axis. */
+function Sparkline({ values }: { values: number[] }) {
+  const n = values.length
+  // Until there are at least two samples, show a quiet placeholder rather than a
+  // degenerate one-point shape.
+  if (n < 2) return <div className="wsl-spark wsl-spark--empty" title="Collecting trend data…" />
+  const ceil = Math.max(10, ...values) * 1.25
+  const pts = values.map((v, i) => {
+    const x = (i / (n - 1)) * 100
+    const y = 100 - Math.max(0, Math.min(100, (v / ceil) * 100))
+    return `${x.toFixed(2)},${y.toFixed(2)}`
+  }).join(' ')
+  return (
+    <svg className="wsl-spark" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
+      <polygon className="wsl-spark-area" points={`0,100 ${pts} 100,100`} />
+      <polyline className="wsl-spark-line" points={pts} fill="none" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function Gauge({ icon: Icon, label, pct, value, sub, color, tip, spark }: {
   icon: typeof Cpu
   label: string
   pct: number | null
@@ -44,6 +66,7 @@ function Gauge({ icon: Icon, label, pct, value, sub, color, tip }: {
   sub?: string
   color: BarColor
   tip?: string
+  spark?: number[]
 }) {
   const width = pct === null ? 0 : Math.min(100, Math.max(0, pct))
   return (
@@ -58,35 +81,17 @@ function Gauge({ icon: Icon, label, pct, value, sub, color, tip }: {
         <div className={clsx('sys-bar-fill', `sys-bar--${color}`)} style={{ width: `${width}%` }} />
       </div>
       {sub && <div className="sys-card-sub">{sub}</div>}
+      {spark && <Sparkline values={spark} />}
     </div>
   )
 }
 
-/** Single-series live trend (0–100%), area + line. Stretches to fill width. */
-function MiniTrend({ label, values, cssVar, valueText }: {
-  label: string
-  values: number[]
-  cssVar: string
-  valueText: string
-}) {
-  const n = values.length
-  const pts = values.map((v, i) => {
-    const x = n <= 1 ? 0 : (i / (n - 1)) * 100
-    const y = 100 - Math.max(0, Math.min(100, v))
-    return `${x.toFixed(2)},${y.toFixed(2)}`
-  }).join(' ')
-  return (
-    <div className="wsl-trend">
-      <div className="wsl-trend-head">
-        <span className="wsl-trend-label">{label}</span>
-        <span className="wsl-trend-val">{valueText}</span>
-      </div>
-      <svg className="wsl-trend-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
-        {n > 0 && <polygon points={`0,100 ${pts} 100,100`} style={{ fill: cssVar, fillOpacity: 0.14 }} />}
-        {n > 1 && <polyline points={pts} fill="none" style={{ stroke: cssVar }} strokeWidth={1.5} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />}
-      </svg>
-    </div>
-  )
+/** Status colour for the systemd init chip — never contradicts the word shown. */
+function initChipClass(m: DistroMetrics): string {
+  if (!m.systemd) return 'wsl-chip--muted'
+  const s = m.systemd_state
+  if (s === 'degraded' || s === 'maintenance' || s === 'starting' || s === 'stopping') return 'wsl-chip--warn'
+  return 'wsl-chip--ok'
 }
 
 function ProcList({ procs, kind }: { procs: DistroMetrics['top_procs']; kind: 'cpu' | 'mem' }) {
@@ -119,9 +124,8 @@ function ProcList({ procs, kind }: { procs: DistroMetrics['top_procs']; kind: 'c
 export default function WslDashboardTab({ distros }: { distros: WslDistro[] }) {
   const selected = useAppStore(s => s.wslSelectedDistro) ?? ''
   const [metrics, setMetrics] = useState<DistroMetrics | null>(null)
-  const [history, setHistory] = useState<{ cpu: number; mem: number }[]>([])
+  const [history, setHistory] = useState<{ cpu: number; mem: number; swap: number; disk: number }[]>([])
   const [error, setError]     = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
   // Distros the user opted to start by loading metrics. Reading a stopped distro
   // boots it, so we never poll one silently.
   const [activated, setActivated] = useState<Set<string>>(() => new Set())
@@ -132,20 +136,19 @@ export default function WslDashboardTab({ distros }: { distros: WslDistro[] }) {
   const running  = current?.running ?? false
   const polling  = !!selected && (running || activated.has(selected))
 
-  const load = useCallback(async (showSpinner: boolean) => {
+  const load = useCallback(async () => {
     if (!selected) return
-    if (showSpinner) setLoading(true)
     try {
       const m = await api.wslDistroMetrics(selected)
       setMetrics(m)
       setError(null)
-      const cpu = m.cpu_count > 0 ? (m.load1 / m.cpu_count) * 100 : 0
-      const mem = m.mem_total_kb > 0 ? ((m.mem_total_kb - m.mem_available_kb) / m.mem_total_kb) * 100 : 0
-      setHistory(prev => [...prev, { cpu, mem }].slice(-HISTORY))
+      const cpu  = m.cpu_count > 0 ? (m.load1 / m.cpu_count) * 100 : 0
+      const mem  = m.mem_total_kb > 0 ? ((m.mem_total_kb - m.mem_available_kb) / m.mem_total_kb) * 100 : 0
+      const swap = m.swap_total_kb > 0 ? ((m.swap_total_kb - m.swap_free_kb) / m.swap_total_kb) * 100 : 0
+      const disk = m.disk_total_bytes > 0 ? (Math.min(m.disk_used_bytes, m.disk_total_bytes) / m.disk_total_bytes) * 100 : 0
+      setHistory(prev => [...prev, { cpu, mem, swap, disk }].slice(-HISTORY))
     } catch (e) {
       setError(String(e))
-    } finally {
-      setLoading(false)
     }
   }, [selected])
 
@@ -167,8 +170,8 @@ export default function WslDashboardTab({ distros }: { distros: WslDistro[] }) {
   useEffect(() => {
     if (!polling) return
     let active = true
-    load(true)
-    const id = setInterval(() => { if (active) load(false) }, POLL_MS)
+    load()
+    const id = setInterval(() => { if (active) load() }, POLL_MS)
     return () => { active = false; clearInterval(id) }
   }, [polling, load])
 
@@ -214,45 +217,40 @@ export default function WslDashboardTab({ distros }: { distros: WslDistro[] }) {
           <div className="overview-section" style={{ margin: 0 }}>
             <div className="overview-section-head overview-section-head--static">
               <span className="section-label" style={{ margin: 0 }}>Resource Monitoring</span>
-              <span className="wsl-live-pill"><span className="wsl-live-dot" />Live · 10s</span>
-              <button className="btn-icon" onClick={() => load(true)} disabled={loading} title="Refresh now" style={{ marginLeft: 'auto' }}>
-                <RefreshCw size={12} className={loading ? 'spin' : ''} />
-              </button>
+              <span className="wsl-live-pill" style={{ marginLeft: 'auto' }}>
+                <span className="wsl-live-dot" />Live · every 10s
+              </span>
             </div>
 
             <div className="sys-metrics">
               <Gauge icon={Cpu} label="CPU load" tip={TIP.cpu} pct={loadPct}
                 value={metrics.load1.toFixed(2)}
                 sub={`${metrics.cpu_count} cores · ${metrics.load5.toFixed(2)} / ${metrics.load15.toFixed(2)} (5m/15m)`}
-                color={loadPct === null ? 'accent' : levelColor(loadPct)} />
+                color={loadPct === null ? 'accent' : levelColor(loadPct)}
+                spark={history.map(h => h.cpu)} />
               <Gauge icon={MemoryStick} label="Memory" pct={memPct}
                 value={memPct === null ? '—' : `${Math.round(memPct)}%`}
                 sub={`${bytesToHuman(memUsedKb * 1024)} / ${bytesToHuman(metrics.mem_total_kb * 1024)}`}
-                color={memPct === null ? 'accent' : levelColor(memPct)} />
+                color={memPct === null ? 'accent' : levelColor(memPct)}
+                spark={history.map(h => h.mem)} />
               <Gauge icon={ArrowDownUp} label="Swap" tip={TIP.swap} pct={swapPct}
                 value={swapPct === null ? 'off' : `${Math.round(swapPct)}%`}
                 sub={metrics.swap_total_kb > 0
                   ? `${bytesToHuman(swapUsedKb * 1024)} / ${bytesToHuman(metrics.swap_total_kb * 1024)}`
                   : 'no swap configured'}
-                color={swapPct === null ? 'accent' : levelColor(swapPct)} />
+                color={swapPct === null ? 'accent' : levelColor(swapPct)}
+                spark={history.map(h => h.swap)} />
               <Gauge icon={HardDrive} label="Disk (/)" tip={TIP.disk} pct={diskPct}
                 value={diskPct === null ? '—' : `${Math.round(diskPct)}%`}
                 sub={`${bytesToHuman(metrics.disk_used_bytes)} / ${bytesToHuman(metrics.disk_total_bytes)}`}
-                color={diskPct === null ? 'accent' : levelColor(diskPct)} />
+                color={diskPct === null ? 'accent' : levelColor(diskPct)}
+                spark={history.map(h => h.disk)} />
             </div>
-
-            <div className="wsl-trends">
-              <MiniTrend label="CPU %" values={history.map(h => h.cpu)} cssVar="var(--color-accent)"
-                valueText={loadPct === null ? '—' : `${Math.round(loadPct)}%`} />
-              <MiniTrend label="Memory %" values={history.map(h => h.mem)} cssVar="var(--color-success)"
-                valueText={memPct === null ? '—' : `${Math.round(memPct)}%`} />
-            </div>
-            {history.length < 2 && <p className="wsl-trend-note">Collecting trend data…</p>}
           </div>
 
           {/* ── System status strip ─────────────────────────────────── */}
           <div className="wsl-dash-chips">
-            <div className={clsx('wsl-chip', metrics.systemd ? 'wsl-chip--ok' : 'wsl-chip--muted')}>
+            <div className={clsx('wsl-chip', initChipClass(metrics))}>
               <Activity size={12} />
               <span className="wsl-chip-label">init</span>
               <span className="wsl-chip-val">

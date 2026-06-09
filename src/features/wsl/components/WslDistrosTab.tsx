@@ -40,6 +40,8 @@ export default function WslDistrosTab({ distros, loading, onReload }: {
   // ── Comparison extras (package count + uptime) ──────────────────────────────
   const [extras, setExtras]       = useState<Record<string, DistroExtras>>({})
   const [extrasBusy, setExtrasBusy] = useState<Set<string>>(() => new Set())
+  // Distros whose scan failed (e.g. no shell/package manager) — do not auto-retry.
+  const [extrasFailed, setExtrasFailed] = useState<Set<string>>(() => new Set())
 
   // ── Restart / clone / migrate ───────────────────────────────────────────────
   const [busyAction, setBusyAction]         = useState<string | null>(null)
@@ -55,22 +57,26 @@ export default function WslDistrosTab({ distros, loading, onReload }: {
 
   const loadExtras = useCallback(async (name: string) => {
     setExtrasBusy(prev => new Set(prev).add(name))
+    setExtrasFailed(prev => { const n = new Set(prev); n.delete(name); return n })
     try {
       const x = await api.wslDistroExtras(name)
       setExtras(prev => ({ ...prev, [name]: x }))
     } catch {
-      // Tolerate — the row falls back to "—".
+      // Mark failed so the auto-scan effect does not retry in a loop (e.g. a
+      // distro with no shell/package manager); the row falls back to "—".
+      setExtrasFailed(prev => new Set(prev).add(name))
     } finally {
       setExtrasBusy(prev => { const n = new Set(prev); n.delete(name); return n })
     }
   }, [])
 
-  // Auto-scan running distros (reading a stopped one boots it → opt-in via Scan).
+  // Auto-scan running distros once (reading a stopped one boots it → opt-in via
+  // Scan). Failed scans are not retried automatically.
   useEffect(() => {
     for (const d of distros) {
-      if (d.running && !extras[d.name] && !extrasBusy.has(d.name)) loadExtras(d.name)
+      if (d.running && !extras[d.name] && !extrasBusy.has(d.name) && !extrasFailed.has(d.name)) loadExtras(d.name)
     }
-  }, [distros, extras, extrasBusy, loadExtras])
+  }, [distros, extras, extrasBusy, extrasFailed, loadExtras])
 
   const busy = optName !== null || exportName !== null || busyAction !== null
 
