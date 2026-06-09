@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { HardDrive, RefreshCw, FolderOpen, Star, Disc3, Boxes, Settings2, Zap, ShieldAlert } from 'lucide-react'
+import { HardDrive, RefreshCw, FolderOpen, Star, Disc3, Boxes, Settings2, Zap, ShieldAlert, Download, Upload, X } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../store/appStore'
 import * as api from '../features/wsl/api'
@@ -23,6 +23,17 @@ export default function WslView() {
   const [optName, setOptName]       = useState<string | null>(null)
   const [optResults, setOptResults] = useState<Record<string, OptimizeResult>>({})
   const [optError, setOptError]     = useState<Record<string, string>>({})
+
+  // ── Export / import (.tar) ───────────────────────────────────────────────
+  const [exportName, setExportName] = useState<string | null>(null)
+  const [exportInfo, setExportInfo] = useState<Record<string, string>>({})
+  const [exportErr, setExportErr]   = useState<Record<string, string>>({})
+  const [showImport, setShowImport] = useState(false)
+  const [importTar, setImportTar]   = useState('')
+  const [importName, setImportName] = useState('')
+  const [importDir, setImportDir]   = useState('')
+  const [importing, setImporting]   = useState(false)
+  const [importErr, setImportErr]   = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -58,6 +69,42 @@ export default function WslView() {
       addActivity({ module: 'wsl', action: `Optimized ${d.name}`, outcome: 'failure', detail: String(e) })
     } finally {
       setOptName(null)
+    }
+  }
+
+  const runExport = async (d: WslDistro) => {
+    setExportName(d.name)
+    setExportErr(prev => { const n = { ...prev }; delete n[d.name]; return n })
+    try {
+      const r = await api.wslExportDistro(d.name)
+      if (r) {
+        setExportInfo(prev => ({ ...prev, [d.name]: `Exported to ${r.path} (${bytesToHuman(r.size_bytes)})` }))
+        addActivity({ module: 'wsl', action: `Exported ${d.name}`, outcome: 'success', detail: bytesToHuman(r.size_bytes) })
+      }
+    } catch (e) {
+      setExportErr(prev => ({ ...prev, [d.name]: String(e) }))
+      addActivity({ module: 'wsl', action: `Exported ${d.name}`, outcome: 'failure', detail: String(e) })
+    } finally {
+      setExportName(null)
+    }
+  }
+
+  const runImport = async () => {
+    const name = importName.trim()
+    if (!importTar || !name || !importDir) return
+    setImporting(true)
+    setImportErr(null)
+    try {
+      await api.wslImportDistro(name, importDir, importTar)
+      addActivity({ module: 'wsl', action: `Imported ${name}`, outcome: 'success' })
+      setShowImport(false)
+      setImportTar(''); setImportName(''); setImportDir('')
+      await load()
+    } catch (e) {
+      setImportErr(String(e))
+      addActivity({ module: 'wsl', action: `Imported ${name}`, outcome: 'failure', detail: String(e) })
+    } finally {
+      setImporting(false)
     }
   }
 
@@ -139,6 +186,9 @@ export default function WslView() {
             <span>{distros.length} distribution{distros.length !== 1 ? 's' : ''}</span>
             <span className="wsl-summary-sep">·</span>
             <span>{bytesToHuman(totalVhd)} total on disk</span>
+            <button className="btn-secondary wsl-import-btn" onClick={() => { setImportErr(null); setShowImport(true) }}>
+              <Upload size={13} /> Import distro
+            </button>
           </div>
 
           <div className="wsl-distro-grid">
@@ -177,21 +227,39 @@ export default function WslView() {
                   </button>
                 )}
 
-                {d.version === 2 && d.vhd_path && (
-                  <div className="wsl-distro-actions">
-                    <button
-                      className="btn-secondary wsl-optimize-btn"
-                      onClick={() => setConfirmOpt(d)}
-                      disabled={optName !== null}
-                      title="Compact the virtual disk (requires admin)"
-                    >
-                      <Zap size={12} />
-                      {optName === d.name ? 'Optimizing…' : 'Optimize'}
-                    </button>
-                    <span className="wsl-optimize-shield" title="Requires administrator approval">
-                      <ShieldAlert size={12} />
-                    </span>
-                  </div>
+                <div className="wsl-distro-actions">
+                  <button
+                    className="btn-secondary"
+                    onClick={() => runExport(d)}
+                    disabled={exportName !== null || optName !== null}
+                    title="Export this distro to a .tar archive"
+                  >
+                    <Download size={12} />
+                    {exportName === d.name ? 'Exporting…' : 'Export'}
+                  </button>
+                  {d.version === 2 && d.vhd_path && (
+                    <>
+                      <button
+                        className="btn-secondary wsl-optimize-btn"
+                        onClick={() => setConfirmOpt(d)}
+                        disabled={optName !== null || exportName !== null}
+                        title="Compact the virtual disk (requires admin)"
+                      >
+                        <Zap size={12} />
+                        {optName === d.name ? 'Optimizing…' : 'Optimize'}
+                      </button>
+                      <span className="wsl-optimize-shield" title="Requires administrator approval">
+                        <ShieldAlert size={12} />
+                      </span>
+                    </>
+                  )}
+                </div>
+
+                {exportInfo[d.name] && exportName !== d.name && (
+                  <p className="wsl-opt-result">{exportInfo[d.name]}</p>
+                )}
+                {exportErr[d.name] && exportName !== d.name && (
+                  <p className="wsl-opt-error">{exportErr[d.name]}</p>
                 )}
 
                 {optName === d.name && (
@@ -232,6 +300,62 @@ export default function WslView() {
               <button className="btn-secondary" onClick={() => setConfirmOpt(null)}>Cancel</button>
               <button className="btn-filled btn-filled--accent" onClick={() => runOptimize(confirmOpt)}>
                 <Zap size={13} /> Optimize
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showImport && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-header">
+              <div className="modal-icon-wrap"><Upload size={16} /></div>
+              <h2 className="modal-title">Import distribution</h2>
+              <button className="modal-close" onClick={() => setShowImport(false)} title="Close"><X size={14} /></button>
+            </div>
+            <p className="modal-body">
+              Create a new distro from a <code>.tar</code> archive. Use a new name to clone,
+              or a new location to relocate.
+            </p>
+
+            <div className="wsl-import-field">
+              <label className="wsl-import-label">Source archive</label>
+              <div className="wsl-import-row">
+                <input className="settings-dir-input" value={importTar} readOnly placeholder="Choose a .tar file…" />
+                <button className="settings-dir-btn" onClick={async () => { const p = await api.pickTarFile(); if (p) setImportTar(p) }}>Browse…</button>
+              </div>
+            </div>
+
+            <div className="wsl-import-field">
+              <label className="wsl-import-label">New distro name</label>
+              <input
+                className="settings-dir-input"
+                value={importName}
+                onChange={e => setImportName(e.target.value)}
+                placeholder="e.g. Ubuntu-Dev"
+                spellCheck={false}
+              />
+            </div>
+
+            <div className="wsl-import-field">
+              <label className="wsl-import-label">Install location</label>
+              <div className="wsl-import-row">
+                <input className="settings-dir-input" value={importDir} readOnly placeholder="Choose a folder…" />
+                <button className="settings-dir-btn" onClick={async () => { const p = await api.pickDirectory(); if (p) setImportDir(p) }}>Browse…</button>
+              </div>
+            </div>
+
+            {importErr && <div className="settings-status settings-status--error">{importErr}</div>}
+
+            <div className="modal-actions">
+              <button className="btn-secondary" onClick={() => setShowImport(false)} disabled={importing}>Cancel</button>
+              <button
+                className="btn-filled btn-filled--accent"
+                onClick={runImport}
+                disabled={importing || !importTar || !importName.trim() || !importDir}
+              >
+                <Upload size={13} /> {importing ? 'Importing…' : 'Import'}
               </button>
             </div>
           </div>

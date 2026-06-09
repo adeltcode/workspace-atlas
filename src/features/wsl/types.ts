@@ -28,3 +28,8 @@ export interface OptimizeResult {
   /** "Optimize-VHD" or "diskpart". */
   method: string
 }
+
+export interface ExportResult {
+  path: string
+  size_bytes: number
+}

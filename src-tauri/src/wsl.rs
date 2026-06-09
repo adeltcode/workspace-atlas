@@ -202,6 +202,115 @@ pub async fn wsl_optimize_vhd(
     .map_err(|e| e.to_string())?
 }
 
+#[derive(serde::Serialize, Clone)]
+pub struct ExportResult {
+    pub path: String,
+    pub size_bytes: u64,
+}
+
+/// Open a file picker for a distro `.tar` archive. Returns `None` if cancelled.
+#[tauri::command]
+pub async fn pick_tar_file() -> Option<String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        rfd::FileDialog::new()
+            .add_filter("Distro archive", &["tar", "gz", "tgz"])
+            .pick_file()
+            .and_then(|p| p.to_str().map(|s| s.to_string()))
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+/// Open a folder picker (used to choose a distro install location).
+#[tauri::command]
+pub async fn pick_directory() -> Option<String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        rfd::FileDialog::new()
+            .pick_folder()
+            .and_then(|p| p.to_str().map(|s| s.to_string()))
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+/// Export a distro to a `.tar` archive (`wsl --export`). Opens a save dialog;
+/// returns `None` if cancelled. Not elevated. WSL_UTF8 keeps error text readable.
+#[tauri::command]
+pub async fn wsl_export_distro(
+    app: tauri::AppHandle,
+    name: String,
+) -> Result<Option<ExportResult>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(dest) = rfd::FileDialog::new()
+            .set_file_name(format!("{}.tar", name))
+            .add_filter("TAR archive", &["tar"])
+            .save_file()
+        else {
+            return Ok(None);
+        };
+        let dest_str = dest.to_string_lossy().to_string();
+
+        emit_line(&app, format!("$ wsl --export {} \"{}\"", name, dest_str), false);
+
+        let out = Command::new("wsl")
+            .env("WSL_UTF8", "1")
+            .args(["--export", &name, &dest_str])
+            .output()
+            .map_err(|e| format!("Failed to run wsl --export: {}", e))?;
+
+        if !out.status.success() {
+            let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            let err = if err.is_empty() { "Export failed".to_string() } else { err };
+            emit_line(&app, format!("  ✗ {}", err), true);
+            return Err(err);
+        }
+
+        let size = std::fs::metadata(&dest).map(|m| m.len()).unwrap_or(0);
+        emit_line(&app, format!("  ✓ exported {} ({})", name, bytes_human(size)), false);
+        Ok(Some(ExportResult { path: dest_str, size_bytes: size }))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Import a distro from a `.tar` archive (`wsl --import`). Creates the install
+/// directory if needed. Cloning = export then import under a new name; relocating
+/// = import into a different directory. Not elevated.
+#[tauri::command]
+pub async fn wsl_import_distro(
+    app: tauri::AppHandle,
+    name: String,
+    install_dir: String,
+    tar_path: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        std::fs::create_dir_all(&install_dir)
+            .map_err(|e| format!("Cannot create install directory: {}", e))?;
+
+        emit_line(&app, format!("$ wsl --import {} \"{}\" \"{}\"", name, install_dir, tar_path), false);
+
+        let out = Command::new("wsl")
+            .env("WSL_UTF8", "1")
+            .args(["--import", &name, &install_dir, &tar_path])
+            .output()
+            .map_err(|e| format!("Failed to run wsl --import: {}", e))?;
+
+        if !out.status.success() {
+            let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            let err = if err.is_empty() { "Import failed".to_string() } else { err };
+            emit_line(&app, format!("  ✗ {}", err), true);
+            return Err(err);
+        }
+
+        emit_line(&app, format!("  ✓ imported {}", name), false);
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Minimal byte formatter for terminal lines (mirrors the frontend's bytesToHuman).
 fn bytes_human(b: u64) -> String {
     if b >= 1_000_000_000 {

@@ -7727,3 +7727,34 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   color: var(--color-danger);
 }
 
+/* ── WSL export / import ──────────────────────────────────────────────── */
+.wsl-import-btn { margin-left: auto; padding: 6px 12px; font-size: 12px; }
+
+.modal-close {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.modal-close:hover { background: var(--color-bg-hover); color: var(--color-text-primary); }
+
+.wsl-import-field { margin-top: 14px; }
+.wsl-import-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+.wsl-import-row {
+  display: flex;
+  gap: 8px;
+}
+.wsl-import-row .settings-dir-input { flex: 1; }
+
