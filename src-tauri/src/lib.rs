@@ -63,6 +63,7 @@ pub fn run() {
             config::import_config,
             wsl::wsl_check,
             wsl::wsl_list_distros,
+            wsl::wsl_distro_metrics,
             wsl::read_wslconfig,
             wsl::write_wslconfig,
             wsl::wslconfig_backup,

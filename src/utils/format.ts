@@ -38,6 +38,18 @@ export function timeAgo(ms: number): string {
   return `${Math.floor(h / 24)}d ago`
 }
 
+/** Compact duration from a second count: "5m", "3h 12m", "2d 4h". For uptimes. */
+export function formatDuration(secs: number): string {
+  if (secs <= 0) return '—'
+  const d = Math.floor(secs / 86400)
+  const h = Math.floor((secs % 86400) / 3600)
+  const m = Math.floor((secs % 3600) / 60)
+  if (d > 0) return h > 0 ? `${d}d ${h}h` : `${d}d`
+  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`
+  if (m > 0) return `${m}m`
+  return `${secs}s`
+}
+
 export function formatDate(ts: number): string {
   const d = new Date(ts * 1000)
   const now = new Date()

@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
-import { HardDrive, RefreshCw, FolderOpen, Star, Disc3, Boxes, Settings2, FileCog, Zap, ShieldAlert, Download, Upload, X } from 'lucide-react'
+import { HardDrive, RefreshCw, FolderOpen, Star, Disc3, Boxes, Settings2, FileCog, Zap, ShieldAlert, Download, Upload, X, LayoutDashboard } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../store/appStore'
 import * as api from '../features/wsl/api'
 import type { WslStatus, WslDistro, OptimizeResult } from '../features/wsl/types'
 import { bytesToHuman } from '../utils/format'
+import { useDistroSelection } from '../features/wsl/hooks'
+import WslDashboardTab from '../features/wsl/components/WslDashboardTab'
 import WslConfigTab from '../features/wsl/components/WslConfigTab'
 import WslConfTab from '../features/wsl/components/WslConfTab'
 
-type WslTab = 'distros' | 'config' | 'conf'
+type WslTab = 'dashboard' | 'distros' | 'config' | 'conf'
 
 export default function WslView() {
   const addActivity = useAppStore(s => s.addActivity)
@@ -17,7 +19,8 @@ export default function WslView() {
   const [distros, setDistros] = useState<WslDistro[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState<string | null>(null)
-  const [tab, setTab]         = useState<WslTab>('distros')
+  const [tab, setTab]         = useState<WslTab>('dashboard')
+  const [selected, setSelected] = useDistroSelection(distros)
 
   // ── VHD optimization (per distro) ────────────────────────────────────────
   const [confirmOpt, setConfirmOpt] = useState<WslDistro | null>(null)
@@ -159,6 +162,9 @@ export default function WslView() {
 
       {available && (
         <div className="wsl-tabs">
+          <button className={clsx('wsl-tab', tab === 'dashboard' && 'active')} onClick={() => setTab('dashboard')}>
+            <LayoutDashboard size={13} /> Dashboard
+          </button>
           <button className={clsx('wsl-tab', tab === 'distros' && 'active')} onClick={() => setTab('distros')}>
             <Boxes size={13} /> Distributions
           </button>
@@ -169,6 +175,10 @@ export default function WslView() {
             <FileCog size={13} /> wsl.conf
           </button>
         </div>
+      )}
+
+      {available && tab === 'dashboard' && (
+        <WslDashboardTab distros={distros} selected={selected} onSelect={setSelected} />
       )}
 
       {available && tab === 'config' && (

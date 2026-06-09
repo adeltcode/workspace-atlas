@@ -41,3 +41,36 @@ export interface WslConfigBackup {
   /** Unix timestamp (seconds). */
   created_at: number
 }
+
+export interface TopProc {
+  cpu_pct: number
+  mem_pct: number
+  command: string
+}
+
+/** Live in-distro metrics for the dashboard (snake_case mirrors the Rust struct). */
+export interface DistroMetrics {
+  load1: number
+  load5: number
+  load15: number
+  cpu_count: number
+  uptime_secs: number
+  mem_total_kb: number
+  mem_available_kb: number
+  swap_total_kb: number
+  swap_free_kb: number
+  disk_used_bytes: number
+  disk_total_bytes: number
+  pid1: string
+  systemd: boolean
+  systemd_state: string
+  nameservers: string[]
+  iface: string
+  ip: string
+  rx_bytes: number
+  tx_bytes: number
+  zombies: number
+  docker_present: boolean
+  docker_running: number
+  top_procs: TopProc[]
+}

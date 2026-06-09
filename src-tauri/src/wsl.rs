@@ -659,6 +659,185 @@ pub async fn wsl_import_distro(
     .map_err(|e| e.to_string())?
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Live in-distro metrics (Dashboard)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Run a bash script inside a distro as root. The script is piped over stdin as
+/// raw UTF-8 with LF line endings (no BOM), so it sidesteps the PowerShell
+/// console encoding pitfalls that mangle scripts. WSL_UTF8 keeps wsl.exe's own
+/// output UTF-8. Booting a stopped distro is the caller's intent.
+fn run_in_distro(distro: &str, script: &str) -> Result<String, String> {
+    use std::io::Write as _;
+    let mut child = Command::new("wsl")
+        .env("WSL_UTF8", "1")
+        .args(["-d", distro, "-u", "root", "bash", "-s"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to launch wsl: {}", e))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(script.as_bytes())
+            .map_err(|e| format!("Write error: {}", e))?;
+    }
+    let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    if out.status.success() {
+        Ok(String::from_utf8_lossy(&out.stdout).to_string())
+    } else {
+        let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        Err(if err.is_empty() { "Command failed inside distro".to_string() } else { err })
+    }
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct TopProc {
+    pub cpu_pct: f32,
+    pub mem_pct: f32,
+    pub command: String,
+}
+
+#[derive(serde::Serialize, Clone, Default)]
+pub struct DistroMetrics {
+    pub load1: f32,
+    pub load5: f32,
+    pub load15: f32,
+    pub cpu_count: u32,
+    pub uptime_secs: u64,
+    pub mem_total_kb: u64,
+    pub mem_available_kb: u64,
+    pub swap_total_kb: u64,
+    pub swap_free_kb: u64,
+    pub disk_used_bytes: u64,
+    pub disk_total_bytes: u64,
+    /// Name of pid 1 (e.g. "systemd" or "init").
+    pub pid1: String,
+    /// True when systemd is pid 1 (the reliable check — `is-system-running`
+    /// returns non-zero on "degraded").
+    pub systemd: bool,
+    /// Raw `systemctl is-system-running` output (running/degraded/…), if any.
+    pub systemd_state: String,
+    pub nameservers: Vec<String>,
+    pub iface: String,
+    pub ip: String,
+    pub rx_bytes: u64,
+    pub tx_bytes: u64,
+    pub zombies: u32,
+    pub docker_present: bool,
+    pub docker_running: u32,
+    pub top_procs: Vec<TopProc>,
+}
+
+/// Section-delimited probe of a distro's live state. Each scalar is a `key=value`
+/// line; the process list follows a literal `@top` marker. Parsed by
+/// `parse_distro_metrics`.
+const METRICS_SCRIPT: &str = r#"
+echo "loadavg=$(cat /proc/loadavg 2>/dev/null)"
+echo "nproc=$(nproc 2>/dev/null)"
+echo "uptime=$(cut -d' ' -f1 /proc/uptime 2>/dev/null)"
+grep -E '^(MemTotal|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo 2>/dev/null | awk '{gsub(":","",$1); print $1"="$2}'
+echo "df=$(df -B1 --output=used,size / 2>/dev/null | tail -1)"
+echo "pid1=$(ps -p 1 -o comm= 2>/dev/null)"
+echo "systemd_state=$(systemctl is-system-running 2>/dev/null)"
+grep '^nameserver' /etc/resolv.conf 2>/dev/null | awk '{print "ns="$2}'
+IFACE=$(ip -o -4 route show to default 2>/dev/null | awk '{print $5; exit}')
+[ -z "$IFACE" ] && IFACE=$(ip -o -4 addr show scope global 2>/dev/null | awk '{print $2; exit}')
+echo "iface=$IFACE"
+echo "ip=$(ip -o -4 addr show dev "$IFACE" 2>/dev/null | awk '{print $4; exit}')"
+echo "rxtx=$(awk -v i="$IFACE:" '$1==i{print $2" "$10}' /proc/net/dev 2>/dev/null)"
+echo "zombies=$(ps -eo stat= 2>/dev/null | grep -c '^Z')"
+if command -v docker >/dev/null 2>&1; then echo "docker=$(docker ps -q 2>/dev/null | wc -l)"; else echo "docker=none"; fi
+echo "@top"
+ps -eo pcpu,pmem,comm --sort=-pcpu --no-headers 2>/dev/null | head -8
+"#;
+
+fn parse_distro_metrics(out: &str) -> DistroMetrics {
+    let mut m = DistroMetrics::default();
+    let mut in_top = false;
+    for raw in out.lines() {
+        let line = raw.trim_end();
+        if line == "@top" {
+            in_top = true;
+            continue;
+        }
+        if in_top {
+            // "pcpu pmem comm…"
+            let mut it = line.split_whitespace();
+            let cpu = it.next().and_then(|s| s.parse().ok());
+            let mem = it.next().and_then(|s| s.parse().ok());
+            let comm = it.collect::<Vec<_>>().join(" ");
+            if let (Some(cpu_pct), Some(mem_pct)) = (cpu, mem) {
+                if !comm.is_empty() {
+                    m.top_procs.push(TopProc { cpu_pct, mem_pct, command: comm });
+                }
+            }
+            continue;
+        }
+        let Some((k, v)) = line.split_once('=') else { continue };
+        let v = v.trim();
+        match k {
+            "loadavg" => {
+                let mut p = v.split_whitespace();
+                m.load1 = p.next().and_then(|s| s.parse().ok()).unwrap_or(0.0);
+                m.load5 = p.next().and_then(|s| s.parse().ok()).unwrap_or(0.0);
+                m.load15 = p.next().and_then(|s| s.parse().ok()).unwrap_or(0.0);
+            }
+            "nproc" => m.cpu_count = v.parse().unwrap_or(0),
+            "uptime" => m.uptime_secs = v.parse::<f64>().map(|f| f as u64).unwrap_or(0),
+            "MemTotal" => m.mem_total_kb = v.parse().unwrap_or(0),
+            "MemAvailable" => m.mem_available_kb = v.parse().unwrap_or(0),
+            "SwapTotal" => m.swap_total_kb = v.parse().unwrap_or(0),
+            "SwapFree" => m.swap_free_kb = v.parse().unwrap_or(0),
+            "df" => {
+                let mut p = v.split_whitespace();
+                m.disk_used_bytes = p.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+                m.disk_total_bytes = p.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+            }
+            "pid1" => m.pid1 = v.to_string(),
+            "systemd_state" => m.systemd_state = v.to_string(),
+            "ns" => {
+                if !v.is_empty() {
+                    m.nameservers.push(v.to_string());
+                }
+            }
+            "iface" => m.iface = v.to_string(),
+            "ip" => m.ip = v.to_string(),
+            "rxtx" => {
+                let mut p = v.split_whitespace();
+                m.rx_bytes = p.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+                m.tx_bytes = p.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+            }
+            "zombies" => m.zombies = v.parse().unwrap_or(0),
+            "docker" => {
+                if v == "none" {
+                    m.docker_present = false;
+                } else {
+                    m.docker_present = true;
+                    m.docker_running = v.parse().unwrap_or(0);
+                }
+            }
+            _ => {}
+        }
+    }
+    m.systemd = m.pid1 == "systemd";
+    m
+}
+
+/// Snapshot a distro's live CPU/memory/swap/disk/network/process/service state.
+/// Read-only and polled (every 10 s by the UI), so it intentionally does not emit
+/// terminal lines — mirroring the silent `get_system_metrics` host poll. Selecting
+/// a stopped distro boots it.
+#[tauri::command]
+pub async fn wsl_distro_metrics(distro: String) -> Result<DistroMetrics, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let out = run_in_distro(&distro, METRICS_SCRIPT)?;
+        Ok(parse_distro_metrics(&out))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Minimal byte formatter for terminal lines (mirrors the frontend's bytesToHuman).
 fn bytes_human(b: u64) -> String {
     if b >= 1_000_000_000 {
@@ -806,4 +985,67 @@ $list | ConvertTo-Json -Compress -Depth 3
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_distro_metrics() {
+        let sample = "\
+loadavg=1.20 0.86 0.41 2/761 8590
+nproc=12
+uptime=43232.02
+MemTotal=40965184
+MemAvailable=35416268
+SwapTotal=10485760
+SwapFree=10485760
+df=28343468032 1081101176832
+pid1=systemd
+systemd_state=degraded
+ns=10.255.255.254
+iface=eth0
+ip=172.20.1.2/20
+rxtx=12345 67890
+zombies=0
+docker=5
+@top
+11.7 0.0 bash
+8.9 0.5 updatedb.plocat
+";
+        let m = parse_distro_metrics(sample);
+        assert_eq!(m.cpu_count, 12);
+        assert_eq!(m.load1, 1.20);
+        assert_eq!(m.uptime_secs, 43232);
+        assert_eq!(m.mem_total_kb, 40965184);
+        assert_eq!(m.mem_available_kb, 35416268);
+        assert_eq!(m.swap_total_kb, 10485760);
+        assert_eq!(m.disk_total_bytes, 1081101176832);
+        assert_eq!(m.disk_used_bytes, 28343468032);
+        assert!(m.systemd);
+        assert_eq!(m.systemd_state, "degraded");
+        assert_eq!(m.nameservers, vec!["10.255.255.254".to_string()]);
+        assert_eq!(m.iface, "eth0");
+        assert_eq!(m.ip, "172.20.1.2/20");
+        assert_eq!(m.rx_bytes, 12345);
+        assert_eq!(m.tx_bytes, 67890);
+        assert_eq!(m.zombies, 0);
+        assert!(m.docker_present);
+        assert_eq!(m.docker_running, 5);
+        assert_eq!(m.top_procs.len(), 2);
+        assert_eq!(m.top_procs[0].command, "bash");
+        assert_eq!(m.top_procs[1].command, "updatedb.plocat");
+    }
+
+    #[test]
+    fn metrics_without_docker_or_systemd() {
+        let sample = "pid1=init\ndocker=none\nzombies=2\n@top\n";
+        let m = parse_distro_metrics(sample);
+        assert!(!m.systemd);
+        assert!(!m.docker_present);
+        assert_eq!(m.docker_running, 0);
+        assert_eq!(m.zombies, 2);
+        assert!(m.top_procs.is_empty());
+    }
 }

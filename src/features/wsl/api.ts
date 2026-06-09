@@ -1,8 +1,9 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { WslStatus, WslDistro, WslConfig, OptimizeResult, ExportResult, WslConfigBackup } from './types'
+import type { WslStatus, WslDistro, WslConfig, OptimizeResult, ExportResult, WslConfigBackup, DistroMetrics } from './types'
 
 export const wslCheck       = () => invoke<WslStatus>('wsl_check')
 export const wslListDistros = () => invoke<WslDistro[]>('wsl_list_distros')
+export const wslDistroMetrics = (distro: string) => invoke<DistroMetrics>('wsl_distro_metrics', { distro })
 
 export const readWslConfig  = () => invoke<WslConfig>('read_wslconfig')
 export const writeWslConfig = (content: string) => invoke<void>('write_wslconfig', { content })

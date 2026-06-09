@@ -7810,6 +7810,78 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   font-family: var(--font-mono);
   color: var(--color-text-secondary);
 }
+
+/* ── WSL dashboard ──────────────────────────────────────────────────────── */
+.wsl-dashboard { margin-top: 4px; }
+.wsl-live-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--color-success);
+  box-shadow: 0 0 0 3px var(--color-success-subtle);
+}
+.wsl-live-text { font-size: 11px; color: var(--color-text-tertiary); }
+
+.wsl-dash-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+.wsl-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
+  font-size: 12px;
+}
+.wsl-chip-label { color: var(--color-text-tertiary); text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; }
+.wsl-chip-val { color: var(--color-text-primary); font-weight: 600; }
+.wsl-chip--ok    { color: var(--color-success); }
+.wsl-chip--warn  { color: var(--color-warning); }
+.wsl-chip--muted { color: var(--color-text-tertiary); }
+.wsl-chip--ok svg, .wsl-chip--warn svg, .wsl-chip--muted svg { flex-shrink: 0; }
+
+.wsl-dash-cols {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 18px;
+  margin-top: 18px;
+}
+@media (max-width: 900px) { .wsl-dash-cols { grid-template-columns: 1fr; } }
+
+.wsl-net-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
+}
+.wsl-net-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.wsl-net-icon { color: var(--color-text-tertiary); flex-shrink: 0; }
+.wsl-net-key { color: var(--color-text-secondary); min-width: 64px; }
+.wsl-net-val { color: var(--color-text-primary); font-family: var(--font-mono); font-size: 12px; }
+
+.wsl-limits { display: flex; flex-direction: column; gap: 6px; }
+.wsl-limit-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 12px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-secondary);
+  font-size: 12.5px;
+}
+.wsl-limit-label { color: var(--color-text-secondary); }
+.wsl-limit-actual { color: var(--color-text-primary); font-weight: 600; }
+.wsl-limit-cap { color: var(--color-text-tertiary); font-size: 11px; }
+.wsl-limits-note { margin-top: 8px; font-size: 11px; color: var(--color-text-tertiary); }
+.wsl-limits-note code { font-family: var(--font-mono); }
 .wslcfg-form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(264px, 1fr));
