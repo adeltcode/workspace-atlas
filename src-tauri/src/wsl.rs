@@ -663,15 +663,25 @@ pub async fn wsl_import_distro(
 // Live in-distro metrics (Dashboard)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Run a bash script inside a distro as root. The script is piped over stdin as
-/// raw UTF-8 with LF line endings (no BOM), so it sidesteps the PowerShell
-/// console encoding pitfalls that mangle scripts. WSL_UTF8 keeps wsl.exe's own
-/// output UTF-8. Booting a stopped distro is the caller's intent.
+/// Run a bash script inside a distro as root. See `run_in_distro_as`.
 fn run_in_distro(distro: &str, script: &str) -> Result<String, String> {
+    run_in_distro_as(distro, Some("root"), script)
+}
+
+/// Run a bash script inside a distro as `user` (None = the distro's default
+/// login user). The script is piped over stdin as raw UTF-8 with LF line endings
+/// (no BOM), so it sidesteps the PowerShell console encoding pitfalls that mangle
+/// scripts. WSL_UTF8 keeps wsl.exe's own output UTF-8. Booting a stopped distro
+/// is the caller's intent.
+fn run_in_distro_as(distro: &str, user: Option<&str>, script: &str) -> Result<String, String> {
     use std::io::Write as _;
-    let mut child = Command::new("wsl")
-        .env("WSL_UTF8", "1")
-        .args(["-d", distro, "-u", "root", "bash", "-s"])
+    let mut cmd = Command::new("wsl");
+    cmd.env("WSL_UTF8", "1").arg("-d").arg(distro);
+    if let Some(u) = user {
+        cmd.arg("-u").arg(u);
+    }
+    let mut child = cmd
+        .args(["bash", "-s"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -1253,6 +1263,160 @@ pub async fn wsl_service_set(
     .map_err(|e| e.to_string())?
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Performance analyzer (cold-boot benchmark + shell profiler)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[derive(serde::Serialize, Clone)]
+pub struct BenchmarkResult {
+    pub boot_ms: u64,
+}
+
+/// Benchmark a distro's cold-boot time: terminate it, let the VM tear down, then
+/// time the first access (`wsl -d <distro> -u root true`) from the host. Mutating
+/// (terminates the distro), so the UI confirms first.
+#[tauri::command]
+pub async fn wsl_benchmark_boot(app: tauri::AppHandle, distro: String) -> Result<BenchmarkResult, String> {
+    use std::time::{Duration, Instant};
+    tauri::async_runtime::spawn_blocking(move || {
+        emit_line(&app, format!("# Cold-boot benchmark — terminating {} first", distro), false);
+        emit_line(&app, format!("$ wsl --terminate {}", distro), false);
+        run_wsl(&["--terminate", &distro]).ok(); // already-stopped is fine
+
+        // Let the lightweight VM fully tear down so the next access is a true cold boot.
+        std::thread::sleep(Duration::from_millis(1500));
+
+        emit_line(&app, format!("$ wsl -d {} -u root true   # timing cold boot", distro), false);
+        let start = Instant::now();
+        run_wsl(&["-d", &distro, "-u", "root", "true"]).map_err(|e| {
+            emit_line(&app, format!("  ✗ {}", e), true);
+            e
+        })?;
+        let boot_ms = start.elapsed().as_millis() as u64;
+        emit_line(&app, format!("  ✓ cold boot: {} ms", boot_ms), false);
+        Ok(BenchmarkResult { boot_ms })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[derive(serde::Serialize, Clone, Default)]
+pub struct RcFile {
+    pub path: String,
+    pub seconds: f32,
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct DetectedTool {
+    pub tool: String,
+    pub suggestion: String,
+}
+
+#[derive(serde::Serialize, Clone, Default)]
+pub struct ShellProfile {
+    /// The default user's login shell (profiling assumes bash).
+    pub shell: String,
+    pub baseline_secs: f32,
+    pub interactive_secs: f32,
+    pub login_secs: f32,
+    /// interactive − baseline: the cost added by rc files (never negative).
+    pub rc_overhead_secs: f32,
+    pub files: Vec<RcFile>,
+    pub detected: Vec<DetectedTool>,
+}
+
+/// Fixed optimization suggestion for a detected slow startup item.
+fn suggestion_for(tool: &str) -> String {
+    match tool {
+        "nvm" => "nvm sourcing nvm.sh eagerly adds 100ms+ — lazy-load it so node/npm/nvm load it on first use.",
+        "conda" => "Disable base auto-activation (`conda config --set auto_activate_base false`) or lazy-init conda.",
+        "pyenv" => "Defer pyenv: use `pyenv init - --no-rehash` and keep virtualenv-init off the hot path.",
+        "rbenv" => "Use `rbenv init - --no-rehash` to skip the rehash on every shell start.",
+        "oh-my-zsh" => "Trim oh-my-zsh plugins and theme — each plugin adds measurable startup cost.",
+        "sdkman" => "SDKMAN sources a large init script — lazy-load it on first `sdk` use.",
+        "nodenv" => "Use `nodenv init - --no-rehash` to cut the per-shell rehash cost.",
+        _ => "Review this item — it runs on every shell startup.",
+    }
+    .to_string()
+}
+
+/// Profiles bash startup as the default user: baseline (no rc), interactive, and
+/// login-interactive timings, isolated per-rc-file source times, and detection of
+/// known-slow tools. Run as the default user so `~` and the login shell are right.
+const PROFILE_SCRIPT: &str = r#"
+SHELL_PATH=$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f7)
+echo "shell=$SHELL_PATH"
+export TIMEFORMAT=%R
+echo "baseline=$( { time bash --norc --noprofile -c true >/dev/null 2>&1 ; } 2>&1 )"
+echo "interactive=$( { time bash -i -c true >/dev/null 2>&1 ; } 2>&1 )"
+echo "login=$( { time bash -l -i -c true >/dev/null 2>&1 ; } 2>&1 )"
+echo "@files"
+for f in /etc/profile "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.profile"; do
+  [ -f "$f" ] || continue
+  echo "$f=$( { time bash --norc -i -c "source '$f'" >/dev/null 2>&1 ; } 2>&1 )"
+done
+echo "@detect"
+RC="$HOME/.bashrc $HOME/.bash_profile $HOME/.profile /etc/profile"
+for spec in "nvm:nvm|NVM_DIR" "conda:conda init|conda.sh|miniconda|anaconda" "pyenv:pyenv init|PYENV_ROOT" "rbenv:rbenv init" "oh-my-zsh:oh-my-zsh|robbyrussell" "sdkman:sdkman|SDKMAN_DIR" "nodenv:nodenv init"; do
+  tool="${spec%%:*}"; pat="${spec#*:}"
+  if grep -lE "$pat" $RC >/dev/null 2>&1; then echo "$tool"; fi
+done
+"#;
+
+fn parse_shell_profile(out: &str) -> ShellProfile {
+    enum Sec { Head, Files, Detect }
+    let mut sec = Sec::Head;
+    let mut p = ShellProfile::default();
+    for line in out.lines() {
+        let line = line.trim_end();
+        match line {
+            "@files" => { sec = Sec::Files; continue }
+            "@detect" => { sec = Sec::Detect; continue }
+            _ => {}
+        }
+        match sec {
+            Sec::Head => {
+                if let Some((k, v)) = line.split_once('=') {
+                    let v = v.trim();
+                    match k {
+                        "shell" => p.shell = v.to_string(),
+                        "baseline" => p.baseline_secs = v.parse().unwrap_or(0.0),
+                        "interactive" => p.interactive_secs = v.parse().unwrap_or(0.0),
+                        "login" => p.login_secs = v.parse().unwrap_or(0.0),
+                        _ => {}
+                    }
+                }
+            }
+            Sec::Files => {
+                if let Some((path, secs)) = line.rsplit_once('=') {
+                    if let Ok(seconds) = secs.trim().parse::<f32>() {
+                        p.files.push(RcFile { path: path.to_string(), seconds });
+                    }
+                }
+            }
+            Sec::Detect => {
+                let t = line.trim();
+                if !t.is_empty() {
+                    p.detected.push(DetectedTool { tool: t.to_string(), suggestion: suggestion_for(t) });
+                }
+            }
+        }
+    }
+    p.rc_overhead_secs = (p.interactive_secs - p.baseline_secs).max(0.0);
+    p
+}
+
+/// Profile the default user's shell startup. Read-only (boots a stopped distro).
+#[tauri::command]
+pub async fn wsl_profile_shell(distro: String) -> Result<ShellProfile, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let out = run_in_distro_as(&distro, None, PROFILE_SCRIPT)?;
+        Ok(parse_shell_profile(&out))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Minimal byte formatter for terminal lines (mirrors the frontend's bytesToHuman).
 fn bytes_human(b: u64) -> String {
     if b >= 1_000_000_000 {
@@ -1495,6 +1659,29 @@ docker=5
         assert_eq!(d.requires, vec!["system.slice", "sysinit.target"]);
         assert_eq!(d.after.len(), 2);
         assert_eq!(d.unit_file_state, "disabled");
+    }
+
+    #[test]
+    fn parses_shell_profile() {
+        let sample = "shell=/bin/bash\nbaseline=0.003\ninteractive=0.140\nlogin=0.200\n@files\n/etc/profile=0.005\n/root/.bashrc=0.110\n@detect\nnvm\noh-my-zsh\n";
+        let p = parse_shell_profile(sample);
+        assert_eq!(p.shell, "/bin/bash");
+        assert!((p.baseline_secs - 0.003).abs() < 1e-4);
+        assert!((p.interactive_secs - 0.140).abs() < 1e-4);
+        assert!((p.rc_overhead_secs - 0.137).abs() < 1e-3);
+        assert_eq!(p.files.len(), 2);
+        assert_eq!(p.files[1].path, "/root/.bashrc");
+        assert!((p.files[1].seconds - 0.110).abs() < 1e-4);
+        assert_eq!(p.detected.len(), 2);
+        assert_eq!(p.detected[0].tool, "nvm");
+        assert!(p.detected[0].suggestion.contains("lazy-load"));
+    }
+
+    #[test]
+    fn shell_profile_overhead_never_negative() {
+        // Baseline can occasionally exceed interactive due to scheduling noise.
+        let p = parse_shell_profile("baseline=0.050\ninteractive=0.030\n");
+        assert_eq!(p.rc_overhead_secs, 0.0);
     }
 
     #[test]

@@ -71,6 +71,8 @@ pub fn run() {
             wsl::wsl_list_services,
             wsl::wsl_service_detail,
             wsl::wsl_service_set,
+            wsl::wsl_benchmark_boot,
+            wsl::wsl_profile_shell,
             wsl::read_wslconfig,
             wsl::write_wslconfig,
             wsl::wslconfig_backup,

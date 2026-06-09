@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { HardDrive, RefreshCw, FolderOpen, Star, Disc3, Boxes, Settings2, FileCog, Zap, ShieldAlert, Download, Upload, X, LayoutDashboard, Copy, RotateCw, FolderInput, ListChecks } from 'lucide-react'
+import { HardDrive, RefreshCw, FolderOpen, Star, Disc3, Boxes, Settings2, FileCog, Zap, ShieldAlert, Download, Upload, X, LayoutDashboard, Copy, RotateCw, FolderInput, ListChecks, Gauge } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../store/appStore'
 import * as api from '../features/wsl/api'
@@ -8,10 +8,11 @@ import { bytesToHuman, formatDuration } from '../utils/format'
 import { useDistroSelection } from '../features/wsl/hooks'
 import WslDashboardTab from '../features/wsl/components/WslDashboardTab'
 import WslStartupTab from '../features/wsl/components/WslStartupTab'
+import WslPerformanceTab from '../features/wsl/components/WslPerformanceTab'
 import WslConfigTab from '../features/wsl/components/WslConfigTab'
 import WslConfTab from '../features/wsl/components/WslConfTab'
 
-type WslTab = 'dashboard' | 'distros' | 'startup' | 'config' | 'conf'
+type WslTab = 'dashboard' | 'distros' | 'startup' | 'performance' | 'config' | 'conf'
 
 export default function WslView() {
   const addActivity = useAppStore(s => s.addActivity)
@@ -261,6 +262,9 @@ export default function WslView() {
           <button className={clsx('wsl-tab', tab === 'startup' && 'active')} onClick={() => setTab('startup')}>
             <ListChecks size={13} /> Startup
           </button>
+          <button className={clsx('wsl-tab', tab === 'performance' && 'active')} onClick={() => setTab('performance')}>
+            <Gauge size={13} /> Performance
+          </button>
           <button className={clsx('wsl-tab', tab === 'config' && 'active')} onClick={() => setTab('config')}>
             <Settings2 size={13} /> .wslconfig
           </button>
@@ -276,6 +280,10 @@ export default function WslView() {
 
       {available && tab === 'startup' && (
         <WslStartupTab distros={distros} selected={selected} onSelect={setSelected} onGoToConf={() => setTab('conf')} />
+      )}
+
+      {available && tab === 'performance' && (
+        <WslPerformanceTab distros={distros} selected={selected} onSelect={setSelected} />
       )}
 
       {available && tab === 'config' && (

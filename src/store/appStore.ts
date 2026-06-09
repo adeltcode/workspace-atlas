@@ -123,6 +123,10 @@ interface AppState {
   addActivity: (entry: Omit<ActivityEntry, 'id' | 'ts'>) => void
   clearActivity: () => void
 
+  // ── WSL cold-boot benchmark history, per distro (persisted)
+  wslBenchmarks: Record<string, Array<{ ts: number; boot_ms: number }>>
+  addWslBenchmark: (distro: string, bootMs: number) => void
+
   // ── Docker data cache (ephemeral)
   dockerCache: DockerCache | null
   setDockerCache: (cache: DockerCache) => void
@@ -249,6 +253,16 @@ export const useAppStore = create<AppState>()(
         })),
       clearActivity: () => set({ activityLog: [] }),
 
+      // ── WSL benchmark history (keep the 20 most recent per distro)
+      wslBenchmarks: {},
+      addWslBenchmark: (distro, bootMs) =>
+        set((s) => ({
+          wslBenchmarks: {
+            ...s.wslBenchmarks,
+            [distro]: [{ ts: Date.now(), boot_ms: bootMs }, ...(s.wslBenchmarks[distro] ?? [])].slice(0, 20),
+          },
+        })),
+
       // ── Docker cache
       dockerCache: null,
       setDockerCache:   (cache) => set({ dockerCache: cache }),
@@ -297,6 +311,7 @@ export const useAppStore = create<AppState>()(
         dockerKeepList:  s.dockerKeepList,
         dockerLogs:      s.dockerLogs,
         activityLog:     s.activityLog,
+        wslBenchmarks:   s.wslBenchmarks,
         preferredEditor: s.preferredEditor,
         knownComposeProjects: s.knownComposeProjects,
       }),

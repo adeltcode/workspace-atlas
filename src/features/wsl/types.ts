@@ -117,3 +117,27 @@ export interface ServiceDetail {
   requires: string[]
   after: string[]
 }
+
+export interface BenchmarkResult {
+  boot_ms: number
+}
+
+export interface RcFile {
+  path: string
+  seconds: number
+}
+
+export interface DetectedTool {
+  tool: string
+  suggestion: string
+}
+
+export interface ShellProfile {
+  shell: string
+  baseline_secs: number
+  interactive_secs: number
+  login_secs: number
+  rc_overhead_secs: number
+  files: RcFile[]
+  detected: DetectedTool[]
+}
