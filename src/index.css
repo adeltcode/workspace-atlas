@@ -2455,6 +2455,8 @@ button:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  /* Extra bottom space so the last section clears the collapsed terminal bar. */
+  padding-bottom: 100px;
 }
 
 .overview-header {
