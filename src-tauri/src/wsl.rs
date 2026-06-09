@@ -162,8 +162,11 @@ pub async fn wsl_optimize_vhd(
             return Err("Administrator access was cancelled.".to_string());
         }
 
-        let result = std::fs::read_to_string(&result_path).unwrap_or_default();
+        let result_raw = std::fs::read_to_string(&result_path).unwrap_or_default();
         std::fs::remove_file(&result_path).ok();
+        // PowerShell 5.1's `Out-File -Encoding utf8` prepends a UTF-8 BOM; strip it
+        // so the first line's `method=` / `error=` prefix still matches.
+        let result = result_raw.trim_start_matches('\u{feff}');
 
         if let Some(err) = result.lines().find_map(|l| l.strip_prefix("error=")) {
             emit_line(&app, format!("  ✗ {}", err.trim()), true);

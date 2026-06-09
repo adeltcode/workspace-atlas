@@ -241,7 +241,9 @@ export const useAppStore = create<AppState>()(
       addActivity: (entry) =>
         set((s) => ({
           activityLog: [
-            { ...entry, id: `${++_lineId}`, ts: Date.now() },
+            // Timestamp + counter so ids stay unique across reloads (activityLog is
+            // persisted; a bare counter resets to 0 and would collide with rehydrated ids).
+            { ...entry, id: `${Date.now()}-${++_lineId}`, ts: Date.now() },
             ...s.activityLog,
           ].slice(0, MAX_ACTIVITY),
         })),
@@ -300,7 +302,8 @@ export const useAppStore = create<AppState>()(
       }),
       onRehydrateStorage: () => (state) => {
         if (state) {
-          applyTheme(state.theme)
+          // Guard against a malformed/partial imported config missing theme.
+          if (state.theme === 'dark' || state.theme === 'light') applyTheme(state.theme)
           // Migrate legacy 'backup' tab value that may be stored in localStorage
           if ((state.dockerTab as string) === 'backup') {
             state.dockerTab = 'backup-volumes'

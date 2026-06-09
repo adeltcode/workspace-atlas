@@ -6,6 +6,23 @@ import { exportConfig, importConfig } from '../features/config/api'
 
 const STORAGE_KEY = 'workspace-atlas-v1'
 
+// Persisted keys that are NOT configuration: transient navigation and local
+// history. Stripped from config export/import so importing settings never yanks
+// the user to another view or overwrites their run history.
+const NON_CONFIG_KEYS = ['activeView', 'dockerTab', 'dockerLogs', 'activityLog']
+
+/** Return the persisted blob with non-config keys removed, or null if unparseable. */
+function stripNonConfig(raw: string): string | null {
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || typeof parsed.state !== 'object') return null
+    for (const k of NON_CONFIG_KEYS) delete parsed.state[k]
+    return JSON.stringify(parsed, null, 2)
+  } catch {
+    return null
+  }
+}
+
 export default function SettingsView() {
   const { backupDir, setBackupDir } = useAppStore()
 
@@ -91,12 +108,13 @@ export default function SettingsView() {
 
   const handleExportConfig = async () => {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) {
+    const contents = raw && stripNonConfig(raw)
+    if (!contents) {
       setStatusMsg({ type: 'error', text: 'No configuration to export yet.' })
       return
     }
     try {
-      const path = await exportConfig(raw)
+      const path = await exportConfig(contents)
       if (path) setStatusMsg({ type: 'success', text: `Configuration exported to ${path}` })
     } catch (e) {
       setStatusMsg({ type: 'error', text: `Export failed: ${String(e)}` })
@@ -113,11 +131,14 @@ export default function SettingsView() {
     }
     if (!contents) return // cancelled
     try {
-      const parsed = JSON.parse(contents)
-      if (!parsed || typeof parsed !== 'object' || typeof parsed.state !== 'object') {
+      // Sanitize first: rejects junk, and strips navigation/history so an import
+      // can't yank the user to another view or replace local run history. Missing
+      // keys are kept at their current values by zustand's merge-on-rehydrate.
+      const sanitized = stripNonConfig(contents)
+      if (!sanitized) {
         throw new Error('Not a valid Workspace Atlas configuration file')
       }
-      localStorage.setItem(STORAGE_KEY, contents)
+      localStorage.setItem(STORAGE_KEY, sanitized)
       await useAppStore.persist.rehydrate()
       setStatusMsg({ type: 'success', text: 'Configuration imported and applied.' })
     } catch (e) {
