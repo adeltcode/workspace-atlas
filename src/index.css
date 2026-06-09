@@ -7499,3 +7499,124 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   color: var(--color-text-tertiary);
 }
 
+/* =============================================================
+   WSL2 Optimizer — distro cards
+   ============================================================= */
+.wsl-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 20px 0 14px;
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+}
+.wsl-summary-sep { color: var(--color-text-tertiary); }
+
+.wsl-distro-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+}
+
+.wsl-distro-card {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+}
+.wsl-distro-card--running {
+  border-color: var(--color-success-subtle, var(--color-border));
+}
+
+.wsl-distro-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.wsl-distro-icon { color: var(--color-text-tertiary); flex-shrink: 0; }
+
+.wsl-distro-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.wsl-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+}
+.wsl-badge--default {
+  background: var(--color-accent-subtle);
+  color: var(--color-accent-hover);
+}
+
+.wsl-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+}
+.wsl-state-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.wsl-state--running { color: var(--color-success); }
+.wsl-state--running .wsl-state-dot { background: var(--color-success); }
+.wsl-state--stopped { color: var(--color-text-tertiary); }
+.wsl-state--stopped .wsl-state-dot { background: var(--color-text-tertiary); }
+
+.wsl-distro-size {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin-bottom: 12px;
+}
+.wsl-distro-size-val {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.wsl-distro-size-label {
+  font-size: 11.5px;
+  color: var(--color-text-tertiary);
+}
+
+.wsl-distro-path {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.wsl-distro-path:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-secondary);
+}
+.wsl-distro-path-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+

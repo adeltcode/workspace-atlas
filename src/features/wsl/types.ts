@@ -1,0 +1,16 @@
+export interface WslStatus {
+  available: boolean
+  error: string | null
+}
+
+export interface WslDistro {
+  name: string
+  /** WSL version: 1 or 2; 0 = unknown. */
+  version: number
+  running: boolean
+  is_default: boolean
+  base_path: string
+  /** Path to ext4.vhdx; empty for WSL1 or if missing. */
+  vhd_path: string
+  vhd_size_bytes: number
+}

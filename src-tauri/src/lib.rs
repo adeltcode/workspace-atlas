@@ -2,6 +2,7 @@ mod config;
 mod docker;
 mod shell;
 mod system;
+mod wsl;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -60,6 +61,8 @@ pub fn run() {
             system::get_system_metrics,
             config::export_config,
             config::import_config,
+            wsl::wsl_check,
+            wsl::wsl_list_distros,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
