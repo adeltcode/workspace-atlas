@@ -693,7 +693,20 @@ export default function ComposeTab({
 
   const loadProjects = async () => {
     setLoading(true); setError(null)
-    try { setProjects(await api.dockerComposeLs()) }
+    try {
+      const live = await api.dockerComposeLs()
+      // Remember the live projects, then re-add any remembered project that is
+      // currently down (gone from `docker compose ls`) as a stopped entry, so
+      // the user can still see and start it.
+      useAppStore.getState().rememberComposeProjects(
+        live.map(p => ({ name: p.name, config_files: p.config_files }))
+      )
+      const liveNames = new Set(live.map(p => p.name))
+      const down: ComposeProject[] = Object.entries(useAppStore.getState().knownComposeProjects)
+        .filter(([name]) => !liveNames.has(name))
+        .map(([name, config_files]) => ({ name, status: '', config_files }))
+      setProjects([...live, ...down])
+    }
     catch (e) { setError(String(e)) }
     finally { setLoading(false) }
   }
@@ -799,6 +812,15 @@ export default function ComposeTab({
   const handleMetaChange = (name: string, meta: AppProjectMeta) => {
     setMetadata(prev => ({ ...prev, [name]: meta }))
     api.metadataSaveProject(name, meta).catch(() => {})
+  }
+
+  // Drop a stopped project from the remembered list and return to the overview.
+  const handleForgetProject = () => {
+    if (!selected) return
+    useAppStore.getState().forgetComposeProject(selected.name)
+    useAppStore.getState().setComposeActiveProject(null)
+    setViewMode('main')
+    loadProjects()
   }
 
   // ── Extra file loader (Dockerfiles, .env tabs) ────────────────────────────
@@ -1364,6 +1386,15 @@ export default function ComposeTab({
                       <span className="compose-sidebar-tool-label">Backup</span>
                       {fileBackups.length > 0 && <span className="compose-backup-btn-count">{fileBackups.length}</span>}
                       <ChevronDown size={10} className={clsx('compose-sidebar-tool-chevron', backupOpen && 'open')} />
+                    </button>
+                  )}
+                  {/* Only meaningful for a project that is down (no containers) — it is
+                      kept in the list from memory and can be dropped from it here. */}
+                  {projectContainers.length === 0 && (
+                    <button className="compose-sidebar-tool-btn" onClick={handleForgetProject}
+                      title="Remove this stopped project from the list">
+                      <Trash2 size={13} />
+                      <span className="compose-sidebar-tool-label">Remove from list</span>
                     </button>
                   )}
                 </div>

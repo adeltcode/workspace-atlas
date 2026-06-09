@@ -6,7 +6,7 @@ import {
 import clsx from 'clsx'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import type { ComposeProject, DockerContainer, ContainerStats, AppProjectMeta } from '../types'
-import { bytesToHuman } from '../../../utils/format'
+import { bytesToHuman, composeStatusLabel } from '../../../utils/format'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -115,9 +115,10 @@ function findPortConflicts(containers: DockerContainer[]): Set<string> {
 // ── Stats strip ───────────────────────────────────────────────────────────────
 
 function StatsStrip({ projects, containers }: { projects: ComposeProject[]; containers: DockerContainer[] }) {
-  const running  = projects.filter(p => p.status.toLowerCase().includes('running')).length
-  const stopped  = projects.filter(p => p.status.toLowerCase() === 'exited' || p.status.toLowerCase() === 'stopped').length
-  const partial  = projects.length - running - stopped
+  const dots     = projects.map(p => composeStatusLabel(p.status).dot)
+  const running  = dots.filter(d => d === 'running').length
+  const stopped  = dots.filter(d => d === 'stopped').length
+  const partial  = dots.filter(d => d === 'partial').length
   const services = containers.filter(c => c.compose_project !== null).length
   const conflicts = findPortConflicts(containers).size
 

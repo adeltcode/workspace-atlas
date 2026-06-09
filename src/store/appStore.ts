@@ -66,6 +66,12 @@ interface AppState {
   setDockerBadges: (b: { images: number; containers: string; volumes: string } | null) => void
   composeProjectsNav: Array<{ name: string; status: string }>
   setComposeProjectsNav: (projects: Array<{ name: string; status: string }>) => void
+  // Compose projects we have seen (name → config files), persisted so a project
+  // that is `down` — and thus drops out of `docker compose ls` — still shows in
+  // the list and can be started again.
+  knownComposeProjects: Record<string, string[]>
+  rememberComposeProjects: (projects: Array<{ name: string; config_files: string[] }>) => void
+  forgetComposeProject: (name: string) => void
   composeActiveProject: string | null
   setComposeActiveProject: (name: string | null) => void
   // Active project's files, shown as a child menu in the sidebar (replaces the
@@ -165,6 +171,19 @@ export const useAppStore = create<AppState>()(
       setDockerBadges:        (dockerBadges)        => set({ dockerBadges }),
       composeProjectsNav:     [],
       setComposeProjectsNav:  (composeProjectsNav)  => set({ composeProjectsNav }),
+      knownComposeProjects:   {},
+      rememberComposeProjects: (projects) =>
+        set((s) => {
+          const next = { ...s.knownComposeProjects }
+          for (const p of projects) next[p.name] = p.config_files
+          return { knownComposeProjects: next }
+        }),
+      forgetComposeProject: (name) =>
+        set((s) => {
+          const next = { ...s.knownComposeProjects }
+          delete next[name]
+          return { knownComposeProjects: next }
+        }),
       composeActiveProject:   null,
       setComposeActiveProject:(composeActiveProject) => set({ composeActiveProject }),
       composeFilesNav:        [],
@@ -242,6 +261,7 @@ export const useAppStore = create<AppState>()(
         dockerKeepList:  s.dockerKeepList,
         dockerLogs:      s.dockerLogs,
         preferredEditor: s.preferredEditor,
+        knownComposeProjects: s.knownComposeProjects,
       }),
       onRehydrateStorage: () => (state) => {
         if (state) {

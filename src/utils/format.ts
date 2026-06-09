@@ -7,7 +7,7 @@ export function composeStatusLabel(raw: string): { text: string; dot: 'running' 
     const m = part.match(/^(\w+)\((\d+)\)$/)
     return m ? { state: m[1], count: parseInt(m[2], 10) } : { state: part, count: 1 }
   })
-  if (!parts.length) return { text: raw || 'unknown', dot: 'stopped', running: 0, total: 0 }
+  if (!parts.length) return { text: raw.trim() || 'stopped', dot: 'stopped', running: 0, total: 0 }
   const total   = parts.reduce((s, p) => s + p.count, 0)
   const running = parts.find(p => p.state === 'running')?.count ?? 0
   const text    = parts.map(p => `${p.count} ${p.state}`).join(', ')
