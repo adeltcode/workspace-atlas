@@ -74,3 +74,14 @@ export interface DistroMetrics {
   docker_running: number
   top_procs: TopProc[]
 }
+
+export interface DistroExtras {
+  package_count: number
+  /** dpkg | rpm | apk | pacman | unknown */
+  package_manager: string
+  uptime_secs: number
+}
+
+export interface MigrateResult {
+  backup_tar: string
+}

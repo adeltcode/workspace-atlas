@@ -838,6 +838,215 @@ pub async fn wsl_distro_metrics(distro: String) -> Result<DistroMetrics, String>
     .map_err(|e| e.to_string())?
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Distro management (comparison extras, restart, clone, migrate)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Run `wsl <args>` with UTF-8 output, mapping a non-zero exit to an error.
+/// wsl.exe sometimes writes its error text to stdout, so both streams are checked.
+fn run_wsl(args: &[&str]) -> Result<(), String> {
+    let out = Command::new("wsl")
+        .env("WSL_UTF8", "1")
+        .args(args)
+        .output()
+        .map_err(|e| format!("Failed to run wsl: {}", e))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    let err = if err.is_empty() {
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    } else {
+        err
+    };
+    Err(if err.is_empty() { "wsl command failed".to_string() } else { err })
+}
+
+#[derive(serde::Serialize, Clone, Default)]
+pub struct DistroExtras {
+    pub package_count: u64,
+    /// dpkg | rpm | apk | pacman | unknown
+    pub package_manager: String,
+    pub uptime_secs: u64,
+}
+
+const EXTRAS_SCRIPT: &str = r#"
+echo "uptime=$(cut -d' ' -f1 /proc/uptime 2>/dev/null)"
+if command -v dpkg-query >/dev/null 2>&1; then echo "pm=dpkg"; echo "count=$(dpkg-query -f '.\n' -W 2>/dev/null | wc -l)"
+elif command -v rpm >/dev/null 2>&1; then echo "pm=rpm"; echo "count=$(rpm -qa 2>/dev/null | wc -l)"
+elif command -v apk >/dev/null 2>&1; then echo "pm=apk"; echo "count=$(apk info 2>/dev/null | wc -l)"
+elif command -v pacman >/dev/null 2>&1; then echo "pm=pacman"; echo "count=$(pacman -Q 2>/dev/null | wc -l)"
+else echo "pm=unknown"; echo "count=0"; fi
+"#;
+
+fn parse_distro_extras(out: &str) -> DistroExtras {
+    let mut e = DistroExtras::default();
+    for line in out.lines() {
+        let Some((k, v)) = line.trim().split_once('=') else { continue };
+        match k {
+            "uptime" => e.uptime_secs = v.trim().parse::<f64>().map(|f| f as u64).unwrap_or(0),
+            "pm" => e.package_manager = v.trim().to_string(),
+            "count" => e.package_count = v.trim().parse().unwrap_or(0),
+            _ => {}
+        }
+    }
+    e
+}
+
+/// Package count + manager + uptime for the comparison table. Reads inside the
+/// distro, so the caller should only invoke this for running distros (otherwise
+/// it boots the distro). Read-only — no terminal emission.
+#[tauri::command]
+pub async fn wsl_distro_extras(distro: String) -> Result<DistroExtras, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let out = run_in_distro(&distro, EXTRAS_SCRIPT)?;
+        Ok(parse_distro_extras(&out))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Restart a distro: `wsl --terminate <distro>`. WSL relaunches it on next access.
+#[tauri::command]
+pub async fn wsl_terminate_distro(app: tauri::AppHandle, distro: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        emit_line(&app, format!("$ wsl --terminate {}", distro), false);
+        run_wsl(&["--terminate", &distro]).map_err(|e| {
+            emit_line(&app, format!("  ✗ {}", e), true);
+            e
+        })?;
+        emit_line(&app, format!("  ✓ terminated {} (restarts on next use)", distro), false);
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Clone a distro: export it to a temp `.tar`, import under a new name/location,
+/// then delete the temp archive. Not elevated.
+#[tauri::command]
+pub async fn wsl_clone_distro(
+    app: tauri::AppHandle,
+    source: String,
+    new_name: String,
+    install_dir: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        std::fs::create_dir_all(&install_dir)
+            .map_err(|e| format!("Cannot create install directory: {}", e))?;
+
+        let tmp = std::env::temp_dir().join(format!("atlas_clone_{}.tar", safe_name(&new_name)));
+        let tmp_str = tmp.to_string_lossy().to_string();
+
+        emit_line(&app, format!("$ wsl --terminate {}", source), false);
+        run_wsl(&["--terminate", &source]).ok();
+
+        emit_line(&app, format!("$ wsl --export {} \"{}\"", source, tmp_str), false);
+        run_wsl(&["--export", &source, &tmp_str]).map_err(|e| {
+            emit_line(&app, format!("  ✗ {}", e), true);
+            e
+        })?;
+
+        emit_line(&app, format!("$ wsl --import {} \"{}\" \"{}\"", new_name, install_dir, tmp_str), false);
+        let imported = run_wsl(&["--import", &new_name, &install_dir, &tmp_str]);
+        std::fs::remove_file(&tmp).ok();
+        imported.map_err(|e| {
+            emit_line(&app, format!("  ✗ {}", e), true);
+            e
+        })?;
+
+        emit_line(&app, format!("  ✓ cloned {} → {}", source, new_name), false);
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct MigrateResult {
+    /// Path to the retained `.tar` backup (the rollback artifact).
+    pub backup_tar: String,
+}
+
+/// Move a distro to another directory/drive with a verified, recoverable flow:
+/// export to a `.tar` in the destination → import to a temp name there → verify it
+/// boots → only then unregister the original → re-import the original name at the
+/// new location → drop the temp. The `.tar` is kept as a rollback artifact; the
+/// original is never unregistered until the new copy is confirmed bootable.
+#[tauri::command]
+pub async fn wsl_migrate_distro(
+    app: tauri::AppHandle,
+    distro: String,
+    new_dir: String,
+    was_default: bool,
+) -> Result<MigrateResult, String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    tauri::async_runtime::spawn_blocking(move || {
+        std::fs::create_dir_all(&new_dir)
+            .map_err(|e| format!("Cannot create destination directory: {}", e))?;
+
+        let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+        let backup = format!("{}/{}_migrate_{}.tar", new_dir.replace('\\', "/"), safe_name(&distro), ts);
+        let temp_name = format!("{}_atlas_migrate", distro);
+        let temp_dir = format!("{}/__atlas_migrate_verify", new_dir.replace('\\', "/"));
+
+        emit_line(&app, format!("# Migrating {} to {} — exporting a backup first", distro, new_dir), false);
+        emit_line(&app, format!("$ wsl --terminate {}", distro), false);
+        run_wsl(&["--terminate", &distro]).ok();
+
+        emit_line(&app, format!("$ wsl --export {} \"{}\"", distro, backup), false);
+        run_wsl(&["--export", &distro, &backup]).map_err(|e| {
+            emit_line(&app, format!("  ✗ {}", e), true);
+            e
+        })?;
+
+        // Import + boot-verify a temp copy at the destination before touching the original.
+        emit_line(&app, format!("$ wsl --import {} \"{}\" \"{}\"", temp_name, temp_dir, backup), false);
+        run_wsl(&["--import", &temp_name, &temp_dir, &backup]).map_err(|e| {
+            emit_line(&app, format!("  ✗ {} (original intact, backup kept at {})", e, backup), true);
+            e
+        })?;
+
+        emit_line(&app, format!("$ wsl -d {} -u root true   # verify boot", temp_name), false);
+        if let Err(e) = run_wsl(&["-d", &temp_name, "-u", "root", "true"]) {
+            emit_line(&app, format!("  ✗ migrated copy failed to boot: {} — keeping original, backup at {}", e, backup), true);
+            run_wsl(&["--unregister", &temp_name]).ok();
+            std::fs::remove_dir_all(&temp_dir).ok();
+            return Err(format!("Migrated copy failed to boot; original left untouched. Backup: {}", backup));
+        }
+
+        // Verified bootable — now replace the original at the new location.
+        emit_line(&app, format!("$ wsl --unregister {}", distro), false);
+        if let Err(e) = run_wsl(&["--unregister", &distro]) {
+            emit_line(&app, format!("  ✗ {} — original intact, backup at {}", e, backup), true);
+            run_wsl(&["--unregister", &temp_name]).ok();
+            std::fs::remove_dir_all(&temp_dir).ok();
+            return Err(e);
+        }
+
+        emit_line(&app, format!("$ wsl --import {} \"{}\" \"{}\"", distro, new_dir, backup), false);
+        if let Err(e) = run_wsl(&["--import", &distro, &new_dir, &backup]) {
+            emit_line(&app, format!("  ✗ re-import failed: {} — recover with: wsl --import {} \"{}\" \"{}\"", e, distro, new_dir, backup), true);
+            return Err(format!("Re-import failed: {}. Recover from the backup: {}", e, backup));
+        }
+
+        // Clean up the temp verification copy.
+        emit_line(&app, format!("$ wsl --unregister {}", temp_name), false);
+        run_wsl(&["--unregister", &temp_name]).ok();
+        std::fs::remove_dir_all(&temp_dir).ok();
+
+        if was_default {
+            emit_line(&app, format!("$ wsl --set-default {}", distro), false);
+            run_wsl(&["--set-default", &distro]).ok();
+        }
+
+        emit_line(&app, format!("  ✓ migrated {} to {} (backup kept: {})", distro, new_dir, backup), false);
+        Ok(MigrateResult { backup_tar: backup })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Minimal byte formatter for terminal lines (mirrors the frontend's bytesToHuman).
 fn bytes_human(b: u64) -> String {
     if b >= 1_000_000_000 {
@@ -1036,6 +1245,14 @@ docker=5
         assert_eq!(m.top_procs.len(), 2);
         assert_eq!(m.top_procs[0].command, "bash");
         assert_eq!(m.top_procs[1].command, "updatedb.plocat");
+    }
+
+    #[test]
+    fn parses_distro_extras() {
+        let e = parse_distro_extras("uptime=43232.99\npm=dpkg\ncount=1463\n");
+        assert_eq!(e.uptime_secs, 43232);
+        assert_eq!(e.package_manager, "dpkg");
+        assert_eq!(e.package_count, 1463);
     }
 
     #[test]

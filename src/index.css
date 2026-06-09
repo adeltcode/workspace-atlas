@@ -7524,6 +7524,49 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 .wsl-summary-sep { color: var(--color-text-tertiary); }
 
+/* ── WSL distro comparison table ────────────────────────────────────────── */
+.wsl-compare-wrap {
+  margin-bottom: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.wsl-compare {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.wsl-compare th {
+  text-align: left;
+  padding: 9px 14px;
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-tertiary);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid var(--color-border);
+}
+.wsl-compare td {
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--color-border-light);
+  color: var(--color-text-secondary);
+}
+.wsl-compare tbody tr:last-child td { border-bottom: none; }
+.wsl-compare-num { text-align: right; font-variant-numeric: tabular-nums; }
+.wsl-compare-name { color: var(--color-text-primary); font-weight: 600; }
+.wsl-compare-star { color: var(--color-warning); margin-left: 5px; vertical-align: middle; }
+.wsl-scan-btn {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  padding: 2px 9px;
+  cursor: pointer;
+}
+.wsl-scan-btn:hover { border-color: var(--color-accent); color: var(--color-text-primary); }
+
 .wsl-distro-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
@@ -7975,6 +8018,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wsl-distro-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
 }
