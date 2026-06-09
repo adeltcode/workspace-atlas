@@ -747,7 +747,9 @@ echo "loadavg=$(cat /proc/loadavg 2>/dev/null)"
 echo "nproc=$(nproc 2>/dev/null)"
 echo "uptime=$(cut -d' ' -f1 /proc/uptime 2>/dev/null)"
 grep -E '^(MemTotal|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo 2>/dev/null | awk '{gsub(":","",$1); print $1"="$2}'
-echo "df=$(df -B1 --output=used,size / 2>/dev/null | tail -1)"
+DF=$(df -B1 --output=used,size / 2>/dev/null | tail -1)
+[ -z "$DF" ] && DF=$(df -kP / 2>/dev/null | tail -1 | awk '{print $3*1024" "$2*1024}')
+echo "df=$DF"
 echo "pid1=$(ps -p 1 -o comm= 2>/dev/null)"
 echo "systemd_state=$(systemctl is-system-running 2>/dev/null)"
 grep '^nameserver' /etc/resolv.conf 2>/dev/null | awk '{print "ns="$2}'
@@ -872,6 +874,47 @@ fn run_wsl(args: &[&str]) -> Result<(), String> {
     Err(if err.is_empty() { "wsl command failed".to_string() } else { err })
 }
 
+/// Capture a distro's default login user (the user `wsl -d <distro>` logs in as).
+/// Returns None for root or on failure. `wsl --import` resets the default user to
+/// root, so import-based ops use this to restore it afterwards.
+fn distro_default_user(distro: &str) -> Option<String> {
+    let out = Command::new("wsl")
+        .env("WSL_UTF8", "1")
+        .args(["-d", distro, "--", "whoami"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let user = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if user.is_empty() || user == "root" { None } else { Some(user) }
+}
+
+/// Human-readable `--version N` suffix for an import command, empty when unknown.
+fn version_flag(version: u32) -> String {
+    if version == 1 || version == 2 { format!(" --version {}", version) } else { String::new() }
+}
+
+/// `wsl --import`, preserving the source WSL version when known (1 or 2) so a
+/// WSL1 distro is not silently upgraded to WSL2 (or vice-versa).
+fn import_distro(name: &str, dir: &str, tar: &str, version: u32) -> Result<(), String> {
+    let v = version.to_string();
+    let mut args = vec!["--import", name, dir, tar];
+    if version == 1 || version == 2 {
+        args.push("--version");
+        args.push(&v);
+    }
+    run_wsl(&args)
+}
+
+/// Restore a distro's default user via `wsl --manage` (best-effort; older WSL
+/// builds lack `--manage`). No-op for root / None.
+fn restore_default_user(app: &tauri::AppHandle, distro: &str, user: &Option<String>) {
+    let Some(u) = user else { return };
+    emit_line(app, format!("$ wsl --manage {} --set-default-user {}", distro, u), false);
+    run_wsl(&["--manage", distro, "--set-default-user", u]).ok();
+}
+
 #[derive(serde::Serialize, Clone, Default)]
 pub struct DistroExtras {
     pub package_count: u64,
@@ -940,10 +983,15 @@ pub async fn wsl_clone_distro(
     source: String,
     new_name: String,
     install_dir: String,
+    version: u32,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         std::fs::create_dir_all(&install_dir)
             .map_err(|e| format!("Cannot create install directory: {}", e))?;
+
+        // Capture the source's default user before terminating it, so the clone
+        // logs in as the same user rather than root.
+        let default_user = distro_default_user(&source);
 
         let tmp = std::env::temp_dir().join(format!("atlas_clone_{}.tar", safe_name(&new_name)));
         let tmp_str = tmp.to_string_lossy().to_string();
@@ -957,13 +1005,15 @@ pub async fn wsl_clone_distro(
             e
         })?;
 
-        emit_line(&app, format!("$ wsl --import {} \"{}\" \"{}\"", new_name, install_dir, tmp_str), false);
-        let imported = run_wsl(&["--import", &new_name, &install_dir, &tmp_str]);
+        emit_line(&app, format!("$ wsl --import {} \"{}\" \"{}\"{}", new_name, install_dir, tmp_str, version_flag(version)), false);
+        let imported = import_distro(&new_name, &install_dir, &tmp_str, version);
         std::fs::remove_file(&tmp).ok();
         imported.map_err(|e| {
             emit_line(&app, format!("  ✗ {}", e), true);
             e
         })?;
+
+        restore_default_user(&app, &new_name, &default_user);
 
         emit_line(&app, format!("  ✓ cloned {} → {}", source, new_name), false);
         Ok(())
@@ -989,11 +1039,27 @@ pub async fn wsl_migrate_distro(
     distro: String,
     new_dir: String,
     was_default: bool,
+    current_base: String,
+    version: u32,
 ) -> Result<MigrateResult, String> {
     use std::time::{SystemTime, UNIX_EPOCH};
     tauri::async_runtime::spawn_blocking(move || {
+        // Refuse to migrate into the distro's current install folder (or a subfolder
+        // of it): `wsl --unregister` deletes that tree, which would take the backup
+        // .tar with it and leave no way to recover. Compare case-insensitively with
+        // normalized separators (Windows paths).
+        let norm = |p: &str| p.replace('\\', "/").trim_end_matches('/').to_lowercase();
+        let dest_n = norm(&new_dir);
+        let base_n = norm(&current_base);
+        if !base_n.is_empty() && (dest_n == base_n || dest_n.starts_with(&format!("{}/", base_n))) {
+            return Err("Choose a destination outside the distro's current install folder — migrating into it would delete the backup.".to_string());
+        }
+
         std::fs::create_dir_all(&new_dir)
             .map_err(|e| format!("Cannot create destination directory: {}", e))?;
+
+        // Capture the default user before terminating, to restore it after re-import.
+        let default_user = distro_default_user(&distro);
 
         let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
         let backup = format!("{}/{}_migrate_{}.tar", new_dir.replace('\\', "/"), safe_name(&distro), ts);
@@ -1011,11 +1077,12 @@ pub async fn wsl_migrate_distro(
         })?;
 
         // Import + boot-verify a temp copy at the destination before touching the original.
-        emit_line(&app, format!("$ wsl --import {} \"{}\" \"{}\"", temp_name, temp_dir, backup), false);
-        run_wsl(&["--import", &temp_name, &temp_dir, &backup]).map_err(|e| {
+        emit_line(&app, format!("$ wsl --import {} \"{}\" \"{}\"{}", temp_name, temp_dir, backup, version_flag(version)), false);
+        if let Err(e) = import_distro(&temp_name, &temp_dir, &backup, version) {
             emit_line(&app, format!("  ✗ {} (original intact, backup kept at {})", e, backup), true);
-            e
-        })?;
+            std::fs::remove_dir_all(&temp_dir).ok();
+            return Err(e);
+        }
 
         emit_line(&app, format!("$ wsl -d {} -u root true   # verify boot", temp_name), false);
         if let Err(e) = run_wsl(&["-d", &temp_name, "-u", "root", "true"]) {
@@ -1034,8 +1101,8 @@ pub async fn wsl_migrate_distro(
             return Err(e);
         }
 
-        emit_line(&app, format!("$ wsl --import {} \"{}\" \"{}\"", distro, new_dir, backup), false);
-        if let Err(e) = run_wsl(&["--import", &distro, &new_dir, &backup]) {
+        emit_line(&app, format!("$ wsl --import {} \"{}\" \"{}\"{}", distro, new_dir, backup, version_flag(version)), false);
+        if let Err(e) = import_distro(&distro, &new_dir, &backup, version) {
             emit_line(&app, format!("  ✗ re-import failed: {} — recover with: wsl --import {} \"{}\" \"{}\"", e, distro, new_dir, backup), true);
             return Err(format!("Re-import failed: {}. Recover from the backup: {}", e, backup));
         }
@@ -1044,6 +1111,8 @@ pub async fn wsl_migrate_distro(
         emit_line(&app, format!("$ wsl --unregister {}", temp_name), false);
         run_wsl(&["--unregister", &temp_name]).ok();
         std::fs::remove_dir_all(&temp_dir).ok();
+
+        restore_default_user(&app, &distro, &default_user);
 
         if was_default {
             emit_line(&app, format!("$ wsl --set-default {}", distro), false);

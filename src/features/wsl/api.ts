@@ -6,10 +6,10 @@ export const wslListDistros = () => invoke<WslDistro[]>('wsl_list_distros')
 export const wslDistroMetrics = (distro: string) => invoke<DistroMetrics>('wsl_distro_metrics', { distro })
 export const wslDistroExtras  = (distro: string) => invoke<DistroExtras>('wsl_distro_extras', { distro })
 export const wslTerminateDistro = (distro: string) => invoke<void>('wsl_terminate_distro', { distro })
-export const wslCloneDistro = (source: string, newName: string, installDir: string) =>
-  invoke<void>('wsl_clone_distro', { source, newName, installDir })
-export const wslMigrateDistro = (distro: string, newDir: string, wasDefault: boolean) =>
-  invoke<MigrateResult>('wsl_migrate_distro', { distro, newDir, wasDefault })
+export const wslCloneDistro = (source: string, newName: string, installDir: string, version: number) =>
+  invoke<void>('wsl_clone_distro', { source, newName, installDir, version })
+export const wslMigrateDistro = (distro: string, newDir: string, wasDefault: boolean, currentBase: string, version: number) =>
+  invoke<MigrateResult>('wsl_migrate_distro', { distro, newDir, wasDefault, currentBase, version })
 
 export const wslListServices  = (distro: string) => invoke<ServiceList>('wsl_list_services', { distro })
 export const wslServiceDetail = (distro: string, service: string) =>

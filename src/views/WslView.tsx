@@ -172,7 +172,7 @@ export default function WslView() {
     setBusyAction(cloneFor.name)
     setCloneErr(null)
     try {
-      await api.wslCloneDistro(cloneFor.name, name, cloneDir)
+      await api.wslCloneDistro(cloneFor.name, name, cloneDir, cloneFor.version)
       addActivity({ module: 'wsl', action: `Cloned ${cloneFor.name} → ${name}`, outcome: 'success' })
       setCloneFor(null); setCloneName(''); setCloneDir('')
       await load()
@@ -190,7 +190,7 @@ export default function WslView() {
     setBusyAction(d.name)
     setMigrateErr(null)
     try {
-      const r = await api.wslMigrateDistro(d.name, migrateDir, d.is_default)
+      const r = await api.wslMigrateDistro(d.name, migrateDir, d.is_default, d.base_path, d.version)
       setMigrateInfo(prev => ({ ...prev, [d.name]: `Migrated. Backup kept at ${r.backup_tar}` }))
       addActivity({ module: 'wsl', action: `Migrated ${d.name}`, outcome: 'success', detail: migrateDir })
       setMigrateFor(null); setMigrateDir('')
