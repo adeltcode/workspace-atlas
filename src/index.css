@@ -5848,6 +5848,12 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 .settings-dir-btn:hover { background: var(--color-bg-hover); color: var(--color-text-primary); }
 
+.settings-config-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
 .settings-dir-refresh {
   display: flex;
   align-items: center;

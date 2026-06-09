@@ -1,3 +1,4 @@
+mod config;
 mod docker;
 mod shell;
 mod system;
@@ -57,6 +58,8 @@ pub fn run() {
             shell::shell_run,
             shell::shell_kill,
             system::get_system_metrics,
+            config::export_config,
+            config::import_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

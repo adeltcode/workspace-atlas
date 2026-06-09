@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Settings, Folder, RefreshCw, MoveRight, HardDriveDownload, Info, ExternalLink, Shield } from 'lucide-react'
+import { Settings, Folder, RefreshCw, MoveRight, HardDriveDownload, Info, ExternalLink, Shield, Upload, Download } from 'lucide-react'
 import { useAppStore } from '../store/appStore'
 import * as api from '../features/docker/api'
+import { exportConfig, importConfig } from '../features/config/api'
+
+const STORAGE_KEY = 'workspace-atlas-v1'
 
 export default function SettingsView() {
   const { backupDir, setBackupDir } = useAppStore()
@@ -84,6 +87,42 @@ export default function SettingsView() {
       setStatusMsg({ type: 'error', text: `Transfer failed: ${String(e)}` })
       setPendingDir(null)
     } finally { setTransferring(false) }
+  }
+
+  const handleExportConfig = async () => {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) {
+      setStatusMsg({ type: 'error', text: 'No configuration to export yet.' })
+      return
+    }
+    try {
+      const path = await exportConfig(raw)
+      if (path) setStatusMsg({ type: 'success', text: `Configuration exported to ${path}` })
+    } catch (e) {
+      setStatusMsg({ type: 'error', text: `Export failed: ${String(e)}` })
+    }
+  }
+
+  const handleImportConfig = async () => {
+    let contents: string | null
+    try {
+      contents = await importConfig()
+    } catch (e) {
+      setStatusMsg({ type: 'error', text: `Import failed: ${String(e)}` })
+      return
+    }
+    if (!contents) return // cancelled
+    try {
+      const parsed = JSON.parse(contents)
+      if (!parsed || typeof parsed !== 'object' || typeof parsed.state !== 'object') {
+        throw new Error('Not a valid Workspace Atlas configuration file')
+      }
+      localStorage.setItem(STORAGE_KEY, contents)
+      await useAppStore.persist.rehydrate()
+      setStatusMsg({ type: 'success', text: 'Configuration imported and applied.' })
+    } catch (e) {
+      setStatusMsg({ type: 'error', text: `Import failed: ${String(e)}` })
+    }
   }
 
   const handleRefresh = async () => {
@@ -195,6 +234,30 @@ export default function SettingsView() {
               </div>
             </div>
           )}
+        </div>
+
+        {/* ── Configuration ─────────────────────────────────────────────────── */}
+        <div className="settings-card">
+          <div className="settings-card-header">
+            <HardDriveDownload size={15} className="settings-card-icon" />
+            <div>
+              <h2 className="settings-card-title">Configuration</h2>
+              <p className="settings-card-desc">
+                Export all Atlas preferences (backup location, keep-list, editor, activity log)
+                to a single portable file, and re-import it on another machine.
+              </p>
+            </div>
+          </div>
+          <div className="settings-config-actions">
+            <button className="settings-dir-btn" onClick={handleExportConfig}>
+              <Download size={13} />
+              Export configuration
+            </button>
+            <button className="settings-dir-btn" onClick={handleImportConfig}>
+              <Upload size={13} />
+              Import configuration
+            </button>
+          </div>
         </div>
 
         {/* ── About ────────────────────────────────────────────────────────── */}
