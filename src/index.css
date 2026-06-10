@@ -7776,43 +7776,93 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 /* Tab content wrapper — consistent top rhythm regardless of which tab renders. */
 .wsl-tab-content { margin-top: 20px; }
 
-/* ── Header active-distro switcher ──────────────────────────────────────── */
-.wsl-distro-switcher {
-  position: relative;
+/* ── Header active-distro switcher (custom dropdown) ────────────────────── */
+.wsl-switcher { position: relative; margin-left: 6px; }
+.wsl-switcher-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 8px;
-  margin-left: 6px;
+  gap: 7px;
+  height: 28px;
+  padding: 0 9px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-bg-secondary);
-}
-.wsl-distro-switcher:hover { border-color: var(--color-accent); }
-.wsl-switcher-icon { color: var(--color-text-tertiary); flex-shrink: 0; }
-.wsl-switcher-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-.wsl-switcher-dot.running { background: var(--color-success); }
-.wsl-switcher-dot.stopped { background: var(--color-text-tertiary); }
-.wsl-switcher-select {
-  appearance: none;
-  border: none;
-  background: transparent;
   color: var(--color-text-primary);
   font-size: 12.5px;
   font-weight: 600;
   font-family: inherit;
-  padding-right: 16px;
   cursor: pointer;
-  outline: none;
-  max-width: 200px;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
 }
-.wsl-switcher-caret {
-  position: absolute;
-  right: 7px;
+.wsl-switcher-trigger:hover { border-color: var(--color-accent); background: var(--color-bg-hover); }
+.wsl-switcher-trigger--open { border-color: var(--color-accent); background: var(--color-bg-hover); }
+.wsl-switcher-disc { color: var(--color-text-tertiary); flex-shrink: 0; }
+.wsl-switcher-name { white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.wsl-switcher-caret { color: var(--color-text-tertiary); flex-shrink: 0; transition: transform var(--transition-fast); }
+.wsl-switcher-caret--open { transform: rotate(180deg); }
+
+.wsl-switcher-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.wsl-switcher-dot.running { background: var(--color-success); box-shadow: 0 0 0 2px var(--color-success-subtle); }
+.wsl-switcher-dot.stopped { background: var(--color-text-tertiary); }
+
+.wsl-switcher-tag {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   color: var(--color-text-tertiary);
-  pointer-events: none;
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-full, 999px);
+  padding: 1px 6px;
+  flex-shrink: 0;
 }
+
+.wsl-switcher-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 248px;
+  padding: 5px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.45);
+  z-index: 60;
+  animation: wsl-switcher-in 0.12s ease;
+}
+@keyframes wsl-switcher-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: none; }
+}
+.wsl-switcher-menu-head {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-tertiary);
+  padding: 6px 9px 5px;
+}
+.wsl-switcher-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 9px;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: 12.5px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.wsl-switcher-item:hover { background: var(--color-bg-hover); }
+.wsl-switcher-item--active { background: var(--color-accent-subtle); }
+.wsl-switcher-item-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wsl-switcher-item-state { margin-left: auto; font-size: 10.5px; color: var(--color-text-tertiary); }
+.wsl-switcher-check { color: var(--color-accent); flex-shrink: 0; }
 
 /* ── Distributions tab (consolidated table) ─────────────────────────────── */
 .wsl-distros-bar {
