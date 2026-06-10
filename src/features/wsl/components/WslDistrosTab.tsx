@@ -1,24 +1,32 @@
 import { useCallback, useEffect, useState } from 'react'
 import clsx from 'clsx'
 import {
-  Star, FolderOpen, Download, Zap, ShieldAlert, RotateCw, Copy, FolderInput,
-  Upload, X, ChevronRight, ChevronDown, Terminal, MoreHorizontal,
+  Star, SquareTerminal, Terminal, FolderOpen, MoreHorizontal, ChevronRight, ChevronDown,
+  Search, HardDrive, RotateCw, Square, Play, Download, Copy, ArrowRightLeft, Zap, ShieldAlert,
+  Upload, X,
 } from 'lucide-react'
 import { useAppStore } from '../../../store/appStore'
 import * as api from '../api'
 import type { WslDistro, OptimizeResult, DistroExtras } from '../types'
 import { bytesToHuman, formatDuration } from '../../../utils/format'
 
+type StateFilter = 'all' | 'running' | 'stopped'
+type Lifecycle = { d: WslDistro; action: 'stop' | 'restart' }
+
 export default function WslDistrosTab({ distros, loading, onReload }: {
   distros: WslDistro[]
   loading: boolean
   onReload: () => Promise<void> | void
 }) {
-  const addActivity        = useAppStore(s => s.addActivity)
-  const selected           = useAppStore(s => s.wslSelectedDistro)
-  const setSelected        = useAppStore(s => s.setWslSelectedDistro)
+  const addActivity     = useAppStore(s => s.addActivity)
+  const selected        = useAppStore(s => s.wslSelectedDistro)
+  const setSelected     = useAppStore(s => s.setWslSelectedDistro)
+  const importOpen      = useAppStore(s => s.wslImportOpen)
+  const setImportOpen   = useAppStore(s => s.setWslImportOpen)
 
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [query, setQuery]       = useState('')
+  const [filter, setFilter]     = useState<StateFilter>('all')
 
   // ── VHD optimization ───────────────────────────────────────────────────────
   const [confirmOpt, setConfirmOpt] = useState<WslDistro | null>(null)
@@ -37,15 +45,14 @@ export default function WslDistrosTab({ distros, loading, onReload }: {
   const [importing, setImporting]   = useState(false)
   const [importErr, setImportErr]   = useState<string | null>(null)
 
-  // ── Comparison extras (package count + uptime) ──────────────────────────────
-  const [extras, setExtras]       = useState<Record<string, DistroExtras>>({})
-  const [extrasBusy, setExtrasBusy] = useState<Set<string>>(() => new Set())
-  // Distros whose scan failed (e.g. no shell/package manager) — do not auto-retry.
+  // ── Comparison extras (package count + uptime + disk) ───────────────────────
+  const [extras, setExtras]             = useState<Record<string, DistroExtras>>({})
+  const [extrasBusy, setExtrasBusy]     = useState<Set<string>>(() => new Set())
   const [extrasFailed, setExtrasFailed] = useState<Set<string>>(() => new Set())
 
-  // ── Restart / clone / migrate ───────────────────────────────────────────────
-  const [busyAction, setBusyAction]         = useState<string | null>(null)
-  const [confirmRestart, setConfirmRestart] = useState<WslDistro | null>(null)
+  // ── Lifecycle / clone / migrate ─────────────────────────────────────────────
+  const [busyAction, setBusyAction] = useState<string | null>(null)
+  const [lifecycle, setLifecycle]   = useState<Lifecycle | null>(null)
   const [cloneFor, setCloneFor]   = useState<WslDistro | null>(null)
   const [cloneName, setCloneName] = useState('')
   const [cloneDir, setCloneDir]   = useState('')
@@ -55,6 +62,11 @@ export default function WslDistrosTab({ distros, loading, onReload }: {
   const [migrateErr, setMigrateErr] = useState<string | null>(null)
   const [migrateInfo, setMigrateInfo] = useState<Record<string, string>>({})
 
+  // Header "Import distro" button opens the dialog via the store flag.
+  useEffect(() => {
+    if (importOpen) { setImportErr(null); setShowImport(true); setImportOpen(false) }
+  }, [importOpen, setImportOpen])
+
   const loadExtras = useCallback(async (name: string) => {
     setExtrasBusy(prev => new Set(prev).add(name))
     setExtrasFailed(prev => { const n = new Set(prev); n.delete(name); return n })
@@ -62,16 +74,12 @@ export default function WslDistrosTab({ distros, loading, onReload }: {
       const x = await api.wslDistroExtras(name)
       setExtras(prev => ({ ...prev, [name]: x }))
     } catch {
-      // Mark failed so the auto-scan effect does not retry in a loop (e.g. a
-      // distro with no shell/package manager); the row falls back to "—".
       setExtrasFailed(prev => new Set(prev).add(name))
     } finally {
       setExtrasBusy(prev => { const n = new Set(prev); n.delete(name); return n })
     }
   }, [])
 
-  // Auto-scan running distros once (reading a stopped one boots it → opt-in via
-  // Scan). Failed scans are not retried automatically.
   useEffect(() => {
     for (const d of distros) {
       if (d.running && !extras[d.name] && !extrasBusy.has(d.name) && !extrasFailed.has(d.name)) loadExtras(d.name)
@@ -79,6 +87,13 @@ export default function WslDistrosTab({ distros, loading, onReload }: {
   }, [distros, extras, extrasBusy, extrasFailed, loadExtras])
 
   const busy = optName !== null || exportName !== null || busyAction !== null
+
+  // ── Actions ──────────────────────────────────────────────────────────────
+  const openTerminal = (d: WslDistro) => {
+    api.wslOpenTerminal(d.name).catch(() => {})
+    addActivity({ module: 'wsl', action: `Opened terminal · ${d.name}`, outcome: 'info' })
+  }
+  const openFolder = (d: WslDistro) => api.wslOpenDistroFolder(d.name).catch(() => {})
 
   const runOptimize = async (d: WslDistro) => {
     setConfirmOpt(null); setOptName(d.name)
@@ -124,15 +139,28 @@ export default function WslDistrosTab({ distros, loading, onReload }: {
     } finally { setImporting(false) }
   }
 
-  const runRestart = async (d: WslDistro) => {
-    setConfirmRestart(null); setBusyAction(d.name)
+  const runLifecycle = async (l: Lifecycle) => {
+    const { d, action } = l
+    setLifecycle(null); setBusyAction(d.name)
     try {
-      await api.wslTerminateDistro(d.name)
-      addActivity({ module: 'wsl', action: `Restarted ${d.name}`, outcome: 'success' })
+      if (action === 'stop') await api.wslTerminateDistro(d.name)
+      else await api.wslRestartDistro(d.name)
+      addActivity({ module: 'wsl', action: `${action === 'stop' ? 'Stopped' : 'Restarted'} ${d.name}`, outcome: 'success' })
       setExtras(prev => { const n = { ...prev }; delete n[d.name]; return n })
       await onReload()
     } catch (e) {
-      addActivity({ module: 'wsl', action: `Restarted ${d.name}`, outcome: 'failure', detail: String(e) })
+      addActivity({ module: 'wsl', action: `${action} ${d.name}`, outcome: 'failure', detail: String(e) })
+    } finally { setBusyAction(null) }
+  }
+
+  const runStart = async (d: WslDistro) => {
+    setBusyAction(d.name)
+    try {
+      await api.wslStartDistro(d.name)
+      addActivity({ module: 'wsl', action: `Started ${d.name}`, outcome: 'success' })
+      await onReload()
+    } catch (e) {
+      addActivity({ module: 'wsl', action: `Start ${d.name}`, outcome: 'failure', detail: String(e) })
     } finally { setBusyAction(null) }
   }
 
@@ -169,14 +197,12 @@ export default function WslDistrosTab({ distros, loading, onReload }: {
   }
 
   const totalVhd = distros.reduce((sum, d) => sum + d.vhd_size_bytes, 0)
-
-  const openTerminal = (d: WslDistro) => {
-    api.wslOpenTerminal(d.name).catch(() => {})
-    addActivity({ module: 'wsl', action: `Opened terminal · ${d.name}`, outcome: 'info' })
-  }
-  const openFolder = (d: WslDistro) => {
-    api.wslOpenDistroFolder(d.name).catch(() => {})
-  }
+  const filtered = distros.filter(d => {
+    if (filter === 'running' && !d.running) return false
+    if (filter === 'stopped' && d.running) return false
+    const q = query.trim().toLowerCase()
+    return !q || d.name.toLowerCase().includes(q)
+  })
 
   if (!loading && distros.length === 0) {
     return (
@@ -188,56 +214,71 @@ export default function WslDistrosTab({ distros, loading, onReload }: {
 
   return (
     <div className="wsl-distros-tab">
-      <div className="wsl-distros-bar">
-        <span className="wsl-distros-total">{bytesToHuman(totalVhd)} on disk · {distros.length} distro{distros.length !== 1 ? 's' : ''}</span>
-        <button className="btn-secondary" onClick={() => { setImportErr(null); setShowImport(true) }}>
-          <Upload size={13} /> Import distro
-        </button>
+      {/* ── Toolbar ─────────────────────────────────────────────────── */}
+      <div className="wsl-distros-toolbar">
+        <div className="wsl-distros-search">
+          <Search size={14} className="wsl-distros-search-icon" />
+          <input
+            className="wsl-distros-search-input"
+            placeholder="Find a distribution…"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            spellCheck={false}
+          />
+        </div>
+        <div className="wsl-distros-toolbar-right">
+          <div className="wsl-seg">
+            {(['all', 'running', 'stopped'] as StateFilter[]).map(f => (
+              <button key={f} className={clsx('wsl-seg-btn', filter === f && 'wsl-seg-btn--active')} onClick={() => setFilter(f)}>
+                {f === 'all' ? 'All' : f === 'running' ? 'Running' : 'Stopped'}
+              </button>
+            ))}
+          </div>
+          <span className="wsl-distros-total"><strong>~{bytesToHuman(totalVhd)}</strong> on disk</span>
+        </div>
       </div>
 
-      <div className="wsl-compare-wrap">
-        <table className="wsl-compare wsl-distros-table">
+      {/* ── Table ───────────────────────────────────────────────────── */}
+      <div className="wsl-dtable-wrap">
+        <table className="wsl-dtable">
           <thead>
             <tr>
-              <th style={{ width: 26 }} />
+              <th className="wsl-dtable-chev" />
               <th>Distribution</th>
-              <th>WSL</th>
               <th>State</th>
-              <th className="wsl-compare-num">VHD size</th>
-              <th className="wsl-compare-num">Packages</th>
-              <th className="wsl-compare-num">Uptime</th>
-              <th className="wsl-distros-actions-head">Actions</th>
+              <th>WSL version</th>
+              <th className="wsl-dtable-num">VHD size</th>
+              <th className="wsl-dtable-num">Packages</th>
+              <th className="wsl-dtable-num">Uptime</th>
+              <th className="wsl-dtable-act">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {distros.map(d => {
+            {filtered.length === 0 && (
+              <tr><td colSpan={8} className="wsl-dtable-empty">No distributions match.</td></tr>
+            )}
+            {filtered.map(d => {
               const x = extras[d.name]
               const isOpen = expanded === d.name
+              const scanning = extrasBusy.has(d.name)
               return (
                 <DistroRow
                   key={d.name}
-                  d={d}
-                  x={x}
-                  scanning={extrasBusy.has(d.name)}
-                  isOpen={isOpen}
-                  isSelected={selected === d.name}
-                  busy={busy}
-                  optName={optName}
-                  exportName={exportName}
-                  busyAction={busyAction}
-                  optResult={optResults[d.name]}
-                  optErr={optError[d.name]}
-                  exportInfo={exportInfo[d.name]}
-                  exportErrText={exportErr[d.name]}
+                  d={d} x={x} scanning={scanning} isOpen={isOpen}
+                  isSelected={selected === d.name} busy={busy}
+                  optName={optName} exportName={exportName} busyAction={busyAction}
+                  optResult={optResults[d.name]} optErr={optError[d.name]}
+                  exportInfo={exportInfo[d.name]} exportErrText={exportErr[d.name]}
                   migrateInfo={migrateInfo[d.name]}
-                  onSelect={() => setSelected(d.name)}
-                  onToggleExpand={() => setExpanded(prev => (prev === d.name ? null : d.name))}
+                  onToggle={() => { setSelected(d.name); setExpanded(prev => (prev === d.name ? null : d.name)) }}
                   onScan={() => loadExtras(d.name)}
                   onTerminal={() => openTerminal(d)}
                   onFolder={() => openFolder(d)}
                   onExport={() => runExport(d)}
                   onOptimize={() => setConfirmOpt(d)}
-                  onRestart={() => setConfirmRestart(d)}
+                  onRestart={() => setLifecycle({ d, action: 'restart' })}
+                  onStop={() => setLifecycle({ d, action: 'stop' })}
+                  onStart={() => runStart(d)}
                   onClone={() => { setCloneErr(null); setCloneName(`${d.name}-clone`); setCloneDir(''); setCloneFor(d) }}
                   onMigrate={() => { setMigrateErr(null); setMigrateDir(''); setMigrateFor(d) }}
                   onReveal={() => api.revealPath(d.vhd_path).catch(() => {})}
@@ -248,12 +289,9 @@ export default function WslDistrosTab({ distros, loading, onReload }: {
         </table>
       </div>
 
+      {/* ── Modals ──────────────────────────────────────────────────── */}
       {confirmOpt && (
-        <Modal
-          icon={<ShieldAlert size={16} />} iconWarning
-          title={`Optimize ${confirmOpt.name}?`}
-          onClose={() => setConfirmOpt(null)}
-        >
+        <Modal icon={<ShieldAlert size={16} />} iconWarning title={`Optimize ${confirmOpt.name}?`} onClose={() => setConfirmOpt(null)}>
           <p className="modal-body">
             This compacts <code>ext4.vhdx</code> to reclaim unused space. It shuts down
             <strong> all WSL distributions</strong> and requires <strong>administrator approval</strong>.
@@ -261,7 +299,7 @@ export default function WslDistrosTab({ distros, loading, onReload }: {
           {(() => {
             const x = extras[confirmOpt.name]
             if (!x || x.disk_used_bytes === 0) {
-              return <p className="wsl-estimate-note">Reclaim estimate unavailable — scan the distro on the Distributions table first.</p>
+              return <p className="wsl-estimate-note">Reclaim estimate unavailable — scan the distro on the table first.</p>
             }
             const est = Math.max(0, confirmOpt.vhd_size_bytes - x.disk_used_bytes)
             return (
@@ -274,27 +312,25 @@ export default function WslDistrosTab({ distros, loading, onReload }: {
           })()}
           <div className="modal-actions">
             <button className="btn-secondary" onClick={() => setConfirmOpt(null)}>Cancel</button>
-            <button className="btn-filled btn-filled--accent" onClick={() => runOptimize(confirmOpt)}>
-              <Zap size={13} /> Optimize
-            </button>
+            <button className="btn-filled btn-filled--accent" onClick={() => runOptimize(confirmOpt)}><Zap size={13} /> Optimize</button>
           </div>
         </Modal>
       )}
 
-      {confirmRestart && (
+      {lifecycle && (
         <Modal
-          icon={<RotateCw size={16} />} iconWarning
-          title={`Restart ${confirmRestart.name}?`}
-          onClose={() => setConfirmRestart(null)}
+          icon={lifecycle.action === 'stop' ? <Square size={16} /> : <RotateCw size={16} />} iconWarning
+          title={`${lifecycle.action === 'stop' ? 'Stop' : 'Restart'} ${lifecycle.d.name}?`}
+          onClose={() => setLifecycle(null)}
         >
           <p className="modal-body">
-            This terminates <strong>{confirmRestart.name}</strong> (<code>wsl --terminate</code>). Any
-            running processes inside it stop immediately; it relaunches on next use.
+            This runs <code>wsl --terminate {lifecycle.d.name}</code>, stopping every process inside it immediately.
+            {lifecycle.action === 'restart' ? ' It then boots the distro straight back up.' : ' It stays stopped until next use.'}
           </p>
           <div className="modal-actions">
-            <button className="btn-secondary" onClick={() => setConfirmRestart(null)}>Cancel</button>
-            <button className="btn-filled btn-filled--accent" onClick={() => runRestart(confirmRestart)}>
-              <RotateCw size={13} /> Restart
+            <button className="btn-secondary" onClick={() => setLifecycle(null)}>Cancel</button>
+            <button className="btn-filled btn-filled--accent" onClick={() => runLifecycle(lifecycle)}>
+              {lifecycle.action === 'stop' ? <><Square size={13} /> Stop</> : <><RotateCw size={13} /> Restart</>}
             </button>
           </div>
         </Modal>
@@ -302,10 +338,7 @@ export default function WslDistrosTab({ distros, loading, onReload }: {
 
       {showImport && (
         <Modal icon={<Upload size={16} />} title="Import distribution" onClose={() => setShowImport(false)} closable>
-          <p className="modal-body">
-            Create a new distro from a <code>.tar</code> archive. Use a new name to clone,
-            or a new location to relocate.
-          </p>
+          <p className="modal-body">Create a new distro from a <code>.tar</code> archive. Use a new name to clone, or a new location to relocate.</p>
           <Field label="Source archive">
             <div className="wsl-import-row">
               <input className="settings-dir-input" value={importTar} readOnly placeholder="Choose a .tar file…" />
@@ -333,10 +366,7 @@ export default function WslDistrosTab({ distros, loading, onReload }: {
 
       {cloneFor && (
         <Modal icon={<Copy size={16} />} title={`Clone ${cloneFor.name}`} onClose={() => setCloneFor(null)} closable>
-          <p className="modal-body">
-            Export <strong>{cloneFor.name}</strong> and re-import it as an independent copy. The source
-            distro is left unchanged.
-          </p>
+          <p className="modal-body">Export <strong>{cloneFor.name}</strong> and re-import it as an independent copy. The source distro is left unchanged.</p>
           <Field label="New distro name">
             <input className="settings-dir-input" value={cloneName} onChange={e => setCloneName(e.target.value)} placeholder="e.g. workstation-kali-clone" spellCheck={false} />
           </Field>
@@ -357,11 +387,11 @@ export default function WslDistrosTab({ distros, loading, onReload }: {
       )}
 
       {migrateFor && (
-        <Modal icon={<FolderInput size={16} />} iconWarning title={`Migrate ${migrateFor.name}`} onClose={() => setMigrateFor(null)} closable>
+        <Modal icon={<ArrowRightLeft size={16} />} iconWarning title={`Migrate ${migrateFor.name}`} onClose={() => setMigrateFor(null)} closable>
           <p className="modal-body">
-            Move <strong>{migrateFor.name}</strong> to another drive or folder. The flow is safe: it
-            exports a <code>.tar</code> backup, imports + boot-verifies the copy at the new location, and
-            only then unregisters the original. The <strong>backup is kept</strong> as a rollback artifact.
+            Move <strong>{migrateFor.name}</strong> to another drive or folder. The flow is safe: it exports a
+            <code> .tar</code> backup, imports + boot-verifies the copy at the new location, and only then unregisters
+            the original. The <strong>backup is kept</strong> as a rollback artifact.
           </p>
           <Field label="Destination folder">
             <div className="wsl-import-row">
@@ -373,7 +403,7 @@ export default function WslDistrosTab({ distros, loading, onReload }: {
           <div className="modal-actions">
             <button className="btn-secondary" onClick={() => setMigrateFor(null)} disabled={busyAction === migrateFor.name}>Cancel</button>
             <button className="btn-filled btn-filled--accent" onClick={runMigrate} disabled={busyAction === migrateFor.name || !migrateDir}>
-              <FolderInput size={13} /> {busyAction === migrateFor.name ? 'Migrating…' : 'Migrate'}
+              <ArrowRightLeft size={13} /> {busyAction === migrateFor.name ? 'Migrating…' : 'Migrate'}
             </button>
           </div>
         </Modal>
@@ -387,7 +417,7 @@ export default function WslDistrosTab({ distros, loading, onReload }: {
 function DistroRow({
   d, x, scanning, isOpen, isSelected, busy, optName, exportName, busyAction,
   optResult, optErr, exportInfo, exportErrText, migrateInfo,
-  onSelect, onToggleExpand, onScan, onTerminal, onFolder, onExport, onOptimize, onRestart, onClone, onMigrate, onReveal,
+  onToggle, onScan, onTerminal, onFolder, onExport, onOptimize, onRestart, onStop, onStart, onClone, onMigrate, onReveal,
 }: {
   d: WslDistro
   x?: DistroExtras
@@ -403,14 +433,15 @@ function DistroRow({
   exportInfo?: string
   exportErrText?: string
   migrateInfo?: string
-  onSelect: () => void
-  onToggleExpand: () => void
+  onToggle: () => void
   onScan: () => void
   onTerminal: () => void
   onFolder: () => void
   onExport: () => void
   onOptimize: () => void
   onRestart: () => void
+  onStop: () => void
+  onStart: () => void
   onClone: () => void
   onMigrate: () => void
   onReveal: () => void
@@ -418,72 +449,96 @@ function DistroRow({
   const stop = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); fn() }
   return (
     <>
-      <tr className={clsx('wsl-distros-row', isSelected && 'wsl-distros-row--selected')} onClick={onSelect}>
-        <td className="wsl-distros-chevron" onClick={stop(onToggleExpand)} title={isOpen ? 'Hide actions' : 'Show actions'}>
-          {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+      <tr className={clsx('wsl-dtable-row', isOpen && 'wsl-dtable-row--open', isSelected && !isOpen && 'wsl-dtable-row--selected')} onClick={onToggle}>
+        <td className="wsl-dtable-chev">{isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</td>
+        <td>
+          <div className="wsl-distro-name-cell">
+            <span className={clsx('wsl-distro-tile', !d.running && 'wsl-distro-tile--off')}><SquareTerminal size={15} /></span>
+            <span className="wsl-distro-name2">{d.name}</span>
+            {d.is_default && <Star size={11} className="wsl-distro-star" />}
+          </div>
         </td>
         <td>
-          <span className="wsl-compare-name">{d.name}</span>
-          {d.is_default && <Star size={9} className="wsl-compare-star" />}
-        </td>
-        <td>{d.version === 1 ? 'WSL1' : 'WSL2'}</td>
-        <td>
-          <span className={clsx('wsl-state', d.running ? 'wsl-state--running' : 'wsl-state--stopped')}>
-            <span className="wsl-state-dot" />
-            {d.running ? 'Running' : 'Stopped'}
+          <span className={clsx('wsl-state-pill', d.running ? 'wsl-state-pill--running' : 'wsl-state-pill--stopped')}>
+            <span className="wsl-state-pill-dot" />{d.running ? 'Running' : 'Stopped'}
           </span>
         </td>
-        <td className="wsl-compare-num">{d.vhd_size_bytes > 0 ? bytesToHuman(d.vhd_size_bytes) : '—'}</td>
-        <td className="wsl-compare-num" onClick={e => e.stopPropagation()}>
+        <td><span className="wsl-ver-badge">WSL {d.version === 1 ? '1' : '2'}</span></td>
+        <td className="wsl-dtable-num">{d.vhd_size_bytes > 0 ? bytesToHuman(d.vhd_size_bytes) : '--'}</td>
+        <td className="wsl-dtable-num" onClick={e => e.stopPropagation()}>
           {x ? `${x.package_count} (${x.package_manager})`
             : scanning ? '…'
-            : d.running ? '—'
+            : d.running ? '--'
             : <button className="wsl-scan-btn" onClick={onScan} title="Reads inside the distro — starts it if stopped">Scan</button>}
         </td>
-        <td className="wsl-compare-num">{x ? formatDuration(x.uptime_secs) : scanning ? '…' : '—'}</td>
-        <td className="wsl-distros-actions-cell" onClick={e => e.stopPropagation()}>
-          <button className="wsl-row-icon" onClick={stop(onTerminal)} title="Open a terminal in this distro">
-            <Terminal size={14} />
-          </button>
-          <button className="wsl-row-icon" onClick={stop(onFolder)} title="Open the distro’s files in Explorer (\\wsl.localhost)">
-            <FolderOpen size={14} />
-          </button>
-          <button className={clsx('wsl-row-icon', isOpen && 'wsl-row-icon--active')} onClick={stop(onToggleExpand)} title="More actions">
-            <MoreHorizontal size={14} />
-          </button>
+        <td className="wsl-dtable-num">{x ? formatDuration(x.uptime_secs) : scanning ? '…' : '--'}</td>
+        <td className="wsl-dtable-act" onClick={e => e.stopPropagation()}>
+          <button className="wsl-row-icon" onClick={stop(onTerminal)} title="Open a terminal in this distro"><Terminal size={14} /></button>
+          <button className="wsl-row-icon" onClick={stop(onFolder)} title="Open the distro’s files in Explorer (\\wsl.localhost)"><FolderOpen size={14} /></button>
+          <button className={clsx('wsl-row-icon', isOpen && 'wsl-row-icon--active')} onClick={stop(onToggle)} title="More actions"><MoreHorizontal size={14} /></button>
         </td>
       </tr>
       {isOpen && (
-        <tr className="wsl-distros-detail-row">
+        <tr className="wsl-dtable-detail">
           <td colSpan={8}>
-            <div className="wsl-distros-detail">
+            <div className="wsl-detail">
               {d.vhd_path && (
-                <button className="wsl-distro-path" onClick={onReveal} title="Reveal ext4.vhdx in Explorer">
-                  <FolderOpen size={12} />
-                  <span className="wsl-distro-path-text">{d.vhd_path}</span>
-                </button>
+                <div className="wsl-detail-block">
+                  <span className="wsl-detail-label">Storage location</span>
+                  <button className="wsl-detail-path" onClick={onReveal} title="Reveal ext4.vhdx in Explorer">
+                    <HardDrive size={13} />
+                    <span className="wsl-detail-path-text">{d.vhd_path}</span>
+                  </button>
+                </div>
               )}
-              <div className="wsl-distro-actions">
-                <button className="btn-secondary" onClick={onExport} disabled={busy} title="Export this distro to a .tar archive">
-                  <Download size={12} /> {exportName === d.name ? 'Exporting…' : 'Export'}
-                </button>
+
+              <div className="wsl-detail-groups">
+                <div className="wsl-agroup">
+                  <span className="wsl-alabel">Lifecycle</span>
+                  <div className="wsl-arow">
+                    {d.running ? (
+                      <>
+                        <button className="btn-secondary" onClick={onRestart} disabled={busy} title="Stop, then boot back up">
+                          <RotateCw size={13} /> {busyAction === d.name ? 'Working…' : 'Restart'}
+                        </button>
+                        <button className="btn-secondary" onClick={onStop} disabled={busy} title="Terminate this distro">
+                          <Square size={13} /> Stop
+                        </button>
+                      </>
+                    ) : (
+                      <button className="btn-secondary" onClick={onStart} disabled={busy} title="Boot this distro">
+                        <Play size={13} /> {busyAction === d.name ? 'Starting…' : 'Start'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="wsl-agroup">
+                  <span className="wsl-alabel">Transfer &amp; backup</span>
+                  <div className="wsl-arow">
+                    <button className="btn-secondary" onClick={onExport} disabled={busy} title="Export to a .tar archive">
+                      <Download size={13} /> {exportName === d.name ? 'Exporting…' : 'Export'}
+                    </button>
+                    <button className="btn-secondary" onClick={onClone} disabled={busy} title="Clone under a new name">
+                      <Copy size={13} /> Clone
+                    </button>
+                    <button className="btn-secondary" onClick={onMigrate} disabled={busy} title="Move to another drive or folder">
+                      <ArrowRightLeft size={13} /> Migrate
+                    </button>
+                  </div>
+                </div>
+
                 {d.version === 2 && d.vhd_path && (
-                  <button className="btn-secondary wsl-optimize-btn" onClick={onOptimize} disabled={busy} title="Compact the virtual disk — requires administrator approval">
-                    <Zap size={12} /> {optName === d.name ? 'Optimizing…' : 'Optimize'}
-                    <ShieldAlert size={11} className="btn-admin-badge" />
-                  </button>
+                  <div className="wsl-agroup">
+                    <span className="wsl-alabel">Maintenance</span>
+                    <div className="wsl-arow">
+                      <button className="wsl-optimize-disk" onClick={onOptimize} disabled={busy} title="Compact the virtual disk — requires administrator approval">
+                        <Zap size={13} /> {optName === d.name ? 'Optimizing…' : 'Optimize Disk'}
+                        <ShieldAlert size={11} className="btn-admin-badge" />
+                      </button>
+                    </div>
+                  </div>
                 )}
-                {d.running && (
-                  <button className="btn-secondary" onClick={onRestart} disabled={busy} title="Terminate this distro (it restarts on next use)">
-                    <RotateCw size={12} /> {busyAction === d.name ? 'Working…' : 'Restart'}
-                  </button>
-                )}
-                <button className="btn-secondary" onClick={onClone} disabled={busy} title="Clone this distro under a new name">
-                  <Copy size={12} /> Clone
-                </button>
-                <button className="btn-secondary" onClick={onMigrate} disabled={busy} title="Move this distro to another drive or folder">
-                  <FolderInput size={12} /> Migrate
-                </button>
               </div>
 
               {optName === d.name && <p className="wsl-opt-progress">Approve the UAC prompt to compact the disk…</p>}

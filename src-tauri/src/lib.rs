@@ -68,6 +68,8 @@ pub fn run() {
             wsl::wsl_open_terminal,
             wsl::wsl_open_distro_folder,
             wsl::wsl_terminate_distro,
+            wsl::wsl_restart_distro,
+            wsl::wsl_start_distro,
             wsl::wsl_clone_distro,
             wsl::wsl_migrate_distro,
             wsl::wsl_list_services,

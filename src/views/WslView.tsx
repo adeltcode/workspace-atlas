@@ -1,5 +1,5 @@
 import { useCallback, useEffect } from 'react'
-import { HardDrive, RefreshCw } from 'lucide-react'
+import { HardDrive, RefreshCw, Upload } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore, type WslTab } from '../store/appStore'
 import { useWslData } from '../features/wsl/hooks'
@@ -13,7 +13,7 @@ import WslConfTab from '../features/wsl/components/WslConfTab'
 
 const TAB_SUBTITLES: Record<WslTab, string> = {
   dashboard:   'Live CPU, memory, disk, network, and process metrics inside the selected distro',
-  distros:     'Compare distributions and export, import, clone, restart, or migrate them',
+  distros:     'Manage, clone, export, and configure your WSL environments',
   startup:     'View and manage the systemd services that start with the distro',
   performance: 'Benchmark cold-boot time and profile shell startup',
   config:      'Edit machine-wide .wslconfig and the selected distro’s wsl.conf',
@@ -97,6 +97,11 @@ export default function WslView() {
           <RefreshCw size={13} className={loading ? 'spin' : ''} />
           Refresh
         </button>
+        {available && wslTab === 'distros' && (
+          <button className="btn-filled btn-filled--accent" onClick={() => useAppStore.getState().setWslImportOpen(true)}>
+            <Upload size={13} /> Import distro
+          </button>
+        )}
       </div>
 
       {error && (

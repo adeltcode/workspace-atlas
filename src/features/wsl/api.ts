@@ -8,6 +8,8 @@ export const wslDistroExtras  = (distro: string) => invoke<DistroExtras>('wsl_di
 export const wslOpenTerminal     = (distro: string) => invoke<void>('wsl_open_terminal', { distro })
 export const wslOpenDistroFolder = (distro: string) => invoke<void>('wsl_open_distro_folder', { distro })
 export const wslTerminateDistro = (distro: string) => invoke<void>('wsl_terminate_distro', { distro })
+export const wslRestartDistro   = (distro: string) => invoke<void>('wsl_restart_distro', { distro })
+export const wslStartDistro     = (distro: string) => invoke<void>('wsl_start_distro', { distro })
 export const wslCloneDistro = (source: string, newName: string, installDir: string, version: number) =>
   invoke<void>('wsl_clone_distro', { source, newName, installDir, version })
 export const wslMigrateDistro = (distro: string, newDir: string, wasDefault: boolean, currentBase: string, version: number) =>

@@ -78,6 +78,9 @@ interface AppState {
   setWslDistrosNav: (distros: WslDistroNav[]) => void
   wslBadges: { distros: string } | null
   setWslBadges: (b: { distros: string } | null) => void
+  /** Header "Import distro" button → opens the dialog inside the Distributions tab. */
+  wslImportOpen: boolean
+  setWslImportOpen: (open: boolean) => void
 
   // ── Layout sizes (persisted)
   sidebarWidth: number
@@ -204,6 +207,8 @@ export const useAppStore = create<AppState>()(
       setWslDistrosNav:     (wslDistrosNav) => set({ wslDistrosNav }),
       wslBadges:            null,
       setWslBadges:         (wslBadges) => set({ wslBadges }),
+      wslImportOpen:        false,
+      setWslImportOpen:     (wslImportOpen) => set({ wslImportOpen }),
 
       // ── Layout sizes (sidebarWidth 0 = auto/fit-content)
       sidebarWidth:  0,

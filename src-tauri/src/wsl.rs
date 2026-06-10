@@ -1004,7 +1004,7 @@ pub async fn wsl_distro_extras(distro: String) -> Result<DistroExtras, String> {
     .map_err(|e| e.to_string())?
 }
 
-/// Restart a distro: `wsl --terminate <distro>`. WSL relaunches it on next access.
+/// Stop a distro: `wsl --terminate <distro>`. It stays stopped until next access.
 #[tauri::command]
 pub async fn wsl_terminate_distro(app: tauri::AppHandle, distro: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -1013,7 +1013,46 @@ pub async fn wsl_terminate_distro(app: tauri::AppHandle, distro: String) -> Resu
             emit_line(&app, format!("  ✗ {}", e), true);
             e
         })?;
-        emit_line(&app, format!("  ✓ terminated {} (restarts on next use)", distro), false);
+        emit_line(&app, format!("  ✓ stopped {}", distro), false);
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Restart a distro: terminate it, then boot it straight back up.
+#[tauri::command]
+pub async fn wsl_restart_distro(app: tauri::AppHandle, distro: String) -> Result<(), String> {
+    use std::time::Duration;
+    tauri::async_runtime::spawn_blocking(move || {
+        emit_line(&app, format!("$ wsl --terminate {}", distro), false);
+        run_wsl(&["--terminate", &distro]).map_err(|e| {
+            emit_line(&app, format!("  ✗ {}", e), true);
+            e
+        })?;
+        std::thread::sleep(Duration::from_millis(800));
+        emit_line(&app, format!("$ wsl -d {} -u root true   # boot", distro), false);
+        run_wsl(&["-d", &distro, "-u", "root", "true"]).map_err(|e| {
+            emit_line(&app, format!("  ✗ {}", e), true);
+            e
+        })?;
+        emit_line(&app, format!("  ✓ restarted {}", distro), false);
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Boot a stopped distro (a no-op command brings the VM up).
+#[tauri::command]
+pub async fn wsl_start_distro(app: tauri::AppHandle, distro: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        emit_line(&app, format!("$ wsl -d {} -u root true   # start", distro), false);
+        run_wsl(&["-d", &distro, "-u", "root", "true"]).map_err(|e| {
+            emit_line(&app, format!("  ✗ {}", e), true);
+            e
+        })?;
+        emit_line(&app, format!("  ✓ started {}", distro), false);
         Ok(())
     })
     .await
