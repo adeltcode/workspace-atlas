@@ -761,7 +761,7 @@ echo "rxtx=$(awk -v i="$IFACE:" '$1==i{print $2" "$10}' /proc/net/dev 2>/dev/nul
 echo "zombies=$(ps -eo stat= 2>/dev/null | grep -c '^Z')"
 if command -v docker >/dev/null 2>&1; then echo "docker=$(docker ps -q 2>/dev/null | wc -l)"; else echo "docker=none"; fi
 echo "@top"
-ps -eo pcpu,pmem,comm --sort=-pcpu --no-headers 2>/dev/null | head -8
+ps -eo pcpu,pmem,comm --sort=-pcpu --no-headers 2>/dev/null | head -15
 "#;
 
 fn parse_distro_metrics(out: &str) -> DistroMetrics {

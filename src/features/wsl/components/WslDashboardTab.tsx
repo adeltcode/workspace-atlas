@@ -12,7 +12,7 @@ import { bytesToHuman, formatDuration } from '../../../utils/format'
 
 type BarColor = 'accent' | 'success' | 'warning' | 'danger'
 
-/** Severity colour for a saturation gauge: neutral, then amber, then red. */
+/** Severity colour for a saturation bar: neutral, then amber, then red. */
 function levelColor(pct: number): BarColor {
   if (pct >= 90) return 'danger'
   if (pct >= 75) return 'warning'
@@ -20,15 +20,15 @@ function levelColor(pct: number): BarColor {
 }
 
 const POLL_MS = 10_000
-const HISTORY = 30
 
 const TIP = {
-  init:    'systemd is PID 1. “degraded” means systemd is up but one or more units failed to start — the distro still works.',
-  zombies: 'Defunct Linux processes that exited but were not reaped by their parent. A few are normal; many point to a buggy parent process.',
+  cpu:     'Load average ÷ logical cores. 100% means the run queue equals the core count.',
+  mem:     'Used vs total RAM in the distro’s VM. Linux uses free RAM as cache, so “available” already accounts for reclaimable cache.',
   swap:    'WSL2’s on-disk swap file for the whole VM. Linux pages memory out here when RAM fills up.',
   disk:    'Used / total of the ext4 root filesystem inside the distro — not the .vhdx file size on Windows, and not your Windows drive.',
+  init:    'systemd is PID 1. “degraded” means systemd is up but one or more units failed to start — the distro still works.',
+  zombies: 'Defunct Linux processes that exited but were not reaped by their parent. A few are normal; many point to a buggy parent process.',
   net:     'Interface and DNS are refreshed live every 10s. The traffic figures are cumulative totals since the distro booted, not a live rate.',
-  cpu:     'Load average ÷ logical cores. 100% means the run queue equals the core count.',
   limits:  '“Actual” is what the running VM has now. “Cap” is the limit set in %USERPROFILE%\\.wslconfig — “none” means WSL chose the default.',
 }
 
@@ -36,72 +36,53 @@ function InfoDot({ tip }: { tip: string }) {
   return <span className="wsl-info" title={tip}><Info size={11} /></span>
 }
 
-/** Compact trend sparkline for a gauge card. Auto-scales Y to the data (with a
- *  floor) so low-but-varying utilisation still reads as a shape, not a flat
- *  line glued to the axis. */
-function Sparkline({ values }: { values: number[] }) {
-  const n = values.length
-  // Until there are at least two samples, show a quiet placeholder rather than a
-  // degenerate one-point shape.
-  if (n < 2) return <div className="wsl-spark wsl-spark--empty" title="Collecting trend data…" />
-  const ceil = Math.max(10, ...values) * 1.25
-  const pts = values.map((v, i) => {
-    const x = (i / (n - 1)) * 100
-    const y = 100 - Math.max(0, Math.min(100, (v / ceil) * 100))
-    return `${x.toFixed(2)},${y.toFixed(2)}`
-  }).join(' ')
-  return (
-    <svg className="wsl-spark" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
-      <polygon className="wsl-spark-area" points={`0,100 ${pts} 100,100`} />
-      <polyline className="wsl-spark-line" points={pts} fill="none" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
-function Gauge({ icon: Icon, label, pct, value, sub, color, tip, spark }: {
+/** Gauge card: header (icon + label + value), a sub-row (detail + %), and a thin
+ *  track with a dot marker at the current value. */
+function Gauge({ icon: Icon, label, value, pct, sub, color, tip }: {
   icon: typeof Cpu
   label: string
-  pct: number | null
   value: string
-  sub?: string
+  pct: number | null
+  sub: string
   color: BarColor
-  tip?: string
-  spark?: number[]
+  tip: string
 }) {
   const width = pct === null ? 0 : Math.min(100, Math.max(0, pct))
   return (
-    <div className="sys-card">
-      <div className="sys-card-head">
-        <Icon size={13} className="sys-card-icon" />
-        <span className="sys-card-label">{label}</span>
-        {tip && <InfoDot tip={tip} />}
-        <span className="sys-card-val">{value}</span>
+    <div className="wsl-gauge">
+      <div className="wsl-gauge-head">
+        <Icon size={14} className="wsl-gauge-icon" />
+        <span className="wsl-gauge-label">{label}</span>
+        <InfoDot tip={tip} />
+        <span className="wsl-gauge-value">{value}</span>
       </div>
-      <div className="sys-bar">
-        <div className={clsx('sys-bar-fill', `sys-bar--${color}`)} style={{ width: `${width}%` }} />
+      <div className="wsl-gauge-sub">
+        <span className="wsl-gauge-sublabel">{sub}</span>
+        <span className="wsl-gauge-pct">{pct === null ? '—' : `${Math.round(pct)}%`}</span>
       </div>
-      {sub && <div className="sys-card-sub">{sub}</div>}
-      {spark && <Sparkline values={spark} />}
+      <div className="wsl-gauge-track">
+        <div className={clsx('wsl-gauge-fill', `wsl-gauge-fill--${color}`)} style={{ width: `${width}%` }} />
+        <span className={clsx('wsl-gauge-dot', `wsl-gauge-dot--${color}`)} style={{ left: `${width}%` }} />
+      </div>
     </div>
   )
 }
 
-/** Status colour for the systemd init chip — never contradicts the word shown. */
-function initChipClass(m: DistroMetrics): string {
-  if (!m.systemd) return 'wsl-chip--muted'
-  const s = m.systemd_state
-  if (s === 'degraded' || s === 'maintenance' || s === 'starting' || s === 'stopping') return 'wsl-chip--warn'
-  return 'wsl-chip--ok'
-}
-
-function ProcList({ procs, kind }: { procs: DistroMetrics['top_procs']; kind: 'cpu' | 'mem' }) {
-  const sorted = [...procs].sort((a, b) =>
-    kind === 'cpu' ? b.cpu_pct - a.cpu_pct : b.mem_pct - a.mem_pct,
-  ).slice(0, 6)
+function ProcList({ procs, kind, limit }: {
+  procs: DistroMetrics['top_procs']
+  kind: 'cpu' | 'mem'
+  limit: number
+}) {
+  const sorted = [...procs]
+    .sort((a, b) => (kind === 'cpu' ? b.cpu_pct - a.cpu_pct : b.mem_pct - a.mem_pct))
+    .slice(0, limit)
   const max = Math.max(1, ...sorted.map(p => (kind === 'cpu' ? p.cpu_pct : p.mem_pct)))
   return (
     <div className="stats-col">
-      <div className="stats-col-label">{kind === 'cpu' ? 'CPU' : 'Memory'}</div>
+      <div className="wsl-proc-head">
+        <span>Process</span>
+        <span>{kind === 'cpu' ? 'CPU' : 'Memory'}</span>
+      </div>
       {sorted.length === 0 ? (
         <p className="overview-empty-row">No process data</p>
       ) : sorted.map((p, i) => {
@@ -121,11 +102,19 @@ function ProcList({ procs, kind }: { procs: DistroMetrics['top_procs']; kind: 'c
   )
 }
 
+/** Status colour for the systemd init chip — never contradicts the word shown. */
+function initChipClass(m: DistroMetrics): string {
+  if (!m.systemd) return 'wsl-chip--muted'
+  const s = m.systemd_state
+  if (s === 'degraded' || s === 'maintenance' || s === 'starting' || s === 'stopping') return 'wsl-chip--warn'
+  return 'wsl-chip--ok'
+}
+
 export default function WslDashboardTab({ distros }: { distros: WslDistro[] }) {
   const selected = useAppStore(s => s.wslSelectedDistro) ?? ''
   const [metrics, setMetrics] = useState<DistroMetrics | null>(null)
-  const [history, setHistory] = useState<{ cpu: number; mem: number; swap: number; disk: number }[]>([])
   const [error, setError]     = useState<string | null>(null)
+  const [expandProc, setExpandProc] = useState(false)
   // Distros the user opted to start by loading metrics. Reading a stopped distro
   // boots it, so we never poll one silently.
   const [activated, setActivated] = useState<Set<string>>(() => new Set())
@@ -139,21 +128,15 @@ export default function WslDashboardTab({ distros }: { distros: WslDistro[] }) {
   const load = useCallback(async () => {
     if (!selected) return
     try {
-      const m = await api.wslDistroMetrics(selected)
-      setMetrics(m)
+      setMetrics(await api.wslDistroMetrics(selected))
       setError(null)
-      const cpu  = m.cpu_count > 0 ? (m.load1 / m.cpu_count) * 100 : 0
-      const mem  = m.mem_total_kb > 0 ? ((m.mem_total_kb - m.mem_available_kb) / m.mem_total_kb) * 100 : 0
-      const swap = m.swap_total_kb > 0 ? ((m.swap_total_kb - m.swap_free_kb) / m.swap_total_kb) * 100 : 0
-      const disk = m.disk_total_bytes > 0 ? (Math.min(m.disk_used_bytes, m.disk_total_bytes) / m.disk_total_bytes) * 100 : 0
-      setHistory(prev => [...prev, { cpu, mem, swap, disk }].slice(-HISTORY))
     } catch (e) {
       setError(String(e))
     }
   }, [selected])
 
-  // Reset view + trend history when the distro changes.
-  useEffect(() => { setMetrics(null); setHistory([]); setError(null) }, [selected])
+  // Reset view when the distro changes.
+  useEffect(() => { setMetrics(null); setError(null) }, [selected])
 
   // Read .wslconfig limits once (global, not per-distro).
   useEffect(() => {
@@ -187,6 +170,7 @@ export default function WslDashboardTab({ distros }: { distros: WslDistro[] }) {
   const diskPct    = metrics && metrics.disk_total_bytes > 0
     ? (Math.min(metrics.disk_used_bytes, metrics.disk_total_bytes) / metrics.disk_total_bytes) * 100
     : null
+  const procLimit = expandProc ? 99 : 6
 
   return (
     <div className="wsl-dashboard">
@@ -214,37 +198,32 @@ export default function WslDashboardTab({ distros }: { distros: WslDistro[] }) {
       {polling && metrics && (
         <>
           {/* ── Resource monitoring ─────────────────────────────────── */}
-          <div className="overview-section" style={{ margin: 0 }}>
-            <div className="overview-section-head overview-section-head--static">
-              <span className="section-label" style={{ margin: 0 }}>Resource Monitoring</span>
-              <span className="wsl-live-pill" style={{ marginLeft: 'auto' }}>
-                <span className="wsl-live-dot" />Live · every 10s
-              </span>
+          <div className="wsl-dash-rm">
+            <div className="wsl-dash-section-head">
+              <span className="wsl-dash-section-label">Resource Monitoring</span>
+              <span className="wsl-live-pill" style={{ marginLeft: 'auto' }}><span className="wsl-live-dot" />Live · every 10s</span>
             </div>
 
-            <div className="sys-metrics">
-              <Gauge icon={Cpu} label="CPU load" tip={TIP.cpu} pct={loadPct}
-                value={metrics.load1.toFixed(2)}
+            <div className="wsl-gauges">
+              <Gauge icon={Cpu} label="CPU load" tip={TIP.cpu}
+                value={metrics.load1.toFixed(2)} pct={loadPct}
                 sub={`${metrics.cpu_count} cores · ${metrics.load5.toFixed(2)} / ${metrics.load15.toFixed(2)} (5m/15m)`}
-                color={loadPct === null ? 'accent' : levelColor(loadPct)}
-                spark={history.map(h => h.cpu)} />
-              <Gauge icon={MemoryStick} label="Memory" pct={memPct}
-                value={memPct === null ? '—' : `${Math.round(memPct)}%`}
+                color={loadPct === null ? 'accent' : levelColor(loadPct)} />
+              <Gauge icon={MemoryStick} label="Memory" tip={TIP.mem}
+                value={memPct === null ? '—' : `${Math.round(memPct)}%`} pct={memPct}
                 sub={`${bytesToHuman(memUsedKb * 1024)} / ${bytesToHuman(metrics.mem_total_kb * 1024)}`}
-                color={memPct === null ? 'accent' : levelColor(memPct)}
-                spark={history.map(h => h.mem)} />
-              <Gauge icon={ArrowDownUp} label="Swap" tip={TIP.swap} pct={swapPct}
-                value={swapPct === null ? 'off' : `${Math.round(swapPct)}%`}
+                color={memPct === null ? 'accent' : levelColor(memPct)} />
+              <Gauge icon={ArrowDownUp} label="Swap" tip={TIP.swap}
+                value={metrics.swap_total_kb === 0 ? 'off' : swapPct === null ? '—' : `${Math.round(swapPct)}%`}
+                pct={swapPct}
                 sub={metrics.swap_total_kb > 0
                   ? `${bytesToHuman(swapUsedKb * 1024)} / ${bytesToHuman(metrics.swap_total_kb * 1024)}`
                   : 'no swap configured'}
-                color={swapPct === null ? 'accent' : levelColor(swapPct)}
-                spark={history.map(h => h.swap)} />
-              <Gauge icon={HardDrive} label="Disk (/)" tip={TIP.disk} pct={diskPct}
-                value={diskPct === null ? '—' : `${Math.round(diskPct)}%`}
+                color={swapPct === null ? 'accent' : levelColor(swapPct)} />
+              <Gauge icon={HardDrive} label="Disk (/)" tip={TIP.disk}
+                value={diskPct === null ? '—' : `${Math.round(diskPct)}%`} pct={diskPct}
                 sub={`${bytesToHuman(metrics.disk_used_bytes)} / ${bytesToHuman(metrics.disk_total_bytes)}`}
-                color={diskPct === null ? 'accent' : levelColor(diskPct)}
-                spark={history.map(h => h.disk)} />
+                color={diskPct === null ? 'accent' : levelColor(diskPct)} />
             </div>
           </div>
 
@@ -278,64 +257,80 @@ export default function WslDashboardTab({ distros }: { distros: WslDistro[] }) {
 
           {/* ── Detail columns ──────────────────────────────────────── */}
           <div className="wsl-dash-cols">
-            <div className="overview-section" style={{ margin: 0 }}>
-              <div className="overview-section-head overview-section-head--static">
-                <span className="section-label" style={{ margin: 0 }}>Top processes</span>
+            <div className="wsl-dash-section">
+              <div className="wsl-dash-section-head">
+                <span className="wsl-dash-section-label">Top processes</span>
+                {metrics.top_procs.length > 6 && (
+                  <button className="wsl-viewall" onClick={() => setExpandProc(v => !v)}>
+                    {expandProc ? 'Show less' : 'View all'}
+                  </button>
+                )}
               </div>
               <div className="stats-grid">
-                <ProcList procs={metrics.top_procs} kind="cpu" />
-                <ProcList procs={metrics.top_procs} kind="mem" />
+                <ProcList procs={metrics.top_procs} kind="cpu" limit={procLimit} />
+                <ProcList procs={metrics.top_procs} kind="mem" limit={procLimit} />
               </div>
             </div>
 
-            <div className="overview-section" style={{ margin: 0 }}>
-              <div className="overview-section-head overview-section-head--static">
-                <span className="section-label" style={{ margin: 0 }}>Network &amp; DNS</span>
-                <InfoDot tip={TIP.net} />
-              </div>
-              <div className="wsl-net-card">
-                <div className="wsl-net-row">
-                  <Network size={13} className="wsl-net-icon" />
-                  <span className="wsl-net-key">{metrics.iface || 'interface'}</span>
-                  <span className="wsl-net-val">{metrics.ip || '—'}</span>
+            <div className="wsl-dash-side">
+              <div className="wsl-dash-section">
+                <div className="wsl-dash-section-head">
+                  <span className="wsl-dash-section-label">Network &amp; DNS</span>
+                  <InfoDot tip={TIP.net} />
                 </div>
-                <div className="wsl-net-row">
-                  <ArrowDownUp size={13} className="wsl-net-icon" />
-                  <span className="wsl-net-key">traffic</span>
-                  <span className="wsl-net-val">↓ {bytesToHuman(metrics.rx_bytes)} · ↑ {bytesToHuman(metrics.tx_bytes)} <span className="wsl-net-sub">since boot</span></span>
-                </div>
-                <div className="wsl-net-row">
-                  <span className="wsl-net-key" style={{ marginLeft: 21 }}>DNS</span>
-                  <span className="wsl-net-val">{metrics.nameservers.length ? metrics.nameservers.join(', ') : 'none configured'}</span>
+                <div className="wsl-net">
+                  <div className="wsl-net-item">
+                    <Network size={14} className="wsl-net-icon" />
+                    <div className="wsl-net-text">
+                      <span className="wsl-net-k">{metrics.iface || 'interface'}</span>
+                      <span className="wsl-net-v">{metrics.ip || '—'}</span>
+                    </div>
+                  </div>
+                  <div className="wsl-net-item">
+                    <ArrowDownUp size={14} className="wsl-net-icon" />
+                    <div className="wsl-net-text">
+                      <span className="wsl-net-k">Traffic <span className="wsl-net-sub">since boot</span></span>
+                      <span className="wsl-net-v">↓ {bytesToHuman(metrics.rx_bytes)} · ↑ {bytesToHuman(metrics.tx_bytes)}</span>
+                    </div>
+                  </div>
+                  <div className="wsl-net-item">
+                    <span className="wsl-net-icon-spacer" />
+                    <div className="wsl-net-text wsl-net-text--inline">
+                      <span className="wsl-net-k">DNS</span>
+                      <span className="wsl-net-v">{metrics.nameservers.length ? metrics.nameservers.join(', ') : 'none configured'}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="overview-section-head overview-section-head--static" style={{ marginTop: 14 }}>
-                <span className="section-label" style={{ margin: 0 }}>Resource limits</span>
-                <InfoDot tip={TIP.limits} />
+              <div className="wsl-dash-section">
+                <div className="wsl-dash-section-head">
+                  <span className="wsl-dash-section-label">Resource limits</span>
+                  <InfoDot tip={TIP.limits} />
+                </div>
+                <table className="wsl-limits-table">
+                  <thead>
+                    <tr><th>Resource</th><th>Configured cap</th><th>Actual</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Memory</td>
+                      <td className={limits.memory ? '' : 'wsl-limit-default'}>{limits.memory ?? 'none (default)'}</td>
+                      <td className="wsl-limit-actual-cell">{bytesToHuman(metrics.mem_total_kb * 1024)}</td>
+                    </tr>
+                    <tr>
+                      <td>Processors</td>
+                      <td className={limits.processors ? '' : 'wsl-limit-default'}>{limits.processors ?? 'none (default)'}</td>
+                      <td className="wsl-limit-actual-cell">{metrics.cpu_count} cores</td>
+                    </tr>
+                    <tr>
+                      <td>Swap</td>
+                      <td className={limits.swap ? '' : 'wsl-limit-default'}>{limits.swap ?? 'none (default)'}</td>
+                      <td className="wsl-limit-actual-cell">{metrics.swap_total_kb > 0 ? bytesToHuman(metrics.swap_total_kb * 1024) : 'off'}</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
-              <table className="wsl-limits-table">
-                <thead>
-                  <tr><th>Resource</th><th>Configured cap</th><th>Actual</th></tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>Memory</td>
-                    <td className={limits.memory ? '' : 'wsl-limit-default'}>{limits.memory ?? 'none (default)'}</td>
-                    <td className="wsl-limit-actual-cell">{bytesToHuman(metrics.mem_total_kb * 1024)}</td>
-                  </tr>
-                  <tr>
-                    <td>Processors</td>
-                    <td className={limits.processors ? '' : 'wsl-limit-default'}>{limits.processors ?? 'none (default)'}</td>
-                    <td className="wsl-limit-actual-cell">{metrics.cpu_count} cores</td>
-                  </tr>
-                  <tr>
-                    <td>Swap</td>
-                    <td className={limits.swap ? '' : 'wsl-limit-default'}>{limits.swap ?? 'none (default)'}</td>
-                    <td className="wsl-limit-actual-cell">{metrics.swap_total_kb > 0 ? bytesToHuman(metrics.swap_total_kb * 1024) : 'off'}</td>
-                  </tr>
-                </tbody>
-              </table>
             </div>
           </div>
         </>
@@ -348,13 +343,13 @@ export default function WslDashboardTab({ distros }: { distros: WslDistro[] }) {
  *  does not shift the page while metrics load. */
 function DashboardSkeleton() {
   return (
-    <div className="overview-section" style={{ margin: 0 }}>
-      <div className="sys-metrics">
+    <div className="wsl-dash-rm">
+      <div className="wsl-gauges">
         {[0, 1, 2, 3].map(i => (
-          <div key={i} className="sys-card">
+          <div key={i} className="wsl-gauge">
             <div className="sk-line w-16" style={{ height: 10 }} />
-            <div className="sk-line" style={{ height: 6, marginTop: 12 }} />
-            <div className="sk-line w-24" style={{ height: 9, marginTop: 8 }} />
+            <div className="sk-line w-24" style={{ height: 9, marginTop: 14 }} />
+            <div className="sk-line" style={{ height: 4, marginTop: 12 }} />
           </div>
         ))}
       </div>

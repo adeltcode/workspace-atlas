@@ -8097,6 +8097,99 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 .wsl-live-text { font-size: 11px; color: var(--color-text-tertiary); }
 
+/* Section header (shared by the resource-monitoring header and the panels). */
+.wsl-dash-section-head { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.wsl-dash-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-tertiary);
+}
+.wsl-viewall {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: var(--color-accent);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+}
+.wsl-viewall:hover { text-decoration: underline; }
+
+/* Resource-monitoring band — header + standalone gauge cards, no outer panel. */
+.wsl-dash-rm { margin-bottom: 16px; }
+.wsl-gauges {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 14px;
+}
+.wsl-gauge {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
+  padding: 14px 16px;
+}
+.wsl-gauge-head { display: flex; align-items: center; gap: 8px; }
+.wsl-gauge-icon { color: var(--color-text-tertiary); flex-shrink: 0; }
+.wsl-gauge-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+}
+.wsl-gauge-value { margin-left: auto; font-size: 18px; font-weight: 700; color: var(--color-text-primary); font-variant-numeric: tabular-nums; }
+.wsl-gauge-sub { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-top: 12px; }
+.wsl-gauge-sublabel { font-size: 11.5px; color: var(--color-text-secondary); }
+.wsl-gauge-pct { font-size: 11.5px; color: var(--color-text-tertiary); font-variant-numeric: tabular-nums; }
+.wsl-gauge-track { position: relative; height: 4px; margin-top: 9px; border-radius: 2px; background: var(--color-bg-tertiary); }
+.wsl-gauge-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; transition: width 0.4s ease; }
+.wsl-gauge-dot {
+  position: absolute; top: 50%;
+  width: 8px; height: 8px; border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 2px var(--color-bg-primary);
+  transition: left 0.4s ease;
+}
+.wsl-gauge-fill--accent,  .wsl-gauge-dot--accent  { background: var(--color-accent); }
+.wsl-gauge-fill--success, .wsl-gauge-dot--success { background: var(--color-success); }
+.wsl-gauge-fill--warning, .wsl-gauge-dot--warning { background: var(--color-warning); }
+.wsl-gauge-fill--danger,  .wsl-gauge-dot--danger  { background: var(--color-danger); }
+
+/* Bordered detail panels (Top processes, Network & DNS, Resource limits). */
+.wsl-dash-section {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
+  padding: 16px 18px;
+}
+.wsl-dash-side { display: flex; flex-direction: column; gap: 16px; }
+
+.wsl-proc-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  padding-bottom: 8px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+/* Network & DNS — vertical, icon + stacked label/value. */
+.wsl-net { display: flex; flex-direction: column; gap: 14px; }
+.wsl-net-item { display: flex; gap: 11px; align-items: flex-start; }
+.wsl-net-icon { color: var(--color-text-tertiary); flex-shrink: 0; margin-top: 1px; }
+.wsl-net-icon-spacer { width: 14px; flex-shrink: 0; }
+.wsl-net-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.wsl-net-text--inline { flex-direction: row; align-items: baseline; gap: 12px; }
+.wsl-net-k { font-size: 11px; color: var(--color-text-tertiary); }
+.wsl-net-v { font-size: 13px; color: var(--color-text-primary); font-family: var(--font-mono); word-break: break-all; }
+
 .wsl-dash-chips {
   display: flex;
   flex-wrap: wrap;
