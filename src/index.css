@@ -7768,17 +7768,14 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wsl-switcher-item-state { margin-left: auto; font-size: 10.5px; color: var(--color-text-tertiary); }
 .wsl-switcher-check { color: var(--color-accent); flex-shrink: 0; }
 
-/* ── Bento home: toolbar ────────────────────────────────────────────────── */
+/* ── Bento home: toolbar (flat — the search field and segments carry their
+   own surfaces, so no box-in-box container) ─────────────────────────────── */
 .wsl-distros-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding: 10px 12px;
   margin-bottom: 14px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-secondary);
   flex-wrap: wrap;
 }
 .wsl-distros-search {
@@ -7867,13 +7864,26 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   white-space: nowrap;
 }
 .wsl-bcard-head:hover .wsl-bcard-name { color: var(--color-accent); }
+/* Visible "this opens a page" affordance: a small ghost icon button. */
 .wsl-bcard-open {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-tertiary);
   color: var(--color-text-tertiary);
   flex-shrink: 0;
-  transition: transform var(--transition-fast), color var(--transition-fast);
+  transition: transform var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
 }
-.wsl-bcard-head:hover .wsl-bcard-open { color: var(--color-accent); transform: translateX(2px); }
+.wsl-bcard-head:hover .wsl-bcard-open {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+  transform: translateX(2px);
+}
 
 .wsl-bcard-stats {
   display: grid;
@@ -7909,17 +7919,27 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius-sm);
   background: var(--color-bg-tertiary);
-  color: var(--color-text-tertiary);
+  color: var(--color-text-secondary);
   font-family: var(--font-mono);
   font-size: 11px;
   cursor: pointer;
   text-align: left;
 }
-.wsl-bcard-path:hover { border-color: var(--color-accent); color: var(--color-text-secondary); }
+.wsl-bcard-path:hover { border-color: var(--color-accent); color: var(--color-text-primary); }
 .wsl-bcard-path svg { flex-shrink: 0; }
 .wsl-bcard-path-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wsl-bcard-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.wsl-optimize-disk--sm { padding: 4px 10px; font-size: 11.5px; }
+/* The everyday per-card primary (Terminal): accent-tinted so one action leads. */
+.wsl-bcard-primary {
+  background: var(--color-accent-subtle);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+.wsl-bcard-primary:hover:not(:disabled) {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
 
 .wsl-home-bottom {
   display: grid;
@@ -7948,6 +7968,11 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wsl-bpanel-head svg { flex-shrink: 0; }
 .wsl-bpanel-head .wsl-link { margin-left: auto; text-transform: none; letter-spacing: 0; }
 .wsl-bpanel-empty { font-size: 12px; color: var(--color-text-tertiary); margin: 0; }
+/* Flatten the shared activity list inside a panel: the panel already provides
+   the surface, so rows are divider-only instead of individually boxed. */
+.wsl-bpanel .activity-list { margin-top: 0; border: none; border-radius: 0; overflow: visible; }
+.wsl-bpanel .activity-row { background: none; padding: 8px 0; }
+.wsl-bpanel .activity-row:not(:last-child) { border-bottom: 1px solid var(--color-border-light); }
 .wsl-bpanel-note { margin: 10px 0 0; font-size: 11px; color: var(--color-text-tertiary); }
 .wsl-bpanel-note code { font-family: var(--font-mono); }
 .wsl-blimits { display: flex; flex-direction: column; gap: 8px; }
@@ -8049,20 +8074,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
-.wsl-optimize-disk {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 12px;
-  border: 1px solid var(--color-warning);
-  border-radius: var(--radius-sm);
-  background: var(--color-warning-subtle);
-  color: var(--color-warning);
-  font-size: 12px; font-weight: 600; font-family: inherit;
-  cursor: pointer;
-  transition: background var(--transition-fast);
-}
-.wsl-optimize-disk:hover:not(:disabled) { background: var(--color-warning); color: #fff; }
-.wsl-optimize-disk:disabled { opacity: 0.5; cursor: default; }
-.wsl-optimize-disk .btn-admin-badge { opacity: 0.8; }
 
 /* ── Info affordance ────────────────────────────────────────────────────── */
 .wsl-info {

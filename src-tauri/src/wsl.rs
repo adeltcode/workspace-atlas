@@ -668,11 +668,15 @@ fn run_in_distro(distro: &str, script: &str) -> Result<String, String> {
     run_in_distro_as(distro, Some("root"), script)
 }
 
-/// Run a bash script inside a distro as `user` (None = the distro's default
+/// Run a shell script inside a distro as `user` (None = the distro's default
 /// login user). The script is piped over stdin as raw UTF-8 with LF line endings
 /// (no BOM), so it sidesteps the PowerShell console encoding pitfalls that mangle
 /// scripts. WSL_UTF8 keeps wsl.exe's own output UTF-8. Booting a stopped distro
 /// is the caller's intent.
+///
+/// Prefers bash but falls back to sh, so busybox-based distros (Alpine,
+/// docker-desktop) still run the POSIX-compatible probe scripts. Scripts that
+/// genuinely need bash must guard themselves (see PROFILE_SCRIPT).
 fn run_in_distro_as(distro: &str, user: Option<&str>, script: &str) -> Result<String, String> {
     use std::io::Write as _;
     let mut cmd = Command::new("wsl");
@@ -681,7 +685,7 @@ fn run_in_distro_as(distro: &str, user: Option<&str>, script: &str) -> Result<St
         cmd.arg("-u").arg(u);
     }
     let mut child = cmd
-        .args(["bash", "-s"])
+        .args(["sh", "-c", "if command -v bash >/dev/null 2>&1; then exec bash -s; else exec sh -s; fi"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -1497,6 +1501,7 @@ fn suggestion_for(tool: &str) -> String {
 /// login-interactive timings, isolated per-rc-file source times, and detection of
 /// known-slow tools. Run as the default user so `~` and the login shell are right.
 const PROFILE_SCRIPT: &str = r#"
+command -v bash >/dev/null 2>&1 || { echo "bash is not installed in this distro; shell profiling needs it" >&2; exit 1; }
 SHELL_PATH=$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f7)
 echo "shell=$SHELL_PATH"
 export TIMEFORMAT=%R

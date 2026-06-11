@@ -217,11 +217,13 @@ export default function WslHome({ distros, loading, onReload }: {
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const runningCnt = distros.filter(d => d.running).length
+  const stoppedCnt = distros.length - runningCnt
   const totalVhd   = distros.reduce((s, d) => s + d.vhd_size_bytes, 0)
   const scanned    = distros.filter(d => extras[d.name] && extras[d.name].disk_used_bytes > 0 && d.vhd_size_bytes > 0)
   const reclaimable = scanned.reduce((s, d) => s + Math.max(0, d.vhd_size_bytes - extras[d.name].disk_used_bytes), 0)
   const defaultDistro = distros.find(d => d.is_default)
-  const wslActivity = activityLog.filter(a => a.module === 'wsl').slice(0, 6)
+  // Operations only: terminal-opened info entries would drown out the real ones.
+  const wslActivity = activityLog.filter(a => a.module === 'wsl' && a.outcome !== 'info').slice(0, 6)
 
   const filtered = distros.filter(d => {
     if (filter === 'running' && !d.running) return false
@@ -244,8 +246,10 @@ export default function WslHome({ distros, loading, onReload }: {
       <div className="wsl-tiles">
         <div className="hero-tile">
           <span className="hero-tile-label">Distributions</span>
-          <span className="hero-tile-value">{distros.length}</span>
-          <span className="hero-tile-sub">{runningCnt} running</span>
+          <span className="hero-tile-value hero-tile-value--text">{distros.length}</span>
+          <span className="hero-tile-sub">
+            {stoppedCnt > 0 ? `${runningCnt} running · ${stoppedCnt} stopped` : 'all running'}
+          </span>
         </div>
         <div className="hero-tile">
           <span className="hero-tile-label">On disk</span>
@@ -262,7 +266,9 @@ export default function WslHome({ distros, loading, onReload }: {
         <div className="hero-tile">
           <span className="hero-tile-label">Default</span>
           <span className="hero-tile-value hero-tile-value--text">{defaultDistro?.name ?? '--'}</span>
-          <span className="hero-tile-sub">default distribution</span>
+          <span className="hero-tile-sub">
+            {defaultDistro ? `WSL ${defaultDistro.version === 1 ? '1' : '2'} · ${defaultDistro.running ? 'running' : 'stopped'}` : 'none set'}
+          </span>
         </div>
       </div>
 
@@ -298,6 +304,7 @@ export default function WslHome({ distros, loading, onReload }: {
               d={d}
               x={extras[d.name]}
               scanning={extrasBusy.has(d.name)}
+              scanFailed={extrasFailed.has(d.name)}
               busy={busy}
               optName={optName} exportName={exportName} busyAction={busyAction}
               optResult={optResults[d.name]} optErr={optError[d.name]}
@@ -480,7 +487,7 @@ export default function WslHome({ distros, loading, onReload }: {
 // ── Distro card ───────────────────────────────────────────────────────────────
 
 function DistroCard({
-  d, x, scanning, busy, optName, exportName, busyAction,
+  d, x, scanning, scanFailed, busy, optName, exportName, busyAction,
   optResult, optErr, exportInfo, exportErrText, migrateInfo,
   onOpen, onScan, onTerminal, onFolder, onReveal,
   onStart, onStop, onRestart, onExport, onClone, onMigrate, onOptimize,
@@ -488,6 +495,7 @@ function DistroCard({
   d: WslDistro
   x?: DistroExtras
   scanning: boolean
+  scanFailed: boolean
   busy: boolean
   optName: string | null
   exportName: string | null
@@ -529,8 +537,15 @@ function DistroCard({
         </div>
         <div className="wsl-bstat">
           <span className="wsl-bstat-k">Packages</span>
-          <span className="wsl-bstat-v" title={x ? x.package_manager : undefined}>
-            {x ? x.package_count
+          <span
+            className="wsl-bstat-v"
+            title={
+              x ? (x.package_manager === 'unknown' ? 'No supported package manager detected' : x.package_manager)
+              : scanFailed ? 'Scan unavailable for this distro'
+              : undefined
+            }
+          >
+            {x ? (x.package_manager === 'unknown' ? '--' : x.package_count)
               : scanning ? '…'
               : d.running ? '--'
               : <button className="wsl-scan-btn" onClick={onScan} title="Reads inside the distro and starts it if stopped">Scan</button>}
@@ -568,7 +583,7 @@ function DistroCard({
             <Play size={12} /> {busyAction === d.name ? 'Starting…' : 'Start'}
           </button>
         )}
-        <button className="btn-secondary btn-sm" onClick={onTerminal} title="Open a terminal in this distro">
+        <button className="btn-secondary btn-sm wsl-bcard-primary" onClick={onTerminal} title="Open a terminal in this distro">
           <Terminal size={12} /> Terminal
         </button>
         <button className="btn-secondary btn-sm" onClick={onFolder} title="Open the distro's files in Explorer (\\wsl.localhost)">
@@ -587,7 +602,7 @@ function DistroCard({
           <ArrowRightLeft size={12} /> Migrate
         </button>
         {d.version === 2 && d.vhd_path && (
-          <button className="wsl-optimize-disk wsl-optimize-disk--sm" onClick={onOptimize} disabled={busy} title="Compact the virtual disk: requires administrator approval">
+          <button className="btn-secondary btn-sm" onClick={onOptimize} disabled={busy} title="Compact the virtual disk: requires administrator approval">
             <Zap size={12} /> {optName === d.name ? 'Optimizing…' : 'Optimize'}
             <ShieldAlert size={10} className="btn-admin-badge" />
           </button>
