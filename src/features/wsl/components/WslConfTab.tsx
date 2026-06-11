@@ -20,6 +20,7 @@ export default function WslConfTab({ distros, runningNames, onAfterShutdown }: {
 }) {
   const backupDir    = useAppStore(s => s.backupDir)
   const setBackupDir = useAppStore(s => s.setBackupDir)
+  const setWslView   = useAppStore(s => s.setWslView)
   // The active distro is the global selection (switched from the view-header).
   const distro       = useAppStore(s => s.wslSelectedDistro) ?? ''
 
@@ -43,7 +44,9 @@ export default function WslConfTab({ distros, runningNames, onAfterShutdown }: {
   return (
     <div className="wslconf">
       <p className="wslconf-context">
-        Editing <code>/etc/wsl.conf</code> inside <strong>{distro}</strong> (writes as root). Switch distro from the header.
+        Editing <code>/etc/wsl.conf</code> inside <strong>{distro}</strong> (writes as root). Switch distro from
+        the header. Machine-wide settings live in{' '}
+        <button className="wsl-link" onClick={() => setWslView('wslconfig')}>.wslconfig</button>.
       </p>
       {distro && (
         <IniConfigEditor

@@ -6,8 +6,8 @@ import type { TerminalLine } from '../types/terminal'
 export type View      = 'dashboard' | 'docker' | 'wsl' | 'packages' | 'automation' | 'settings'
 export type Theme     = 'dark' | 'light'
 export type DockerTab = 'overview' | 'images' | 'containers' | 'volumes' | 'networks' | 'compose' | 'backup-volumes' | 'backup-compose' | 'prune' | 'log'
-export type WslTab    = 'dashboard' | 'distros' | 'startup' | 'performance' | 'config'
-export type WslConfigSub = 'wslconfig' | 'conf'
+export type WslView      = 'dashboard' | 'distro' | 'wslconfig'
+export type WslDistroTab = 'overview' | 'startup' | 'performance' | 'config'
 
 /** Lightweight distro entry for the sidebar grandchild list. */
 export interface WslDistroNav {
@@ -67,12 +67,12 @@ interface AppState {
   setActiveView: (view: View) => void
   setDockerTab: (tab: DockerTab) => void
 
-  // ── WSL navigation (wslTab/configSub/selected persisted; nav+badges ephemeral)
-  wslTab: WslTab
-  wslConfigSub: WslConfigSub
+  // ── WSL navigation (view/distroTab/selected persisted; nav+badges ephemeral)
+  wslView: WslView
+  wslDistroTab: WslDistroTab
   wslSelectedDistro: string | null
-  setWslTab: (tab: WslTab) => void
-  setWslConfigSub: (sub: WslConfigSub) => void
+  setWslView: (view: WslView) => void
+  setWslDistroTab: (tab: WslDistroTab) => void
   setWslSelectedDistro: (name: string | null) => void
   wslDistrosNav: WslDistroNav[]
   setWslDistrosNav: (distros: WslDistroNav[]) => void
@@ -197,11 +197,11 @@ export const useAppStore = create<AppState>()(
       setDockerTab:  (dockerTab) => set({ dockerTab }),
 
       // ── WSL navigation
-      wslTab:            'dashboard',
-      wslConfigSub:      'wslconfig',
+      wslView:           'dashboard',
+      wslDistroTab:      'overview',
       wslSelectedDistro: null,
-      setWslTab:            (wslTab) => set({ wslTab }),
-      setWslConfigSub:      (wslConfigSub) => set({ wslConfigSub }),
+      setWslView:           (wslView) => set({ wslView }),
+      setWslDistroTab:      (wslDistroTab) => set({ wslDistroTab }),
       setWslSelectedDistro: (wslSelectedDistro) => set({ wslSelectedDistro }),
       wslDistrosNav:        [],
       setWslDistrosNav:     (wslDistrosNav) => set({ wslDistrosNav }),
@@ -344,8 +344,8 @@ export const useAppStore = create<AppState>()(
         theme:           s.theme,
         activeView:      s.activeView,
         dockerTab:       s.dockerTab,
-        wslTab:          s.wslTab,
-        wslConfigSub:    s.wslConfigSub,
+        wslView:         s.wslView,
+        wslDistroTab:    s.wslDistroTab,
         wslSelectedDistro: s.wslSelectedDistro,
         sidebarWidth:    s.sidebarWidth,
         terminalHeight:  s.terminalHeight,

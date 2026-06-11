@@ -1,6 +1,6 @@
 import { LayoutDashboard, Box, HardDrive, Package, Bot, Settings, FileText, FileCode2, FileKey } from 'lucide-react'
 import clsx from 'clsx'
-import { useAppStore, type View, type DockerTab, type WslTab, type WslConfigSub } from '../store/appStore'
+import { useAppStore, type View, type DockerTab, type WslView } from '../store/appStore'
 import { composeStatusLabel } from '../utils/format'
 
 // ── Top-level module nav ──────────────────────────────────────────────────────
@@ -26,20 +26,9 @@ const DOCKER_TABS: { id: DockerTab; label: string }[] = [
   { id: 'log',        label: 'Log'        },
 ]
 
-// ── WSL child tabs ──────────────────────────────────────────────────────────────
-
-const WSL_TABS: { id: WslTab; label: string }[] = [
-  { id: 'dashboard',   label: 'Dashboard'     },
-  { id: 'distros',     label: 'Distributions' },
-  { id: 'startup',     label: 'Startup'       },
-  { id: 'performance', label: 'Performance'   },
-  { id: 'config',      label: 'Config'        },
-]
-
-const WSL_CONFIG_SUBS: { id: WslConfigSub; label: string }[] = [
-  { id: 'wslconfig', label: '.wslconfig' },
-  { id: 'conf',      label: 'wsl.conf'   },
-]
+// ── WSL child nav ───────────────────────────────────────────────────────────────
+// Dashboard (bento overview, distros nested under it) + the machine-wide
+// .wslconfig editor. Per-distro tabs live inside the distro page, not here.
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -53,10 +42,8 @@ export default function Sidebar() {
   const composeActiveProject = useAppStore(s => s.composeActiveProject)
   const composeFilesNav      = useAppStore(s => s.composeFilesNav)
   const composeActiveFilePath = useAppStore(s => s.composeActiveFilePath)
-  const wslTab               = useAppStore(s => s.wslTab)
-  const setWslTab            = useAppStore(s => s.setWslTab)
-  const wslConfigSub         = useAppStore(s => s.wslConfigSub)
-  const setWslConfigSub      = useAppStore(s => s.setWslConfigSub)
+  const wslView              = useAppStore(s => s.wslView)
+  const setWslView           = useAppStore(s => s.setWslView)
   const wslSelectedDistro    = useAppStore(s => s.wslSelectedDistro)
   const wslDistrosNav        = useAppStore(s => s.wslDistrosNav)
   const wslBadges            = useAppStore(s => s.wslBadges)
@@ -66,15 +53,15 @@ export default function Sidebar() {
     setDockerTab(id)
   }
 
-  const goWslTab = (id: WslTab) => {
+  const goWslView = (v: WslView) => {
     setActiveView('wsl')
-    setWslTab(id)
+    setWslView(v)
   }
 
   const goWslDistro = (name: string) => {
     setActiveView('wsl')
     useAppStore.getState().setWslSelectedDistro(name)
-    setWslTab('dashboard')
+    setWslView('distro')
   }
 
   const goComposeProject = (name: string) => {
@@ -207,53 +194,43 @@ export default function Sidebar() {
               {/* WSL child nav — only when WSL module is active */}
               {view === 'wsl' && activeView === 'wsl' && (
                 <ul className="sidebar-children">
-                  {WSL_TABS.map(({ id, label: tabLabel }) => (
-                    <li key={id}>
-                      <button
-                        className={clsx('sidebar-child-item', wslTab === id && 'active')}
-                        onClick={() => goWslTab(id)}
-                      >
-                        <span className="sidebar-child-label">{tabLabel}</span>
-                        {id === 'distros' && wslBadges?.distros && (
-                          <span className="sidebar-child-badge">{wslBadges.distros}</span>
-                        )}
-                      </button>
-
-                      {/* Distro grandchildren — only when Distributions tab is active */}
-                      {id === 'distros' && wslTab === 'distros' && wslDistrosNav.length > 0 && (
-                        <ul className="sidebar-grandchildren">
-                          {wslDistrosNav.map(d => (
-                            <li key={d.name}>
-                              <button
-                                className={clsx('sidebar-grandchild-item', wslSelectedDistro === d.name && 'active')}
-                                onClick={() => goWslDistro(d.name)}
-                                title={`${d.name}${d.is_default ? ' (default)' : ''} — ${d.running ? 'running' : 'stopped'}`}
-                              >
-                                <span className={clsx('sidebar-compose-dot', d.running ? 'running' : 'stopped')} />
-                                <span className="sidebar-grandchild-label">{d.name}</span>
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
+                  <li>
+                    <button
+                      className={clsx('sidebar-child-item', (wslView === 'dashboard' || wslView === 'distro') && 'active')}
+                      onClick={() => goWslView('dashboard')}
+                    >
+                      <span className="sidebar-child-label">Dashboard</span>
+                      {wslBadges?.distros && (
+                        <span className="sidebar-child-badge">{wslBadges.distros}</span>
                       )}
+                    </button>
 
-                      {/* Config editor grandchildren — only when Config tab is active */}
-                      {id === 'config' && wslTab === 'config' && (
-                        <ul className="sidebar-grandchildren">
-                          {WSL_CONFIG_SUBS.map(sub => (
-                            <li key={sub.id}>
-                              <button
-                                className={clsx('sidebar-grandchild-item', wslConfigSub === sub.id && 'active')}
-                                onClick={() => { setActiveView('wsl'); setWslTab('config'); setWslConfigSub(sub.id) }}
-                              >
-                                <span className="sidebar-grandchild-label">{sub.label}</span>
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </li>
-                  ))}
+                    {/* Distro grandchildren — each distribution is its own page */}
+                    {(wslView === 'dashboard' || wslView === 'distro') && wslDistrosNav.length > 0 && (
+                      <ul className="sidebar-grandchildren">
+                        {wslDistrosNav.map(d => (
+                          <li key={d.name}>
+                            <button
+                              className={clsx('sidebar-grandchild-item', wslView === 'distro' && wslSelectedDistro === d.name && 'active')}
+                              onClick={() => goWslDistro(d.name)}
+                              title={`${d.name}${d.is_default ? ' (default)' : ''} · ${d.running ? 'running' : 'stopped'}`}
+                            >
+                              <span className={clsx('sidebar-compose-dot', d.running ? 'running' : 'stopped')} />
+                              <span className="sidebar-grandchild-label">{d.name}</span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                  <li>
+                    <button
+                      className={clsx('sidebar-child-item', wslView === 'wslconfig' && 'active')}
+                      onClick={() => goWslView('wslconfig')}
+                    >
+                      <span className="sidebar-child-label">.wslconfig</span>
+                    </button>
+                  </li>
                 </ul>
               )}
             </li>

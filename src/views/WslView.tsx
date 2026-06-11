@@ -1,33 +1,25 @@
-import { useCallback, useEffect } from 'react'
+import { useEffect } from 'react'
 import { HardDrive, RefreshCw, Upload } from 'lucide-react'
 import clsx from 'clsx'
-import { useAppStore, type WslTab } from '../store/appStore'
+import { useAppStore, type WslDistroTab } from '../store/appStore'
 import { useWslData } from '../features/wsl/hooks'
 import DistroSwitcher from '../features/wsl/components/DistroSwitcher'
-import WslDashboardTab from '../features/wsl/components/WslDashboardTab'
-import WslDistrosTab from '../features/wsl/components/WslDistrosTab'
-import WslStartupTab from '../features/wsl/components/WslStartupTab'
-import WslPerformanceTab from '../features/wsl/components/WslPerformanceTab'
+import WslHome from '../features/wsl/components/WslHome'
+import WslDistroPage from '../features/wsl/components/WslDistroPage'
 import WslConfigTab from '../features/wsl/components/WslConfigTab'
-import WslConfTab from '../features/wsl/components/WslConfTab'
 
-const TAB_SUBTITLES: Record<WslTab, string> = {
-  dashboard:   'Live CPU, memory, disk, network, and process metrics inside the selected distro',
-  distros:     'Manage, clone, export, and configure your WSL environments',
-  startup:     'View and manage the systemd services that start with the distro',
+const DISTRO_TAB_SUBTITLES: Record<WslDistroTab, string> = {
+  overview:    'Live CPU, memory, disk, network, and process metrics inside this distro',
+  startup:     'View and manage the systemd services that start with this distro',
   performance: 'Benchmark cold-boot time and profile shell startup',
-  config:      'Edit machine-wide .wslconfig and the selected distro’s wsl.conf',
+  config:      'Edit /etc/wsl.conf inside this distro',
 }
 
-/** Tabs that act on a single distro and therefore show the header switcher. */
-const PER_DISTRO: WslTab[] = ['dashboard', 'startup', 'performance']
-
 export default function WslView() {
-  const wslTab        = useAppStore(s => s.wslTab)
-  const configSub     = useAppStore(s => s.wslConfigSub)
-  const selected      = useAppStore(s => s.wslSelectedDistro)
-  const setSelected   = useAppStore(s => s.setWslSelectedDistro)
-  const setWslTab     = useAppStore(s => s.setWslTab)
+  const wslView      = useAppStore(s => s.wslView)
+  const wslDistroTab = useAppStore(s => s.wslDistroTab)
+  const selected     = useAppStore(s => s.wslSelectedDistro)
+  const setSelected  = useAppStore(s => s.setWslSelectedDistro)
 
   const { status, distros, loading, error, reload } = useWslData()
   const available  = status?.available ?? false
@@ -65,12 +57,10 @@ export default function WslView() {
     return () => window.removeEventListener('keydown', onKey)
   }, [reload])
 
-  const goToConf = useCallback(() => {
-    setWslTab('config')
-    useAppStore.getState().setWslConfigSub('conf')
-  }, [setWslTab])
-
-  const showSwitcher = available && (PER_DISTRO.includes(wslTab) || (wslTab === 'config' && configSub === 'conf'))
+  const subtitle =
+    wslView === 'dashboard'  ? 'All distributions at a glance: manage, clone, export, and optimize'
+    : wslView === 'wslconfig' ? 'Machine-wide WSL2 settings, applied to every distribution'
+    : DISTRO_TAB_SUBTITLES[wslDistroTab]
 
   return (
     <div className="view-container wsl-view">
@@ -89,15 +79,15 @@ export default function WslView() {
                 </span>
               </>
             )}
-            {showSwitcher && <DistroSwitcher distros={distros} />}
+            {available && wslView === 'distro' && <DistroSwitcher distros={distros} />}
           </div>
-          <p className="view-subtitle">{TAB_SUBTITLES[wslTab]}</p>
+          <p className="view-subtitle">{subtitle}</p>
         </div>
         <button className="btn-refresh" onClick={reload} disabled={loading} title="Refresh (Ctrl+R)">
           <RefreshCw size={13} className={loading ? 'spin' : ''} />
           Refresh
         </button>
-        {available && wslTab === 'distros' && (
+        {available && wslView === 'dashboard' && (
           <button className="btn-filled btn-filled--accent" onClick={() => useAppStore.getState().setWslImportOpen(true)}>
             <Upload size={13} /> Import distro
           </button>
@@ -124,15 +114,10 @@ export default function WslView() {
 
       {available && (
         <div className="wsl-tab-content">
-          {wslTab === 'dashboard'   && <WslDashboardTab distros={distros} />}
-          {wslTab === 'distros'     && <WslDistrosTab distros={distros} loading={loading} onReload={reload} />}
-          {wslTab === 'startup'     && <WslStartupTab distros={distros} onGoToConf={goToConf} />}
-          {wslTab === 'performance' && <WslPerformanceTab distros={distros} />}
-          {wslTab === 'config' && configSub === 'wslconfig' && (
+          {wslView === 'dashboard' && <WslHome distros={distros} loading={loading} onReload={reload} />}
+          {wslView === 'distro'    && <WslDistroPage distros={distros} onReload={reload} />}
+          {wslView === 'wslconfig' && (
             <WslConfigTab runningNames={distros.filter(d => d.running).map(d => d.name)} onAfterShutdown={reload} />
-          )}
-          {wslTab === 'config' && configSub === 'conf' && (
-            <WslConfTab distros={distros} runningNames={distros.filter(d => d.running).map(d => d.name)} onAfterShutdown={reload} />
           )}
         </div>
       )}
