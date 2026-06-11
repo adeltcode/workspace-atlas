@@ -8041,7 +8041,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   margin-bottom: 14px;
 }
 .wsl-identity-name { font-size: 16px; font-weight: 700; color: var(--color-text-primary); }
-.wsl-identity-actions { margin-left: auto; display: flex; gap: 8px; }
+.wsl-identity-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 
 .wsl-page-tabs {
   display: inline-flex;

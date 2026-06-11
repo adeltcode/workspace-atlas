@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
 import clsx from 'clsx'
 import {
-  Star, SquareTerminal, Terminal, FolderOpen, ChevronRight, Search, HardDrive,
-  RotateCw, Square, Play, Download, Copy, ArrowRightLeft, Zap, ShieldAlert,
-  Upload, X, Settings2, History,
+  Star, SquareTerminal, Terminal, ChevronRight, Search, HardDrive,
+  RotateCw, Square, Play, Upload, Settings2, History,
 } from 'lucide-react'
 import { useAppStore } from '../../../store/appStore'
 import * as api from '../api'
 import { readWslConfig } from '../api'
 import { getIniValue } from '../ini'
-import type { WslDistro, OptimizeResult, DistroExtras } from '../types'
+import type { WslDistro, DistroExtras } from '../types'
 import { bytesToHuman, formatDuration, timeAgo } from '../../../utils/format'
+import { Modal, Field } from './Dialog'
 
 type StateFilter = 'all' | 'running' | 'stopped'
 type Lifecycle = { d: WslDistro; action: 'stop' | 'restart' }
@@ -33,16 +33,7 @@ export default function WslHome({ distros, loading, onReload }: {
   // .wslconfig caps for the limits panel (machine-wide).
   const [limits, setLimits] = useState<{ memory?: string; processors?: string; swap?: string }>({})
 
-  // ── VHD optimization ───────────────────────────────────────────────────────
-  const [confirmOpt, setConfirmOpt] = useState<WslDistro | null>(null)
-  const [optName, setOptName]       = useState<string | null>(null)
-  const [optResults, setOptResults] = useState<Record<string, OptimizeResult>>({})
-  const [optError, setOptError]     = useState<Record<string, string>>({})
-
-  // ── Export / import ────────────────────────────────────────────────────────
-  const [exportName, setExportName] = useState<string | null>(null)
-  const [exportInfo, setExportInfo] = useState<Record<string, string>>({})
-  const [exportErr, setExportErr]   = useState<Record<string, string>>({})
+  // ── Import dialog ──────────────────────────────────────────────────────────
   const [showImport, setShowImport] = useState(false)
   const [importTar, setImportTar]   = useState('')
   const [importName, setImportName] = useState('')
@@ -55,17 +46,9 @@ export default function WslHome({ distros, loading, onReload }: {
   const [extrasBusy, setExtrasBusy]     = useState<Set<string>>(() => new Set())
   const [extrasFailed, setExtrasFailed] = useState<Set<string>>(() => new Set())
 
-  // ── Lifecycle / clone / migrate ─────────────────────────────────────────────
+  // ── Lifecycle ────────────────────────────────────────────────────────────
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [lifecycle, setLifecycle]   = useState<Lifecycle | null>(null)
-  const [cloneFor, setCloneFor]   = useState<WslDistro | null>(null)
-  const [cloneName, setCloneName] = useState('')
-  const [cloneDir, setCloneDir]   = useState('')
-  const [cloneErr, setCloneErr]   = useState<string | null>(null)
-  const [migrateFor, setMigrateFor] = useState<WslDistro | null>(null)
-  const [migrateDir, setMigrateDir] = useState('')
-  const [migrateErr, setMigrateErr] = useState<string | null>(null)
-  const [migrateInfo, setMigrateInfo] = useState<Record<string, string>>({})
 
   // Header "Import distro" button opens the dialog via the store flag.
   useEffect(() => {
@@ -102,45 +85,15 @@ export default function WslHome({ distros, loading, onReload }: {
     }
   }, [distros, extras, extrasBusy, extrasFailed, loadExtras])
 
-  const busy = optName !== null || exportName !== null || busyAction !== null
+  const busy = busyAction !== null
 
   // Explicit navigation: opening a card IS allowed to change the active distro.
-  // Card action buttons below never touch the selection (decoupling contract).
+  // Card action buttons never touch the selection (decoupling contract).
   const openDistro = (name: string) => { setSelected(name); setWslView('distro') }
 
   const openTerminal = (d: WslDistro) => {
     api.wslOpenTerminal(d.name).catch(() => {})
     addActivity({ module: 'wsl', action: `Opened terminal · ${d.name}`, outcome: 'info' })
-  }
-  const openFolder = (d: WslDistro) => api.wslOpenDistroFolder(d.name).catch(() => {})
-
-  const runOptimize = async (d: WslDistro) => {
-    setConfirmOpt(null); setOptName(d.name)
-    setOptError(prev => { const n = { ...prev }; delete n[d.name]; return n })
-    try {
-      const r = await api.wslOptimizeVhd(d.vhd_path)
-      setOptResults(prev => ({ ...prev, [d.name]: r }))
-      addActivity({ module: 'wsl', action: `Optimized ${d.name}`, outcome: 'success', detail: `reclaimed ${bytesToHuman(r.reclaimed_bytes)}` })
-      await onReload()
-    } catch (e) {
-      setOptError(prev => ({ ...prev, [d.name]: String(e) }))
-      addActivity({ module: 'wsl', action: `Optimized ${d.name}`, outcome: 'failure', detail: String(e) })
-    } finally { setOptName(null) }
-  }
-
-  const runExport = async (d: WslDistro) => {
-    setExportName(d.name)
-    setExportErr(prev => { const n = { ...prev }; delete n[d.name]; return n })
-    try {
-      const r = await api.wslExportDistro(d.name)
-      if (r) {
-        setExportInfo(prev => ({ ...prev, [d.name]: `Exported to ${r.path} (${bytesToHuman(r.size_bytes)})` }))
-        addActivity({ module: 'wsl', action: `Exported ${d.name}`, outcome: 'success', detail: bytesToHuman(r.size_bytes) })
-      }
-    } catch (e) {
-      setExportErr(prev => ({ ...prev, [d.name]: String(e) }))
-      addActivity({ module: 'wsl', action: `Exported ${d.name}`, outcome: 'failure', detail: String(e) })
-    } finally { setExportName(null) }
   }
 
   const runImport = async () => {
@@ -180,38 +133,6 @@ export default function WslHome({ distros, loading, onReload }: {
       await onReload()
     } catch (e) {
       addActivity({ module: 'wsl', action: `Start ${d.name}`, outcome: 'failure', detail: String(e) })
-    } finally { setBusyAction(null) }
-  }
-
-  const runClone = async () => {
-    if (!cloneFor) return
-    const name = cloneName.trim()
-    if (!name || !cloneDir) return
-    setBusyAction(cloneFor.name); setCloneErr(null)
-    try {
-      await api.wslCloneDistro(cloneFor.name, name, cloneDir, cloneFor.version)
-      addActivity({ module: 'wsl', action: `Cloned ${cloneFor.name} → ${name}`, outcome: 'success' })
-      setCloneFor(null); setCloneName(''); setCloneDir('')
-      await onReload()
-    } catch (e) {
-      setCloneErr(String(e))
-      addActivity({ module: 'wsl', action: `Cloned ${cloneFor.name}`, outcome: 'failure', detail: String(e) })
-    } finally { setBusyAction(null) }
-  }
-
-  const runMigrate = async () => {
-    if (!migrateFor || !migrateDir) return
-    const d = migrateFor
-    setBusyAction(d.name); setMigrateErr(null)
-    try {
-      const r = await api.wslMigrateDistro(d.name, migrateDir, d.is_default, d.base_path, d.version)
-      setMigrateInfo(prev => ({ ...prev, [d.name]: `Migrated. Backup kept at ${r.backup_tar}` }))
-      addActivity({ module: 'wsl', action: `Migrated ${d.name}`, outcome: 'success', detail: migrateDir })
-      setMigrateFor(null); setMigrateDir('')
-      await onReload()
-    } catch (e) {
-      setMigrateErr(String(e))
-      addActivity({ module: 'wsl', action: `Migrated ${d.name}`, outcome: 'failure', detail: String(e) })
     } finally { setBusyAction(null) }
   }
 
@@ -306,22 +227,14 @@ export default function WslHome({ distros, loading, onReload }: {
               scanning={extrasBusy.has(d.name)}
               scanFailed={extrasFailed.has(d.name)}
               busy={busy}
-              optName={optName} exportName={exportName} busyAction={busyAction}
-              optResult={optResults[d.name]} optErr={optError[d.name]}
-              exportInfo={exportInfo[d.name]} exportErrText={exportErr[d.name]}
-              migrateInfo={migrateInfo[d.name]}
+              busyAction={busyAction}
               onOpen={() => openDistro(d.name)}
               onScan={() => loadExtras(d.name)}
               onTerminal={() => openTerminal(d)}
-              onFolder={() => openFolder(d)}
               onReveal={() => api.revealPath(d.vhd_path).catch(() => {})}
               onStart={() => runStart(d)}
               onStop={() => setLifecycle({ d, action: 'stop' })}
               onRestart={() => setLifecycle({ d, action: 'restart' })}
-              onExport={() => runExport(d)}
-              onClone={() => { setCloneErr(null); setCloneName(`${d.name}-clone`); setCloneDir(''); setCloneFor(d) }}
-              onMigrate={() => { setMigrateErr(null); setMigrateDir(''); setMigrateFor(d) }}
-              onOptimize={() => setConfirmOpt(d)}
             />
           ))}
         </div>
@@ -362,33 +275,6 @@ export default function WslHome({ distros, loading, onReload }: {
       </div>
 
       {/* ── Modals ──────────────────────────────────────────────────── */}
-      {confirmOpt && (
-        <Modal icon={<ShieldAlert size={16} />} iconWarning title={`Optimize ${confirmOpt.name}?`} onClose={() => setConfirmOpt(null)}>
-          <p className="modal-body">
-            This compacts <code>ext4.vhdx</code> to reclaim unused space. It shuts down
-            <strong> all WSL distributions</strong> and requires <strong>administrator approval</strong>.
-          </p>
-          {(() => {
-            const x = extras[confirmOpt.name]
-            if (!x || x.disk_used_bytes === 0) {
-              return <p className="wsl-estimate-note">Reclaim estimate unavailable: scan the distro from its card first.</p>
-            }
-            const est = Math.max(0, confirmOpt.vhd_size_bytes - x.disk_used_bytes)
-            return (
-              <div className="wsl-estimate">
-                <div className="wsl-estimate-row"><span>VHD file on Windows</span><strong>{bytesToHuman(confirmOpt.vhd_size_bytes)}</strong></div>
-                <div className="wsl-estimate-row"><span>Actually used inside</span><strong>{bytesToHuman(x.disk_used_bytes)}</strong></div>
-                <div className="wsl-estimate-row wsl-estimate-row--accent"><span>Estimated reclaimable</span><strong>≈ {bytesToHuman(est)}</strong></div>
-              </div>
-            )
-          })()}
-          <div className="modal-actions">
-            <button className="btn-secondary" onClick={() => setConfirmOpt(null)}>Cancel</button>
-            <button className="btn-filled btn-filled--accent" onClick={() => runOptimize(confirmOpt)}><Zap size={13} /> Optimize</button>
-          </div>
-        </Modal>
-      )}
-
       {lifecycle && (
         <Modal
           icon={lifecycle.action === 'stop' ? <Square size={16} /> : <RotateCw size={16} />} iconWarning
@@ -435,88 +321,31 @@ export default function WslHome({ distros, loading, onReload }: {
           </div>
         </Modal>
       )}
-
-      {cloneFor && (
-        <Modal icon={<Copy size={16} />} title={`Clone ${cloneFor.name}`} onClose={() => setCloneFor(null)} closable>
-          <p className="modal-body">Export <strong>{cloneFor.name}</strong> and re-import it as an independent copy. The source distro is left unchanged.</p>
-          <Field label="New distro name">
-            <input className="settings-dir-input" value={cloneName} onChange={e => setCloneName(e.target.value)} placeholder="e.g. workstation-kali-clone" spellCheck={false} />
-          </Field>
-          <Field label="Install location">
-            <div className="wsl-import-row">
-              <input className="settings-dir-input" value={cloneDir} readOnly placeholder="Choose a folder…" />
-              <button className="settings-dir-btn" onClick={async () => { const p = await api.pickDirectory(); if (p) setCloneDir(p) }}>Browse…</button>
-            </div>
-          </Field>
-          {cloneErr && <div className="settings-status settings-status--error">{cloneErr}</div>}
-          <div className="modal-actions">
-            <button className="btn-secondary" onClick={() => setCloneFor(null)} disabled={busyAction === cloneFor.name}>Cancel</button>
-            <button className="btn-filled btn-filled--accent" onClick={runClone} disabled={busyAction === cloneFor.name || !cloneName.trim() || !cloneDir}>
-              <Copy size={13} /> {busyAction === cloneFor.name ? 'Cloning…' : 'Clone'}
-            </button>
-          </div>
-        </Modal>
-      )}
-
-      {migrateFor && (
-        <Modal icon={<ArrowRightLeft size={16} />} iconWarning title={`Migrate ${migrateFor.name}`} onClose={() => setMigrateFor(null)} closable>
-          <p className="modal-body">
-            Move <strong>{migrateFor.name}</strong> to another drive or folder. The flow is safe: it exports a
-            <code> .tar</code> backup, imports + boot-verifies the copy at the new location, and only then unregisters
-            the original. The <strong>backup is kept</strong> as a rollback artifact.
-          </p>
-          <Field label="Destination folder">
-            <div className="wsl-import-row">
-              <input className="settings-dir-input" value={migrateDir} readOnly placeholder="Choose a folder on the target drive…" />
-              <button className="settings-dir-btn" onClick={async () => { const p = await api.pickDirectory(); if (p) setMigrateDir(p) }}>Browse…</button>
-            </div>
-          </Field>
-          {migrateErr && <div className="settings-status settings-status--error">{migrateErr}</div>}
-          <div className="modal-actions">
-            <button className="btn-secondary" onClick={() => setMigrateFor(null)} disabled={busyAction === migrateFor.name}>Cancel</button>
-            <button className="btn-filled btn-filled--accent" onClick={runMigrate} disabled={busyAction === migrateFor.name || !migrateDir}>
-              <ArrowRightLeft size={13} /> {busyAction === migrateFor.name ? 'Migrating…' : 'Migrate'}
-            </button>
-          </div>
-        </Modal>
-      )}
     </div>
   )
 }
 
 // ── Distro card ───────────────────────────────────────────────────────────────
+// Lean by design: lifecycle + terminal only. Management actions (files, export,
+// clone, migrate, optimize) live on the distribution's own page.
 
 function DistroCard({
-  d, x, scanning, scanFailed, busy, optName, exportName, busyAction,
-  optResult, optErr, exportInfo, exportErrText, migrateInfo,
-  onOpen, onScan, onTerminal, onFolder, onReveal,
-  onStart, onStop, onRestart, onExport, onClone, onMigrate, onOptimize,
+  d, x, scanning, scanFailed, busy, busyAction,
+  onOpen, onScan, onTerminal, onReveal, onStart, onStop, onRestart,
 }: {
   d: WslDistro
   x?: DistroExtras
   scanning: boolean
   scanFailed: boolean
   busy: boolean
-  optName: string | null
-  exportName: string | null
   busyAction: string | null
-  optResult?: OptimizeResult
-  optErr?: string
-  exportInfo?: string
-  exportErrText?: string
-  migrateInfo?: string
   onOpen: () => void
   onScan: () => void
   onTerminal: () => void
-  onFolder: () => void
   onReveal: () => void
   onStart: () => void
   onStop: () => void
   onRestart: () => void
-  onExport: () => void
-  onClone: () => void
-  onMigrate: () => void
-  onOptimize: () => void
 }) {
   return (
     <div className="wsl-bcard">
@@ -527,7 +356,7 @@ function DistroCard({
         <span className={clsx('wsl-state-pill', d.running ? 'wsl-state-pill--running' : 'wsl-state-pill--stopped')}>
           <span className="wsl-state-pill-dot" />{d.running ? 'Running' : 'Stopped'}
         </span>
-        <ChevronRight size={15} className="wsl-bcard-open" />
+        <span className="wsl-bcard-open"><ChevronRight size={14} /></span>
       </button>
 
       <div className="wsl-bcard-stats">
@@ -586,73 +415,7 @@ function DistroCard({
         <button className="btn-secondary btn-sm wsl-bcard-primary" onClick={onTerminal} title="Open a terminal in this distro">
           <Terminal size={12} /> Terminal
         </button>
-        <button className="btn-secondary btn-sm" onClick={onFolder} title="Open the distro's files in Explorer (\\wsl.localhost)">
-          <FolderOpen size={12} /> Files
-        </button>
       </div>
-
-      <div className="wsl-bcard-actions">
-        <button className="btn-secondary btn-sm" onClick={onExport} disabled={busy} title="Export to a .tar archive">
-          <Download size={12} /> {exportName === d.name ? 'Exporting…' : 'Export'}
-        </button>
-        <button className="btn-secondary btn-sm" onClick={onClone} disabled={busy} title="Clone under a new name">
-          <Copy size={12} /> Clone
-        </button>
-        <button className="btn-secondary btn-sm" onClick={onMigrate} disabled={busy} title="Move to another drive or folder">
-          <ArrowRightLeft size={12} /> Migrate
-        </button>
-        {d.version === 2 && d.vhd_path && (
-          <button className="btn-secondary btn-sm" onClick={onOptimize} disabled={busy} title="Compact the virtual disk: requires administrator approval">
-            <Zap size={12} /> {optName === d.name ? 'Optimizing…' : 'Optimize'}
-            <ShieldAlert size={10} className="btn-admin-badge" />
-          </button>
-        )}
-      </div>
-
-      {optName === d.name && <p className="wsl-opt-progress">Approve the UAC prompt to compact the disk…</p>}
-      {optResult && optName !== d.name && (
-        <p className="wsl-opt-result">
-          Reclaimed {bytesToHuman(optResult.reclaimed_bytes)}
-          <span className="wsl-opt-delta"> ({bytesToHuman(optResult.before_bytes)} → {bytesToHuman(optResult.after_bytes)} · {optResult.method})</span>
-        </p>
-      )}
-      {optErr && optName !== d.name && <p className="wsl-opt-error">{optErr}</p>}
-      {exportInfo && exportName !== d.name && <p className="wsl-opt-result">{exportInfo}</p>}
-      {exportErrText && exportName !== d.name && <p className="wsl-opt-error">{exportErrText}</p>}
-      {migrateInfo && busyAction !== d.name && <p className="wsl-opt-result">{migrateInfo}</p>}
-    </div>
-  )
-}
-
-// ── Small shared bits ─────────────────────────────────────────────────────────
-
-function Modal({ icon, iconWarning, title, onClose, closable, children }: {
-  icon: React.ReactNode
-  iconWarning?: boolean
-  title: string
-  onClose: () => void
-  closable?: boolean
-  children: React.ReactNode
-}) {
-  return (
-    <div className="modal-overlay">
-      <div className="modal">
-        <div className="modal-header">
-          <div className={clsx('modal-icon-wrap', iconWarning && 'warning')}>{icon}</div>
-          <h2 className="modal-title">{title}</h2>
-          {closable && <button className="modal-close" onClick={onClose} title="Close"><X size={14} /></button>}
-        </div>
-        {children}
-      </div>
-    </div>
-  )
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="wsl-import-field">
-      <label className="wsl-import-label">{label}</label>
-      {children}
     </div>
   )
 }
