@@ -64,6 +64,7 @@ pub fn run() {
             wsl::wsl_check,
             wsl::wsl_list_distros,
             wsl::wsl_distro_metrics,
+            wsl::wsl_distro_stats,
             wsl::wsl_distro_extras,
             wsl::wsl_open_terminal,
             wsl::wsl_open_distro_folder,

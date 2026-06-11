@@ -840,6 +840,53 @@ fn parse_distro_metrics(out: &str) -> DistroMetrics {
     m
 }
 
+#[derive(serde::Serialize, Clone, Default)]
+pub struct DistroStats {
+    /// Instantaneous CPU usage summed over the distro's processes (can exceed
+    /// 100 on multi-core, like docker stats).
+    pub cpu_pct: f32,
+    /// Sum of the distro's process RSS, in bytes.
+    pub mem_used_bytes: u64,
+}
+
+/// Per-distro usage probe for the home dashboard chart. /proc/meminfo and
+/// loadavg are VM-global under WSL2 (all distros share one kernel), so this
+/// sums per-process jiffies (1 s delta) and RSS inside the distro's own PID
+/// namespace instead. POSIX/busybox-safe.
+const STATS_SCRIPT: &str = r#"
+HZ=$(getconf CLK_TCK 2>/dev/null); [ -z "$HZ" ] && HZ=100
+S1=$(awk '{sub(/^[^)]*\) /,""); s+=$12+$13} END {print s+0}' /proc/[0-9]*/stat 2>/dev/null)
+sleep 1
+S2=$(awk '{sub(/^[^)]*\) /,""); s+=$12+$13} END {print s+0}' /proc/[0-9]*/stat 2>/dev/null)
+echo "cpu=$(awk -v a="$S1" -v b="$S2" -v hz="$HZ" 'BEGIN{ if (hz<=0) hz=100; d=b-a; if (d<0) d=0; printf "%.1f", d*100/hz }')"
+echo "mem=$(awk '/^VmRSS:/{s+=$2} END {print s*1024+0}' /proc/[0-9]*/status 2>/dev/null)"
+"#;
+
+fn parse_distro_stats(out: &str) -> DistroStats {
+    let mut st = DistroStats::default();
+    for line in out.lines() {
+        let Some((k, v)) = line.trim().split_once('=') else { continue };
+        match k {
+            "cpu" => st.cpu_pct = v.trim().parse().unwrap_or(0.0),
+            "mem" => st.mem_used_bytes = v.trim().parse().unwrap_or(0),
+            _ => {}
+        }
+    }
+    st
+}
+
+/// Lightweight live CPU/memory snapshot for one distro (the home dashboard
+/// polls this for every running distro). Read-only, no terminal emission.
+#[tauri::command]
+pub async fn wsl_distro_stats(distro: String) -> Result<DistroStats, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let out = run_in_distro(&distro, STATS_SCRIPT)?;
+        Ok(parse_distro_stats(&out))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Snapshot a distro's live CPU/memory/swap/disk/network/process/service state.
 /// Read-only and polled (every 10 s by the UI), so it intentionally does not emit
 /// terminal lines — mirroring the silent `get_system_metrics` host poll. Selecting
@@ -1773,6 +1820,16 @@ docker=5
         assert_eq!(m.top_procs.len(), 2);
         assert_eq!(m.top_procs[0].command, "bash");
         assert_eq!(m.top_procs[1].command, "updatedb.plocat");
+    }
+
+    #[test]
+    fn parses_distro_stats() {
+        let st = parse_distro_stats("cpu=12.5\nmem=4358811648\n");
+        assert!((st.cpu_pct - 12.5).abs() < 1e-4);
+        assert_eq!(st.mem_used_bytes, 4358811648);
+        let empty = parse_distro_stats("");
+        assert_eq!(empty.cpu_pct, 0.0);
+        assert_eq!(empty.mem_used_bytes, 0);
     }
 
     #[test]

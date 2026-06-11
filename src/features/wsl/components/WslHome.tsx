@@ -1,16 +1,19 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
 import {
   Star, SquareTerminal, Terminal, ChevronRight, Search, HardDrive,
-  RotateCw, Square, Play, Upload, Settings2, History,
+  RotateCw, Square, Play, Upload, Settings2, History, Activity,
 } from 'lucide-react'
 import { useAppStore } from '../../../store/appStore'
 import * as api from '../api'
 import { readWslConfig } from '../api'
+import { getDiskStats } from '../../docker/api'
+import type { DiskStats } from '../../docker/types'
 import { getIniValue } from '../ini'
 import type { WslDistro, DistroExtras } from '../types'
 import { bytesToHuman, formatDuration, timeAgo } from '../../../utils/format'
 import { Modal, Field } from './Dialog'
+import LiveMetricsCharts, { getChartColors } from '../../../components/LiveMetricsCharts'
 
 type StateFilter = 'all' | 'running' | 'stopped'
 type Lifecycle = { d: WslDistro; action: 'stop' | 'restart' }
@@ -50,6 +53,11 @@ export default function WslHome({ distros, loading, onReload }: {
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [lifecycle, setLifecycle]   = useState<Lifecycle | null>(null)
 
+  // ── Live monitoring (per running distro, 10 s) + per-drive disk stats ──────
+  const theme = useAppStore(s => s.theme)
+  const [statHistory, setStatHistory] = useState<Map<string, { cpu: number[]; mem: number[] }>>(() => new Map())
+  const [drives, setDrives] = useState<Record<string, DiskStats>>({})
+
   // Header "Import distro" button opens the dialog via the store flag.
   useEffect(() => {
     if (importOpen) { setImportErr(null); setShowImport(true); setImportOpen(false) }
@@ -84,6 +92,48 @@ export default function WslHome({ distros, loading, onReload }: {
       if (d.running && !extras[d.name] && !extrasBusy.has(d.name) && !extrasFailed.has(d.name)) loadExtras(d.name)
     }
   }, [distros, extras, extrasBusy, extrasFailed, loadExtras])
+
+  // Poll live CPU/memory for every running distro (running only — the probe
+  // never boots a stopped distro). The probe itself takes ~1 s (jiffies delta).
+  const runningKey = distros.filter(d => d.running).map(d => d.name).join('|')
+  useEffect(() => {
+    const running = runningKey ? runningKey.split('|') : []
+    if (running.length === 0) { setStatHistory(new Map()); return }
+    let active = true
+    const poll = async () => {
+      const results = await Promise.all(running.map(async name => {
+        try { return { name, s: await api.wslDistroStats(name) } } catch { return null }
+      }))
+      if (!active) return
+      setStatHistory(prev => {
+        const next = new Map(prev)
+        for (const k of next.keys()) if (!running.includes(k)) next.delete(k)
+        for (const r of results) {
+          if (!r) continue
+          const h = next.get(r.name) ?? { cpu: [], mem: [] }
+          next.set(r.name, {
+            cpu: [...h.cpu.slice(-14), r.s.cpu_pct],
+            mem: [...h.mem.slice(-14), r.s.mem_used_bytes],
+          })
+        }
+        return next
+      })
+    }
+    poll()
+    const id = setInterval(poll, 10_000)
+    return () => { active = false; clearInterval(id) }
+  }, [runningKey])
+
+  // Capacity of every drive that hosts a VHD, for the Docker-style disk bars.
+  const driveLetters = [...new Set(distros.filter(d => d.vhd_path).map(d => d.vhd_path.slice(0, 1).toUpperCase()))].join('|')
+  useEffect(() => {
+    if (!driveLetters) return
+    for (const letter of driveLetters.split('|')) {
+      getDiskStats(`${letter}:\\`)
+        .then(s => setDrives(prev => ({ ...prev, [letter]: s })))
+        .catch(() => {})
+    }
+  }, [driveLetters])
 
   const busy = busyAction !== null
 
@@ -146,6 +196,39 @@ export default function WslHome({ distros, loading, onReload }: {
   // Operations only: terminal-opened info entries would drown out the real ones.
   const wslActivity = activityLog.filter(a => a.module === 'wsl' && a.outcome !== 'info').slice(0, 6)
 
+  // One stable colour per distro (registry order) shared by the charts and the
+  // disk bars, so a distro is the same colour everywhere.
+  const palette = useMemo(() => getChartColors(), [theme]) // eslint-disable-line react-hooks/exhaustive-deps
+  const colorOf = useCallback(
+    (name: string) => palette[Math.max(0, distros.findIndex(d => d.name === name)) % palette.length],
+    [palette, distros],
+  )
+
+  const monItems = useMemo(
+    () => distros
+      .filter(d => statHistory.has(d.name))
+      .map(d => {
+        const h = statHistory.get(d.name)!
+        return { name: d.name, cpu: h.cpu, mem: h.mem, color: colorOf(d.name) }
+      }),
+    [distros, statHistory, colorOf],
+  )
+
+  // VHD-bearing distros grouped by drive letter for the stacked bars.
+  const driveGroups = useMemo(() => {
+    const groups = new Map<string, WslDistro[]>()
+    for (const d of distros) {
+      if (!d.vhd_path || d.vhd_size_bytes <= 0) continue
+      const letter = d.vhd_path.slice(0, 1).toUpperCase()
+      groups.set(letter, [...(groups.get(letter) ?? []), d])
+    }
+    return [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+  }, [distros])
+  const multiDrive = driveGroups.length > 1
+
+  const segPct = (bytes: number, total: number) =>
+    total > 0 ? Math.max((bytes / total) * 100, bytes > 0 ? 0.3 : 0) : 0
+
   const filtered = distros.filter(d => {
     if (filter === 'running' && !d.running) return false
     if (filter === 'stopped' && d.running) return false
@@ -170,18 +253,6 @@ export default function WslHome({ distros, loading, onReload }: {
           <span className="hero-tile-value hero-tile-value--text">{distros.length}</span>
           <span className="hero-tile-sub">
             {stoppedCnt > 0 ? `${runningCnt} running · ${stoppedCnt} stopped` : 'all running'}
-          </span>
-        </div>
-        <div className="hero-tile">
-          <span className="hero-tile-label">On disk</span>
-          <span className="hero-tile-value hero-tile-value--text">{totalVhd > 0 ? bytesToHuman(totalVhd) : '--'}</span>
-          <span className="hero-tile-sub">total VHD size</span>
-        </div>
-        <div className="hero-tile">
-          <span className="hero-tile-label">Reclaimable</span>
-          <span className="hero-tile-value hero-tile-value--text">{scanned.length > 0 ? `≈ ${bytesToHuman(reclaimable)}` : '--'}</span>
-          <span className="hero-tile-sub">
-            {scanned.length > 0 ? `estimated from ${scanned.length} scan${scanned.length !== 1 ? 's' : ''}` : 'scan a distro to estimate'}
           </span>
         </div>
         <div className="hero-tile">
@@ -237,6 +308,102 @@ export default function WslHome({ distros, loading, onReload }: {
               onRestart={() => setLifecycle({ d, action: 'restart' })}
             />
           ))}
+        </div>
+      )}
+
+      {/* ── Live resource monitoring (Docker-style charts) ──────────── */}
+      <div className="wsl-bpanel wsl-home-panel">
+        <div className="wsl-bpanel-head">
+          <Activity size={13} /><span>Resource monitoring</span>
+          <span className="wsl-live-pill" style={{ marginLeft: 'auto' }}>
+            <span className="wsl-live-dot" />Live · every 10s
+          </span>
+        </div>
+        {monItems.length === 0 ? (
+          <p className="wsl-bpanel-empty">No live data yet: metrics appear for running distributions.</p>
+        ) : (
+          <>
+            <LiveMetricsCharts items={monItems} stepSecs={10} />
+            <p className="wsl-bpanel-note">Per-distro process totals; all WSL2 distros share one VM and kernel.</p>
+          </>
+        )}
+      </div>
+
+      {/* ── Disk usage (Docker-style drive bars) ────────────────────── */}
+      {driveGroups.length > 0 && (
+        <div className="wsl-bpanel wsl-home-panel">
+          <div className="wsl-bpanel-head"><HardDrive size={13} /><span>Disk usage</span></div>
+
+          <div className="drive-bars-grid">
+            {driveGroups.map(([letter, ds]) => {
+              const stats = drives[letter]
+              const used = stats ? stats.total_bytes - stats.free_bytes : 0
+              const vhdSum = ds.reduce((s, d) => s + d.vhd_size_bytes, 0)
+              const other = stats ? Math.max(0, used - vhdSum) : 0
+              return (
+                <div key={letter} className="drive-bar-group">
+                  <div className="drive-bar-header">
+                    <span className="drive-bar-title">{stats ? stats.drive_label : `${letter}:`}</span>
+                    {stats && (
+                      <span className="drive-bar-meta">
+                        {bytesToHuman(stats.total_bytes)} disk size · {bytesToHuman(stats.free_bytes)} free
+                      </span>
+                    )}
+                  </div>
+                  <div className="disk-stacked-bar">
+                    {ds.map(d => (
+                      <div
+                        key={d.name}
+                        className="disk-seg"
+                        style={{
+                          width: stats ? `${segPct(d.vhd_size_bytes, stats.total_bytes)}%` : undefined,
+                          flex: stats ? undefined : d.vhd_size_bytes,
+                          background: colorOf(d.name),
+                        }}
+                        title={`${d.name}: ${bytesToHuman(d.vhd_size_bytes)}`}
+                      />
+                    ))}
+                    {other > 0 && stats && (
+                      <div className="disk-seg disk-seg--other" style={{ width: `${segPct(other, stats.total_bytes)}%` }}
+                        title={`Other apps: ${bytesToHuman(other)}`} />
+                    )}
+                    {stats && (
+                      <div className="disk-seg disk-seg--free" style={{ width: `${segPct(stats.free_bytes, stats.total_bytes)}%` }}
+                        title={`Free: ${bytesToHuman(stats.free_bytes)}`} />
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          <div className="disk-legend">
+            {[...distros].filter(d => d.vhd_size_bytes > 0).sort((a, b) => b.vhd_size_bytes - a.vhd_size_bytes).map(d => {
+              const x = extras[d.name]
+              const est = x && x.disk_used_bytes > 0 ? Math.max(0, d.vhd_size_bytes - x.disk_used_bytes) : 0
+              return (
+                <div key={d.name} className="disk-legend-row">
+                  <span className="disk-legend-dot" style={{ background: colorOf(d.name) }} />
+                  <span className="disk-legend-label">
+                    {d.name}
+                    {multiDrive && <span className="disk-legend-drive-note">{d.vhd_path.slice(0, 2)}</span>}
+                  </span>
+                  <span className="disk-legend-size">{bytesToHuman(d.vhd_size_bytes)}</span>
+                  {est > 0 && <span className="disk-legend-free">{bytesToHuman(est)} freeable est.</span>}
+                </div>
+              )
+            })}
+          </div>
+
+          <div className="disk-summary">
+            <span>WSL: <strong>{bytesToHuman(totalVhd)}</strong></span>
+            {scanned.length > 0 && reclaimable > 0 && (
+              <span className="disk-summary-free">≈ {bytesToHuman(reclaimable)} freeable (est.)</span>
+            )}
+            <span className="disk-summary-note" title="VHD sizes from the Lxss registry; usage scanned inside running distros">
+              via registry + df
+            </span>
+          </div>
         </div>
       )}
 
