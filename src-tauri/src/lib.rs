@@ -63,6 +63,7 @@ pub fn run() {
             config::import_config,
             wsl::wsl_check,
             wsl::wsl_list_distros,
+            wsl::wsl_running_names,
             wsl::wsl_distro_metrics,
             wsl::wsl_distro_stats,
             wsl::wsl_distro_extras,
@@ -94,6 +95,9 @@ pub fn run() {
             wsl::wsl_optimize_vhd,
             wsl::wsl_export_distro,
             wsl::wsl_import_distro,
+            wsl::wsl_install_catalog,
+            wsl::wsl_default_install_dir,
+            wsl::wsl_install_download,
             wsl::pick_tar_file,
             wsl::pick_directory,
         ])

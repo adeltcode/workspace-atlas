@@ -1,5 +1,5 @@
-import { useEffect } from 'react'
-import { HardDrive, RefreshCw, Upload } from 'lucide-react'
+import { useEffect, useRef } from 'react'
+import { HardDrive, RefreshCw, Upload, Star } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore, type WslDistroTab } from '../store/appStore'
 import { useWslData } from '../features/wsl/hooks'
@@ -7,6 +7,7 @@ import DistroSwitcher from '../features/wsl/components/DistroSwitcher'
 import WslHome from '../features/wsl/components/WslHome'
 import WslDistroPage from '../features/wsl/components/WslDistroPage'
 import WslConfigTab from '../features/wsl/components/WslConfigTab'
+import WslInstallWizard from '../features/wsl/components/WslInstallWizard'
 
 const DISTRO_TAB_SUBTITLES: Record<WslDistroTab, string> = {
   overview:    'Live CPU, memory, disk, network, and process metrics inside this distro',
@@ -21,9 +22,10 @@ export default function WslView() {
   const selected     = useAppStore(s => s.wslSelectedDistro)
   const setSelected  = useAppStore(s => s.setWslSelectedDistro)
 
-  const { status, distros, loading, error, reload } = useWslData()
+  const { status, distros, loading, error, reload, refresh, refreshRunning } = useWslData()
   const available  = status?.available ?? false
   const runningCnt = distros.filter(d => d.running).length
+  const defaultDistro = distros.find(d => d.is_default)
 
   // Publish the distro list + badge to the store for the sidebar nav.
   useEffect(() => {
@@ -57,9 +59,28 @@ export default function WslView() {
     return () => window.removeEventListener('keydown', onKey)
   }, [reload])
 
+  // Keep the distro list live without the heavy registry/VHD scan on every tick:
+  //  • a cheap running-state poll every 5s catches start/stop (the common case),
+  //  • a full silent refresh on sub-view navigation + window focus catches distros
+  //    added/removed outside the app.
+  // The initial mount is skipped — useWslData already did the full load — so we
+  // don't double-fetch on open.
+  const didMount = useRef(false)
+  useEffect(() => {
+    if (!available) return
+    if (didMount.current) refresh()
+    else didMount.current = true
+
+    const id = setInterval(refreshRunning, 5000)
+    const onFocus = () => refresh()
+    window.addEventListener('focus', onFocus)
+    return () => { clearInterval(id); window.removeEventListener('focus', onFocus) }
+  }, [available, wslView, refresh, refreshRunning])
+
   const subtitle =
     wslView === 'dashboard'  ? 'All distributions at a glance: manage, clone, export, and optimize'
     : wslView === 'wslconfig' ? 'Machine-wide WSL2 settings, applied to every distribution'
+    : wslView === 'install'   ? 'Browse the catalog and install a new Linux distribution'
     : DISTRO_TAB_SUBTITLES[wslDistroTab]
 
   return (
@@ -78,6 +99,11 @@ export default function WslView() {
                     : 'not installed'}
                 </span>
               </>
+            )}
+            {available && defaultDistro && (
+              <span className="wsl-header-default" title={`${defaultDistro.name} is the default distribution`}>
+                <Star size={11} /> {defaultDistro.name}
+              </span>
             )}
             {available && wslView === 'distro' && <DistroSwitcher distros={distros} />}
           </div>
@@ -116,6 +142,7 @@ export default function WslView() {
         <div className="wsl-tab-content">
           {wslView === 'dashboard' && <WslHome distros={distros} loading={loading} onReload={reload} />}
           {wslView === 'distro'    && <WslDistroPage distros={distros} onReload={reload} />}
+          {wslView === 'install'   && <WslInstallWizard distros={distros} onReload={reload} />}
           {wslView === 'wslconfig' && (
             <WslConfigTab runningNames={distros.filter(d => d.running).map(d => d.name)} onAfterShutdown={reload} />
           )}

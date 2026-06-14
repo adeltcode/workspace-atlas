@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  Star, SquareTerminal, Terminal, ChevronRight, Search, HardDrive,
+  Star, Terminal, ChevronRight, Search, HardDrive,
   RotateCw, Square, Play, Upload, Settings2, History, Activity,
 } from 'lucide-react'
 import { useAppStore } from '../../../store/appStore'
@@ -13,6 +13,8 @@ import { getIniValue } from '../ini'
 import type { WslDistro, DistroExtras } from '../types'
 import { bytesToHuman, formatDuration, timeAgo } from '../../../utils/format'
 import { Modal, Field } from './Dialog'
+import { DistroLogo } from '../DistroLogo'
+import { useAsyncAction } from '../../../hooks/useAsyncAction'
 import LiveMetricsCharts, { getChartColors } from '../../../components/LiveMetricsCharts'
 
 type StateFilter = 'all' | 'running' | 'stopped'
@@ -50,7 +52,16 @@ export default function WslHome({ distros, loading, onReload }: {
   const [extrasFailed, setExtrasFailed] = useState<Set<string>>(() => new Set())
 
   // ── Lifecycle ────────────────────────────────────────────────────────────
+  // Two concerns, deliberately separate:
+  //  • `busyAction` (local) drives this dashboard's button-disable + "Working…"
+  //    labels — only dashboard-initiated start/stop/restart.
+  //  • `wslBusyDistro` (store) tells in-distro pollers everywhere to skip a distro
+  //    that's transitioning (here and on the distro/perf pages) so a probe can't
+  //    reboot it. Set by every op that boots/stops a distro, not just dashboard
+  //    ones — which is why it must not gate the dashboard's buttons.
   const [busyAction, setBusyAction] = useState<string | null>(null)
+  const busyDistro    = useAppStore(s => s.wslBusyDistro)
+  const setBusyDistro = useAppStore(s => s.setWslBusyDistro)
   const [lifecycle, setLifecycle]   = useState<Lifecycle | null>(null)
 
   // ── Live monitoring (per running distro, 10 s) + per-drive disk stats ──────
@@ -86,16 +97,19 @@ export default function WslHome({ distros, loading, onReload }: {
     }
   }, [])
 
-  // Auto-scan running distros once; never boot a stopped one silently.
+  // Auto-scan running distros once; never boot a stopped one silently. Skip the
+  // distro mid-action: when it's being stopped the list can still show it as
+  // running for a moment, and a scan would boot it straight back up.
   useEffect(() => {
     for (const d of distros) {
-      if (d.running && !extras[d.name] && !extrasBusy.has(d.name) && !extrasFailed.has(d.name)) loadExtras(d.name)
+      if (d.running && d.name !== busyDistro && !extras[d.name] && !extrasBusy.has(d.name) && !extrasFailed.has(d.name)) loadExtras(d.name)
     }
-  }, [distros, extras, extrasBusy, extrasFailed, loadExtras])
+  }, [distros, extras, extrasBusy, extrasFailed, loadExtras, busyDistro])
 
-  // Poll live CPU/memory for every running distro (running only — the probe
-  // never boots a stopped distro). The probe itself takes ~1 s (jiffies delta).
-  const runningKey = distros.filter(d => d.running).map(d => d.name).join('|')
+  // Poll live CPU/memory for every running distro. The probe runs a command
+  // inside the distro, so it would reboot one that's mid-stop — exclude the busy
+  // distro from the poll set. The probe itself takes ~1 s (jiffies delta).
+  const runningKey = distros.filter(d => d.running && d.name !== busyDistro).map(d => d.name).join('|')
   useEffect(() => {
     const running = runningKey ? runningKey.split('|') : []
     if (running.length === 0) { setStatHistory(new Map()); return }
@@ -136,19 +150,24 @@ export default function WslHome({ distros, loading, onReload }: {
   }, [driveLetters])
 
   const busy = busyAction !== null
+  // Synchronous re-entry guard shared by the lifecycle/import ops: blocks a second
+  // call (e.g. a same-frame double-click) before the disabled state has rendered.
+  const opInFlight = useRef(false)
 
   // Explicit navigation: opening a card IS allowed to change the active distro.
   // Card action buttons never touch the selection (decoupling contract).
   const openDistro = (name: string) => { setSelected(name); setWslView('distro') }
 
   const openTerminal = (d: WslDistro) => {
-    api.wslOpenTerminal(d.name).catch(() => {})
     addActivity({ module: 'wsl', action: `Opened terminal · ${d.name}`, outcome: 'info' })
+    return api.wslOpenTerminal(d.name).catch(() => {})
   }
 
   const runImport = async () => {
     const name = importName.trim()
     if (!importTar || !name || !importDir) return
+    if (opInFlight.current) return
+    opInFlight.current = true
     setImporting(true); setImportErr(null)
     try {
       await api.wslImportDistro(name, importDir, importTar)
@@ -158,12 +177,14 @@ export default function WslHome({ distros, loading, onReload }: {
     } catch (e) {
       setImportErr(String(e))
       addActivity({ module: 'wsl', action: `Imported ${name}`, outcome: 'failure', detail: String(e) })
-    } finally { setImporting(false) }
+    } finally { setImporting(false); opInFlight.current = false }
   }
 
   const runLifecycle = async (l: Lifecycle) => {
+    if (opInFlight.current) return
+    opInFlight.current = true
     const { d, action } = l
-    setLifecycle(null); setBusyAction(d.name)
+    setLifecycle(null); setBusyAction(d.name); setBusyDistro(d.name)
     try {
       if (action === 'stop') await api.wslTerminateDistro(d.name)
       else await api.wslRestartDistro(d.name)
@@ -172,27 +193,26 @@ export default function WslHome({ distros, loading, onReload }: {
       await onReload()
     } catch (e) {
       addActivity({ module: 'wsl', action: `${action} ${d.name}`, outcome: 'failure', detail: String(e) })
-    } finally { setBusyAction(null) }
+    } finally { setBusyAction(null); setBusyDistro(null); opInFlight.current = false }
   }
 
   const runStart = async (d: WslDistro) => {
-    setBusyAction(d.name)
+    if (opInFlight.current) return
+    opInFlight.current = true
+    setBusyAction(d.name); setBusyDistro(d.name)
     try {
       await api.wslStartDistro(d.name)
       addActivity({ module: 'wsl', action: `Started ${d.name}`, outcome: 'success' })
       await onReload()
     } catch (e) {
       addActivity({ module: 'wsl', action: `Start ${d.name}`, outcome: 'failure', detail: String(e) })
-    } finally { setBusyAction(null) }
+    } finally { setBusyAction(null); setBusyDistro(null); opInFlight.current = false }
   }
 
   // ── Derived ───────────────────────────────────────────────────────────────
-  const runningCnt = distros.filter(d => d.running).length
-  const stoppedCnt = distros.length - runningCnt
   const totalVhd   = distros.reduce((s, d) => s + d.vhd_size_bytes, 0)
   const scanned    = distros.filter(d => extras[d.name] && extras[d.name].disk_used_bytes > 0 && d.vhd_size_bytes > 0)
   const reclaimable = scanned.reduce((s, d) => s + Math.max(0, d.vhd_size_bytes - extras[d.name].disk_used_bytes), 0)
-  const defaultDistro = distros.find(d => d.is_default)
   // Operations only: terminal-opened info entries would drown out the real ones.
   const wslActivity = activityLog.filter(a => a.module === 'wsl' && a.outcome !== 'info').slice(0, 6)
 
@@ -246,24 +266,6 @@ export default function WslHome({ distros, loading, onReload }: {
 
   return (
     <div className="wsl-home">
-      {/* ── Summary tiles ───────────────────────────────────────────── */}
-      <div className="wsl-tiles">
-        <div className="hero-tile">
-          <span className="hero-tile-label">Distributions</span>
-          <span className="hero-tile-value hero-tile-value--text">{distros.length}</span>
-          <span className="hero-tile-sub">
-            {stoppedCnt > 0 ? `${runningCnt} running · ${stoppedCnt} stopped` : 'all running'}
-          </span>
-        </div>
-        <div className="hero-tile">
-          <span className="hero-tile-label">Default</span>
-          <span className="hero-tile-value hero-tile-value--text">{defaultDistro?.name ?? '--'}</span>
-          <span className="hero-tile-sub">
-            {defaultDistro ? `WSL ${defaultDistro.version === 1 ? '1' : '2'} · ${defaultDistro.running ? 'running' : 'stopped'}` : 'none set'}
-          </span>
-        </div>
-      </div>
-
       {/* ── Search + filter ─────────────────────────────────────────── */}
       <div className="wsl-distros-toolbar">
         <div className="wsl-distros-search">
@@ -300,7 +302,7 @@ export default function WslHome({ distros, loading, onReload }: {
               busy={busy}
               busyAction={busyAction}
               onOpen={() => openDistro(d.name)}
-              onScan={() => loadExtras(d.name)}
+              onScan={() => Promise.resolve(loadExtras(d.name)).then(() => onReload())}
               onTerminal={() => openTerminal(d)}
               onReveal={() => api.revealPath(d.vhd_path).catch(() => {})}
               onStart={() => runStart(d)}
@@ -320,7 +322,16 @@ export default function WslHome({ distros, loading, onReload }: {
           </span>
         </div>
         {monItems.length === 0 ? (
-          <p className="wsl-bpanel-empty">No live data yet: metrics appear for running distributions.</p>
+          distros.some(d => d.running) ? (
+            // Running distros exist but the first sample (~1s probe) hasn't landed —
+            // show a chart-shaped skeleton rather than a misleading "no data" notice.
+            <div className="wsl-mon-skeleton">
+              <div className="sk-box wsl-mon-sk" />
+              <div className="sk-box wsl-mon-sk" />
+            </div>
+          ) : (
+            <p className="wsl-bpanel-empty">No running distributions — start one to see live metrics.</p>
+          )
         ) : (
           <>
             <LiveMetricsCharts items={monItems} stepSecs={10} />
@@ -393,6 +404,15 @@ export default function WslHome({ distros, loading, onReload }: {
                 </div>
               )
             })}
+            {/* Key for the two neutral bar segments. */}
+            <div className="disk-legend-row disk-legend-row--key">
+              <span className="disk-legend-dot disk-legend-dot--other" />
+              <span className="disk-legend-label">Other apps &amp; system</span>
+            </div>
+            <div className="disk-legend-row disk-legend-row--key">
+              <span className="disk-legend-dot disk-legend-dot--free" />
+              <span className="disk-legend-label">Free space</span>
+            </div>
           </div>
 
           <div className="disk-summary">
@@ -514,10 +534,11 @@ function DistroCard({
   onStop: () => void
   onRestart: () => void
 }) {
+  const term = useAsyncAction()
   return (
     <div className="wsl-bcard">
       <button className="wsl-bcard-head" onClick={onOpen} title="Open this distribution's page">
-        <span className={clsx('wsl-distro-tile', !d.running && 'wsl-distro-tile--off')}><SquareTerminal size={15} /></span>
+        <DistroLogo name={d.name} size={30} dimmed={!d.running} />
         <span className="wsl-bcard-name">{d.name}</span>
         {d.is_default && <Star size={11} className="wsl-distro-star" />}
         <span className={clsx('wsl-state-pill', d.running ? 'wsl-state-pill--running' : 'wsl-state-pill--stopped')}>
@@ -542,7 +563,7 @@ function DistroCard({
             }
           >
             {x ? (x.package_manager === 'unknown' ? '--' : x.package_count)
-              : scanning ? '…'
+              : scanning ? <span className="sk-line wsl-bstat-sk" />
               : d.running ? '--'
               : <button className="wsl-scan-btn" onClick={onScan} title="Reads inside the distro and starts it if stopped">Scan</button>}
           </span>
@@ -579,7 +600,7 @@ function DistroCard({
             <Play size={12} /> {busyAction === d.name ? 'Starting…' : 'Start'}
           </button>
         )}
-        <button className="btn-secondary btn-sm wsl-bcard-primary" onClick={onTerminal} title="Open a terminal in this distro">
+        <button className="btn-secondary btn-sm wsl-bcard-primary" onClick={() => term.run(onTerminal)} disabled={term.pending} title="Open a terminal in this distro">
           <Terminal size={12} /> Terminal
         </button>
       </div>

@@ -660,6 +660,263 @@ pub async fn wsl_import_distro(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Install catalog (Microsoft ModernDistributions manifest + direct download)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// `wsl --install` hides byte-level download progress when its output is piped, so
+// to show real speed/size we resolve the distro's official image URL from
+// Microsoft's manifest, stream-download the .wsl (a tar.gz) ourselves with
+// progress events, verify its SHA-256, then `wsl --import` it.
+
+/// Microsoft's published distribution manifest (Name/FriendlyName + per-arch image
+/// URL and SHA-256). The same source `wsl --list --online` reads.
+const MANIFEST_URL: &str =
+    "https://raw.githubusercontent.com/microsoft/WSL/master/distributions/DistributionInfo.json";
+
+#[derive(serde::Serialize, Clone)]
+pub struct CatalogDistro {
+    /// Registration identifier, e.g. "Ubuntu-24.04".
+    pub name: String,
+    /// Human-readable label, e.g. "Ubuntu 24.04 LTS".
+    pub friendly_name: String,
+    /// Direct download URL of the .wsl image for this host's architecture.
+    pub url: String,
+    /// Expected SHA-256 of the image (empty when the manifest omits it).
+    pub sha256: String,
+}
+
+/// True on x86-64 hosts (use the Amd64 image); false selects the Arm64 image.
+fn host_is_amd64() -> bool {
+    std::env::consts::ARCH != "aarch64"
+}
+
+/// Flatten `ModernDistributions` (vendor → entries) into the host-arch catalog.
+/// Entries without an image URL for this architecture are skipped.
+fn parse_manifest(json: &str, amd64: bool) -> Vec<CatalogDistro> {
+    let key = if amd64 { "Amd64Url" } else { "Arm64Url" };
+    let v: serde_json::Value = match serde_json::from_str(json) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+    let mut out = Vec::new();
+    let Some(modern) = v.get("ModernDistributions").and_then(|m| m.as_object()) else {
+        return out;
+    };
+    for (_vendor, entries) in modern {
+        let Some(arr) = entries.as_array() else { continue };
+        for e in arr {
+            let name = e.get("Name").and_then(|x| x.as_str()).unwrap_or("");
+            if name.is_empty() {
+                continue;
+            }
+            let friendly = e.get("FriendlyName").and_then(|x| x.as_str()).unwrap_or(name);
+            let arch = e.get(key);
+            let url = arch.and_then(|u| u.get("Url")).and_then(|x| x.as_str()).unwrap_or("");
+            if url.is_empty() {
+                continue;
+            }
+            let sha = arch.and_then(|u| u.get("Sha256")).and_then(|x| x.as_str()).unwrap_or("");
+            out.push(CatalogDistro {
+                name: name.to_string(),
+                friendly_name: friendly.to_string(),
+                url: url.to_string(),
+                sha256: sha.to_string(),
+            });
+        }
+    }
+    out
+}
+
+/// Fetch and parse the install catalog for this host's architecture.
+#[tauri::command]
+pub async fn wsl_install_catalog(app: tauri::AppHandle) -> Result<Vec<CatalogDistro>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        emit_line(&app, format!("$ GET {}", MANIFEST_URL), false);
+        let body = http_agent()
+            .get(MANIFEST_URL)
+            .call()
+            .map_err(|e| format!("Could not fetch the distro catalog: {}", e))?
+            .into_string()
+            .map_err(|e| format!("Could not read the distro catalog: {}", e))?;
+        let list = parse_manifest(&body, host_is_amd64());
+        if list.is_empty() {
+            return Err("The distro catalog was empty or in an unexpected format.".to_string());
+        }
+        emit_line(&app, format!("  ✓ {} distro(s) in catalog", list.len()), false);
+        Ok(list)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Default install location for a downloaded distro: %LOCALAPPDATA%\WSL\<name>.
+fn default_install_dir(name: &str) -> Result<String, String> {
+    let base = std::env::var("LOCALAPPDATA").map_err(|_| "LOCALAPPDATA is not set".to_string())?;
+    Ok(format!("{}\\WSL\\{}", base, safe_name(name)))
+}
+
+#[tauri::command]
+pub async fn wsl_default_install_dir(name: String) -> Result<String, String> {
+    default_install_dir(&name)
+}
+
+/// Streamed-download progress, emitted on the `wsl-install-progress` event.
+#[derive(serde::Serialize, Clone)]
+struct InstallProgress {
+    /// "downloading" | "verifying" | "importing" | "done".
+    phase: String,
+    downloaded: u64,
+    /// Total bytes from Content-Length, or 0 when the server omits it.
+    total: u64,
+    bytes_per_sec: u64,
+    percent: f32,
+}
+
+fn emit_progress(app: &tauri::AppHandle, p: InstallProgress) {
+    app.emit("wsl-install-progress", p).ok();
+}
+
+/// Blocking HTTP agent for catalog/image fetches. A per-read timeout makes a
+/// stalled connection fail with an error instead of hanging the download forever
+/// (data flows continuously on a healthy transfer, so 60s only trips on a stall).
+fn http_agent() -> ureq::Agent {
+    use std::time::Duration;
+    ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(30))
+        .timeout_read(Duration::from_secs(60))
+        .build()
+}
+
+/// SHA-256 of a file via PowerShell's Get-FileHash (uppercase hex). Avoids pulling
+/// in a hashing crate just for one verification step.
+fn sha256_of(path: &str) -> Result<String, String> {
+    let cmd = format!("(Get-FileHash -Algorithm SHA256 -LiteralPath '{}').Hash", ps_single_quote(path));
+    let out = Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &cmd])
+        .output()
+        .map_err(|e| format!("Get-FileHash failed: {}", e))?;
+    if !out.status.success() {
+        return Err("Could not compute the file checksum.".to_string());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// Download a distro image with live progress, verify its checksum, and import it.
+/// `install_dir` empty falls back to the default location. Emits `wsl-install-progress`
+/// throughout and terminal lines at each milestone.
+#[tauri::command]
+pub async fn wsl_install_download(
+    app: tauri::AppHandle,
+    name: String,
+    url: String,
+    sha256: String,
+    install_dir: String,
+) -> Result<(), String> {
+    use std::io::{Read, Write};
+    use std::time::{Duration, Instant};
+
+    tauri::async_runtime::spawn_blocking(move || {
+        if !url.starts_with("https://") {
+            return Err("Refusing to download from a non-HTTPS URL.".to_string());
+        }
+
+        let dir = if install_dir.trim().is_empty() {
+            default_install_dir(&name)?
+        } else {
+            install_dir.clone()
+        };
+
+        let tmp = std::env::temp_dir().join(format!("atlas_wsl_{}.tar.gz", safe_name(&name)));
+        let tmp_str = tmp.to_string_lossy().to_string();
+
+        // ── Download ──────────────────────────────────────────────────────────
+        emit_line(&app, format!("$ GET {}", url), false);
+        let resp = http_agent()
+            .get(&url)
+            .call()
+            .map_err(|e| {
+                let msg = format!("Download failed: {}", e);
+                emit_line(&app, format!("  ✗ {}", msg), true);
+                msg
+            })?;
+        let total: u64 = resp.header("Content-Length").and_then(|s| s.parse().ok()).unwrap_or(0);
+
+        let mut reader = resp.into_reader();
+        let mut file = std::fs::File::create(&tmp).map_err(|e| format!("Cannot create temp file: {}", e))?;
+        let mut buf = [0u8; 65536];
+        let mut downloaded: u64 = 0;
+        let mut last_emit = Instant::now();
+        let mut last_bytes: u64 = 0;
+        emit_progress(&app, InstallProgress { phase: "downloading".into(), downloaded: 0, total, bytes_per_sec: 0, percent: 0.0 });
+
+        loop {
+            let n = match reader.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => n,
+                Err(e) => {
+                    std::fs::remove_file(&tmp).ok();
+                    let msg = format!("Download interrupted: {}", e);
+                    emit_line(&app, format!("  ✗ {}", msg), true);
+                    return Err(msg);
+                }
+            };
+            if let Err(e) = file.write_all(&buf[..n]) {
+                std::fs::remove_file(&tmp).ok();
+                return Err(format!("Cannot write download: {}", e));
+            }
+            downloaded += n as u64;
+
+            if last_emit.elapsed() >= Duration::from_millis(250) {
+                let dt = last_emit.elapsed().as_secs_f64();
+                let bps = if dt > 0.0 { (((downloaded - last_bytes) as f64) / dt) as u64 } else { 0 };
+                let percent = if total > 0 { (downloaded as f64 / total as f64 * 100.0) as f32 } else { 0.0 };
+                emit_progress(&app, InstallProgress { phase: "downloading".into(), downloaded, total, bytes_per_sec: bps, percent });
+                last_emit = Instant::now();
+                last_bytes = downloaded;
+            }
+        }
+        file.flush().ok();
+        drop(file);
+        emit_progress(&app, InstallProgress { phase: "downloading".into(), downloaded, total: total.max(downloaded), bytes_per_sec: 0, percent: 100.0 });
+        emit_line(&app, format!("  ✓ downloaded {} ({})", name, bytes_human(downloaded)), false);
+
+        // ── Verify ────────────────────────────────────────────────────────────
+        if !sha256.is_empty() {
+            emit_progress(&app, InstallProgress { phase: "verifying".into(), downloaded, total: downloaded, bytes_per_sec: 0, percent: 100.0 });
+            emit_line(&app, "$ Get-FileHash -Algorithm SHA256", false);
+            let actual = sha256_of(&tmp_str)?;
+            if !actual.eq_ignore_ascii_case(&sha256) {
+                std::fs::remove_file(&tmp).ok();
+                let msg = "Checksum mismatch — the download may be corrupted. Nothing was installed.".to_string();
+                emit_line(&app, format!("  ✗ {}", msg), true);
+                return Err(msg);
+            }
+            emit_line(&app, "  ✓ checksum verified (SHA-256)", false);
+        }
+
+        // ── Import ────────────────────────────────────────────────────────────
+        emit_progress(&app, InstallProgress { phase: "importing".into(), downloaded, total: downloaded, bytes_per_sec: 0, percent: 100.0 });
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            std::fs::remove_file(&tmp).ok();
+            return Err(format!("Cannot create install directory: {}", e));
+        }
+        emit_line(&app, format!("$ wsl --import {} \"{}\" \"{}\" --version 2", name, dir, tmp_str), false);
+        let imported = import_distro(&name, &dir, &tmp_str, 2);
+        std::fs::remove_file(&tmp).ok();
+        imported.map_err(|e| {
+            emit_line(&app, format!("  ✗ {}", e), true);
+            e
+        })?;
+
+        emit_progress(&app, InstallProgress { phase: "done".into(), downloaded, total: downloaded, bytes_per_sec: 0, percent: 100.0 });
+        emit_line(&app, format!("  ✓ installed {}", name), false);
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Live in-distro metrics (Dashboard)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -709,6 +966,9 @@ fn run_in_distro_as(distro: &str, user: Option<&str>, script: &str) -> Result<St
 pub struct TopProc {
     pub cpu_pct: f32,
     pub mem_pct: f32,
+    /// Resident set size in KiB — shown in the UI as a real MB figure, since the
+    /// per-process mem% rounds to 0.0 on a large-RAM VM.
+    pub rss_kb: u64,
     pub command: String,
 }
 
@@ -765,7 +1025,7 @@ echo "rxtx=$(awk -v i="$IFACE:" '$1==i{print $2" "$10}' /proc/net/dev 2>/dev/nul
 echo "zombies=$(ps -eo stat= 2>/dev/null | grep -c '^Z')"
 if command -v docker >/dev/null 2>&1; then echo "docker=$(docker ps -q 2>/dev/null | wc -l)"; else echo "docker=none"; fi
 echo "@top"
-ps -eo pcpu,pmem,comm --sort=-pcpu --no-headers 2>/dev/null | head -15
+ps -eo pcpu,pmem,rss,comm --sort=-pcpu --no-headers 2>/dev/null | head -15
 "#;
 
 fn parse_distro_metrics(out: &str) -> DistroMetrics {
@@ -778,14 +1038,15 @@ fn parse_distro_metrics(out: &str) -> DistroMetrics {
             continue;
         }
         if in_top {
-            // "pcpu pmem comm…"
+            // "pcpu pmem rss comm…"
             let mut it = line.split_whitespace();
             let cpu = it.next().and_then(|s| s.parse().ok());
             let mem = it.next().and_then(|s| s.parse().ok());
+            let rss = it.next().and_then(|s| s.parse().ok());
             let comm = it.collect::<Vec<_>>().join(" ");
-            if let (Some(cpu_pct), Some(mem_pct)) = (cpu, mem) {
+            if let (Some(cpu_pct), Some(mem_pct), Some(rss_kb)) = (cpu, mem, rss) {
                 if !comm.is_empty() {
-                    m.top_procs.push(TopProc { cpu_pct, mem_pct, command: comm });
+                    m.top_procs.push(TopProc { cpu_pct, mem_pct, rss_kb, command: comm });
                 }
             }
             continue;
@@ -925,6 +1186,56 @@ fn run_wsl(args: &[&str]) -> Result<(), String> {
     Err(if err.is_empty() { "wsl command failed".to_string() } else { err })
 }
 
+/// Whether `wsl -l --running -q` currently lists the distro. Used to confirm a
+/// lifecycle change has actually taken effect before the UI re-reads the list.
+fn distro_is_running(distro: &str) -> bool {
+    Command::new("wsl")
+        .env("WSL_UTF8", "1")
+        .args(["-l", "--running", "-q"])
+        .output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).lines().any(|l| l.trim() == distro))
+        .unwrap_or(false)
+}
+
+/// Poll until the distro's running state matches `want` (or ~3s elapses). WSL's
+/// running list lags `--terminate` and first boot by a moment, so without this a
+/// reload fired right after a lifecycle action can capture the stale state and
+/// leave the UI showing the wrong status.
+fn wait_for_running_state(distro: &str, want: bool) {
+    use std::time::Duration;
+    for _ in 0..15 {
+        if distro_is_running(distro) == want {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+}
+
+/// Names of currently-running distros (`wsl -l --running -q`). A lightweight poll
+/// the UI runs frequently to keep running/stopped status fresh without the heavy
+/// registry + per-VHD list scan. No terminal emission (it would flood the panel).
+#[tauri::command]
+pub async fn wsl_running_names() -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let out = Command::new("wsl")
+            .env("WSL_UTF8", "1")
+            .args(["-l", "--running", "-q"])
+            .output()
+            .map_err(|e| format!("Failed to list running distros: {}", e))?;
+        if !out.status.success() {
+            return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+        }
+        Ok(String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Capture a distro's default login user (the user `wsl -d <distro>` logs in as).
 /// Returns None for root or on failure. `wsl --import` resets the default user to
 /// root, so import-based ops use this to restore it afterwards.
@@ -1011,16 +1322,18 @@ fn parse_distro_extras(out: &str) -> DistroExtras {
 }
 
 /// Open an interactive shell into a distro. Prefers Windows Terminal; falls back
-/// to a console window. Detached — the GUI does not wait on it.
+/// to a console window. Detached — the GUI does not wait on it. `--cd ~` starts in
+/// the Linux user's home directory rather than the Windows path the app launched
+/// from (which would land the shell on a /mnt/… mount).
 #[tauri::command]
 pub async fn wsl_open_terminal(app: tauri::AppHandle, distro: String) -> Result<(), String> {
-    emit_line(&app, format!("$ wt wsl -d {}", distro), false);
-    if Command::new("wt.exe").args(["wsl.exe", "-d", &distro]).spawn().is_ok() {
+    emit_line(&app, format!("$ wt wsl -d {} --cd ~", distro), false);
+    if Command::new("wt.exe").args(["wsl.exe", "-d", &distro, "--cd", "~"]).spawn().is_ok() {
         return Ok(());
     }
     // No Windows Terminal — open a classic console window instead.
     Command::new("cmd")
-        .args(["/c", "start", "", "wsl.exe", "-d", &distro])
+        .args(["/c", "start", "", "wsl.exe", "-d", &distro, "--cd", "~"])
         .spawn()
         .map_err(|e| {
             emit_line(&app, format!("  ✗ {}", e), true);
@@ -1064,6 +1377,7 @@ pub async fn wsl_terminate_distro(app: tauri::AppHandle, distro: String) -> Resu
             emit_line(&app, format!("  ✗ {}", e), true);
             e
         })?;
+        wait_for_running_state(&distro, false);
         emit_line(&app, format!("  ✓ stopped {}", distro), false);
         Ok(())
     })
@@ -1087,6 +1401,7 @@ pub async fn wsl_restart_distro(app: tauri::AppHandle, distro: String) -> Result
             emit_line(&app, format!("  ✗ {}", e), true);
             e
         })?;
+        wait_for_running_state(&distro, true);
         emit_line(&app, format!("  ✓ restarted {}", distro), false);
         Ok(())
     })
@@ -1103,6 +1418,7 @@ pub async fn wsl_start_distro(app: tauri::AppHandle, distro: String) -> Result<(
             emit_line(&app, format!("  ✗ {}", e), true);
             e
         })?;
+        wait_for_running_state(&distro, true);
         emit_line(&app, format!("  ✓ started {}", distro), false);
         Ok(())
     })
@@ -1690,11 +2006,15 @@ pub async fn wsl_check() -> WslStatus {
 /// Reading the registry directly (rather than parsing `wsl -l -v`) avoids the
 /// UTF-16 console-encoding pitfalls and gives us the BasePath needed to locate
 /// each distro's `ext4.vhdx`.
+/// `silent` skips terminal-output events so background polling does not flood the
+/// terminal panel with a list command every few seconds.
 #[tauri::command]
-pub async fn wsl_list_distros(app: tauri::AppHandle) -> Result<Vec<WslDistro>, String> {
+pub async fn wsl_list_distros(app: tauri::AppHandle, silent: bool) -> Result<Vec<WslDistro>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        emit_line(&app, "$ Get-ChildItem 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Lxss'", false);
-        emit_line(&app, "$ wsl -l --running", false);
+        if !silent {
+            emit_line(&app, "$ Get-ChildItem 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Lxss'", false);
+            emit_line(&app, "$ wsl -l --running", false);
+        }
         // WSL_UTF8=1 makes `wsl.exe` emit UTF-8 instead of UTF-16, so the
         // running-distro list reads cleanly.
         let script = r#"
@@ -1764,7 +2084,9 @@ $list | ConvertTo-Json -Compress -Depth 3
             .filter(|d| !d.name.is_empty())
             .collect::<Vec<WslDistro>>();
 
-        emit_line(&app, format!("  ✓ {} distro(s)", distros.len()), false);
+        if !silent {
+            emit_line(&app, format!("  ✓ {} distro(s)", distros.len()), false);
+        }
         Ok(distros)
     })
     .await
@@ -1795,8 +2117,8 @@ rxtx=12345 67890
 zombies=0
 docker=5
 @top
-11.7 0.0 bash
-8.9 0.5 updatedb.plocat
+11.7 0.0 8920 bash
+8.9 0.5 204800 updatedb.plocat
 ";
         let m = parse_distro_metrics(sample);
         assert_eq!(m.cpu_count, 12);
@@ -1819,7 +2141,9 @@ docker=5
         assert_eq!(m.docker_running, 5);
         assert_eq!(m.top_procs.len(), 2);
         assert_eq!(m.top_procs[0].command, "bash");
+        assert_eq!(m.top_procs[0].rss_kb, 8920);
         assert_eq!(m.top_procs[1].command, "updatedb.plocat");
+        assert_eq!(m.top_procs[1].rss_kb, 204800);
     }
 
     #[test]
@@ -1899,6 +2223,42 @@ docker=5
         // Baseline can occasionally exceed interactive due to scheduling noise.
         let p = parse_shell_profile("baseline=0.050\ninteractive=0.030\n");
         assert_eq!(p.rc_overhead_secs, 0.0);
+    }
+
+    #[test]
+    fn parses_manifest_amd64() {
+        let sample = r#"{
+          "ModernDistributions": {
+            "Ubuntu": [
+              { "Name": "Ubuntu", "FriendlyName": "Ubuntu", "Default": true,
+                "Amd64Url": { "Url": "https://example/u-amd64.wsl", "Sha256": "AABB" },
+                "Arm64Url": { "Url": "https://example/u-arm64.wsl", "Sha256": "CCDD" } },
+              { "Name": "Ubuntu-24.04", "FriendlyName": "Ubuntu 24.04 LTS",
+                "Amd64Url": { "Url": "https://example/u24-amd64.wsl", "Sha256": "EEFF" } }
+            ],
+            "Debian": [
+              { "Name": "Debian", "FriendlyName": "Debian GNU/Linux",
+                "Arm64Url": { "Url": "https://example/d-arm64.wsl", "Sha256": "1122" } }
+            ]
+          }
+        }"#;
+        let list = parse_manifest(sample, true);
+        // Debian has no Amd64Url, so it is skipped on an amd64 host.
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].name, "Ubuntu");
+        assert_eq!(list[0].url, "https://example/u-amd64.wsl");
+        assert_eq!(list[0].sha256, "AABB");
+        assert_eq!(list[1].friendly_name, "Ubuntu 24.04 LTS");
+    }
+
+    #[test]
+    fn parses_manifest_arm64_and_empty() {
+        let sample = r#"{ "ModernDistributions": { "Debian": [
+            { "Name": "Debian", "FriendlyName": "Debian",
+              "Arm64Url": { "Url": "https://example/d-arm64.wsl", "Sha256": "1122" } } ] } }"#;
+        assert_eq!(parse_manifest(sample, true).len(), 0);  // no amd64 url
+        assert_eq!(parse_manifest(sample, false).len(), 1); // arm64 present
+        assert!(parse_manifest("not json", true).is_empty());
     }
 
     #[test]

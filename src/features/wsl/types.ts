@@ -21,6 +21,28 @@ export interface WslConfig {
   exists: boolean
 }
 
+/** An installable distribution resolved from Microsoft's ModernDistributions manifest. */
+export interface CatalogDistro {
+  /** Registration identifier, e.g. "Ubuntu-24.04". */
+  name: string
+  /** Human-readable label, e.g. "Ubuntu 24.04 LTS". */
+  friendly_name: string
+  /** Direct download URL of the .wsl image for this host's architecture. */
+  url: string
+  /** Expected SHA-256 of the image (empty when the manifest omits it). */
+  sha256: string
+}
+
+/** Live download/install progress, streamed on the `wsl-install-progress` event. */
+export interface InstallProgress {
+  phase: 'downloading' | 'verifying' | 'importing' | 'done'
+  downloaded: number
+  /** Total bytes from Content-Length, or 0 when unknown. */
+  total: number
+  bytes_per_sec: number
+  percent: number
+}
+
 export interface OptimizeResult {
   before_bytes: number
   after_bytes: number
@@ -45,6 +67,8 @@ export interface WslConfigBackup {
 export interface TopProc {
   cpu_pct: number
   mem_pct: number
+  /** Resident set size in KiB (shown as MB; per-process mem% rounds to 0 on big VMs). */
+  rss_kb: number
   command: string
 }
 

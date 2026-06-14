@@ -225,6 +225,14 @@ export default function Sidebar() {
                   </li>
                   <li>
                     <button
+                      className={clsx('sidebar-child-item', wslView === 'install' && 'active')}
+                      onClick={() => goWslView('install')}
+                    >
+                      <span className="sidebar-child-label">Install distro</span>
+                    </button>
+                  </li>
+                  <li>
+                    <button
                       className={clsx('sidebar-child-item', wslView === 'wslconfig' && 'active')}
                       onClick={() => goWslView('wslconfig')}
                     >

@@ -1,8 +1,19 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { WslStatus, WslDistro, WslConfig, OptimizeResult, ExportResult, WslConfigBackup, DistroMetrics, DistroStats, DistroExtras, MigrateResult, ServiceList, ServiceDetail, BenchmarkResult, ShellProfile } from './types'
+import type { WslStatus, WslDistro, WslConfig, OptimizeResult, ExportResult, WslConfigBackup, DistroMetrics, DistroStats, DistroExtras, MigrateResult, ServiceList, ServiceDetail, BenchmarkResult, ShellProfile, CatalogDistro } from './types'
 
 export const wslCheck       = () => invoke<WslStatus>('wsl_check')
-export const wslListDistros = () => invoke<WslDistro[]>('wsl_list_distros')
+/** Pass `silent` for background polling so the list command stays out of the terminal panel. */
+export const wslListDistros = (silent = false) => invoke<WslDistro[]>('wsl_list_distros', { silent })
+/** Cheap running-state poll (`wsl -l --running -q`) — names of currently-running distros. */
+export const wslRunningNames = () => invoke<string[]>('wsl_running_names')
+
+/** Installable distros resolved from Microsoft's ModernDistributions manifest. */
+export const wslInstallCatalog  = () => invoke<CatalogDistro[]>('wsl_install_catalog')
+/** Default install location (%LOCALAPPDATA%\WSL\<name>) for a downloaded distro. */
+export const wslDefaultInstallDir = (name: string) => invoke<string>('wsl_default_install_dir', { name })
+/** Stream-download a distro image (progress on `wsl-install-progress`), verify, and import it. */
+export const wslInstallDownload = (name: string, url: string, sha256: string, installDir: string) =>
+  invoke<void>('wsl_install_download', { name, url, sha256, installDir })
 export const wslDistroMetrics = (distro: string) => invoke<DistroMetrics>('wsl_distro_metrics', { distro })
 export const wslDistroStats   = (distro: string) => invoke<DistroStats>('wsl_distro_stats', { distro })
 export const wslDistroExtras  = (distro: string) => invoke<DistroExtras>('wsl_distro_extras', { distro })

@@ -73,10 +73,11 @@ function ProcList({ procs, kind, limit }: {
   kind: 'cpu' | 'mem'
   limit: number
 }) {
-  const sorted = [...procs]
-    .sort((a, b) => (kind === 'cpu' ? b.cpu_pct - a.cpu_pct : b.mem_pct - a.mem_pct))
-    .slice(0, limit)
-  const max = Math.max(1, ...sorted.map(p => (kind === 'cpu' ? p.cpu_pct : p.mem_pct)))
+  // CPU column is a percentage; memory column shows real RSS (in bytes), since the
+  // per-process mem% rounds to 0.0 on a large-RAM VM and reads as broken.
+  const metric = (p: DistroMetrics['top_procs'][number]) => (kind === 'cpu' ? p.cpu_pct : p.rss_kb)
+  const sorted = [...procs].sort((a, b) => metric(b) - metric(a)).slice(0, limit)
+  const max = Math.max(1, ...sorted.map(metric))
   return (
     <div className="stats-col">
       <div className="wsl-proc-head">
@@ -85,19 +86,18 @@ function ProcList({ procs, kind, limit }: {
       </div>
       {sorted.length === 0 ? (
         <p className="overview-empty-row">No process data</p>
-      ) : sorted.map((p, i) => {
-        const v = kind === 'cpu' ? p.cpu_pct : p.mem_pct
-        return (
-          <div key={`${p.command}-${i}`} className="stats-row">
-            <span className="stats-name" title={p.command}>{p.command}</span>
-            <div className="stats-bar-wrap">
-              <div className={clsx('stats-bar', kind === 'cpu' ? 'stats-bar--cpu' : 'stats-bar--mem')}
-                style={{ width: `${(v / max) * 100}%` }} />
-            </div>
-            <span className="stats-value">{v.toFixed(1)}%</span>
+      ) : sorted.map((p, i) => (
+        <div key={`${p.command}-${i}`} className="stats-row">
+          <span className="stats-name" title={p.command}>{p.command}</span>
+          <div className="stats-bar-wrap">
+            <div className={clsx('stats-bar', kind === 'cpu' ? 'stats-bar--cpu' : 'stats-bar--mem')}
+              style={{ width: `${(metric(p) / max) * 100}%` }} />
           </div>
-        )
-      })}
+          <span className="stats-value">
+            {kind === 'cpu' ? `${p.cpu_pct.toFixed(1)}%` : bytesToHuman(p.rss_kb * 1024)}
+          </span>
+        </div>
+      ))}
     </div>
   )
 }
@@ -110,33 +110,58 @@ function initChipClass(m: DistroMetrics): string {
   return 'wsl-chip--ok'
 }
 
-export default function WslDashboardTab({ distros }: { distros: WslDistro[] }) {
+export default function WslDashboardTab({ distros, onReload }: {
+  distros: WslDistro[]
+  onReload: () => Promise<void> | void
+}) {
   const selected = useAppStore(s => s.wslSelectedDistro) ?? ''
-  const [metrics, setMetrics] = useState<DistroMetrics | null>(null)
+  const busyDistro = useAppStore(s => s.wslBusyDistro)
+  // Metrics are cached per distro in the store, so reopening this page (tab switch,
+  // distro switch, leaving and returning) shows the last sample immediately and
+  // refreshes in the background — no skeleton flash every time.
+  const metrics = useAppStore(s => s.wslMetrics[selected]) ?? null
+  const setWslMetric = useAppStore(s => s.setWslMetric)
   const [error, setError]     = useState<string | null>(null)
   const [expandProc, setExpandProc] = useState(false)
-  // Distros the user opted to start by loading metrics. Reading a stopped distro
-  // boots it, so we never poll one silently.
-  const [activated, setActivated] = useState<Set<string>>(() => new Set())
+  const [starting, setStarting] = useState(false)
   // .wslconfig limits (VM-wide; shared across distros).
   const [limits, setLimits] = useState<{ memory?: string; processors?: string; swap?: string }>({})
 
   const current  = distros.find(d => d.name === selected)
   const running  = current?.running ?? false
-  const polling  = !!selected && (running || activated.has(selected))
+  // What we render follows the distro's real running state (kept fresh by the
+  // list poll) so this page never contradicts the title. Whether we *probe* is a
+  // separate decision: skip a distro mid lifecycle action so the metrics probe
+  // can't reboot one that's being stopped.
+  const shouldPoll = running && selected !== busyDistro
 
   const load = useCallback(async () => {
     if (!selected) return
     try {
-      setMetrics(await api.wslDistroMetrics(selected))
+      setWslMetric(selected, await api.wslDistroMetrics(selected))
       setError(null)
     } catch (e) {
       setError(String(e))
     }
-  }, [selected])
+  }, [selected, setWslMetric])
 
-  // Reset view when the distro changes.
-  useEffect(() => { setMetrics(null); setError(null) }, [selected])
+  // Explicit start from the offline card: actually boot the distro and refresh
+  // the shared list, so every view updates to "running" together.
+  const startDistro = async () => {
+    setStarting(true); setError(null)
+    try {
+      await api.wslStartDistro(selected)
+      await onReload()
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setStarting(false)
+    }
+  }
+
+  // Clear only the transient error when the distro changes; metrics come from the
+  // per-distro cache so there's no reset-to-skeleton on switch.
+  useEffect(() => { setError(null) }, [selected])
 
   // Read .wslconfig limits once (global, not per-distro).
   useEffect(() => {
@@ -149,14 +174,14 @@ export default function WslDashboardTab({ distros }: { distros: WslDistro[] }) {
       .catch(() => {})
   }, [])
 
-  // Poll every 10 s while a started distro is selected.
+  // Poll every 10 s while a running, non-transitioning distro is selected.
   useEffect(() => {
-    if (!polling) return
+    if (!shouldPoll) return
     let active = true
     load()
     const id = setInterval(() => { if (active) load() }, POLL_MS)
     return () => { active = false; clearInterval(id) }
-  }, [polling, load])
+  }, [shouldPoll, load])
 
   if (distros.length === 0) {
     return <p className="empty-state" style={{ marginTop: 8 }}>No distributions found.</p>
@@ -174,28 +199,29 @@ export default function WslDashboardTab({ distros }: { distros: WslDistro[] }) {
 
   return (
     <div className="wsl-dashboard">
-      {!polling && (
+      {!running && (
         <div className="offline-card">
           <p className="offline-title">{selected} is stopped</p>
           <p className="offline-desc">
-            Loading live metrics will start this distribution. Nothing runs until you choose to.
+            Start it to load live metrics. Nothing runs until you choose to.
           </p>
-          <button className="btn-filled btn-filled--accent" onClick={() => setActivated(prev => new Set(prev).add(selected))}>
-            <Play size={13} /> Start &amp; load metrics
+          {error && <p className="wsl-opt-error" style={{ margin: '0 0 12px' }}>{error}</p>}
+          <button className="btn-filled btn-filled--accent" onClick={startDistro} disabled={starting}>
+            <Play size={13} /> {starting ? 'Starting…' : 'Start distribution'}
           </button>
         </div>
       )}
 
-      {error && (
+      {running && error && (
         <div className="error-banner">
           <span className="error-title">Error</span>
           <span className="error-msg">{error}</span>
         </div>
       )}
 
-      {polling && !metrics && !error && <DashboardSkeleton />}
+      {running && !metrics && !error && <DashboardSkeleton />}
 
-      {polling && metrics && (
+      {running && metrics && (
         <>
           {/* ── Resource monitoring ─────────────────────────────────── */}
           <div className="wsl-dash-rm">

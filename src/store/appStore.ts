@@ -1,12 +1,13 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { LogEntry, DockerStatus, DockerSystemDf, DockerImage, DockerContainer, DockerVolume, ComposeProject } from '../features/docker/types'
+import type { DistroMetrics } from '../features/wsl/types'
 import type { TerminalLine } from '../types/terminal'
 
 export type View      = 'dashboard' | 'docker' | 'wsl' | 'packages' | 'automation' | 'settings'
 export type Theme     = 'dark' | 'light'
 export type DockerTab = 'overview' | 'images' | 'containers' | 'volumes' | 'networks' | 'compose' | 'backup-volumes' | 'backup-compose' | 'prune' | 'log'
-export type WslView      = 'dashboard' | 'distro' | 'wslconfig'
+export type WslView      = 'dashboard' | 'distro' | 'wslconfig' | 'install'
 export type WslDistroTab = 'overview' | 'startup' | 'performance' | 'config'
 
 /** Lightweight distro entry for the sidebar grandchild list. */
@@ -81,6 +82,20 @@ interface AppState {
   /** Header "Import distro" button → opens the dialog inside the Distributions tab. */
   wslImportOpen: boolean
   setWslImportOpen: (open: boolean) => void
+  /** Distro currently mid lifecycle action (start/stop/restart). In-distro pollers
+   *  (metrics/stats/extras) must skip it so a probe doesn't reboot a distro that is
+   *  being stopped. Ephemeral. */
+  wslBusyDistro: string | null
+  setWslBusyDistro: (name: string | null) => void
+  /** Catalog distro whose download/import is in flight. Survives the install
+   *  wizard unmounting (it runs in the backend), so re-opening the wizard can't
+   *  start a second concurrent install. Ephemeral. */
+  wslInstalling: string | null
+  setWslInstalling: (name: string | null) => void
+  /** Last-seen live metrics per distro, so reopening a distro's overview shows
+   *  them instantly instead of a skeleton while the next probe runs. Ephemeral. */
+  wslMetrics: Record<string, DistroMetrics>
+  setWslMetric: (distro: string, metrics: DistroMetrics) => void
 
   // ── Layout sizes (persisted)
   sidebarWidth: number
@@ -209,6 +224,12 @@ export const useAppStore = create<AppState>()(
       setWslBadges:         (wslBadges) => set({ wslBadges }),
       wslImportOpen:        false,
       setWslImportOpen:     (wslImportOpen) => set({ wslImportOpen }),
+      wslBusyDistro:        null,
+      setWslBusyDistro:     (wslBusyDistro) => set({ wslBusyDistro }),
+      wslInstalling:        null,
+      setWslInstalling:     (wslInstalling) => set({ wslInstalling }),
+      wslMetrics:           {},
+      setWslMetric:         (distro, metrics) => set((s) => ({ wslMetrics: { ...s.wslMetrics, [distro]: metrics } })),
 
       // ── Layout sizes (sidebarWidth 0 = auto/fit-content)
       sidebarWidth:  0,

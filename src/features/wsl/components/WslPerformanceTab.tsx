@@ -14,11 +14,15 @@ function fmtMs(ms: number): string {
   return ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${ms} ms`
 }
 
-export default function WslPerformanceTab({ distros }: { distros: WslDistro[] }) {
+export default function WslPerformanceTab({ distros, onReload }: {
+  distros: WslDistro[]
+  onReload: () => Promise<void> | void
+}) {
   const selected = useAppStore(s => s.wslSelectedDistro) ?? ''
   const addActivity      = useAppStore(s => s.addActivity)
   const benchmarks       = useAppStore(s => s.wslBenchmarks)
   const addWslBenchmark  = useAppStore(s => s.addWslBenchmark)
+  const setBusyDistro    = useAppStore(s => s.setWslBusyDistro)
 
   const [confirmBench, setConfirmBench] = useState(false)
   const [benching, setBenching] = useState(false)
@@ -34,31 +38,40 @@ export default function WslPerformanceTab({ distros }: { distros: WslDistro[] })
 
   const history = benchmarks[selected] ?? []
 
+  // Benchmark and profile both leave the distro running (and the benchmark first
+  // terminates it), so they mark it busy to keep other views' probes off it during
+  // the run, then refresh the shared list so every view reflects the new state.
   const runBenchmark = async () => {
     setConfirmBench(false)
     setBenching(true)
     setBenchErr(null)
+    setBusyDistro(selected)
     try {
       const r = await api.wslBenchmarkBoot(selected)
       addWslBenchmark(selected, r.boot_ms)
       addActivity({ module: 'wsl', action: `Boot benchmark ${selected}`, outcome: 'success', detail: fmtMs(r.boot_ms) })
+      await onReload()
     } catch (e) {
       setBenchErr(String(e))
       addActivity({ module: 'wsl', action: `Boot benchmark ${selected}`, outcome: 'failure', detail: String(e) })
     } finally {
       setBenching(false)
+      setBusyDistro(null)
     }
   }
 
   const runProfile = async () => {
     setProfiling(true)
     setProfileErr(null)
+    setBusyDistro(selected)
     try {
       setProfile(await api.wslProfileShell(selected))
+      await onReload()
     } catch (e) {
       setProfileErr(String(e))
     } finally {
       setProfiling(false)
+      setBusyDistro(null)
     }
   }
 

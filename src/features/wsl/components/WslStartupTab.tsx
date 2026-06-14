@@ -134,17 +134,19 @@ function ServiceRow({ distro, svc, onToggle }: {
   )
 }
 
-export default function WslStartupTab({ distros, onGoToConf }: {
+export default function WslStartupTab({ distros, onReload, onGoToConf }: {
   distros: WslDistro[]
+  onReload: () => Promise<void> | void
   onGoToConf: () => void
 }) {
   const addActivity = useAppStore(s => s.addActivity)
   const selected    = useAppStore(s => s.wslSelectedDistro) ?? ''
+  const busyDistro  = useAppStore(s => s.wslBusyDistro)
 
   const [data, setData]       = useState<ServiceList | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState<string | null>(null)
-  const [activated, setActivated] = useState<Set<string>>(() => new Set())
+  const [starting, setStarting] = useState(false)
   const [query, setQuery]     = useState('')
   const [filter, setFilter]   = useState<Filter>('all')
   const [pending, setPending] = useState<{ svc: Service; enable: boolean } | null>(null)
@@ -152,7 +154,6 @@ export default function WslStartupTab({ distros, onGoToConf }: {
 
   const current = distros.find(d => d.name === selected)
   const running = current?.running ?? false
-  const ready   = !!selected && (running || activated.has(selected))
 
   const load = useCallback(async () => {
     if (!selected) return
@@ -167,8 +168,23 @@ export default function WslStartupTab({ distros, onGoToConf }: {
     }
   }, [selected])
 
+  // Explicit start: boot for real and refresh the shared list so every view syncs.
+  const startDistro = async () => {
+    setStarting(true); setError(null)
+    try {
+      await api.wslStartDistro(selected)
+      await onReload()
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setStarting(false)
+    }
+  }
+
   useEffect(() => { setData(null); setError(null); setQuery(''); setFilter('all') }, [selected])
-  useEffect(() => { if (ready) load() }, [ready, load])
+  // Load services only for a running, non-transitioning distro — the probe would
+  // otherwise boot a distro that's being stopped.
+  useEffect(() => { if (running && selected !== busyDistro) load() }, [running, busyDistro, selected, load])
 
   const confirmToggle = async () => {
     if (!pending) return
@@ -212,17 +228,18 @@ export default function WslStartupTab({ distros, onGoToConf }: {
 
   return (
     <div className="wsl-startup">
-      {!ready && (
+      {!running && (
         <div className="offline-card" style={{ marginTop: 16 }}>
           <p className="offline-title">{selected} is stopped</p>
-          <p className="offline-desc">Listing services reads inside the distro and will start it.</p>
-          <button className="btn-filled btn-filled--accent" onClick={() => setActivated(prev => new Set(prev).add(selected))}>
-            <Play size={13} /> Start &amp; list services
+          <p className="offline-desc">Listing services needs the distro running. Start it to continue.</p>
+          {error && <p className="wsl-opt-error" style={{ margin: '0 0 12px' }}>{error}</p>}
+          <button className="btn-filled btn-filled--accent" onClick={startDistro} disabled={starting}>
+            <Play size={13} /> {starting ? 'Starting…' : 'Start distribution'}
           </button>
         </div>
       )}
 
-      {ready && data && !data.init.is_systemd && (
+      {running && data && !data.init.is_systemd && (
         <div className="offline-card" style={{ marginTop: 16 }}>
           <p className="offline-title">systemd is not running (init: {data.init.pid1 || 'unknown'})</p>
           <p className="offline-desc">{data.init.hint}</p>
@@ -232,14 +249,14 @@ export default function WslStartupTab({ distros, onGoToConf }: {
         </div>
       )}
 
-      {error && (
+      {running && error && (
         <div className="error-banner" style={{ marginTop: 16 }}>
           <span className="error-title">Error</span>
           <span className="error-msg">{error}</span>
         </div>
       )}
 
-      {ready && data?.init.is_systemd && (
+      {running && data?.init.is_systemd && (
         <>
           <div className="wsl-svc-toolbar">
             <div className="wsl-svc-search">
@@ -295,7 +312,7 @@ export default function WslStartupTab({ distros, onGoToConf }: {
         </>
       )}
 
-      {ready && !data && !error && (
+      {running && !data && !error && (
         <p className="empty-state" style={{ marginTop: 24 }}>Loading services…</p>
       )}
 

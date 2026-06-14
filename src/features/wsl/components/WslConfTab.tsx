@@ -29,6 +29,9 @@ export default function WslConfTab({ distros, runningNames, onAfterShutdown }: {
   }, [backupDir, setBackupDir])
 
   const backend = useMemo<IniBackend>(() => ({
+    // Reading /etc/wsl.conf boots a stopped distro; the cheap running-state poll in
+    // WslView reflects that in the shared list within a few seconds, so we don't
+    // pay a full reload (with its loading flicker) on every config open here.
     load:          () => api.readWslConf(distro),
     save:          (content) => api.writeWslConf(distro, content),
     listBackups:   () => api.wslConfListBackups(distro, backupDir),

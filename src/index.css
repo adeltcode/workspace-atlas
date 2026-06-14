@@ -19,7 +19,7 @@
   /* ── Text */
   --color-text-primary:   #eaeafa;
   --color-text-secondary: #7878a0;
-  --color-text-tertiary:  #545678;   /* bumped from #404060 for contrast improvement */
+  --color-text-tertiary:  #6b6d95;   /* lifted for legibility; still dimmer than secondary */
 
   /* ── Accent (indigo-blue) */
   --color-accent:        #6c71ff;
@@ -86,6 +86,10 @@
   --chart-6: #ff5050;   /* danger-red */
   --chart-7: #fb923c;   /* orange */
   --chart-8: #34d399;   /* emerald */
+
+  /* ── Disk-usage neutral segments (other apps / free) */
+  --disk-other: #54566f;
+  --disk-free:  #2a2c46;
 }
 
 /* =============================================================
@@ -104,7 +108,11 @@
 
   --color-text-primary:   #0e0f1e;
   --color-text-secondary: #5a5c80;
-  --color-text-tertiary:  #9092b8;
+  --color-text-tertiary:  #797ba4;   /* darkened for legibility on light surfaces */
+
+  /* ── Disk-usage neutral segments (other apps / free) */
+  --disk-other: #b6b8cc;
+  --disk-free:  #e4e6f0;
 
   --color-accent:        #4f52e8;
   --color-accent-hover:  #3e42cc;
@@ -761,6 +769,9 @@ ul, ol { list-style: none; }
   /* Reserve the scrollbar's space at all times so content doesn't shift
      horizontally when the scrollbar appears/disappears between views. */
   scrollbar-gutter: stable;
+  /* Guaranteed breathing room below every page when scrolled to the end — set on
+     the scroll container so it isn't clipped the way a last child's space can be. */
+  padding-bottom: 24px;
 }
 
 /* =============================================================
@@ -3770,8 +3781,10 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .disk-seg--volumes    { background: var(--color-warning); }
 .disk-seg--cache      { background: var(--color-danger); }
 .disk-seg--backups    { background: #8b5cf6; }
-.disk-seg--other      { background: var(--color-bg-hover); opacity: 0.9; }
-.disk-seg--free       { background: var(--color-bg-tertiary); }
+/* "Other apps" and "free" must read as clearly distinct greys (and distinct from
+   the track) — shared with the legend keys via the same tokens. */
+.disk-seg--other      { background: var(--disk-other); }
+.disk-seg--free       { background: var(--disk-free); }
 
 /* Legend */
 .disk-legend {
@@ -3795,6 +3808,9 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   border-radius: 2px;
   flex-shrink: 0;
 }
+.disk-legend-dot--other { background: var(--disk-other); }
+.disk-legend-dot--free  { background: var(--disk-free); }
+.disk-legend-row--key .disk-legend-label { color: var(--color-text-secondary); font-weight: 400; }
 
 .disk-legend-label {
   color: var(--color-text-primary);
@@ -7815,27 +7831,18 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wsl-seg-btn--active { background: var(--color-bg-secondary); color: var(--color-text-primary); box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
 
 /* ── WSL bento home ─────────────────────────────────────────────────────── */
-/* Summary tiles: 4-up band using the shared hero-tile internals, with the
-   same gap-as-border technique as Docker's hero grid. */
-.wsl-tiles {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 1px;
-  background: var(--color-border);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  margin-bottom: 14px;
-}
-
 /* Full-width bento panels stacked below the cards. */
 .wsl-home-panel { margin-top: 14px; }
 
 .wsl-home-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  /* auto-fit so a partial row stretches to fill instead of leaving an orphaned
+     half-width card; min 300px lets three cards share a row at the usual width. */
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 14px;
 }
+/* Whole-card hover cue so it's obvious the card opens the distro page. */
+.wsl-bcard:has(.wsl-bcard-head:hover) { border-color: var(--color-border-strong); }
 .wsl-bcard {
   display: flex;
   flex-direction: column;
@@ -7912,6 +7919,8 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   text-overflow: ellipsis;
   font-variant-numeric: tabular-nums;
 }
+/* Loading placeholder for a stat value (e.g. package count while scanning). */
+.wsl-bstat-sk { display: inline-block; width: 36px; height: 11px; vertical-align: middle; }
 .wsl-bcard-path {
   display: flex;
   align-items: center;
@@ -7970,6 +7979,10 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wsl-bpanel-head svg { flex-shrink: 0; }
 .wsl-bpanel-head .wsl-link { margin-left: auto; text-transform: none; letter-spacing: 0; }
 .wsl-bpanel-empty { font-size: 12px; color: var(--color-text-tertiary); margin: 0; }
+/* Chart-shaped placeholder shown while the first live sample is still arriving. */
+.wsl-mon-skeleton { display: flex; gap: 14px; }
+.wsl-mon-sk { flex: 1; height: 148px; border-radius: var(--radius-md); }
+@media (max-width: 700px) { .wsl-mon-skeleton { flex-direction: column; } }
 /* Flatten the shared activity list inside a panel: the panel already provides
    the surface, so rows are divider-only instead of individually boxed. */
 .wsl-bpanel .activity-list { margin-top: 0; border: none; border-radius: 0; overflow: visible; }
@@ -7999,16 +8012,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   cursor: pointer;
 }
 .wsl-link:hover { text-decoration: underline; }
-.wsl-distro-tile {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 28px; height: 28px;
-  border-radius: var(--radius-sm);
-  background: var(--color-bg-tertiary);
-  border: 1px solid var(--color-border);
-  color: var(--color-accent);
-  flex-shrink: 0;
-}
-.wsl-distro-tile--off { color: var(--color-text-tertiary); }
 .wsl-distro-star { color: var(--color-warning); flex-shrink: 0; }
 
 .wsl-state-pill {
@@ -8044,6 +8047,44 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 .wsl-identity-name { font-size: 16px; font-weight: 700; color: var(--color-text-primary); }
 .wsl-identity-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+
+/* "Manage" action dropdown in the identity strip. */
+.wsl-menu { position: relative; display: inline-flex; }
+.wsl-menu-caret { transition: transform var(--transition-fast); }
+.wsl-menu-caret--open { transform: rotate(180deg); }
+.wsl-menu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 224px;
+  padding: 5px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.45);
+  z-index: 60;
+  animation: wsl-switcher-in 0.12s ease;
+}
+.wsl-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: 12.5px;
+  font-family: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.wsl-menu-item:hover { background: var(--color-bg-hover); }
+.wsl-menu-item > svg:first-child { color: var(--color-text-tertiary); flex-shrink: 0; }
+.wsl-menu-badge { margin-left: auto; }
 
 .wsl-page-tabs {
   display: inline-flex;
@@ -8289,7 +8330,8 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wsl-dash-rm { margin-bottom: 16px; }
 .wsl-gauges {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  /* 4-up across the panel width so Disk joins the row instead of orphaning. */
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 14px;
 }
 .wsl-gauge {
@@ -8383,6 +8425,9 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wsl-dash-cols {
   display: grid;
   grid-template-columns: 1.4fr 1fr;
+  /* Each column hugs its own content; without this the shorter Top-processes
+     panel stretches to match the taller side column and shows dead space. */
+  align-items: start;
   gap: 18px;
   margin-top: 18px;
 }
@@ -8596,4 +8641,336 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   gap: 8px;
 }
 .wsl-import-row .settings-dir-input { flex: 1; }
+
+/* ── WSL header: default-distro chip ──────────────────────────────────────── */
+.wsl-header-default {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent-subtle);
+  border: 1px solid var(--color-accent-border);
+  color: var(--color-accent);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.wsl-header-default svg { color: var(--color-warning); }
+
+/* ── Distro brand badge (official logo, or lettered avatar fallback) ───────── */
+.distro-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  flex-shrink: 0;
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14);
+}
+.distro-logo svg { filter: drop-shadow(0 1px 1px rgba(0,0,0,0.22)); }
+.distro-logo-text { font-weight: 700; letter-spacing: -0.02em; text-shadow: 0 1px 1px rgba(0,0,0,0.25); }
+.distro-logo--off { filter: grayscale(0.65); opacity: 0.55; }
+
+/* ── WSL install wizard ───────────────────────────────────────────────────── */
+.wsl-wizard {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* Stepper: numbered circles joined by progress lines. */
+.wiz-steps {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 2px;
+}
+.wiz-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.wiz-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.wiz-step-label {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+}
+.wiz-step--active .wiz-step-num {
+  background: var(--color-accent);
+  border-color: transparent;
+  color: var(--color-on-brand);
+  box-shadow: 0 0 0 3px var(--color-accent-subtle);
+}
+.wiz-step--active .wiz-step-label { color: var(--color-text-primary); }
+.wiz-step--done .wiz-step-num {
+  background: var(--color-success-subtle);
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+.wiz-step--done .wiz-step-label { color: var(--color-text-secondary); }
+.wiz-step-line {
+  flex: 1;
+  min-width: 16px;
+  height: 2px;
+  border-radius: var(--radius-full);
+  background: var(--color-border);
+}
+.wiz-step-line--done { background: var(--color-success); }
+
+.wiz-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Notice shown when a background install is still running. */
+.wiz-inflight-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 13px;
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+  background: var(--color-accent-subtle);
+  border: 1px solid var(--color-accent-border);
+  border-radius: var(--radius-md);
+}
+.wiz-inflight-note svg { color: var(--color-accent); flex-shrink: 0; }
+
+/* Catalog grid of selectable distro cards. */
+.wiz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+.wiz-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 14px;
+  text-align: left;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color var(--transition-fast), background var(--transition-fast), transform var(--transition-fast);
+}
+.wiz-card:hover:not(:disabled) { border-color: var(--color-accent); background: var(--color-bg-hover); }
+.wiz-card:active:not(:disabled) { transform: scale(0.99); }
+.wiz-card--active {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent), 0 0 0 4px var(--color-accent-subtle);
+}
+.wiz-card--installed { opacity: 0.55; cursor: default; }
+.wiz-card--skeleton { pointer-events: none; }
+.wiz-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.wiz-card-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wiz-card-id {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wiz-card-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: var(--color-on-brand);
+  flex-shrink: 0;
+}
+.wiz-card-badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-success);
+  background: var(--color-success-subtle);
+  border: 1px solid var(--color-success);
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+/* Footer action row shared across steps. */
+.wiz-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+}
+.wiz-actions-hint {
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+  margin-right: auto;
+}
+
+/* Review step. */
+.wiz-review {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
+}
+.wiz-review-id { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.wiz-review-name { font-size: 16px; font-weight: 700; color: var(--color-text-primary); }
+.wiz-review-sub { font-size: 12px; color: var(--color-text-tertiary); font-family: var(--font-mono); }
+
+.wiz-facts {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0;
+  margin: 0;
+}
+.wiz-facts li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+.wiz-facts code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--color-accent);
+  background: var(--color-accent-subtle);
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+}
+.wiz-fact-icon { color: var(--color-text-tertiary); flex-shrink: 0; margin-top: 1px; }
+
+/* Install location field (review step). */
+.wiz-location { display: flex; flex-direction: column; gap: 6px; }
+.wiz-location-label { font-size: 11.5px; font-weight: 600; color: var(--color-text-secondary); }
+
+/* Install / result step — centred status block. */
+.wiz-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 40px 24px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-secondary);
+}
+/* Active install: logo, phase title, and a real progress bar. */
+.wiz-install {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+  padding: 36px 24px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-secondary);
+}
+.wiz-progress { width: 100%; max-width: 460px; display: flex; flex-direction: column; gap: 8px; }
+.wiz-progress-track {
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-tertiary);
+  overflow: hidden;
+}
+.wiz-progress-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  transition: width 0.25s ease;
+}
+.wiz-progress-fill--pulse { width: 100%; animation: wiz-pulse 1.2s ease-in-out infinite; }
+.wiz-progress-fill--indet { width: 40%; animation: wiz-indet 1.1s ease-in-out infinite; }
+@keyframes wiz-indet {
+  0%   { margin-left: -40%; }
+  100% { margin-left: 100%; }
+}
+@keyframes wiz-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.5; }
+}
+.wiz-progress-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.wiz-progress-mid { color: var(--color-text-primary); font-weight: 600; }
+.wiz-status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+.wiz-status-icon--ok  { color: var(--color-success); }
+.wiz-status-icon--err { color: var(--color-danger); }
+.wiz-status-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+.wiz-status-desc {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  max-width: 460px;
+  line-height: 1.55;
+}
+.wiz-status-desc--err {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-danger);
+  word-break: break-word;
+}
+.wiz-done-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 12px;
+}
 
