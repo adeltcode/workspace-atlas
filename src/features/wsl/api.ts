@@ -66,4 +66,4 @@ export const pickTarFile  = () => invoke<string | null>('pick_tar_file')
 export const pickDirectory = () => invoke<string | null>('pick_directory')
 
 /** Reveal a path in Windows Explorer. Reuses the generic backend command. */
-export const revealPath = (path: string) => invoke<void>('reveal_path', { path })
+export { revealPath } from '../docker/api'

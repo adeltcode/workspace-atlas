@@ -442,7 +442,7 @@ fn parse_size_bytes(size: &str) -> u64 {
     }
 }
 
-fn bytes_to_human(bytes: u64) -> String {
+pub(crate) fn bytes_to_human(bytes: u64) -> String {
     if bytes >= 1_000_000_000 {
         format!("{:.2} GB", bytes as f64 / 1_000_000_000.0)
     } else if bytes >= 1_000_000 {

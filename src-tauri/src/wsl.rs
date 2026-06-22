@@ -2,6 +2,8 @@ use std::process::{Command, Stdio};
 
 use tauri::Emitter;
 
+use crate::docker::bytes_to_human;
+
 /// Emitted as a `shell-out` event so the bottom terminal shows the real commands.
 #[derive(serde::Serialize, Clone)]
 struct ShellOut {
@@ -537,9 +539,9 @@ pub async fn wsl_optimize_vhd(
             &app,
             format!(
                 "  ✓ reclaimed {} ({} → {})",
-                bytes_human(reclaimed),
-                bytes_human(before),
-                bytes_human(after)
+                bytes_to_human(reclaimed),
+                bytes_to_human(before),
+                bytes_to_human(after)
             ),
             false,
         );
@@ -616,7 +618,7 @@ pub async fn wsl_export_distro(
         }
 
         let size = std::fs::metadata(&dest).map(|m| m.len()).unwrap_or(0);
-        emit_line(&app, format!("  ✓ exported {} ({})", name, bytes_human(size)), false);
+        emit_line(&app, format!("  ✓ exported {} ({})", name, bytes_to_human(size)), false);
         Ok(Some(ExportResult { path: dest_str, size_bytes: size }))
     })
     .await
@@ -878,7 +880,7 @@ pub async fn wsl_install_download(
         file.flush().ok();
         drop(file);
         emit_progress(&app, InstallProgress { phase: "downloading".into(), downloaded, total: total.max(downloaded), bytes_per_sec: 0, percent: 100.0 });
-        emit_line(&app, format!("  ✓ downloaded {} ({})", name, bytes_human(downloaded)), false);
+        emit_line(&app, format!("  ✓ downloaded {} ({})", name, bytes_to_human(downloaded)), false);
 
         // ── Verify ────────────────────────────────────────────────────────────
         if !sha256.is_empty() {
@@ -1936,19 +1938,6 @@ pub async fn wsl_profile_shell(distro: String) -> Result<ShellProfile, String> {
     })
     .await
     .map_err(|e| e.to_string())?
-}
-
-/// Minimal byte formatter for terminal lines (mirrors the frontend's bytesToHuman).
-fn bytes_human(b: u64) -> String {
-    if b >= 1_000_000_000 {
-        format!("{:.2} GB", b as f64 / 1e9)
-    } else if b >= 1_000_000 {
-        format!("{:.1} MB", b as f64 / 1e6)
-    } else if b >= 1_000 {
-        format!("{:.0} kB", b as f64 / 1e3)
-    } else {
-        format!("{} B", b)
-    }
 }
 
 const INNER_OPTIMIZE_PS: &str = r#"$ErrorActionPreference='Stop'

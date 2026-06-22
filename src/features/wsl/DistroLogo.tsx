@@ -60,11 +60,6 @@ function matchBrand(name: string): Brand | null {
   return BRANDS.find(b => b.keys.some(k => lower.includes(k))) ?? null
 }
 
-/** Stable brand/identity colour for a distro (its official colour, or a hashed one). */
-export function distroColor(name: string): string {
-  return matchBrand(name)?.color ?? FALLBACK[hashIndex(name, FALLBACK.length)]
-}
-
 function initials(label: string): string {
   const word = label.trim().split(/\s+/)[0] ?? ''
   return (word.slice(0, 2) || '?').toUpperCase()
