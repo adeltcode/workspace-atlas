@@ -66,7 +66,6 @@ export interface WslConfigBackup {
 
 export interface TopProc {
   cpu_pct: number
-  mem_pct: number
   /** Resident set size in KiB (shown as MB; per-process mem% rounds to 0 on big VMs). */
   rss_kb: number
   command: string
@@ -138,12 +137,6 @@ export interface ServiceList {
 }
 
 export interface ServiceDetail {
-  id: string
-  description: string
-  load_state: string
-  active_state: string
-  sub_state: string
-  unit_file_state: string
   fragment_path: string
   main_pid: string
   requires: string[]

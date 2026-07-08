@@ -43,7 +43,6 @@ export const wslShutdown    = () => invoke<void>('wsl_shutdown')
 export const wslconfigBackup       = (backupDir: string) => invoke<WslConfigBackup>('wslconfig_backup', { backupDir })
 export const wslconfigListBackups  = (backupDir: string) => invoke<WslConfigBackup[]>('wslconfig_list_backups', { backupDir })
 export const wslconfigRestore      = (backupPath: string) => invoke<string>('wslconfig_restore', { backupPath })
-export const wslconfigDeleteBackup = (backupPath: string) => invoke<void>('wslconfig_delete_backup', { backupPath })
 
 // /etc/wsl.conf (per-distro)
 export const readWslConf  = (distro: string) => invoke<WslConfig>('read_wsl_conf', { distro })

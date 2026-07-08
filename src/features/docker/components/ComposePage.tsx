@@ -5,8 +5,8 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import { openUrl } from '@tauri-apps/plugin-opener'
-import type { ComposeProject, DockerContainer, ContainerStats, AppProjectMeta } from '../types'
-import { bytesToHuman, composeStatusLabel } from '../../../utils/format'
+import { emptyMeta, type ComposeProject, type DockerContainer, type ContainerStats, type AppProjectMeta } from '../types'
+import { bytesToHuman, composeStatusLabel, hostPorts } from '../../../utils/format'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -14,31 +14,11 @@ interface Props {
   projects:       ComposeProject[]
   containers:     DockerContainer[]
   containerStats: ContainerStats[]
-  statHistory:    Map<string, { cpu: number[]; mem: number[] }>
   metadata:       Record<string, AppProjectMeta>
   onMetaChange:   (name: string, meta: AppProjectMeta) => void
   onSelectProject:(project: ComposeProject) => void
   onLifecycle:    (project: ComposeProject, action: 'up' | 'down' | 'restart') => Promise<void>
   lifecycleRunning: { project: string; action: string } | null
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-// Docker runtime format: "0.0.0.0:3000->3000/tcp, :::3000->3000/tcp"
-// Capture the host port (before "->") by matching ":PORT->".
-// A new RegExp per call avoids the stateful /g lastIndex issue.
-function extractHostPorts(portStr: string): string[] {
-  const re = /:(\d+)->/g
-  const ports: string[] = []
-  let m: RegExpExecArray | null
-  while ((m = re.exec(portStr)) !== null) {
-    if (m[1] !== '0') ports.push(m[1])
-  }
-  return [...new Set(ports)]
-}
-
-function emptyMeta(): AppProjectMeta {
-  return { favorite: false, tags: [], note: '', active_env: null, recent_opened: null, startup_times: [] }
 }
 
 // ── Health Score ──────────────────────────────────────────────────────────────
@@ -99,7 +79,7 @@ function findPortConflicts(containers: DockerContainer[]): Set<string> {
   const portToProjects = new Map<string, string[]>()
   for (const c of containers) {
     if (!c.compose_project || !c.ports) continue
-    for (const port of extractHostPorts(c.ports)) {
+    for (const port of hostPorts(c.ports)) {
       const list = portToProjects.get(port) ?? []
       if (!list.includes(c.compose_project)) list.push(c.compose_project)
       portToProjects.set(port, list)
@@ -176,7 +156,6 @@ interface CardProps {
   project:          ComposeProject
   containers:       DockerContainer[]
   containerStats:   ContainerStats[]
-  statHistory:      Map<string, { cpu: number[]; mem: number[] }>
   meta:             AppProjectMeta
   conflictPorts:    Set<string>
   onToggleFavorite: () => void
@@ -201,10 +180,10 @@ function ProjectCard({
   const hasStats    = projectStats.length > 0
 
   // Exposed ports from running containers
-  const hostPorts = [...new Set(
+  const ports = [...new Set(
     projectContainers
       .filter(c => c.state === 'running' && c.ports)
-      .flatMap(c => extractHostPorts(c.ports))
+      .flatMap(c => hostPorts(c.ports))
   )].slice(0, 5)
 
   const isRunning = lifecycleRunning !== null
@@ -273,9 +252,9 @@ function ProjectCard({
       </div>
 
       {/* ── Port chips ── */}
-      {hostPorts.length > 0 && (
+      {ports.length > 0 && (
         <div className="compose-card-ports">
-          {hostPorts.map(port => (
+          {ports.map(port => (
             <button
               key={port}
               className={clsx('compose-port-chip', conflictPorts.has(port) && 'conflict')}
@@ -335,7 +314,7 @@ function ProjectCard({
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function ComposePage({
-  projects, containers, containerStats, statHistory,
+  projects, containers, containerStats,
   metadata, onMetaChange, onSelectProject, onLifecycle, lifecycleRunning,
 }: Props) {
   const conflictPorts = useMemo(() => findPortConflicts(containers), [containers])
@@ -382,7 +361,6 @@ export default function ComposePage({
                 project={p}
                 containers={containers}
                 containerStats={containerStats}
-                statHistory={statHistory}
                 meta={metadata[p.name] ?? emptyMeta()}
                 conflictPorts={conflictPorts}
                 onToggleFavorite={() => toggleFavorite(p)}
@@ -408,7 +386,6 @@ export default function ComposePage({
               project={p}
               containers={containers}
               containerStats={containerStats}
-              statHistory={statHistory}
               meta={metadata[p.name] ?? emptyMeta()}
               conflictPorts={conflictPorts}
               onToggleFavorite={() => toggleFavorite(p)}

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Trash2 } from 'lucide-react'
 import clsx from 'clsx'
 import * as api from '../api'
 import type { DockerNetwork } from '../types'
 import { useAppStore } from '../../../store/appStore'
+import { ConfirmRemoveButton } from './TableBits'
 
 /** Format an ISO date string as relative ("3 months ago") for recent dates,
  *  or a short absolute date for older ones. */
@@ -39,7 +39,6 @@ export default function NetworksTab() {
   const [loading, setLoading]         = useState(true)
   const [error, setError]             = useState<string | null>(null)
   const [search, setSearch]           = useState('')
-  const [confirmId, setConfirmId]     = useState<string | null>(null)
   const [busy, setBusy]               = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -53,7 +52,7 @@ export default function NetworksTab() {
   useEffect(() => { load() }, [])
 
   const doRemove = async (id: string) => {
-    setBusy(id); setConfirmId(null); setActionError(null)
+    setBusy(id); setActionError(null)
     const { addTerminalLine } = useAppStore.getState()
     const name = networks.find(n => n.id === id)?.name || id.slice(0, 12)
     addTerminalLine(`$ docker network rm ${id.slice(0, 12)}`, 'cmd')
@@ -122,7 +121,6 @@ export default function NetworksTab() {
             {filtered.map(n => {
               const isProtected  = PROTECTED.has(n.name)
               const isBusy       = busy === n.id
-              const isConfirming = confirmId === n.id
 
               return (
                 <tr key={n.id} className="img-row">
@@ -144,24 +142,13 @@ export default function NetworksTab() {
                   <td className="img-td ctr-td-actions">
                     {isProtected ? (
                       <span className="img-colon" title="Built-in network — cannot be removed">—</span>
-                    ) : isConfirming ? (
-                      <button
-                        className="ctr-action-btn ctr-action-confirm"
-                        onClick={() => doRemove(n.id)}
-                        disabled={isBusy}
-                        title="Confirm removal"
-                      >
-                        <Trash2 size={12} /><span>?</span>
-                      </button>
                     ) : (
-                      <button
-                        className="ctr-action-btn ctr-action-remove"
-                        onClick={() => { setConfirmId(n.id); setActionError(null) }}
+                      <ConfirmRemoveButton
+                        onConfirm={() => doRemove(n.id)}
+                        onArm={() => setActionError(null)}
                         disabled={isBusy}
                         title="Remove network"
-                      >
-                        <Trash2 size={12} />
-                      </button>
+                      />
                     )}
                   </td>
                 </tr>

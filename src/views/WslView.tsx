@@ -30,7 +30,7 @@ export default function WslView() {
   // Publish the distro list + badge to the store for the sidebar nav.
   useEffect(() => {
     useAppStore.getState().setWslDistrosNav(
-      distros.map(d => ({ name: d.name, running: d.running, is_default: d.is_default, version: d.version })),
+      distros.map(d => ({ name: d.name, running: d.running, is_default: d.is_default })),
     )
     useAppStore.getState().setWslBadges(
       distros.length

@@ -60,9 +60,12 @@ export interface AppProjectMeta {
   favorite: boolean
   tags: string[]
   note: string
-  active_env: string | null
   recent_opened: string | null
   startup_times: number[]
+}
+
+export function emptyMeta(): AppProjectMeta {
+  return { favorite: false, tags: [], note: '', recent_opened: null, startup_times: [] }
 }
 
 export interface DetectedFile {
@@ -78,7 +81,6 @@ export interface EditorInfo {
 export interface DockerVolume {
   name: string
   driver: string
-  mountpoint: string
   /** false = dangling / unused */
   in_use: boolean
   /** Container names currently using this volume */
@@ -115,8 +117,6 @@ export interface ContainerStats {
   name: string
   cpu_pct: number
   mem_used_bytes: number
-  mem_limit_bytes: number
-  mem_pct: number
 }
 
 export interface ComposeProject {

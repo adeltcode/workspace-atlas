@@ -7,6 +7,7 @@ import * as api from '../api'
 import { useAppStore } from '../../../store/appStore'
 import type { DockerVolume, VolumeBackupEntry, BackupProgress } from '../types'
 import { fmtBytes, formatDate } from '../../../utils/format'
+import { ConfirmRemoveButton } from './TableBits'
 
 type UsageFilter = 'all' | 'in-use' | 'unused'
 type VolStatus   = 'running' | 'done' | 'error'
@@ -78,7 +79,6 @@ export default function VolumesTab({
       setUsageFilter('unused')
     }
   }, [volumesFilterSignal])
-  const [confirmId, setConfirmId]     = useState<string | null>(null)
   const [busy, setBusy]               = useState<string | null>(null)
   const [pruningAll, setPruningAll]   = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -235,7 +235,7 @@ export default function VolumesTab({
   }
 
   const doRemove = async (name: string) => {
-    setBusy(name); setConfirmId(null); setActionError(null)
+    setBusy(name); setActionError(null)
     const { addTerminalLine } = useAppStore.getState()
     addTerminalLine(`$ docker volume rm ${name}`, 'cmd')
     try {
@@ -355,7 +355,6 @@ export default function VolumesTab({
           <tbody>
             {filtered.map(v => {
               const isBusy       = busy === v.name
-              const isConfirming = confirmId === v.name
               const isExpanded   = expandedVol === v.name
               const isBackingUp  = backingUpSet.has(v.name)
               const vp           = volProgress[v.name]
@@ -403,25 +402,12 @@ export default function VolumesTab({
                         <HardDriveDownload size={12} />
                         {isBackingUp ? 'Backing up…' : 'Backup'}
                       </button>
-                      {isConfirming ? (
-                        <button
-                          className="ctr-action-btn ctr-action-confirm"
-                          onClick={() => doRemove(v.name)}
-                          disabled={isBusy}
-                          title="Confirm removal"
-                        >
-                          <Trash2 size={12} /><span>?</span>
-                        </button>
-                      ) : (
-                        <button
-                          className="ctr-action-btn ctr-action-remove"
-                          onClick={() => { setConfirmId(v.name); setActionError(null) }}
-                          disabled={isBusy || v.in_use}
-                          title={v.in_use ? 'Cannot remove: volume is in use' : 'Remove volume'}
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      )}
+                      <ConfirmRemoveButton
+                        onConfirm={() => doRemove(v.name)}
+                        onArm={() => setActionError(null)}
+                        disabled={isBusy || v.in_use}
+                        title={v.in_use ? 'Cannot remove: volume is in use' : 'Remove volume'}
+                      />
                     </td>
                   </tr>
 

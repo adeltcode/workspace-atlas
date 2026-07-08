@@ -1,28 +1,12 @@
 import { useState, useMemo } from 'react'
-import { Pin, PinOff, ChevronUp, ChevronDown, X } from 'lucide-react'
+import { Pin, PinOff, X } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../../../store/appStore'
 import type { DockerImage } from '../types'
+import { SortHeader } from './TableBits'
 
 type SortKey = 'name' | 'size_bytes' | 'age_days'
 type SortDir = 'asc' | 'desc'
-
-function SortHeader({ label, sortKey, active, dir, onSort }: {
-  label: string; sortKey: SortKey; active: SortKey; dir: SortDir
-  onSort: (k: SortKey) => void
-}) {
-  const isActive = sortKey === active
-  return (
-    <th className={clsx('img-th img-th-sort sortable', isActive && 'active')} onClick={() => onSort(sortKey)}>
-      <div className="th-sort-inner">
-        {label}
-        {isActive
-          ? dir === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />
-          : <ChevronDown size={12} className="sort-idle" />}
-      </div>
-    </th>
-  )
-}
 
 export default function ImagesTab({ images, loading }: { images: DockerImage[]; loading: boolean }) {
   const { dockerKeepList, addToKeepList, removeFromKeepList } = useAppStore()
@@ -101,10 +85,10 @@ export default function ImagesTab({ images, loading }: { images: DockerImage[]; 
         <table className="img-table">
           <thead>
             <tr>
-              <SortHeader label="Name : Tag" sortKey="name"       active={sortKey} dir={sortDir} onSort={handleSort} />
+              <SortHeader label="Name : Tag" col="name"       sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
               <th className="img-th">ID</th>
-              <SortHeader label="Size"       sortKey="size_bytes" active={sortKey} dir={sortDir} onSort={handleSort} />
-              <SortHeader label="Age"        sortKey="age_days"   active={sortKey} dir={sortDir} onSort={handleSort} />
+              <SortHeader label="Size"       col="size_bytes" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+              <SortHeader label="Age"        col="age_days"   sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
               <th className="img-th">Status</th>
               <th className="img-th img-th-pin">Pin</th>
             </tr>

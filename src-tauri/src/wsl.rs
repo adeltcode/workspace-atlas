@@ -3,13 +3,7 @@ use std::process::{Command, Stdio};
 use tauri::Emitter;
 
 use crate::docker::bytes_to_human;
-
-/// Emitted as a `shell-out` event so the bottom terminal shows the real commands.
-#[derive(serde::Serialize, Clone)]
-struct ShellOut {
-    text: String,
-    stderr: bool,
-}
+use crate::shell::ShellOut;
 
 fn emit_line(app: &tauri::AppHandle, text: impl Into<String>, stderr: bool) {
     app.emit("shell-out", ShellOut { text: text.into(), stderr }).ok();
@@ -134,15 +128,14 @@ fn wslconfig_backup_dir(root: &str) -> String {
     format!("{}/wsl/wslconfig", root.replace('\\', "/"))
 }
 
-/// List `.wslconfig` backups under `{root}/wsl/wslconfig`, most-recent first.
-fn list_wslconfig_backups_sync(root: &str) -> Vec<WslConfigBackup> {
-    let dir = wslconfig_backup_dir(root);
-    let mut out: Vec<WslConfigBackup> = match std::fs::read_dir(&dir) {
+/// List `{prefix}{ts}.conf` backups in `dir`, most-recent first.
+fn list_conf_backups(dir: &str, prefix: &str) -> Vec<WslConfigBackup> {
+    let mut out: Vec<WslConfigBackup> = match std::fs::read_dir(dir) {
         Ok(rd) => rd
             .flatten()
             .filter_map(|e| {
                 let name = e.file_name().to_string_lossy().to_string();
-                let ts = name.strip_prefix("wslconfig_")?.strip_suffix(".conf")?;
+                let ts = name.strip_prefix(prefix)?.strip_suffix(".conf")?;
                 let created_at = ts.parse::<i64>().ok()?;
                 let size_bytes = e.metadata().map(|m| m.len()).unwrap_or(0);
                 Some(WslConfigBackup {
@@ -157,6 +150,11 @@ fn list_wslconfig_backups_sync(root: &str) -> Vec<WslConfigBackup> {
     };
     out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
     out
+}
+
+/// List `.wslconfig` backups under `{root}/wsl/wslconfig`, most-recent first.
+fn list_wslconfig_backups_sync(root: &str) -> Vec<WslConfigBackup> {
+    list_conf_backups(&wslconfig_backup_dir(root), "wslconfig_")
 }
 
 /// Snapshot the current `.wslconfig` to `{root}/wsl/wslconfig/wslconfig_{ts}.conf`.
@@ -220,18 +218,6 @@ pub async fn wslconfig_restore(app: tauri::AppHandle, backup_path: String) -> Re
     std::fs::write(&dest, &content).map_err(|e| format!("Cannot write .wslconfig: {}", e))?;
     emit_line(&app, format!("  ✓ restored {}", dest.replace('/', "\\")), false);
     Ok(content)
-}
-
-/// Delete a single `.wslconfig` backup.
-#[tauri::command]
-pub async fn wslconfig_delete_backup(app: tauri::AppHandle, backup_path: String) -> Result<(), String> {
-    emit_line(&app, format!("$ Remove-Item \"{}\"", backup_path.replace('/', "\\")), false);
-    if std::path::Path::new(&backup_path).exists() {
-        std::fs::remove_file(&backup_path)
-            .map_err(|e| format!("Cannot delete backup: {}", e))?;
-    }
-    emit_line(&app, format!("  ✓ deleted {}", file_name_of(&backup_path)), false);
-    Ok(())
 }
 
 // ── /etc/wsl.conf (per-distro) read / write / backup / restore ──────────────────
@@ -324,23 +310,7 @@ fn wslconf_backup_dir(root: &str) -> String {
 }
 
 fn list_wslconf_backups_sync(root: &str, distro: &str) -> Vec<WslConfigBackup> {
-    let dir = wslconf_backup_dir(root);
-    let prefix = format!("{}_", safe_name(distro));
-    let mut out: Vec<WslConfigBackup> = match std::fs::read_dir(&dir) {
-        Ok(rd) => rd
-            .flatten()
-            .filter_map(|e| {
-                let name = e.file_name().to_string_lossy().to_string();
-                let ts = name.strip_prefix(&prefix)?.strip_suffix(".conf")?;
-                let created_at = ts.parse::<i64>().ok()?;
-                let size_bytes = e.metadata().map(|m| m.len()).unwrap_or(0);
-                Some(WslConfigBackup { filename: name, path: e.path().to_string_lossy().to_string(), size_bytes, created_at })
-            })
-            .collect(),
-        Err(_) => Vec::new(),
-    };
-    out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-    out
+    list_conf_backups(&wslconf_backup_dir(root), &format!("{}_", safe_name(distro)))
 }
 
 /// Snapshot a distro's `/etc/wsl.conf` to `{root}/wsl/wslconf/{distro}_{ts}.conf`.
@@ -413,7 +383,7 @@ pub async fn wsl_conf_restore(app: tauri::AppHandle, distro: String, backup_path
     Ok(returned)
 }
 
-/// Delete a single wsl.conf backup.
+/// Delete a single config backup file (used for both .wslconfig and wsl.conf backups).
 #[tauri::command]
 pub async fn wsl_conf_delete_backup(app: tauri::AppHandle, backup_path: String) -> Result<(), String> {
     emit_line(&app, format!("$ Remove-Item \"{}\"", backup_path.replace('/', "\\")), false);
@@ -429,15 +399,7 @@ pub async fn wsl_conf_delete_backup(app: tauri::AppHandle, backup_path: String) 
 /// Not elevated, but stops every running distro — the UI warns first.
 #[tauri::command]
 pub async fn wsl_shutdown() -> Result<(), String> {
-    let out = Command::new("wsl")
-        .arg("--shutdown")
-        .output()
-        .map_err(|e| format!("Failed to run wsl --shutdown: {}", e))?;
-    if out.status.success() {
-        Ok(())
-    } else {
-        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
-    }
+    run_wsl(&["--shutdown"])
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -967,7 +929,6 @@ fn run_in_distro_as(distro: &str, user: Option<&str>, script: &str) -> Result<St
 #[derive(serde::Serialize, Clone)]
 pub struct TopProc {
     pub cpu_pct: f32,
-    pub mem_pct: f32,
     /// Resident set size in KiB — shown in the UI as a real MB figure, since the
     /// per-process mem% rounds to 0.0 on a large-RAM VM.
     pub rss_kb: u64,
@@ -1040,15 +1001,14 @@ fn parse_distro_metrics(out: &str) -> DistroMetrics {
             continue;
         }
         if in_top {
-            // "pcpu pmem rss comm…"
+            // "pcpu pmem rss comm…" (pmem is skipped — it rounds to 0 on big VMs)
             let mut it = line.split_whitespace();
             let cpu = it.next().and_then(|s| s.parse().ok());
-            let mem = it.next().and_then(|s| s.parse().ok());
-            let rss = it.next().and_then(|s| s.parse().ok());
+            let rss = it.nth(1).and_then(|s| s.parse().ok());
             let comm = it.collect::<Vec<_>>().join(" ");
-            if let (Some(cpu_pct), Some(mem_pct), Some(rss_kb)) = (cpu, mem, rss) {
+            if let (Some(cpu_pct), Some(rss_kb)) = (cpu, rss) {
                 if !comm.is_empty() {
-                    m.top_procs.push(TopProc { cpu_pct, mem_pct, rss_kb, command: comm });
+                    m.top_procs.push(TopProc { cpu_pct, rss_kb, command: comm });
                 }
             }
             continue;
@@ -1700,12 +1660,6 @@ pub async fn wsl_list_services(distro: String) -> Result<ServiceList, String> {
 
 #[derive(serde::Serialize, Clone, Default)]
 pub struct ServiceDetail {
-    pub id: String,
-    pub description: String,
-    pub load_state: String,
-    pub active_state: String,
-    pub sub_state: String,
-    pub unit_file_state: String,
     pub fragment_path: String,
     pub main_pid: String,
     pub requires: Vec<String>,
@@ -1719,12 +1673,6 @@ fn parse_service_detail(out: &str) -> ServiceDetail {
         let v = v.trim();
         let split = |s: &str| s.split_whitespace().map(|x| x.to_string()).collect::<Vec<_>>();
         match k {
-            "Id" => d.id = v.to_string(),
-            "Description" => d.description = v.to_string(),
-            "LoadState" => d.load_state = v.to_string(),
-            "ActiveState" => d.active_state = v.to_string(),
-            "SubState" => d.sub_state = v.to_string(),
-            "UnitFileState" => d.unit_file_state = v.to_string(),
             "FragmentPath" => d.fragment_path = v.to_string(),
             "MainPID" => d.main_pid = v.to_string(),
             "Requires" => d.requires = split(v),
@@ -1735,12 +1683,12 @@ fn parse_service_detail(out: &str) -> ServiceDetail {
     d
 }
 
-/// Detailed status for one service (dependencies, paths, PID).
+/// Detailed status for one service (dependencies, path, PID).
 #[tauri::command]
 pub async fn wsl_service_detail(distro: String, service: String) -> Result<ServiceDetail, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let script = format!(
-            "systemctl show {} -p Id,Description,LoadState,ActiveState,SubState,UnitFileState,FragmentPath,MainPID,Requires,After 2>/dev/null",
+            "systemctl show {} -p FragmentPath,MainPID,Requires,After 2>/dev/null",
             shell_quote(&service)
         );
         let out = run_in_distro(&distro, &script)?;
@@ -2183,12 +2131,11 @@ docker=5
 
     #[test]
     fn parses_service_detail_deps() {
-        let sample = "Id=ssh.service\nRequires=system.slice sysinit.target\nAfter=network.target basic.target\nDescription=OpenBSD Secure Shell server\nActiveState=inactive\nUnitFileState=disabled\nMainPID=0\n";
+        let sample = "Requires=system.slice sysinit.target\nAfter=network.target basic.target\nFragmentPath=/lib/systemd/system/ssh.service\nMainPID=0\n";
         let d = parse_service_detail(sample);
-        assert_eq!(d.id, "ssh.service");
+        assert_eq!(d.fragment_path, "/lib/systemd/system/ssh.service");
         assert_eq!(d.requires, vec!["system.slice", "sysinit.target"]);
         assert_eq!(d.after.len(), 2);
-        assert_eq!(d.unit_file_state, "disabled");
     }
 
     #[test]

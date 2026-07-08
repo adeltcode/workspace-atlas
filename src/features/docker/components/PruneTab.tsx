@@ -4,7 +4,7 @@ import { Shield, Layers, Zap, Eye, Play, RotateCcw, AlertTriangle } from 'lucide
 import clsx from 'clsx'
 import { useAppStore } from '../../../store/appStore'
 import { dockerPrunePreview, dockerPruneRun } from '../api'
-import type { DockerImage, PrunePreview, LogEntry } from '../types'
+import type { PrunePreview, LogEntry } from '../types'
 
 const LEVELS = [
   { level: 1 as const, icon: Shield, label: 'Safe',    sublabel: 'Dangling images only',  desc: 'Removes untagged images with no containers. Zero risk.',                                 color: 'success' },
@@ -14,7 +14,7 @@ const LEVELS = [
 
 type PruneState = 'idle' | 'previewing' | 'confirming' | 'running' | 'done'
 
-export default function PruneTab({ images: _images, onDone }: { images: DockerImage[]; onDone: () => void }) {
+export default function PruneTab({ onDone }: { onDone: () => void }) {
   const { dockerKeepList, addDockerLog, addTerminalLine, addActivity } = useAppStore()
 
   const [selectedLevel, setSelectedLevel] = useState<1 | 2 | 3>(1)

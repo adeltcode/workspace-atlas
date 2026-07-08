@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react'
-import { Play, Square, Trash2, ChevronUp, ChevronDown, FileText, RefreshCw, X } from 'lucide-react'
+import { Play, Square, Trash2, ChevronDown, FileText, RefreshCw, X } from 'lucide-react'
 import clsx from 'clsx'
 import * as api from '../api'
 import type { DockerContainer } from '../types'
 import { useAppStore } from '../../../store/appStore'
+import { SortHeader, ConfirmRemoveButton } from './TableBits'
 
 type SortKey    = 'name' | 'image' | 'state' | 'created_since'
 type SortDir    = 'asc' | 'desc'
@@ -126,25 +127,6 @@ function LogViewer({ id, name, onClose }: { id: string; name: string; onClose: (
   )
 }
 
-// ── Sort header (fixed alignment) ─────────────────────────────────────────────
-
-function SortHeader({ label, col, sortKey, sortDir, onSort }: {
-  label: string; col: SortKey; sortKey: SortKey; sortDir: SortDir
-  onSort: (k: SortKey) => void
-}) {
-  const active = col === sortKey
-  return (
-    <th className={clsx('img-th img-th-sort', active && 'active')} onClick={() => onSort(col)}>
-      <div className="th-sort-inner">
-        {label}
-        {active
-          ? sortDir === 'asc' ? <ChevronUp size={11} /> : <ChevronDown size={11} />
-          : <ChevronDown size={11} className="sort-idle" />}
-      </div>
-    </th>
-  )
-}
-
 function StateBadge({ state, sub }: { state: string; sub?: string }) {
   const s     = state.toLowerCase()
   const badge =
@@ -177,7 +159,6 @@ export default function ContainersTab({
   const [sortDir, setSortDir]         = useState<SortDir>('asc')
   const [search, setSearch]           = useState('')
   const [stateFilter, setStateFilter] = useState<StateFilter>('all')
-  const [confirmId, setConfirmId]     = useState<string | null>(null)
   const [busy, setBusy]               = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [logsId, setLogsId]           = useState<string | null>(null)
@@ -267,7 +248,7 @@ export default function ContainersTab({
   // ── Per-row action ────────────────────────────────────────────────────────
 
   const doAction = async (id: string, action: 'start' | 'stop' | 'remove') => {
-    setBusy(id); setConfirmId(null); setActionError(null)
+    setBusy(id); setActionError(null)
     const { addTerminalLine } = useAppStore.getState()
     const sub  = action === 'remove' ? 'rm' : action
     const name = containers.find(c => c.id === id)?.name || id.slice(0, 12)
@@ -369,7 +350,6 @@ export default function ContainersTab({
             {filtered.map(c => {
               const isRunning    = c.state === 'running'
               const isBusy       = busy === c.id
-              const isConfirming = confirmId === c.id
               const showLogs     = logsId === c.id
               const isSelected   = selectedIds.has(c.id)
 
@@ -411,19 +391,12 @@ export default function ContainersTab({
                           <Play size={12} />
                         </button>
                       )}
-                      {isConfirming ? (
-                        <button className="ctr-action-btn ctr-action-confirm" onClick={() => doAction(c.id, 'remove')}
-                          disabled={isBusy} title="Confirm removal">
-                          <Trash2 size={12} /><span>?</span>
-                        </button>
-                      ) : (
-                        <button className="ctr-action-btn ctr-action-remove"
-                          onClick={() => { setConfirmId(c.id); setActionError(null) }}
-                          disabled={isBusy || isRunning}
-                          title={isRunning ? 'Stop first to remove' : 'Remove container'}>
-                          <Trash2 size={12} />
-                        </button>
-                      )}
+                      <ConfirmRemoveButton
+                        onConfirm={() => doAction(c.id, 'remove')}
+                        onArm={() => setActionError(null)}
+                        disabled={isBusy || isRunning}
+                        title={isRunning ? 'Stop first to remove' : 'Remove container'}
+                      />
                     </td>
                   </tr>
 

@@ -15,6 +15,11 @@ export function composeStatusLabel(raw: string): { text: string; dot: 'running' 
   return { text, dot, running, total }
 }
 
+/** Docker port string "0.0.0.0:3000->3000/tcp, :::3000->3000/tcp" → unique published host ports. */
+export function hostPorts(portStr: string): string[] {
+  return [...new Set([...portStr.matchAll(/:(\d+)->/g)].map(m => m[1]).filter(p => p !== '0'))]
+}
+
 export function bytesToHuman(b: number): string {
   if (b >= 1e9) return `${(b / 1e9).toFixed(2)} GB`
   if (b >= 1e6) return `${(b / 1e6).toFixed(1)} MB`

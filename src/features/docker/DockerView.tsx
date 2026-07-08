@@ -256,12 +256,11 @@ export default function DockerView() {
               refreshTick={composeTick}
               containers={containers}
               containerStats={containerStats}
-              statHistory={statHistory}
               onRefresh={refreshContainers}
             />
           </div>
 
-          {dockerTab === 'prune'      && <PruneTab images={images} onDone={refresh} />}
+          {dockerTab === 'prune'      && <PruneTab onDone={refresh} />}
           {dockerTab === 'log'        && <LogTab />}
         </div>
       )}

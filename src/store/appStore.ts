@@ -4,9 +4,9 @@ import type { LogEntry, DockerStatus, DockerSystemDf, DockerImage, DockerContain
 import type { DistroMetrics } from '../features/wsl/types'
 import type { TerminalLine } from '../types/terminal'
 
-export type View      = 'dashboard' | 'docker' | 'wsl' | 'packages' | 'automation' | 'settings'
+export type View      = 'dashboard' | 'docker' | 'wsl' | 'settings'
 export type Theme     = 'dark' | 'light'
-export type DockerTab = 'overview' | 'images' | 'containers' | 'volumes' | 'networks' | 'compose' | 'backup-volumes' | 'backup-compose' | 'prune' | 'log'
+export type DockerTab = 'overview' | 'images' | 'containers' | 'volumes' | 'networks' | 'compose' | 'prune' | 'log'
 export type WslView      = 'dashboard' | 'distro' | 'wslconfig' | 'install'
 export type WslDistroTab = 'overview' | 'startup' | 'performance' | 'config'
 
@@ -15,14 +15,13 @@ export interface WslDistroNav {
   name: string
   running: boolean
   is_default: boolean
-  version: number
 }
 
 const MAX_DOCKER_LOGS    = 10
 const MAX_TERMINAL_LINES = 500
 const MAX_ACTIVITY       = 50
 
-export type ActivityModule  = 'docker' | 'wsl' | 'packages' | 'system'
+export type ActivityModule  = 'docker' | 'wsl'
 export type ActivityOutcome = 'success' | 'failure' | 'dry-run' | 'info'
 
 /** One cross-module operation record for the unified activity log. Lightweight
@@ -106,10 +105,6 @@ interface AppState {
   // ── Backup directory (persisted)
   backupDir: string
   setBackupDir: (dir: string) => void
-
-  // ── Backup pre-select — set before navigating to backup tab (ephemeral)
-  backupPreselect: string | null
-  setBackupPreselect: (name: string | null) => void
 
   // ── Tab pre-filters — set before navigating, consumed once by target tab (ephemeral)
   imagesFilter: 'dangling' | 'unused-tagged' | null
@@ -240,10 +235,6 @@ export const useAppStore = create<AppState>()(
       // ── Backup directory
       backupDir: '',
       setBackupDir: (backupDir) => set({ backupDir }),
-
-      // ── Backup pre-select (ephemeral)
-      backupPreselect: null,
-      setBackupPreselect: (backupPreselect) => set({ backupPreselect }),
 
       // ── Tab pre-filters (ephemeral)
       imagesFilter:     null,
@@ -382,9 +373,12 @@ export const useAppStore = create<AppState>()(
         if (state) {
           // Guard against a malformed/partial imported config missing theme.
           if (state.theme === 'dark' || state.theme === 'light') applyTheme(state.theme)
-          // Migrate legacy 'backup' tab value that may be stored in localStorage
-          if ((state.dockerTab as string) === 'backup') {
-            state.dockerTab = 'backup-volumes'
+          // Migrate persisted values whose views/tabs no longer exist.
+          if (!['dashboard', 'docker', 'wsl', 'settings'].includes(state.activeView)) {
+            state.activeView = 'dashboard'
+          }
+          if (['backup', 'backup-volumes', 'backup-compose'].includes(state.dockerTab as string)) {
+            state.dockerTab = 'volumes'
           }
         }
       },

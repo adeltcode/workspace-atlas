@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, Play, RefreshCw, Search, ShieldAlert, Settin
 import { useAppStore } from '../../../store/appStore'
 import * as api from '../api'
 import type { WslDistro, ServiceList, Service, ServiceDetail } from '../types'
+import { Modal } from './Dialog'
 
 type Filter = 'all' | 'enabled' | 'disabled' | 'running' | 'failed'
 
@@ -317,27 +318,24 @@ export default function WslStartupTab({ distros, onReload, onGoToConf }: {
       )}
 
       {pending && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <div className="modal-header">
-              <div className={clsx('modal-icon-wrap', !pending.enable && 'warning')}>
-                <ShieldAlert size={16} />
-              </div>
-              <h2 className="modal-title">{pending.enable ? 'Enable' : 'Disable'} {pending.svc.name}?</h2>
-            </div>
-            <p className="modal-body">
-              This runs <code>systemctl {pending.enable ? 'enable' : 'disable'} {pending.svc.name}</code> as
-              root in <strong>{selected}</strong>, changing whether it starts at boot. It does not
-              {pending.enable ? ' start' : ' stop'} the service now.
-            </p>
-            <div className="modal-actions">
-              <button className="btn-secondary" onClick={() => setPending(null)} disabled={working}>Cancel</button>
-              <button className="btn-filled btn-filled--accent" onClick={confirmToggle} disabled={working}>
-                {working ? 'Working…' : pending.enable ? 'Enable' : 'Disable'}
-              </button>
-            </div>
+        <Modal
+          icon={<ShieldAlert size={16} />}
+          iconWarning={!pending.enable}
+          title={`${pending.enable ? 'Enable' : 'Disable'} ${pending.svc.name}?`}
+          onClose={() => setPending(null)}
+        >
+          <p className="modal-body">
+            This runs <code>systemctl {pending.enable ? 'enable' : 'disable'} {pending.svc.name}</code> as
+            root in <strong>{selected}</strong>, changing whether it starts at boot. It does not
+            {pending.enable ? ' start' : ' stop'} the service now.
+          </p>
+          <div className="modal-actions">
+            <button className="btn-secondary" onClick={() => setPending(null)} disabled={working}>Cancel</button>
+            <button className="btn-filled btn-filled--accent" onClick={confirmToggle} disabled={working}>
+              {working ? 'Working…' : pending.enable ? 'Enable' : 'Disable'}
+            </button>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   )

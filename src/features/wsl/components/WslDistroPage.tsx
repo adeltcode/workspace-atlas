@@ -52,9 +52,9 @@ export default function WslDistroPage({ distros, onReload }: {
   const [showMigrate, setShowMigrate] = useState(false)
   const [migrateDir, setMigrateDir]   = useState('')
   const [migrateErr, setMigrateErr]   = useState<string | null>(null)
-  // Synchronous re-entry guard for the management ops (export/optimize/clone/
-  // migrate), and per-button guards for the fire-and-forget terminal/file launches.
-  const opInFlight = useRef(false)
+  // Shared re-entry guard for the management ops (export/optimize/clone/migrate),
+  // and per-button guards for the fire-and-forget terminal/file launches.
+  const op    = useAsyncAction()
   const term  = useAsyncAction()
   const files = useAsyncAction()
   // "Manage" dropdown holding the heavier image ops (export/clone/migrate/optimize).
@@ -96,9 +96,7 @@ export default function WslDistroPage({ distros, onReload }: {
     return api.wslOpenTerminal(d.name).catch(() => {})
   }
 
-  const runExport = async () => {
-    if (opInFlight.current) return
-    opInFlight.current = true
+  const runExport = () => op.run(async () => {
     setBusyOp('export'); setStatus(null)
     try {
       const r = await api.wslExportDistro(d.name)
@@ -109,12 +107,10 @@ export default function WslDistroPage({ distros, onReload }: {
     } catch (e) {
       setStatus({ kind: 'err', text: String(e) })
       addActivity({ module: 'wsl', action: `Exported ${d.name}`, outcome: 'failure', detail: String(e) })
-    } finally { setBusyOp(null); opInFlight.current = false }
-  }
+    } finally { setBusyOp(null) }
+  })
 
-  const runOptimize = async () => {
-    if (opInFlight.current) return
-    opInFlight.current = true
+  const runOptimize = () => op.run(async () => {
     setConfirmOpt(false); setBusyOp('optimize')
     setStatus({ kind: 'progress', text: 'Approve the UAC prompt to compact the disk…' })
     try {
@@ -128,14 +124,12 @@ export default function WslDistroPage({ distros, onReload }: {
     } catch (e) {
       setStatus({ kind: 'err', text: String(e) })
       addActivity({ module: 'wsl', action: `Optimized ${d.name}`, outcome: 'failure', detail: String(e) })
-    } finally { setBusyOp(null); opInFlight.current = false }
-  }
+    } finally { setBusyOp(null) }
+  })
 
-  const runClone = async () => {
+  const runClone = () => op.run(async () => {
     const name = cloneName.trim()
     if (!name || !cloneDir) return
-    if (opInFlight.current) return
-    opInFlight.current = true
     setBusyOp('clone'); setCloneErr(null)
     try {
       await api.wslCloneDistro(d.name, name, cloneDir, d.version)
@@ -146,13 +140,11 @@ export default function WslDistroPage({ distros, onReload }: {
     } catch (e) {
       setCloneErr(String(e))
       addActivity({ module: 'wsl', action: `Cloned ${d.name}`, outcome: 'failure', detail: String(e) })
-    } finally { setBusyOp(null); opInFlight.current = false }
-  }
+    } finally { setBusyOp(null) }
+  })
 
-  const runMigrate = async () => {
+  const runMigrate = () => op.run(async () => {
     if (!migrateDir) return
-    if (opInFlight.current) return
-    opInFlight.current = true
     setBusyOp('migrate'); setMigrateErr(null)
     try {
       const r = await api.wslMigrateDistro(d.name, migrateDir, d.is_default, d.base_path, d.version)
@@ -163,8 +155,8 @@ export default function WslDistroPage({ distros, onReload }: {
     } catch (e) {
       setMigrateErr(String(e))
       addActivity({ module: 'wsl', action: `Migrated ${d.name}`, outcome: 'failure', detail: String(e) })
-    } finally { setBusyOp(null); opInFlight.current = false }
-  }
+    } finally { setBusyOp(null) }
+  })
 
   const busy = busyOp !== null
 

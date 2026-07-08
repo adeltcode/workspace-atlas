@@ -79,7 +79,6 @@ pub struct DockerContainer {
 pub struct DockerVolume {
     pub name: String,
     pub driver: String,
-    pub mountpoint: String,
     pub in_use: bool,
     /// Container names currently using this volume.
     pub containers: Vec<String>,
@@ -110,10 +109,6 @@ pub struct ContainerStats {
     pub cpu_pct: f64,
     /// Memory used by the container, in bytes.
     pub mem_used_bytes: u64,
-    /// Container memory limit, in bytes (0 = no limit / unknown).
-    pub mem_limit_bytes: u64,
-    /// Memory usage as a percentage of the container's limit.
-    pub mem_pct: f64,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -260,6 +255,26 @@ fn to_windows_path(path: &str) -> String {
         }
     }
     path.to_string()
+}
+
+/// Build a `docker compose -f <path> …` base command, routing by path style:
+/// native Windows and `/mnt/<drive>` paths go to the Windows Docker CLI, pure
+/// WSL paths run docker inside WSL. The second value is the resolved Windows
+/// path when a `/mnt/` mount was translated (for "# resolved to" logging).
+fn compose_base(config_file: &str) -> (Command, Option<String>) {
+    if is_windows_absolute(config_file) {
+        let mut cmd = Command::new("docker");
+        cmd.args(["compose", "-f", config_file]);
+        (cmd, None)
+    } else if let Some(win_path) = wsl_mount_to_windows(config_file) {
+        let mut cmd = Command::new("docker");
+        cmd.args(["compose", "-f", &win_path]);
+        (cmd, Some(win_path))
+    } else {
+        let mut cmd = Command::new("wsl");
+        cmd.args(["docker", "compose", "-f", config_file]);
+        (cmd, None)
+    }
 }
 
 /// Read a file that lives inside WSL via `wsl cat`. Capped at `max_bytes`.
@@ -426,22 +441,6 @@ fn parse_system_df(output: &str) -> Result<DockerSystemDf, String> {
     })
 }
 
-/// Parse Docker size strings like "2.54GB", "187MB", "145.3kB", "0B" → bytes.
-fn parse_size_bytes(size: &str) -> u64 {
-    let s = size.trim();
-    if let Some(n) = s.strip_suffix("GB") {
-        (n.trim().parse::<f64>().unwrap_or(0.0) * 1_000_000_000.0) as u64
-    } else if let Some(n) = s.strip_suffix("MB") {
-        (n.trim().parse::<f64>().unwrap_or(0.0) * 1_000_000.0) as u64
-    } else if let Some(n) = s.strip_suffix("kB") {
-        (n.trim().parse::<f64>().unwrap_or(0.0) * 1_000.0) as u64
-    } else if let Some(n) = s.strip_suffix('B') {
-        n.trim().parse::<u64>().unwrap_or(0)
-    } else {
-        0
-    }
-}
-
 pub(crate) fn bytes_to_human(bytes: u64) -> String {
     if bytes >= 1_000_000_000 {
         format!("{:.2} GB", bytes as f64 / 1_000_000_000.0)
@@ -452,43 +451,6 @@ pub(crate) fn bytes_to_human(bytes: u64) -> String {
     } else {
         format!("{} B", bytes)
     }
-}
-
-fn is_leap_year(y: u32) -> bool {
-    (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
-}
-
-/// Format a Unix timestamp (seconds) as "YYYY-MM-DD_HH-mm" (UTC).
-/// Used for backup filenames so they sort and read cleanly.
-fn ts_to_datetime_str(ts: u64) -> String {
-    let min_total  = ts / 60;
-    let hour_total = min_total / 60;
-    let day_total  = hour_total / 24;
-
-    let hh = (hour_total % 24) as u32;
-    let mm = (min_total  % 60) as u32;
-
-    // Days since 1970-01-01
-    let mut y = 1970u32;
-    let mut d = day_total as u32;
-    loop {
-        let dy = if is_leap_year(y) { 366 } else { 365 };
-        if d < dy { break; }
-        d -= dy;
-        y += 1;
-    }
-    let mo_days: [u32; 12] = if is_leap_year(y) {
-        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-    } else {
-        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-    };
-    let mut mo = 0u32;
-    for &days_in_mo in &mo_days {
-        if d < days_in_mo { break; }
-        d -= days_in_mo;
-        mo += 1;
-    }
-    format!("{:04}-{:02}-{:02}_{:02}-{:02}", y, mo + 1, d + 1, hh, mm)
 }
 
 /// Approximate days from Docker's human-readable "CreatedSince" field
@@ -540,7 +502,7 @@ fn get_all_images_sync() -> Result<Vec<DockerImage>, String> {
         let repository = v["Repository"].as_str().unwrap_or("<none>").to_string();
         let tag = v["Tag"].as_str().unwrap_or("<none>").to_string();
         let size = v["Size"].as_str().unwrap_or("0B").to_string();
-        let size_bytes = parse_size_bytes(&size);
+        let size_bytes = parse_iec_bytes(&size);
         let created_since = v["CreatedSince"].as_str().unwrap_or("").to_string();
         let age_days = parse_age_days(&created_since);
 
@@ -651,7 +613,7 @@ fn parse_volume_sizes_text(text: &str) -> std::collections::HashMap<String, u64>
             // Split on 2+ consecutive spaces: NAME  LINKS  SIZE
             let cols = split_df_line(trimmed);
             if cols.len() >= 3 {
-                sizes.insert(cols[0].clone(), parse_size_bytes(&cols[2]));
+                sizes.insert(cols[0].clone(), parse_iec_bytes(&cols[2]));
             }
         }
     }
@@ -702,19 +664,10 @@ fn get_networks_sync() -> Result<Vec<DockerNetwork>, String> {
 }
 
 /// Run a command and stream each stdout/stderr line as a "docker-log" event.
-/// Stderr lines are prefixed with "[err] " so the frontend can colour them red.
-fn run_streaming_sync(app: &tauri::AppHandle, cmd: Command) -> Result<(), String> {
-    run_streaming_inner(app, cmd, true)
-}
-
-/// Like run_streaming_sync but does NOT prefix stderr with "[err] ".
-/// Use for `docker compose` commands, which write all progress output to stderr
-/// by design — those messages are informational, not errors.
-fn run_streaming_compose(app: &tauri::AppHandle, cmd: Command) -> Result<(), String> {
-    run_streaming_inner(app, cmd, false)
-}
-
-fn run_streaming_inner(app: &tauri::AppHandle, mut cmd: Command, tag_stderr: bool) -> Result<(), String> {
+/// With `tag_stderr`, stderr lines are prefixed "[err] " so the frontend can
+/// colour them red. Pass `false` for `docker compose`, which writes all its
+/// informational progress output to stderr by design.
+fn run_streaming(app: &tauri::AppHandle, mut cmd: Command, tag_stderr: bool) -> Result<(), String> {
     let mut child = cmd
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -983,7 +936,7 @@ pub async fn docker_prune_run(
                 emit("$ docker image prune -f");
                 let mut cmd = Command::new("docker");
                 cmd.args(["image", "prune", "-f"]);
-                run_streaming_sync(&app, cmd)?;
+                run_streaming(&app, cmd, true)?;
             }
 
             2 => {
@@ -996,7 +949,7 @@ pub async fn docker_prune_run(
                     for id in &image_ids {
                         cmd.arg(id);
                     }
-                    run_streaming_sync(&app, cmd)?;
+                    run_streaming(&app, cmd, true)?;
                 }
             }
 
@@ -1004,7 +957,7 @@ pub async fn docker_prune_run(
                 emit("$ docker container prune -f");
                 let mut cmd = Command::new("docker");
                 cmd.args(["container", "prune", "-f"]);
-                run_streaming_sync(&app, cmd)?;
+                run_streaming(&app, cmd, true)?;
 
                 if !image_ids.is_empty() {
                     emit(&format!("$ docker rmi {}", image_ids.join(" ")));
@@ -1013,18 +966,18 @@ pub async fn docker_prune_run(
                     for id in &image_ids {
                         cmd.arg(id);
                     }
-                    run_streaming_sync(&app, cmd)?;
+                    run_streaming(&app, cmd, true)?;
                 }
 
                 emit("$ docker volume prune -f");
                 let mut cmd = Command::new("docker");
                 cmd.args(["volume", "prune", "-f"]);
-                run_streaming_sync(&app, cmd)?;
+                run_streaming(&app, cmd, true)?;
 
                 emit("$ docker builder prune -a -f");
                 let mut cmd = Command::new("docker");
                 cmd.args(["builder", "prune", "-a", "-f"]);
-                run_streaming_sync(&app, cmd)?;
+                run_streaming(&app, cmd, true)?;
             }
 
             _ => return Err(format!("Invalid level: {}", level)),
@@ -1166,7 +1119,6 @@ fn get_volumes_sync() -> Result<Vec<DockerVolume>, String> {
             in_use,
             name,
             driver:     v["Driver"].as_str().unwrap_or("local").to_string(),
-            mountpoint: v["Mountpoint"].as_str().unwrap_or("").to_string(),
             containers,
             compose_project,
             size_bytes: 0, // filled in by docker_volumes() in parallel
@@ -1200,6 +1152,19 @@ pub async fn docker_volumes() -> Result<Vec<DockerVolume>, String> {
     Ok(volumes)
 }
 
+/// Run a one-shot `docker <args>` command: Ok on success, trimmed stderr on failure.
+fn docker_run_ok(args: &[&str]) -> Result<(), String> {
+    let output = Command::new("docker")
+        .args(args)
+        .output()
+        .map_err(|e| format!("Failed to run docker: {}", e))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
+}
+
 #[tauri::command]
 pub async fn docker_container_action(id: String, action: String) -> Result<(), String> {
     let sub = match action.as_str() {
@@ -1208,41 +1173,17 @@ pub async fn docker_container_action(id: String, action: String) -> Result<(), S
         "remove" => "rm",
         _ => return Err(format!("Unknown action: {}", action)),
     };
-    let output = Command::new("docker")
-        .args([sub, &id])
-        .output()
-        .map_err(|e| format!("Failed to run docker: {}", e))?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
-    }
+    docker_run_ok(&[sub, &id])
 }
 
 #[tauri::command]
 pub async fn docker_volume_remove(name: String) -> Result<(), String> {
-    let output = Command::new("docker")
-        .args(["volume", "rm", &name])
-        .output()
-        .map_err(|e| format!("Failed to run docker: {}", e))?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
-    }
+    docker_run_ok(&["volume", "rm", &name])
 }
 
 #[tauri::command]
 pub async fn docker_volumes_prune() -> Result<(), String> {
-    let output = Command::new("docker")
-        .args(["volume", "prune", "-f"])
-        .output()
-        .map_err(|e| format!("Failed to run docker: {}", e))?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
-    }
+    docker_run_ok(&["volume", "prune", "-f"])
 }
 
 /// Stream the last `tail` log lines from a container.
@@ -1283,15 +1224,7 @@ pub async fn docker_networks() -> Result<Vec<DockerNetwork>, String> {
 
 #[tauri::command]
 pub async fn docker_network_remove(id: String) -> Result<(), String> {
-    let output = Command::new("docker")
-        .args(["network", "rm", &id])
-        .output()
-        .map_err(|e| format!("Failed to run docker network rm: {}", e))?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
-    }
+    docker_run_ok(&["network", "rm", &id])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1435,29 +1368,12 @@ pub async fn docker_compose_action(
             format!("$ docker compose -f \"{}\" {}", &config_file, extra_args.join(" "))
         ).ok();
 
-        if is_windows_absolute(&config_file) {
-            // Native Windows path (C:\...) — pass directly to Windows Docker CLI
-            let mut cmd = Command::new("docker");
-            cmd.args(["compose", "-f", &config_file]);
-            cmd.args(extra_args);
-            run_streaming_compose(&app, cmd)?;
-
-        } else if let Some(win_path) = wsl_mount_to_windows(&config_file) {
-            // WSL mount path (/mnt/c/...) — convert to Windows path
-            app.emit("docker-log", format!("# resolved to {}", &win_path)).ok();
-            let mut cmd = Command::new("docker");
-            cmd.args(["compose", "-f", &win_path]);
-            cmd.args(extra_args);
-            run_streaming_compose(&app, cmd)?;
-
-        } else {
-            // Pure WSL path (/home/..., /root/..., etc.) — run inside WSL
-            let mut cmd = Command::new("wsl");
-            cmd.arg("docker");
-            cmd.args(["compose", "-f", &config_file]);
-            cmd.args(extra_args);
-            run_streaming_compose(&app, cmd)?;
+        let (mut cmd, resolved) = compose_base(&config_file);
+        if let Some(win) = &resolved {
+            app.emit("docker-log", format!("# resolved to {}", win)).ok();
         }
+        cmd.args(extra_args);
+        run_streaming(&app, cmd, false)?;
 
         app.emit("docker-done", true).ok();
         Ok(())
@@ -1491,57 +1407,12 @@ pub async fn docker_compose_service_action(
             format!("$ docker compose -f \"{}\" {} {}", &config_file, base.join(" "), &service)
         ).ok();
 
-        if is_windows_absolute(&config_file) {
-            let mut cmd = Command::new("docker");
-            cmd.args(["compose", "-f", &config_file]);
-            cmd.args(extra.iter().map(|s| s.as_str()).collect::<Vec<_>>());
-            run_streaming_compose(&app, cmd)?;
-        } else if let Some(win_path) = wsl_mount_to_windows(&config_file) {
-            app.emit("docker-log", format!("# resolved to {}", &win_path)).ok();
-            let mut cmd = Command::new("docker");
-            cmd.args(["compose", "-f", &win_path]);
-            cmd.args(extra.iter().map(|s| s.as_str()).collect::<Vec<_>>());
-            run_streaming_compose(&app, cmd)?;
-        } else {
-            let mut cmd = Command::new("wsl");
-            cmd.arg("docker");
-            cmd.args(["compose", "-f", &config_file]);
-            cmd.args(extra.iter().map(|s| s.as_str()).collect::<Vec<_>>());
-            run_streaming_compose(&app, cmd)?;
+        let (mut cmd, resolved) = compose_base(&config_file);
+        if let Some(win) = &resolved {
+            app.emit("docker-log", format!("# resolved to {}", win)).ok();
         }
-
-        app.emit("docker-done", true).ok();
-        Ok(())
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-/// Stream the last 200 lines + follow of a single compose service's logs via docker-log.
-#[tauri::command]
-pub async fn docker_compose_service_logs(
-    app: tauri::AppHandle,
-    config_file: String,
-    service: String,
-) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        app.emit("docker-log",
-            format!("$ docker compose logs --tail=200 -f {}", &service)
-        ).ok();
-
-        if is_windows_absolute(&config_file) {
-            let mut cmd = Command::new("docker");
-            cmd.args(["compose", "-f", &config_file, "logs", "--tail=200", "-f", &service]);
-            run_streaming_compose(&app, cmd)?;
-        } else if let Some(win_path) = wsl_mount_to_windows(&config_file) {
-            let mut cmd = Command::new("docker");
-            cmd.args(["compose", "-f", &win_path, "logs", "--tail=200", "-f", &service]);
-            run_streaming_compose(&app, cmd)?;
-        } else {
-            let mut cmd = Command::new("wsl");
-            cmd.args(["docker", "compose", "-f", &config_file, "logs", "--tail=200", "-f", &service]);
-            run_streaming_compose(&app, cmd)?;
-        }
+        cmd.args(extra.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+        run_streaming(&app, cmd, false)?;
 
         app.emit("docker-done", true).ok();
         Ok(())
@@ -1641,12 +1512,9 @@ fn parse_iec_bytes(s: &str) -> u64 {
     0
 }
 
-/// Parse `docker stats` MemUsage like "23.5MiB / 15.55GiB" → (used, limit) in bytes.
-fn parse_mem_usage(s: &str) -> (u64, u64) {
-    let mut parts = s.splitn(2, '/');
-    let used  = parse_iec_bytes(parts.next().unwrap_or("").trim());
-    let limit = parse_iec_bytes(parts.next().unwrap_or("").trim());
-    (used, limit)
+/// Parse `docker stats` MemUsage like "23.5MiB / 15.55GiB" → used bytes.
+fn parse_mem_used(s: &str) -> u64 {
+    parse_iec_bytes(s.splitn(2, '/').next().unwrap_or("").trim())
 }
 
 fn get_stats_sync() -> Result<Vec<ContainerStats>, String> {
@@ -1673,10 +1541,8 @@ fn get_stats_sync() -> Result<Vec<ContainerStats>, String> {
             .to_string();
         if name.is_empty() { continue; }
         let cpu_pct = parse_pct(v["CPUPerc"].as_str().unwrap_or("0%"));
-        let mem_pct = parse_pct(v["MemPerc"].as_str().unwrap_or("0%"));
-        let (mem_used_bytes, mem_limit_bytes) =
-            parse_mem_usage(v["MemUsage"].as_str().unwrap_or("0B / 0B"));
-        stats.push(ContainerStats { name, cpu_pct, mem_used_bytes, mem_limit_bytes, mem_pct });
+        let mem_used_bytes = parse_mem_used(v["MemUsage"].as_str().unwrap_or("0B / 0B"));
+        stats.push(ContainerStats { name, cpu_pct, mem_used_bytes });
     }
     Ok(stats)
 }
@@ -2067,12 +1933,7 @@ pub async fn docker_volume_restore(
     Ok(())
 }
 
-/// Emitted as a `shell-out` event so the terminal shows the real command.
-#[derive(serde::Serialize, Clone)]
-struct ShellOut {
-    text:   String,
-    stderr: bool,
-}
+use crate::shell::ShellOut;
 
 /// Backup compose config files for a project.
 /// - Skips files whose content is unchanged since the last backup (deduplication).
@@ -2124,7 +1985,8 @@ pub async fn docker_backup_compose(
         let src_path = std::path::Path::new(src_str);
         let stem = src_path.file_stem().and_then(|s| s.to_str()).unwrap_or("compose");
         let ext  = src_path.extension().and_then(|e| e.to_str()).unwrap_or("yml");
-        let filename  = format!("{}_{}__{}.{}", project, stem, ts_to_datetime_str(ts), ext);
+        // ponytail: raw epoch-seconds filename, matching what volume backups use
+        let filename  = format!("{}_{}__{}.{}", project, stem, ts, ext);
         let dest_path = format!("{}/{}", compose_dir.replace('\\', "/"), filename);
 
         // Emit the real PowerShell command the user could run themselves
@@ -2179,19 +2041,6 @@ pub async fn docker_backup_compose(
 
     write_compose_manifest(&backup_dir, &manifest)?;
     Ok(saved)
-}
-
-/// List every compose backup across all projects, most-recent first.
-/// Entries whose archive files no longer exist are filtered out.
-#[tauri::command]
-pub async fn docker_list_all_compose_backups(backup_dir: String) -> Result<Vec<ComposeBackupEntry>, String> {
-    let mut entries: Vec<_> = read_compose_manifest(&backup_dir)
-        .backups
-        .into_iter()
-        .filter(|e| std::path::Path::new(&e.path).exists())
-        .collect();
-    entries.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-    Ok(entries)
 }
 
 /// List all compose backups for a given project, most-recent first.
@@ -2393,7 +2242,6 @@ pub struct AppProjectMeta {
     #[serde(default)] pub favorite: bool,
     #[serde(default)] pub tags: Vec<String>,
     #[serde(default)] pub note: String,
-    #[serde(default)] pub active_env: Option<String>,
     #[serde(default)] pub recent_opened: Option<String>,
     #[serde(default)] pub startup_times: Vec<u64>,
 }
@@ -2691,20 +2539,9 @@ pub async fn reveal_path(path: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn docker_compose_config(config_file: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let output = if is_windows_absolute(&config_file) {
-            Command::new("docker")
-                .args(["compose", "-f", &config_file, "config"])
-                .output()
-        } else if let Some(win_path) = wsl_mount_to_windows(&config_file) {
-            Command::new("docker")
-                .args(["compose", "-f", &win_path, "config"])
-                .output()
-        } else {
-            Command::new("wsl")
-                .args(["docker", "compose", "-f", &config_file, "config"])
-                .output()
-        }
-        .map_err(|e| format!("Failed to run docker compose config: {}", e))?;
+        let (mut cmd, _) = compose_base(&config_file);
+        let output = cmd.arg("config").output()
+            .map_err(|e| format!("Failed to run docker compose config: {}", e))?;
 
         if output.status.success() {
             String::from_utf8(output.stdout)
@@ -2746,24 +2583,11 @@ pub async fn compose_logs_watch(
     tauri::async_runtime::spawn_blocking(move || {
         let svc_refs: Vec<&str> = services.iter().map(|s| s.as_str()).collect();
 
-        let mut child = if is_windows_absolute(&config_file) {
-            let mut cmd = Command::new("docker");
-            cmd.args(["compose", "-f", &config_file, "logs", "--tail=200", "-f"]);
-            cmd.args(&svc_refs);
-            cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()
-        } else if let Some(win_path) = wsl_mount_to_windows(&config_file) {
-            let mut cmd = Command::new("docker");
-            cmd.args(["compose", "-f", &win_path, "logs", "--tail=200", "-f"]);
-            cmd.args(&svc_refs);
-            cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()
-        } else {
-            let mut cmd = Command::new("wsl");
-            cmd.arg("docker");
-            cmd.args(["compose", "-f", &config_file, "logs", "--tail=200", "-f"]);
-            cmd.args(&svc_refs);
-            cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()
-        }
-        .map_err(|e| format!("Failed to start log stream: {}", e))?;
+        let (mut cmd, _) = compose_base(&config_file);
+        cmd.args(["logs", "--tail=200", "-f"]);
+        cmd.args(&svc_refs);
+        let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()
+            .map_err(|e| format!("Failed to start log stream: {}", e))?;
 
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
@@ -2846,16 +2670,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_size_bytes_handles_each_unit() {
-        assert_eq!(parse_size_bytes("2.54GB"), 2_540_000_000);
-        assert_eq!(parse_size_bytes("187MB"), 187_000_000);
-        assert_eq!(parse_size_bytes("145.3kB"), 145_300);
-        assert_eq!(parse_size_bytes("512B"), 512);
-        assert_eq!(parse_size_bytes("0B"), 0);
-        assert_eq!(parse_size_bytes(""), 0);
-    }
-
-    #[test]
     fn bytes_to_human_picks_the_right_scale() {
         assert_eq!(bytes_to_human(2_540_000_000), "2.54 GB");
         assert_eq!(bytes_to_human(187_000_000), "187.0 MB");
@@ -2897,23 +2711,8 @@ mod tests {
     }
 
     #[test]
-    fn parse_mem_usage_splits_used_and_limit() {
-        assert_eq!(parse_mem_usage("100MiB / 2GiB"), (104_857_600, 2_147_483_648));
-    }
-
-    #[test]
-    fn ts_to_datetime_str_formats_utc() {
-        assert_eq!(ts_to_datetime_str(0), "1970-01-01_00-00");
-        assert_eq!(ts_to_datetime_str(86_400), "1970-01-02_00-00");
-        assert_eq!(ts_to_datetime_str(3_661), "1970-01-01_01-01");
-    }
-
-    #[test]
-    fn is_leap_year_follows_gregorian_rules() {
-        assert!(is_leap_year(2000));
-        assert!(is_leap_year(2024));
-        assert!(!is_leap_year(1900));
-        assert!(!is_leap_year(2023));
+    fn parse_mem_used_takes_the_used_side() {
+        assert_eq!(parse_mem_used("100MiB / 2GiB"), 104_857_600);
     }
 
     #[test]

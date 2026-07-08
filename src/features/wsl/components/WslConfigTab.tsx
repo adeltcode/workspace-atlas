@@ -33,7 +33,7 @@ export default function WslConfigTab({ runningNames, onAfterShutdown }: {
     listBackups:   () => api.wslconfigListBackups(backupDir),
     createBackup:  () => api.wslconfigBackup(backupDir),
     restoreBackup: (path) => api.wslconfigRestore(path),
-    deleteBackup:  (path) => api.wslconfigDeleteBackup(path),
+    deleteBackup:  (path) => api.wslConfDeleteBackup(path),
   }), [backupDir])
 
   return (

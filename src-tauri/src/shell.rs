@@ -14,10 +14,12 @@ pub struct ShellState(pub Arc<Mutex<Option<Child>>>);
 
 // ── Event payloads ────────────────────────────────────────────────────────────
 
+/// One line of a `shell-out` event. Shared by docker.rs / wsl.rs, which emit
+/// the real commands they run so the bottom terminal shows them.
 #[derive(serde::Serialize, Clone)]
-struct ShellLine {
-    text:   String,
-    stderr: bool,
+pub(crate) struct ShellOut {
+    pub(crate) text:   String,
+    pub(crate) stderr: bool,
 }
 
 /// Emitted once after all stdout/stderr lines have been flushed, so the
@@ -62,7 +64,7 @@ pub async fn shell_run(
             thread::spawn(move || {
                 BufReader::new(out).lines().flatten().for_each(|line| {
                     stdout_app
-                        .emit("shell-out", ShellLine { text: line, stderr: false })
+                        .emit("shell-out", ShellOut { text: line, stderr: false })
                         .ok();
                 });
             })
@@ -74,7 +76,7 @@ pub async fn shell_run(
                 BufReader::new(err).lines().flatten().for_each(|line| {
                     if !line.trim().is_empty() {
                         stderr_app
-                            .emit("shell-out", ShellLine { text: line, stderr: true })
+                            .emit("shell-out", ShellOut { text: line, stderr: true })
                             .ok();
                     }
                 });

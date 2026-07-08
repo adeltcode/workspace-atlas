@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Box, HardDrive, Package, Bot, ArrowRight, Cpu, MemoryStick, Activity } from 'lucide-react'
+import { Box, HardDrive, ArrowRight, Cpu, MemoryStick } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore, type View, type ActivityModule } from '../store/appStore'
 import { getSystemMetrics, type SystemMetrics } from '../features/system/api'
 import { bytesToHuman, timeAgo } from '../utils/format'
 
 const MODULE_ICON: Record<ActivityModule, typeof Box> = {
-  docker: Box, wsl: HardDrive, packages: Package, system: Activity,
+  docker: Box, wsl: HardDrive,
 }
 
 const MODULES = [
@@ -25,22 +25,6 @@ const MODULES = [
     description: 'Monitor distros live, manage systemd services, benchmark startup, and compact or migrate VHDs.',
     tags: ['Dashboard', 'Distros', 'Startup', 'Performance'],
     color: 'success',
-  },
-  {
-    view: 'packages' as View,
-    icon: Package,
-    title: 'Package Scanner',
-    description: 'Scan 10+ package sources, flag outdated packages, and run upgrades with live output.',
-    tags: ['winget', 'npm', 'pip', 'Cargo'],
-    color: 'warning',
-  },
-  {
-    view: 'automation' as View,
-    icon: Bot,
-    title: 'Automation',
-    description: 'Schedule recurring tasks, set up event-driven triggers, and automate your dev workflows.',
-    tags: ['Scheduling', 'Triggers', 'Webhooks', 'Git Hooks'],
-    color: 'danger',
   },
 ] as const
 

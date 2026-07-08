@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
 import {
   Star, Terminal, ChevronRight, Search, HardDrive,
@@ -150,9 +150,9 @@ export default function WslHome({ distros, loading, onReload }: {
   }, [driveLetters])
 
   const busy = busyAction !== null
-  // Synchronous re-entry guard shared by the lifecycle/import ops: blocks a second
-  // call (e.g. a same-frame double-click) before the disabled state has rendered.
-  const opInFlight = useRef(false)
+  // Shared re-entry guard for the lifecycle/import ops (blocks a same-frame
+  // double-click before the disabled state has rendered).
+  const op = useAsyncAction()
 
   // Explicit navigation: opening a card IS allowed to change the active distro.
   // Card action buttons never touch the selection (decoupling contract).
@@ -163,11 +163,9 @@ export default function WslHome({ distros, loading, onReload }: {
     return api.wslOpenTerminal(d.name).catch(() => {})
   }
 
-  const runImport = async () => {
+  const runImport = () => op.run(async () => {
     const name = importName.trim()
     if (!importTar || !name || !importDir) return
-    if (opInFlight.current) return
-    opInFlight.current = true
     setImporting(true); setImportErr(null)
     try {
       await api.wslImportDistro(name, importDir, importTar)
@@ -177,12 +175,10 @@ export default function WslHome({ distros, loading, onReload }: {
     } catch (e) {
       setImportErr(String(e))
       addActivity({ module: 'wsl', action: `Imported ${name}`, outcome: 'failure', detail: String(e) })
-    } finally { setImporting(false); opInFlight.current = false }
-  }
+    } finally { setImporting(false) }
+  })
 
-  const runLifecycle = async (l: Lifecycle) => {
-    if (opInFlight.current) return
-    opInFlight.current = true
+  const runLifecycle = (l: Lifecycle) => op.run(async () => {
     const { d, action } = l
     setLifecycle(null); setBusyAction(d.name); setBusyDistro(d.name)
     try {
@@ -193,12 +189,10 @@ export default function WslHome({ distros, loading, onReload }: {
       await onReload()
     } catch (e) {
       addActivity({ module: 'wsl', action: `${action} ${d.name}`, outcome: 'failure', detail: String(e) })
-    } finally { setBusyAction(null); setBusyDistro(null); opInFlight.current = false }
-  }
+    } finally { setBusyAction(null); setBusyDistro(null) }
+  })
 
-  const runStart = async (d: WslDistro) => {
-    if (opInFlight.current) return
-    opInFlight.current = true
+  const runStart = (d: WslDistro) => op.run(async () => {
     setBusyAction(d.name); setBusyDistro(d.name)
     try {
       await api.wslStartDistro(d.name)
@@ -206,8 +200,8 @@ export default function WslHome({ distros, loading, onReload }: {
       await onReload()
     } catch (e) {
       addActivity({ module: 'wsl', action: `Start ${d.name}`, outcome: 'failure', detail: String(e) })
-    } finally { setBusyAction(null); setBusyDistro(null); opInFlight.current = false }
-  }
+    } finally { setBusyAction(null); setBusyDistro(null) }
+  })
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const totalVhd   = distros.reduce((s, d) => s + d.vhd_size_bytes, 0)

@@ -8,6 +8,7 @@ import { wslShutdown, revealPath } from '../api'
 import { getIniValue, setIniValue, type WslField, type WslSection } from '../ini'
 import { bytesToHuman, formatDate } from '../../../utils/format'
 import type { WslConfigBackup } from '../types'
+import { Modal } from './Dialog'
 
 export interface IniBackend {
   load: () => Promise<{ path: string; content: string; exists: boolean }>
@@ -339,43 +340,31 @@ export default function IniConfigEditor({
       </div>
 
       {confirmRestart && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <div className="modal-header">
-              <div className="modal-icon-wrap warning"><AlertTriangle size={16} /></div>
-              <h2 className="modal-title">Restart WSL?</h2>
-            </div>
-            <p className="modal-body">
-              <code>wsl --shutdown</code> stops every running distribution immediately.
-              {runningNames.length > 0
-                ? <> Currently running: <strong>{runningNames.join(', ')}</strong>. Unsaved work inside them will be lost.</>
-                : ' No distributions appear to be running.'}
-            </p>
-            <div className="modal-actions">
-              <button className="btn-secondary" onClick={() => setConfirmRestart(false)}>Cancel</button>
-              <button className="btn-filled btn-filled--accent" onClick={restart}>Shut down WSL</button>
-            </div>
+        <Modal icon={<AlertTriangle size={16} />} iconWarning title="Restart WSL?" onClose={() => setConfirmRestart(false)}>
+          <p className="modal-body">
+            <code>wsl --shutdown</code> stops every running distribution immediately.
+            {runningNames.length > 0
+              ? <> Currently running: <strong>{runningNames.join(', ')}</strong>. Unsaved work inside them will be lost.</>
+              : ' No distributions appear to be running.'}
+          </p>
+          <div className="modal-actions">
+            <button className="btn-secondary" onClick={() => setConfirmRestart(false)}>Cancel</button>
+            <button className="btn-filled btn-filled--accent" onClick={restart}>Shut down WSL</button>
           </div>
-        </div>
+        </Modal>
       )}
 
       {confirmRestore && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <div className="modal-header">
-              <div className="modal-icon-wrap warning"><Undo2 size={16} /></div>
-              <h2 className="modal-title">Restore backup?</h2>
-            </div>
-            <p className="modal-body">
-              This overwrites your current <code>{label}</code> with the backup from{' '}
-              <strong>{formatDate(confirmRestore.created_at)}</strong>. Any unsaved edits will be lost.
-            </p>
-            <div className="modal-actions">
-              <button className="btn-secondary" onClick={() => setConfirmRestore(null)}>Cancel</button>
-              <button className="btn-filled btn-filled--accent" onClick={() => restore(confirmRestore)}>Restore</button>
-            </div>
+        <Modal icon={<Undo2 size={16} />} iconWarning title="Restore backup?" onClose={() => setConfirmRestore(null)}>
+          <p className="modal-body">
+            This overwrites your current <code>{label}</code> with the backup from{' '}
+            <strong>{formatDate(confirmRestore.created_at)}</strong>. Any unsaved edits will be lost.
+          </p>
+          <div className="modal-actions">
+            <button className="btn-secondary" onClick={() => setConfirmRestore(null)}>Cancel</button>
+            <button className="btn-filled btn-filled--accent" onClick={() => restore(confirmRestore)}>Restore</button>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   )

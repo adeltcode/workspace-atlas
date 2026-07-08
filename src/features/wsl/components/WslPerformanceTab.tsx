@@ -4,6 +4,7 @@ import { Timer, Gauge, Play, ShieldAlert, Lightbulb } from 'lucide-react'
 import { useAppStore } from '../../../store/appStore'
 import * as api from '../api'
 import type { WslDistro, ShellProfile } from '../types'
+import { Modal } from './Dialog'
 
 /** Format a duration given in seconds as ms or s. */
 function fmtSecs(s: number): string {
@@ -214,24 +215,18 @@ export default function WslPerformanceTab({ distros, onReload }: {
       </div>
 
       {confirmBench && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <div className="modal-header">
-              <div className="modal-icon-wrap warning"><ShieldAlert size={16} /></div>
-              <h2 className="modal-title">Benchmark {selected}?</h2>
-            </div>
-            <p className="modal-body">
-              This terminates <strong>{selected}</strong> (<code>wsl --terminate</code>) and times its next
-              cold start. Any running processes inside it stop immediately.
-            </p>
-            <div className="modal-actions">
-              <button className="btn-secondary" onClick={() => setConfirmBench(false)}>Cancel</button>
-              <button className="btn-filled btn-filled--accent" onClick={runBenchmark}>
-                <Timer size={13} /> Run benchmark
-              </button>
-            </div>
+        <Modal icon={<ShieldAlert size={16} />} iconWarning title={`Benchmark ${selected}?`} onClose={() => setConfirmBench(false)}>
+          <p className="modal-body">
+            This terminates <strong>{selected}</strong> (<code>wsl --terminate</code>) and times its next
+            cold start. Any running processes inside it stop immediately.
+          </p>
+          <div className="modal-actions">
+            <button className="btn-secondary" onClick={() => setConfirmBench(false)}>Cancel</button>
+            <button className="btn-filled btn-filled--accent" onClick={runBenchmark}>
+              <Timer size={13} /> Run benchmark
+            </button>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   )

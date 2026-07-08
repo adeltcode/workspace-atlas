@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
 import { listen } from '@tauri-apps/api/event'
 import {
@@ -53,8 +53,7 @@ export default function WslInstallWizard({ distros, onReload }: {
   const [installErr, setInstallErr] = useState<string | null>(null)
   const [done, setDone]       = useState(false)
   const [progress, setProgress] = useState<InstallProgress | null>(null)
-  // Synchronous guard so a quick double-click can't kick off two downloads.
-  const installInFlight = useRef(false)
+  const install  = useAsyncAction()
   const openTerm = useAsyncAction()
 
   const installedNames = useMemo(
@@ -87,12 +86,10 @@ export default function WslInstallWizard({ distros, onReload }: {
     )
   }, [catalog, query])
 
-  const runInstall = async () => {
-    if (!pickedDistro) return
-    // Block a second install: the synchronous ref stops same-frame double-clicks,
-    // the store flag stops a re-opened wizard from racing an in-flight download.
-    if (installInFlight.current || wslInstalling) return
-    installInFlight.current = true
+  const runInstall = () => install.run(async () => {
+    // The hook blocks same-frame double-clicks; the store flag stops a re-opened
+    // wizard from racing an in-flight download.
+    if (!pickedDistro || wslInstalling) return
     setWslInstalling(pickedDistro.name)
     setStep('install'); setInstalling(true); setInstallErr(null); setDone(false); setProgress(null)
     const unlisten = await listen<InstallProgress>('wsl-install-progress', e => setProgress(e.payload))
@@ -105,9 +102,9 @@ export default function WslInstallWizard({ distros, onReload }: {
       setInstallErr(String(e))
       addActivity({ module: 'wsl', action: `Install ${pickedDistro.name}`, outcome: 'failure', detail: String(e) })
     } finally {
-      unlisten(); setInstalling(false); installInFlight.current = false; setWslInstalling(null)
+      unlisten(); setInstalling(false); setWslInstalling(null)
     }
-  }
+  })
 
   const reset = () => { setStep('select'); setPicked(null); setInstallErr(null); setDone(false); setProgress(null) }
 

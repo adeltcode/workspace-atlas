@@ -10,8 +10,8 @@ import {
 import clsx from 'clsx'
 import * as api from '../api'
 import { useAppStore } from '../../../store/appStore'
-import type { ComposeProject, ComposeBackupEntry, DockerContainer, ContainerStats, AppProjectMeta, DetectedFile, EditorInfo } from '../types'
-import { bytesToHuman, formatDate } from '../../../utils/format'
+import { emptyMeta, type ComposeProject, type ComposeBackupEntry, type DockerContainer, type ContainerStats, type AppProjectMeta, type DetectedFile, type EditorInfo } from '../types'
+import { bytesToHuman, formatDate, hostPorts } from '../../../utils/format'
 import ComposePage from './ComposePage'
 import ComposeEnvTab from './ComposeEnvTab'
 import ComposeDockerfileViewer, { DockerfileLine } from './ComposeDockerfileViewer'
@@ -59,16 +59,7 @@ const EMPTY_FILES: DetectedFile[] = []
 
 // Host ports published by the running containers in a project (deduped, in order)
 function runningHostPorts(containers: DockerContainer[]): string[] {
-  const ports = new Set<string>()
-  for (const c of containers) {
-    if (c.state !== 'running' || !c.ports) continue
-    const re = /:(\d+)->/g
-    let m: RegExpExecArray | null
-    while ((m = re.exec(c.ports)) !== null) {
-      if (m[1] !== '0') ports.add(m[1])
-    }
-  }
-  return [...ports]
+  return [...new Set(containers.filter(c => c.state === 'running' && c.ports).flatMap(c => hostPorts(c.ports)))]
 }
 
 function renderYamlValue(
@@ -342,12 +333,7 @@ type LifecycleAction = typeof LIFECYCLE_ACTIONS[number]['id']
 // ── Inspect drawer ────────────────────────────────────────────────────────────
 
 function InspectDrawer({ container, onClose }: { container: DockerContainer; onClose: () => void }) {
-  const portRe = /:(\d+)->/g
-  const hostPorts: string[] = []
-  let m: RegExpExecArray | null
-  while ((m = portRe.exec(container.ports)) !== null) {
-    if (m[1] !== '0') hostPorts.push(m[1])
-  }
+  const ports = hostPorts(container.ports)
 
   return (
     <div className="compose-inspect-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
@@ -369,9 +355,9 @@ function InspectDrawer({ container, onClose }: { container: DockerContainer; onC
           )}>{container.state}</dd>
           <dt>Status</dt>
           <dd>{container.status}</dd>
-          {hostPorts.length > 0 && <>
+          {ports.length > 0 && <>
             <dt>Host ports</dt>
-            <dd>{hostPorts.map(p => `:${p}`).join('  ')}</dd>
+            <dd>{ports.map(p => `:${p}`).join('  ')}</dd>
           </>}
           <dt>Container</dt>
           <dd title={container.name}>{container.name}</dd>
@@ -466,12 +452,11 @@ interface ComposeTabProps {
   refreshTick?:   number
   containers:     DockerContainer[]
   containerStats: ContainerStats[]
-  statHistory:    Map<string, { cpu: number[]; mem: number[] }>
   onRefresh?:     () => void
 }
 
 export default function ComposeTab({
-  refreshTick = 0, containers, containerStats, statHistory, onRefresh,
+  refreshTick = 0, containers, containerStats, onRefresh,
 }: ComposeTabProps) {
   const backupDir = useAppStore(s => s.backupDir)
 
@@ -803,7 +788,7 @@ export default function ComposeTab({
     if (backupDir) loadComposeBackups(project.name)
     // Record recent_opened in metadata
     const now = new Date().toISOString()
-    const current = metadata[project.name] ?? { favorite: false, tags: [], note: '', active_env: null, recent_opened: null, startup_times: [] }
+    const current = metadata[project.name] ?? emptyMeta()
     const updated = { ...current, recent_opened: now }
     setMetadata(prev => ({ ...prev, [project.name]: updated }))
     api.metadataSaveProject(project.name, updated).catch(() => {})
@@ -891,7 +876,7 @@ export default function ComposeTab({
         const projectCtrs = ctrs.filter(c => c.compose_project === projectName)
         if (projectCtrs.length > 0 && projectCtrs.every(c => c.state === 'running')) {
           const elapsed = Date.now() - startMs
-          const currentMeta = metadata[projectName] ?? { favorite: false, tags: [], note: '', active_env: null, recent_opened: null, startup_times: [] }
+          const currentMeta = metadata[projectName] ?? emptyMeta()
           const updated = { ...currentMeta, startup_times: [...(currentMeta.startup_times ?? []).slice(-9), elapsed] }
           setMetadata(prev => ({ ...prev, [projectName]: updated }))
           api.metadataSaveProject(projectName, updated).catch(() => {})
@@ -1158,7 +1143,6 @@ export default function ComposeTab({
           projects={projects}
           containers={containers}
           containerStats={containerStats}
-          statHistory={statHistory}
           metadata={metadata}
           onMetaChange={handleMetaChange}
           onSelectProject={selectProject}
@@ -1431,7 +1415,7 @@ export default function ComposeTab({
 
               {/* Metadata - inline in sidebar */}
               {metaPanelOpen && selected && (() => {
-                const meta = metadata[selected.name] ?? { favorite: false, tags: [], note: '', active_env: null, recent_opened: null, startup_times: [] }
+                const meta = metadata[selected.name] ?? emptyMeta()
                 const saveMeta = (patch: Partial<AppProjectMeta>) => handleMetaChange(selected.name, { ...meta, ...patch })
                 return (
                   <div className="compose-sidebar-panel">

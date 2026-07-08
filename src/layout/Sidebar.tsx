@@ -1,4 +1,4 @@
-import { LayoutDashboard, Box, HardDrive, Package, Bot, Settings, FileText, FileCode2, FileKey } from 'lucide-react'
+import { LayoutDashboard, Box, HardDrive, Settings, FileText, FileCode2, FileKey } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore, type View, type DockerTab, type WslView } from '../store/appStore'
 import { composeStatusLabel } from '../utils/format'
@@ -6,11 +6,9 @@ import { composeStatusLabel } from '../utils/format'
 // ── Top-level module nav ──────────────────────────────────────────────────────
 
 const TOP_NAV: { view: View; label: string; icon: React.ElementType }[] = [
-  { view: 'dashboard',  label: 'Dashboard',      icon: LayoutDashboard },
-  { view: 'docker',     label: 'Docker',          icon: Box             },
-  { view: 'wsl',        label: 'WSL',             icon: HardDrive       },
-  { view: 'packages',   label: 'Package Scanner', icon: Package         },
-  { view: 'automation', label: 'Automation',      icon: Bot             },
+  { view: 'dashboard',  label: 'Dashboard', icon: LayoutDashboard },
+  { view: 'docker',     label: 'Docker',    icon: Box             },
+  { view: 'wsl',        label: 'WSL',       icon: HardDrive       },
 ]
 
 // ── Docker child tabs ─────────────────────────────────────────────────────────

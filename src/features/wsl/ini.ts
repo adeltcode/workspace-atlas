@@ -2,7 +2,8 @@
 // the single source of truth; the form reads values from it and writes surgical
 // edits back, so comments, ordering, and unknown keys are all preserved.
 
-export type FieldType = 'bool' | 'int' | 'size' | 'path' | 'string' | 'enum'
+// 'text' covers everything that renders as a free-form input (numbers, sizes, paths).
+export type FieldType = 'bool' | 'enum' | 'text'
 
 export interface WslField {
   key: string
@@ -27,26 +28,26 @@ export const WSLCONFIG_SECTIONS: WslSection[] = [
     name: 'wsl2',
     title: '[wsl2]',
     fields: [
-      { key: 'processors', label: 'Processors', type: 'int', hint: 'Logical processors available to WSL2', placeholder: 'e.g. 4', common: true },
-      { key: 'memory', label: 'Memory', type: 'size', hint: 'Max memory (default: 50% of host or 8GB)', placeholder: 'e.g. 8GB', common: true },
-      { key: 'swap', label: 'Swap', type: 'size', hint: 'Swap size (0 disables swap)', placeholder: 'e.g. 2GB', common: true },
-      { key: 'swapFile', label: 'Swap file', type: 'path', hint: 'Path to the swap VHD', placeholder: 'e.g. C:\\\\swap.vhdx' },
+      { key: 'processors', label: 'Processors', type: 'text', hint: 'Logical processors available to WSL2', placeholder: 'e.g. 4', common: true },
+      { key: 'memory', label: 'Memory', type: 'text', hint: 'Max memory (default: 50% of host or 8GB)', placeholder: 'e.g. 8GB', common: true },
+      { key: 'swap', label: 'Swap', type: 'text', hint: 'Swap size (0 disables swap)', placeholder: 'e.g. 2GB', common: true },
+      { key: 'swapFile', label: 'Swap file', type: 'text', hint: 'Path to the swap VHD', placeholder: 'e.g. C:\\\\swap.vhdx' },
       { key: 'localhostForwarding', label: 'localhost forwarding', type: 'bool', hint: 'Forward localhost ports to Windows (default: on)', common: true },
       { key: 'networkingMode', label: 'Networking mode', type: 'enum', options: ['NAT', 'mirrored'], hint: 'mirrored shares the host network', common: true },
       { key: 'firewall', label: 'Firewall', type: 'bool', hint: 'Apply Windows Firewall rules to WSL (default: on)' },
       { key: 'dnsTunneling', label: 'DNS tunneling', type: 'bool', hint: 'Tunnel DNS queries through Windows' },
       { key: 'autoProxy', label: 'Auto proxy', type: 'bool', hint: 'Use the Windows HTTP proxy settings' },
-      { key: 'ignoredPorts', label: 'Ignored ports', type: 'string', hint: 'Ports WSL will not bind in mirrored mode (comma-separated)', placeholder: 'e.g. 3000,8080' },
+      { key: 'ignoredPorts', label: 'Ignored ports', type: 'text', hint: 'Ports WSL will not bind in mirrored mode (comma-separated)', placeholder: 'e.g. 3000,8080' },
       { key: 'nestedVirtualization', label: 'Nested virtualization', type: 'bool', hint: 'Run VMs inside WSL2 (default: on)' },
-      { key: 'vmIdleTimeout', label: 'VM idle timeout', type: 'int', hint: 'Milliseconds before the idle VM shuts down', placeholder: 'e.g. 60000' },
+      { key: 'vmIdleTimeout', label: 'VM idle timeout', type: 'text', hint: 'Milliseconds before the idle VM shuts down', placeholder: 'e.g. 60000' },
       { key: 'guiApplications', label: 'GUI applications', type: 'bool', hint: 'Enable WSLg Linux GUI apps (default: on)' },
       { key: 'pageReporting', label: 'Page reporting', type: 'bool', hint: 'Return freed memory to Windows (default: on)' },
       { key: 'debugConsole', label: 'Debug console', type: 'bool', hint: 'Show the kernel debug console window' },
       { key: 'safeMode', label: 'Safe mode', type: 'bool', hint: 'Minimal feature set for troubleshooting' },
-      { key: 'defaultVhdSize', label: 'Default VHD size', type: 'size', hint: 'Max size of new distro virtual disks', placeholder: 'e.g. 1TB' },
-      { key: 'kernel', label: 'Custom kernel', type: 'path', hint: 'Path to a custom kernel image', placeholder: 'e.g. C:\\\\kernel' },
-      { key: 'kernelModules', label: 'Kernel modules', type: 'path', hint: 'Path to a custom kernel-modules VHD', placeholder: 'e.g. C:\\\\modules.vhdx' },
-      { key: 'kernelCommandLine', label: 'Kernel command line', type: 'string', hint: 'Extra kernel boot arguments', placeholder: 'e.g. cgroup_no_v1=all' },
+      { key: 'defaultVhdSize', label: 'Default VHD size', type: 'text', hint: 'Max size of new distro virtual disks', placeholder: 'e.g. 1TB' },
+      { key: 'kernel', label: 'Custom kernel', type: 'text', hint: 'Path to a custom kernel image', placeholder: 'e.g. C:\\\\kernel' },
+      { key: 'kernelModules', label: 'Kernel modules', type: 'text', hint: 'Path to a custom kernel-modules VHD', placeholder: 'e.g. C:\\\\modules.vhdx' },
+      { key: 'kernelCommandLine', label: 'Kernel command line', type: 'text', hint: 'Extra kernel boot arguments', placeholder: 'e.g. cgroup_no_v1=all' },
     ],
   },
   {
@@ -69,7 +70,7 @@ export const WSLCONF_SECTIONS: WslSection[] = [
     title: '[boot]',
     fields: [
       { key: 'systemd', label: 'systemd', type: 'bool', hint: 'Run systemd as init (WSL 0.67.6+)' },
-      { key: 'command', label: 'Boot command', type: 'string', hint: 'Command run as root at every boot', placeholder: 'e.g. service docker start' },
+      { key: 'command', label: 'Boot command', type: 'text', hint: 'Command run as root at every boot', placeholder: 'e.g. service docker start' },
     ],
   },
   {
@@ -78,8 +79,8 @@ export const WSLCONF_SECTIONS: WslSection[] = [
     fields: [
       { key: 'enabled', label: 'Enabled', type: 'bool', hint: 'Auto-mount Windows drives (default: on)' },
       { key: 'mountFsTab', label: 'Process fstab', type: 'bool', hint: 'Process /etc/fstab on boot (default: on)' },
-      { key: 'root', label: 'Mount root', type: 'string', hint: 'Where Windows drives mount (default: /mnt/)', placeholder: 'e.g. /mnt/' },
-      { key: 'options', label: 'Mount options', type: 'string', hint: 'Options for mounted Windows drives', placeholder: 'e.g. metadata,uid=1000' },
+      { key: 'root', label: 'Mount root', type: 'text', hint: 'Where Windows drives mount (default: /mnt/)', placeholder: 'e.g. /mnt/' },
+      { key: 'options', label: 'Mount options', type: 'text', hint: 'Options for mounted Windows drives', placeholder: 'e.g. metadata,uid=1000' },
     ],
   },
   {
@@ -94,7 +95,7 @@ export const WSLCONF_SECTIONS: WslSection[] = [
     name: 'network',
     title: '[network]',
     fields: [
-      { key: 'hostname', label: 'Hostname', type: 'string', hint: 'Hostname for the distro', placeholder: 'e.g. devbox' },
+      { key: 'hostname', label: 'Hostname', type: 'text', hint: 'Hostname for the distro', placeholder: 'e.g. devbox' },
       { key: 'generateHosts', label: 'Generate hosts', type: 'bool', hint: 'Auto-generate /etc/hosts (default: on)' },
       { key: 'generateResolvConf', label: 'Generate resolv.conf', type: 'bool', hint: 'Auto-generate /etc/resolv.conf (default: on)' },
     ],
@@ -103,7 +104,7 @@ export const WSLCONF_SECTIONS: WslSection[] = [
     name: 'user',
     title: '[user]',
     fields: [
-      { key: 'default', label: 'Default user', type: 'string', hint: 'User to log in as by default', placeholder: 'e.g. patrick' },
+      { key: 'default', label: 'Default user', type: 'text', hint: 'User to log in as by default', placeholder: 'e.g. patrick' },
     ],
   },
 ]
