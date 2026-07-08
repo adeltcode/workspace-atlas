@@ -310,6 +310,25 @@ fn read_via_wsl(path: &str, max_bytes: usize) -> Result<Vec<u8>, String> {
 // Helpers — backup / pause
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Docker object names are constrained to `[a-zA-Z0-9][a-zA-Z0-9_.-]*`. A few
+/// command strings (`docker exec`, `--volume` mount specs) are built from names
+/// that originate in the webview, so reject anything outside that charset before
+/// use rather than trusting the daemon's own constraint to hold at this boundary.
+fn validate_docker_name(name: &str) -> Result<(), String> {
+    let valid = name
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_alphanumeric())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'));
+    if valid {
+        Ok(())
+    } else {
+        Err(format!("Invalid Docker name: {:?}", name))
+    }
+}
+
 /// Returns IDs of containers that are currently **running** and have `volume_name`
 /// mounted. Uses `docker ps` (running-only by default, no `-a` flag).
 fn get_running_containers_for_volume(volume_name: &str) -> Vec<String> {
@@ -1425,6 +1444,7 @@ pub async fn docker_compose_service_action(
 /// Tries `sh`; the user can switch shells manually if needed.
 #[tauri::command]
 pub async fn open_container_shell(container_name: String) -> Result<(), String> {
+    validate_docker_name(&container_name)?;
     let docker_cmd = format!("docker exec -it {} sh", container_name);
 
     // Try Windows Terminal first; fall back to a plain PowerShell window.
@@ -1701,6 +1721,7 @@ pub async fn docker_volume_backup(
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    validate_docker_name(&volume_name)?;
     let volumes_dir = docker_volumes_dir(&backup_dir);
     fs::create_dir_all(&volumes_dir)
         .map_err(|e| format!("Cannot create backup directory: {}", e))?;
@@ -1825,6 +1846,7 @@ pub async fn docker_volume_restore(
     volume_name: String,
     backup_file: String,
 ) -> Result<(), String> {
+    validate_docker_name(&volume_name)?;
     let vol = &volume_name;
 
     let src_path = std::path::Path::new(&backup_file);
@@ -1892,14 +1914,14 @@ pub async fn docker_volume_restore(
     }
 
     // `find -mindepth 1 -delete` removes all content without removing the
-    // directory itself, handling hidden files and nested dirs correctly.
-    let restore_cmd = format!(
-        "find /target -mindepth 1 -delete && tar xzf /backup/{} -C /target",
-        filename
-    );
+    // directory itself, handling hidden files and nested dirs correctly. The
+    // filename is passed as the shell positional `$1` (never interpolated into
+    // the script), so a backup file with shell metacharacters in its name can't
+    // inject commands into the container's `sh`.
+    let restore_cmd = "find /target -mindepth 1 -delete && tar xzf \"/backup/$1\" -C /target";
     let docker_cmd = format!(
-        "docker run --rm --volume {}:/target --volume {}:/backup:ro alpine sh -c \"{}\"",
-        vol, backup_dir, restore_cmd
+        "docker run --rm --volume {}:/target --volume {}:/backup:ro alpine sh -c '{}' sh {}",
+        vol, backup_dir, restore_cmd, filename
     );
     emit_bp(&app, vol, "Restoring data…", 45, false, None, None, Some(docker_cmd));
 
@@ -1909,7 +1931,7 @@ pub async fn docker_volume_restore(
             "--volume", &format!("{}:/target", vol),
             "--volume", &format!("{}:/backup:ro", backup_dir),
             "alpine",
-            "sh", "-c", &restore_cmd,
+            "sh", "-c", restore_cmd, "sh", &filename,
         ])
         .output()
         .map_err(|e| format!("Failed to run docker: {}", e))?;
@@ -2573,7 +2595,7 @@ pub async fn compose_logs_watch(
 ) -> Result<(), String> {
     // Kill any previous stream
     {
-        let mut guard = state.0.lock().unwrap();
+        let mut guard = state.0.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(ref mut child) = *guard { child.kill().ok(); }
         *guard = None;
     }
@@ -2593,7 +2615,7 @@ pub async fn compose_logs_watch(
         let stderr = child.stderr.take();
 
         // Store child so compose_logs_stop can kill it
-        *child_arc.lock().unwrap() = Some(child);
+        *child_arc.lock().unwrap_or_else(|e| e.into_inner()) = Some(child);
 
         // Merge stdout + stderr into one channel via a shared sender
         let (tx, rx) = std::sync::mpsc::channel::<String>();
@@ -2655,7 +2677,7 @@ pub async fn compose_logs_watch(
 pub async fn compose_logs_stop(
     state: tauri::State<'_, ComposeLogState>,
 ) -> Result<(), String> {
-    let mut guard = state.0.lock().unwrap();
+    let mut guard = state.0.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(ref mut child) = *guard { child.kill().ok(); }
     *guard = None;
     Ok(())

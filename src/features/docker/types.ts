@@ -165,7 +165,6 @@ export interface LogEntry {
   id: string
   timestamp: number
   level: number
-  dry_run: boolean
   lines: string[]
   success: boolean
 }

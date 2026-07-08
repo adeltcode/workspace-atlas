@@ -1,5 +1,4 @@
 import { useEffect, useLayoutEffect, useState, useMemo, useRef } from 'react'
-import { listen } from '@tauri-apps/api/event'
 import { revealItemInDir, openUrl } from '@tauri-apps/plugin-opener'
 import {
   Download, AlertCircle, FolderOpen, Trash2, Monitor, Terminal,
@@ -9,6 +8,8 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import * as api from '../api'
+import { runWithDockerLog } from '../dockerLog'
+import { ModalOverlay } from '../../../components/Modal'
 import { useAppStore } from '../../../store/appStore'
 import { emptyMeta, type ComposeProject, type ComposeBackupEntry, type DockerContainer, type ContainerStats, type AppProjectMeta, type DetectedFile, type EditorInfo } from '../types'
 import { bytesToHuman, formatDate, hostPorts } from '../../../utils/format'
@@ -374,27 +375,44 @@ function InspectDrawer({ container, onClose }: { container: DockerContainer; onC
 function WipeConfirmModal({ projectName, onConfirm, onCancel, running }: {
   projectName: string; onConfirm: () => void; onCancel: () => void; running: boolean
 }) {
+  // Typed confirmation: wiping named volumes destroys data (databases included)
+  // irreversibly, so it sits in the same tier as Nuclear Prune — the user must
+  // type the project name before the button arms.
+  const [confirmText, setConfirmText] = useState('')
+  const armed = confirmText.trim() === projectName
   return (
-    <div className="compose-modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onCancel() }}>
+    <ModalOverlay onClose={onCancel} className="compose-modal-backdrop" dismissable={!running} labelledBy="wipe-confirm-title">
       <div className="compose-modal-box">
-        <h3 className="compose-modal-title">Wipe volumes for "{projectName}"?</h3>
+        <h3 className="compose-modal-title" id="wipe-confirm-title">Wipe volumes for "{projectName}"?</h3>
         <p className="compose-modal-body">
           This permanently deletes all named volumes for this project — including database
           data — and runs <code>docker compose down -v</code>. This cannot be undone.
         </p>
+        <p className="compose-modal-body" style={{ marginTop: 8 }}>
+          Type <strong>{projectName}</strong> to confirm.
+        </p>
+        <input
+          className="modal-input"
+          type="text"
+          placeholder={projectName}
+          value={confirmText}
+          onChange={e => setConfirmText(e.target.value)}
+          disabled={running}
+          autoFocus
+        />
         <div className="compose-modal-actions">
           <button className="btn-refresh" onClick={onCancel} disabled={running}>Cancel</button>
           <button
             className="compose-modal-btn-danger"
             onClick={onConfirm}
-            disabled={running}
+            disabled={running || !armed}
           >
             {running ? <RotateCcw size={11} className="spin" /> : <Trash2 size={11} />}
             {running ? 'Running…' : 'Wipe & Down'}
           </button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   )
 }
 
@@ -676,7 +694,7 @@ export default function ComposeTab({
 
   // ── Load projects ─────────────────────────────────────────────────────────
 
-  const loadProjects = async () => {
+  const loadProjects = async (): Promise<ComposeProject[]> => {
     setLoading(true); setError(null)
     try {
       const live = await api.dockerComposeLs()
@@ -690,9 +708,11 @@ export default function ComposeTab({
       const down: ComposeProject[] = Object.entries(useAppStore.getState().knownComposeProjects)
         .filter(([name]) => !liveNames.has(name))
         .map(([name, config_files]) => ({ name, status: '', config_files }))
-      setProjects([...live, ...down])
+      const all = [...live, ...down]
+      setProjects(all)
+      return all
     }
-    catch (e) { setError(String(e)) }
+    catch (e) { setError(String(e)); return [] }
     finally { setLoading(false) }
   }
 
@@ -876,10 +896,17 @@ export default function ComposeTab({
         const projectCtrs = ctrs.filter(c => c.compose_project === projectName)
         if (projectCtrs.length > 0 && projectCtrs.every(c => c.state === 'running')) {
           const elapsed = Date.now() - startMs
-          const currentMeta = metadata[projectName] ?? emptyMeta()
-          const updated = { ...currentMeta, startup_times: [...(currentMeta.startup_times ?? []).slice(-9), elapsed] }
-          setMetadata(prev => ({ ...prev, [projectName]: updated }))
-          api.metadataSaveProject(projectName, updated).catch(() => {})
+          // Merge from the freshest metadata (functional update), not the value
+          // captured when the action started — the user may have edited tags or
+          // notes during the up-to-5-minute poll, and reading the stale copy here
+          // would write those edits back out.
+          let toSave: AppProjectMeta | null = null
+          setMetadata(prev => {
+            const currentMeta = prev[projectName] ?? emptyMeta()
+            toSave = { ...currentMeta, startup_times: [...(currentMeta.startup_times ?? []).slice(-9), elapsed] }
+            return { ...prev, [projectName]: toSave }
+          })
+          if (toSave) api.metadataSaveProject(projectName, toSave).catch(() => {})
           return
         }
       } catch { break }
@@ -934,20 +961,10 @@ export default function ComposeTab({
   const handleServiceAction = async (service: string, action: 'up' | 'stop' | 'restart') => {
     if (!activeFile || serviceAction) return
     setServiceAction({ service, action })
-    const { addTerminalLine, setTerminalOpen } = useAppStore.getState()
-    setTerminalOpen(true)
-    addTerminalLine(`─── docker compose ${action} ${service} ───`, 'info')
-    const unlistenLog = await listen<string>('docker-log', e => {
-      const type = e.payload.startsWith('$') ? 'cmd' : e.payload.startsWith('[err]') ? 'stderr' : 'stdout'
-      useAppStore.getState().addTerminalLine(e.payload, type)
-    })
     try {
-      await api.dockerComposeServiceAction(activeFile, action, service)
-      useAppStore.getState().addTerminalLine('─── Done ───', 'success')
-    } catch (e) {
-      useAppStore.getState().addTerminalLine(`  ✗ ${String(e)}`, 'error')
+      await runWithDockerLog(`─── docker compose ${action} ${service} ───`, () =>
+        api.dockerComposeServiceAction(activeFile, action, service))
     } finally {
-      unlistenLog()
       setServiceAction(null)
       loadProjects()
       onRefresh?.()
@@ -967,20 +984,10 @@ export default function ComposeTab({
   const handleWipeDown = async () => {
     if (!activeFile || wipeRunning) return
     setWipeRunning(true)
-    const { addTerminalLine, setTerminalOpen } = useAppStore.getState()
-    setTerminalOpen(true)
-    addTerminalLine('─── docker compose down -v ───', 'info')
-    const unlistenLog = await listen<string>('docker-log', e => {
-      const type = e.payload.startsWith('$') ? 'cmd' : e.payload.startsWith('[err]') ? 'stderr' : 'stdout'
-      useAppStore.getState().addTerminalLine(e.payload, type)
-    })
     try {
-      await api.dockerComposeAction(activeFile, 'down-volumes')
-      useAppStore.getState().addTerminalLine('─── Done ───', 'success')
-    } catch (e) {
-      useAppStore.getState().addTerminalLine(`  ✗ ${String(e)}`, 'error')
+      await runWithDockerLog('─── docker compose down -v ───', () =>
+        api.dockerComposeAction(activeFile, 'down-volumes'))
     } finally {
-      unlistenLog()
       setWipeRunning(false)
       setWipeConfirmOpen(false)
       loadProjects()
@@ -1013,42 +1020,24 @@ export default function ComposeTab({
   const runComposeAction = async (action: LifecycleAction) => {
     if (!activeFile || lifecycleRunning) return
     setLifecycleRunning(action)
-    const { addTerminalLine, setTerminalOpen } = useAppStore.getState()
-    setTerminalOpen(true)
     const actionDef = LIFECYCLE_ACTIONS.find(a => a.id === action)!
-    addTerminalLine(`─── ${actionDef.title} ───`, 'info')
-
-    const unlistenLog = await listen<string>('docker-log', e => {
-      const type = e.payload.startsWith('$') ? 'cmd'
-        : e.payload.startsWith('[err]') ? 'stderr'
-        : 'stdout'
-      useAppStore.getState().addTerminalLine(e.payload, type)
-    })
-
     const startMs = Date.now()
     try {
-      await api.dockerComposeAction(activeFile, action)
-      useAppStore.getState().addTerminalLine('─── Done ───', 'success')
+      const { success } = await runWithDockerLog(`─── ${actionDef.title} ───`, () =>
+        api.dockerComposeAction(activeFile, action))
       // Kick off startup time tracking for Up/Rebuild actions
-      if ((action === 'up' || action === 'rebuild') && selected) {
+      if (success && (action === 'up' || action === 'rebuild') && selected) {
         recordStartupTime(selected.name, startMs)
       }
-    } catch (e) {
-      useAppStore.getState().addTerminalLine(`  ✗ ${String(e)}`, 'error')
     } finally {
-      unlistenLog()
       setLifecycleRunning(null)
       // Refresh project list and container states to reflect updated status
       onRefresh?.()
-      loadProjects().then(() => {
-        if (selected) {
-          setProjects(prev => {
-            const updated = prev.find(p => p.name === selected.name)
-            if (updated) setSelected(updated)
-            return prev
-          })
-        }
-      })
+      const list = await loadProjects()
+      if (selected) {
+        const updated = list.find(p => p.name === selected.name)
+        if (updated) setSelected(updated)
+      }
     }
   }
 
@@ -1101,26 +1090,12 @@ export default function ComposeTab({
   const runCardLifecycle = async (project: ComposeProject, action: 'up' | 'down' | 'restart') => {
     if (cardLifecycle) return
     setCardLifecycle({ project: project.name, action })
-    const { addTerminalLine, setTerminalOpen } = useAppStore.getState()
-    setTerminalOpen(true)
     const actionMap = { up: 'docker compose up -d', down: 'docker compose down', restart: 'docker compose restart' }
-    addTerminalLine(`─── ${actionMap[action]} (${project.name}) ───`, 'info')
     const configFile = project.config_files[0] ?? ''
-
-    const unlistenLog = await listen<string>('docker-log', e => {
-      const type = e.payload.startsWith('$') ? 'cmd'
-        : e.payload.startsWith('[err]') ? 'stderr'
-        : 'stdout'
-      useAppStore.getState().addTerminalLine(e.payload, type)
-    })
-
     try {
-      await api.dockerComposeAction(configFile, action)
-      useAppStore.getState().addTerminalLine('─── Done ───', 'success')
-    } catch (e) {
-      useAppStore.getState().addTerminalLine(`  ✗ ${String(e)}`, 'error')
+      await runWithDockerLog(`─── ${actionMap[action]} (${project.name}) ───`, () =>
+        api.dockerComposeAction(configFile, action))
     } finally {
-      unlistenLog()
       setCardLifecycle(null)
       loadProjects()
     }
@@ -1533,9 +1508,9 @@ export default function ComposeTab({
 
       {/* ── IDE picker modal ─────────────────────────────────────────────────── */}
       {idePickerOpen && (
-        <div className="compose-modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setIdePickerOpen(false) }}>
+        <ModalOverlay onClose={() => setIdePickerOpen(false)} className="compose-modal-backdrop" labelledBy="ide-picker-title">
           <div className="compose-modal-box" style={{ maxWidth: 340 }}>
-            <h3 className="compose-modal-title">Open in Editor</h3>
+            <h3 className="compose-modal-title" id="ide-picker-title">Open in Editor</h3>
             <p className="compose-modal-body" style={{ marginBottom: 12 }}>
               Choose your preferred editor. This preference is saved and used for all future opens.
             </p>
@@ -1561,7 +1536,7 @@ export default function ComposeTab({
               <button className="btn-refresh" onClick={() => setIdePickerOpen(false)}>Cancel</button>
             </div>
           </div>
-        </div>
+        </ModalOverlay>
       )}
     </div>
   )

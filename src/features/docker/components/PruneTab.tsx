@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event'
 import { Shield, Layers, Zap, Eye, Play, RotateCcw, AlertTriangle } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../../../store/appStore'
+import { ModalOverlay } from '../../../components/Modal'
 import { dockerPrunePreview, dockerPruneRun } from '../api'
 import type { PrunePreview, LogEntry } from '../types'
 
@@ -71,7 +72,7 @@ export default function PruneTab({ onDone }: { onDone: () => void }) {
       unlistenLog()
     }
 
-    addDockerLog({ id: `${startTime}`, timestamp: startTime, level: selectedLevel, dry_run: false, lines, success } satisfies LogEntry)
+    addDockerLog({ id: `${startTime}`, timestamp: startTime, level: selectedLevel, lines, success } satisfies LogEntry)
     addActivity({
       module: 'docker',
       action: `Prune — ${LEVELS[selectedLevel - 1].label}`,
@@ -169,11 +170,11 @@ export default function PruneTab({ onDone }: { onDone: () => void }) {
       )}
 
       {pruneState === 'confirming' && (
-        <div className="modal-overlay">
+        <ModalOverlay onClose={() => { setPruneState('idle'); setConfirmText('') }} labelledBy="prune-confirm-title">
           <div className="modal">
             <div className="modal-header">
               <div className="modal-icon-wrap danger"><Zap size={16} /></div>
-              <h2 className="modal-title">Nuclear Prune — Confirm</h2>
+              <h2 className="modal-title" id="prune-confirm-title">Nuclear Prune — Confirm</h2>
             </div>
             <p className="modal-body">
               This removes stopped containers, all unused images outside your keep-list,
@@ -186,7 +187,7 @@ export default function PruneTab({ onDone }: { onDone: () => void }) {
               <button className="btn-filled btn-filled--danger" disabled={confirmText !== 'I understand'} onClick={runPrune}>Execute Nuclear Prune</button>
             </div>
           </div>
-        </div>
+        </ModalOverlay>
       )}
     </div>
   )

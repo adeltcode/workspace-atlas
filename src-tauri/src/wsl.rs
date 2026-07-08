@@ -416,6 +416,27 @@ fn ps_single_quote(s: &str) -> String {
     s.replace('\'', "''")
 }
 
+/// Encode a script as base64 of its UTF-16LE bytes — the format PowerShell's
+/// `-EncodedCommand` expects. Lets us elevate a script without ever writing it
+/// to disk (no temp-file swap window). Standard base64, no line wraps; the
+/// output alphabet (`A-Za-z0-9+/=`) is safe inside a single-quoted PS argument.
+fn base64_encode_utf16le(script: &str) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let bytes: Vec<u8> = script.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+    let mut out = String::with_capacity((bytes.len() + 2) / 3 * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = *chunk.get(1).unwrap_or(&0) as u32;
+        let b2 = *chunk.get(2).unwrap_or(&0) as u32;
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        out.push(T[(n >> 18 & 63) as usize] as char);
+        out.push(T[(n >> 12 & 63) as usize] as char);
+        out.push(if chunk.len() > 1 { T[(n >> 6 & 63) as usize] as char } else { '=' });
+        out.push(if chunk.len() > 2 { T[(n & 63) as usize] as char } else { '=' });
+    }
+    out
+}
+
 /// Compact a distro's ext4.vhdx, reclaiming unused space. Requires admin, so a
 /// single elevated PowerShell child is spawned via UAC (the app stays
 /// unprivileged). The child shuts WSL down, then prefers `Optimize-VHD -Mode
@@ -435,36 +456,40 @@ pub async fn wsl_optimize_vhd(
             .map_err(|e| format!("Cannot read VHD '{}': {}", vhd_path, e))?;
 
         let tmp = std::env::temp_dir();
-        let script_path = tmp.join("atlas_wsl_optimize.ps1");
-        let result_path = tmp.join("atlas_wsl_optimize_result.txt");
-        let script_str = script_path.to_string_lossy().to_string();
+        // Unpredictable per-run result name so a same-user process can neither
+        // pre-plant a fake success nor guess the name to overwrite it mid-run.
+        let token = {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            format!("{}_{}", std::process::id(), nanos)
+        };
+        let result_path = tmp.join(format!("atlas_wsl_optimize_{}.txt", token));
         let result_str = result_path.to_string_lossy().to_string();
-
-        // Stale result from a previous run would be misread — remove it first.
-        std::fs::remove_file(&result_path).ok();
 
         // Inner script runs elevated. Placeholders avoid format! brace-escaping.
         let inner = INNER_OPTIMIZE_PS
             .replace("__VHD__", &ps_single_quote(&vhd_path))
             .replace("__OUT__", &ps_single_quote(&result_str));
-        std::fs::write(&script_path, inner)
-            .map_err(|e| format!("Cannot write optimize script: {}", e))?;
 
         emit_line(&app, format!("# Optimizing {} — administrator approval required", vhd_path), false);
         emit_line(&app, "$ wsl --shutdown", false);
 
-        // Outer (unprivileged) launches the elevated child and waits for it.
+        // Pass the script via -EncodedCommand so it never lands on disk. Writing
+        // a script then elevating it leaves a window where a same-user process
+        // could rewrite the file between our write and the UAC approval, turning
+        // the user's "yes" into arbitrary admin code. Encoding closes that window.
+        let encoded = base64_encode_utf16le(&inner);
         let outer = format!(
-            "try {{ $p = Start-Process powershell -Verb RunAs -Wait -PassThru -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File \"{}\"'; exit $p.ExitCode }} catch {{ exit 1223 }}",
-            ps_single_quote(&script_str)
+            "try {{ $p = Start-Process powershell -Verb RunAs -Wait -PassThru -ArgumentList '-NoProfile -ExecutionPolicy Bypass -EncodedCommand {}'; exit $p.ExitCode }} catch {{ exit 1223 }}",
+            encoded
         );
 
         let status = Command::new("powershell")
             .args(["-NoProfile", "-NonInteractive", "-Command", &outer])
             .status()
             .map_err(|e| format!("Failed to request elevation: {}", e))?;
-
-        std::fs::remove_file(&script_path).ok();
 
         if status.code() == Some(1223) {
             emit_line(&app, "  ✗ administrator access was cancelled", true);
@@ -916,12 +941,37 @@ fn run_in_distro_as(distro: &str, user: Option<&str>, script: &str) -> Result<St
         stdin
             .write_all(script.as_bytes())
             .map_err(|e| format!("Write error: {}", e))?;
+        // stdin dropped here → the child sees EOF and its `bash -s` can finish.
     }
-    let out = child.wait_with_output().map_err(|e| e.to_string())?;
-    if out.status.success() {
-        Ok(String::from_utf8_lossy(&out.stdout).to_string())
+
+    // Drain both pipes on threads so a full pipe buffer can't deadlock the wait,
+    // and cap the wait so a wedged distro (or an rc file that blocks on input in
+    // the profile probe) can't hang the probe forever.
+    // ponytail: fixed 25s ceiling; make it a param if a probe ever needs longer.
+    use std::io::Read as _;
+    let mut so = child.stdout.take();
+    let mut se = child.stderr.take();
+    let so_t = std::thread::spawn(move || { let mut b = Vec::new(); if let Some(ref mut p) = so { p.read_to_end(&mut b).ok(); } b });
+    let se_t = std::thread::spawn(move || { let mut b = Vec::new(); if let Some(ref mut p) = se { p.read_to_end(&mut b).ok(); } b });
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(25);
+    let status = loop {
+        match child.try_wait().map_err(|e| e.to_string())? {
+            Some(s) => break s,
+            None if std::time::Instant::now() >= deadline => {
+                child.kill().ok();
+                child.wait().ok();
+                return Err(format!("Timed out waiting for distro '{}'", distro));
+            }
+            None => std::thread::sleep(std::time::Duration::from_millis(50)),
+        }
+    };
+    let stdout = so_t.join().unwrap_or_default();
+    let stderr = se_t.join().unwrap_or_default();
+    if status.success() {
+        Ok(String::from_utf8_lossy(&stdout).to_string())
     } else {
-        let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        let err = String::from_utf8_lossy(&stderr).trim().to_string();
         Err(if err.is_empty() { "Command failed inside distro".to_string() } else { err })
     }
 }
@@ -1103,6 +1153,11 @@ fn parse_distro_stats(out: &str) -> DistroStats {
 #[tauri::command]
 pub async fn wsl_distro_stats(distro: String) -> Result<DistroStats, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        // Never boot a stopped distro from a background poll — running the probe
+        // script would silently start the VM and keep it alive.
+        if !distro_is_running(&distro) {
+            return Ok(DistroStats::default());
+        }
         let out = run_in_distro(&distro, STATS_SCRIPT)?;
         Ok(parse_distro_stats(&out))
     })
@@ -1117,6 +1172,10 @@ pub async fn wsl_distro_stats(distro: String) -> Result<DistroStats, String> {
 #[tauri::command]
 pub async fn wsl_distro_metrics(distro: String) -> Result<DistroMetrics, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        // Never boot a stopped distro from a background poll (see wsl_distro_stats).
+        if !distro_is_running(&distro) {
+            return Ok(DistroMetrics::default());
+        }
         let out = run_in_distro(&distro, METRICS_SCRIPT)?;
         Ok(parse_distro_metrics(&out))
     })
@@ -1323,6 +1382,10 @@ pub async fn wsl_open_distro_folder(app: tauri::AppHandle, distro: String) -> Re
 #[tauri::command]
 pub async fn wsl_distro_extras(distro: String) -> Result<DistroExtras, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        // Never boot a stopped distro from a background poll (see wsl_distro_stats).
+        if !distro_is_running(&distro) {
+            return Ok(DistroExtras::default());
+        }
         let out = run_in_distro(&distro, EXTRAS_SCRIPT)?;
         Ok(parse_distro_extras(&out))
     })
@@ -2033,6 +2096,15 @@ $list | ConvertTo-Json -Compress -Depth 3
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn base64_utf16le_matches_powershell() {
+        // PowerShell: [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes('Hi'))
+        assert_eq!(base64_encode_utf16le("Hi"), "SABpAA==");
+        // 'A' -> UTF-16LE 0x41 0x00 -> "QQA="
+        assert_eq!(base64_encode_utf16le("A"), "QQA=");
+        assert_eq!(base64_encode_utf16le(""), "");
+    }
 
     #[test]
     fn parses_distro_metrics() {

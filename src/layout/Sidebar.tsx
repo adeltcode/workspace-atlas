@@ -194,7 +194,7 @@ export default function Sidebar() {
                 <ul className="sidebar-children">
                   <li>
                     <button
-                      className={clsx('sidebar-child-item', (wslView === 'dashboard' || wslView === 'distro') && 'active')}
+                      className={clsx('sidebar-child-item', wslView === 'dashboard' && 'active')}
                       onClick={() => goWslView('dashboard')}
                     >
                       <span className="sidebar-child-label">Dashboard</span>

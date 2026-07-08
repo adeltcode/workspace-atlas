@@ -18,8 +18,11 @@
 
   /* ── Text */
   --color-text-primary:   #eaeafa;
-  --color-text-secondary: #7878a0;
-  --color-text-tertiary:  #6b6d95;   /* lifted for legibility; still dimmer than secondary */
+  /* secondary/tertiary raised to clear WCAG AA (4.5:1) on the card (#141528) and
+     input (#1c1d35) surfaces, not just the main panel — tertiary is the workhorse
+     for 10-11px table headers and metadata where the 4.5:1 threshold applies. */
+  --color-text-secondary: #9294b7;
+  --color-text-tertiary:  #8385ab;   /* AA on cards/inputs; still dimmer than secondary */
 
   /* ── Accent (indigo-blue) */
   --color-accent:        #6c71ff;
@@ -108,7 +111,7 @@
 
   --color-text-primary:   #0e0f1e;
   --color-text-secondary: #5a5c80;
-  --color-text-tertiary:  #797ba4;   /* darkened for legibility on light surfaces */
+  --color-text-tertiary:  #636585;   /* AA (4.5:1) on white cards + light surfaces */
 
   /* ── Disk-usage neutral segments (other apps / free) */
   --disk-other: #b6b8cc;
@@ -3164,38 +3167,6 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
 }
 .stats-row:last-child { margin-bottom: 0; }
 
-/* Live Activity — one row per container with CPU + mem sparklines */
-.realtime-body {
-  padding: 10px 14px;
-}
-
-.realtime-header {
-  display: grid;
-  /* 3 cols: name | CPU (sparkline 64 + gap 8 + value 50 = 122) | Mem (sparkline 64 + gap 8 + value 52 = 124) */
-  grid-template-columns: 1fr 122px 124px;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-.realtime-col-label {
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-text-tertiary);
-  text-align: center;
-}
-
-.realtime-row {
-  display: grid;
-  grid-template-columns: 1fr 64px 50px 64px 52px;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 0;
-  border-bottom: 1px solid var(--color-border-light);
-}
-.realtime-row:last-child { border-bottom: none; }
-
 .stats-name {
   font-size: 12px;
   font-weight: 500;
@@ -3405,101 +3376,6 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
 
 @media (max-width: 900px) {
   .overview-two-col { grid-template-columns: 1fr; }
-}
-
-/* =============================================================
-   Overview — Health & Alerts Panel
-   ============================================================= */
-
-.health-panel {
-  display: flex;
-  flex-direction: column;
-}
-
-.health-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 14px;
-  font-size: 12px;
-  font-weight: 500;
-  border-bottom: 1px solid var(--color-border-light);
-  background: none;
-  font-family: inherit;
-  text-align: left;
-  width: 100%;
-  color: inherit;
-  line-height: 1.4;
-}
-.health-item:last-child { border-bottom: none; }
-
-button.health-item {
-  cursor: pointer;
-  transition: background var(--transition-fast);
-}
-
-.health-item--ok       { color: var(--color-success); }
-.health-item--warn     { color: var(--color-warning); }
-.health-item--critical { color: var(--color-danger); background: var(--color-danger-subtle); }
-.health-item--info     { color: var(--color-text-secondary); }
-
-button.health-item--warn:hover     { background: var(--color-bg-hover); }
-button.health-item--critical:hover { background: rgba(255, 80, 80, 0.15); }
-button.health-item--info:hover     { background: var(--color-bg-hover); }
-
-.health-item-arrow {
-  margin-left: auto;
-  opacity: 0.45;
-  flex-shrink: 0;
-}
-
-/* =============================================================
-   Overview — System Insights Grid
-   ============================================================= */
-
-.insights-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  background: var(--color-border);
-  gap: 1px;
-}
-
-@media (max-width: 900px) {
-  .insights-grid { grid-template-columns: repeat(2, 1fr); }
-}
-
-.insights-tile {
-  background: var(--color-bg-secondary);
-  padding: 12px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.insights-tile-label {
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-text-tertiary);
-}
-
-.insights-tile-value {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--color-text-primary);
-  line-height: 1.2;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.insights-tile-sub {
-  font-size: 10.5px;
-  color: var(--color-text-tertiary);
-  white-space: nowrap;
 }
 
 /* =============================================================
@@ -7457,6 +7333,8 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   margin-bottom: 14px;
 }
 .wsl-identity-name { font-size: 16px; font-weight: 700; color: var(--color-text-primary); }
+/* Compact square icon button that returns to the WSL dashboard (one level up). */
+.wsl-back-btn { padding: 6px; line-height: 0; }
 .wsl-identity-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 
 /* "Manage" action dropdown in the identity strip. */
@@ -8383,5 +8261,19 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   flex-wrap: wrap;
   justify-content: center;
   margin-top: 12px;
+}
+
+/* =============================================================
+   Accessibility — honour the OS "reduce motion" preference.
+   Collapses the 16 keyframe animations + transitions to instant
+   for users who opt out of motion (spinners become static).
+   ============================================================= */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 

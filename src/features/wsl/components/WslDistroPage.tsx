@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   LayoutDashboard, ListChecks, Gauge, FileCog, Star, Terminal, FolderOpen,
-  Download, Copy, ArrowRightLeft, Zap, ShieldAlert, SlidersHorizontal, ChevronDown,
+  Download, Copy, ArrowRightLeft, Zap, ShieldAlert, SlidersHorizontal, ChevronDown, ArrowLeft,
 } from 'lucide-react'
 import { useAppStore, type WslDistroTab } from '../../../store/appStore'
 import * as api from '../api'
@@ -35,6 +35,7 @@ export default function WslDistroPage({ distros, onReload }: {
   const selected    = useAppStore(s => s.wslSelectedDistro) ?? ''
   const tab         = useAppStore(s => s.wslDistroTab)
   const setTab      = useAppStore(s => s.setWslDistroTab)
+  const setWslView  = useAppStore(s => s.setWslView)
   const addActivity = useAppStore(s => s.addActivity)
   const busyDistro  = useAppStore(s => s.wslBusyDistro)
 
@@ -163,6 +164,9 @@ export default function WslDistroPage({ distros, onReload }: {
   return (
     <div className="wsl-distro-page">
       <div className="wsl-identity">
+        <button className="btn-secondary wsl-back-btn" onClick={() => setWslView('dashboard')} title="Back to WSL dashboard">
+          <ArrowLeft size={15} />
+        </button>
         <DistroLogo name={d.name} size={32} dimmed={!d.running} />
         <span className="wsl-identity-name">{d.name}</span>
         {d.is_default && <Star size={11} className="wsl-distro-star" />}
