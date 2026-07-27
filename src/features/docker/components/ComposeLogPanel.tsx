@@ -145,6 +145,7 @@ export default function ComposeLogPanel({ project, containers, configFile, initi
         <Search size={11} className="log-search-icon" />
         <input
           className="log-search-input"
+          aria-label="Filter log lines"
           placeholder="Filter lines…"
           value={search}
           onChange={e => setSearch(e.target.value)}

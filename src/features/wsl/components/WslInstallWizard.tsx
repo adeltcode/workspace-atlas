@@ -146,6 +146,7 @@ export default function WslInstallWizard({ distros, onReload }: {
               <input
                 className="wsl-distros-search-input"
                 placeholder="Search distributions…"
+                aria-label="Search distributions"
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 spellCheck={false}
@@ -231,9 +232,9 @@ export default function WslInstallWizard({ distros, onReload }: {
           </ul>
 
           <div className="wiz-location">
-            <label className="wiz-location-label">Install location</label>
+            <span className="wiz-location-label" id="wiz-install-location">Install location</span>
             <div className="wsl-import-row">
-              <input className="settings-dir-input" value={installDir} readOnly placeholder="Default location…" />
+              <input className="settings-dir-input" aria-labelledby="wiz-install-location" value={installDir} readOnly placeholder="Default location…" />
               <button className="settings-dir-btn" onClick={async () => { const p = await api.pickDirectory(); if (p) setInstallDir(p) }}>
                 <FolderOpen size={13} /> Browse…
               </button>

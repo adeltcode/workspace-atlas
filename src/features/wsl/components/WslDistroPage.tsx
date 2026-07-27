@@ -275,11 +275,11 @@ export default function WslDistroPage({ distros, onReload }: {
         <Modal icon={<Copy size={16} />} title={`Clone ${d.name}`} onClose={() => setShowClone(false)} closable>
           <p className="modal-body">Export <strong>{d.name}</strong> and re-import it as an independent copy. The source distro is left unchanged.</p>
           <Field label="New distro name">
-            <input className="settings-dir-input" value={cloneName} onChange={e => setCloneName(e.target.value)} placeholder={`e.g. ${d.name}-clone`} spellCheck={false} />
+            <input className="settings-dir-input" aria-label="New distro name" value={cloneName} onChange={e => setCloneName(e.target.value)} placeholder={`e.g. ${d.name}-clone`} spellCheck={false} />
           </Field>
           <Field label="Install location">
             <div className="wsl-import-row">
-              <input className="settings-dir-input" value={cloneDir} readOnly placeholder="Choose a folder…" />
+              <input className="settings-dir-input" aria-label="Install location" value={cloneDir} readOnly placeholder="Choose a folder…" />
               <button className="settings-dir-btn" onClick={async () => { const p = await api.pickDirectory(); if (p) setCloneDir(p) }}>Browse…</button>
             </div>
           </Field>
@@ -302,7 +302,7 @@ export default function WslDistroPage({ distros, onReload }: {
           </p>
           <Field label="Destination folder">
             <div className="wsl-import-row">
-              <input className="settings-dir-input" value={migrateDir} readOnly placeholder="Choose a folder on the target drive…" />
+              <input className="settings-dir-input" aria-label="Destination folder" value={migrateDir} readOnly placeholder="Choose a folder on the target drive…" />
               <button className="settings-dir-btn" onClick={async () => { const p = await api.pickDirectory(); if (p) setMigrateDir(p) }}>Browse…</button>
             </div>
           </Field>

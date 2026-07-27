@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Box, HardDrive, ArrowRight, Cpu, MemoryStick } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore, type View, type ActivityModule } from '../store/appStore'
+import { useVisiblePoll } from '../hooks/useVisiblePoll'
 import { getSystemMetrics, type SystemMetrics } from '../features/system/api'
 import { bytesToHuman, timeAgo } from '../utils/format'
 
@@ -64,17 +65,12 @@ export default function Dashboard() {
   const activityLog   = useAppStore(s => s.activityLog)
   const [metrics, setMetrics] = useState<SystemMetrics | null>(null)
 
-  // Poll live system metrics every 2 s while the dashboard is mounted.
-  // The effect cleans up on navigation away, so no polling runs off-screen.
-  useEffect(() => {
-    let active = true
-    const poll = () => {
-      getSystemMetrics().then(m => { if (active) setMetrics(m) }).catch(() => {})
-    }
-    poll()
-    const id = setInterval(poll, 2000)
-    return () => { active = false; clearInterval(id) }
-  }, [])
+  // Poll live system metrics every 2 s while the dashboard is mounted and the
+  // window is visible. The effect cleans up on navigation away, so no polling
+  // runs off-screen either.
+  const poll = () => { getSystemMetrics().then(setMetrics).catch(() => {}) }
+  useEffect(poll, [])
+  useVisiblePoll(poll, 2000)
 
   const memPct = metrics && metrics.mem_total_bytes > 0
     ? (metrics.mem_used_bytes / metrics.mem_total_bytes) * 100

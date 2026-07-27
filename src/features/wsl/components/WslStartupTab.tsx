@@ -265,6 +265,7 @@ export default function WslStartupTab({ distros, onReload, onGoToConf }: {
               <input
                 className="wsl-svc-search-input"
                 placeholder="Search services…"
+                aria-label="Search services"
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 spellCheck={false}

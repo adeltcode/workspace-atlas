@@ -276,6 +276,7 @@ export default function ContainersTab({
           className="img-search"
           type="search"
           placeholder="Filter by name, image, or ID…"
+          aria-label="Filter containers"
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
@@ -333,6 +334,7 @@ export default function ContainersTab({
                 <input
                   type="checkbox"
                   className="row-checkbox"
+                  aria-label="Select all containers"
                   checked={allSelected}
                   ref={el => { if (el) el.indeterminate = someSelected }}
                   onChange={toggleSelectAll}
@@ -365,6 +367,7 @@ export default function ContainersTab({
                       <input
                         type="checkbox"
                         className="row-checkbox"
+                        aria-label={`Select container ${c.name}`}
                         checked={isSelected}
                         onChange={() => toggleSelect(c.id)}
                       />

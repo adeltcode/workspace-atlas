@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import {
   Save, RotateCcw, FolderOpen, Power, FilePlus, AlertTriangle,
   ListChecks, FileCode2, Archive, History, Trash2, Undo2, ChevronRight, ChevronDown,
@@ -26,13 +26,14 @@ type Mode = 'form' | 'raw'
 function FieldRow({ field, value, onChange }: {
   field: WslField; value: string; onChange: (v: string) => void
 }) {
+  const id = useId()
   const control = () => {
     if (field.type === 'bool' || field.type === 'enum') {
       const opts = field.type === 'bool' ? ['true', 'false'] : (field.options ?? [])
       const all = value && !opts.some(o => o.toLowerCase() === value.toLowerCase()) ? [value, ...opts] : opts
       const selected = all.find(o => o.toLowerCase() === value.toLowerCase()) ?? ''
       return (
-        <select className="wslcfg-field-control" value={selected} onChange={e => onChange(e.target.value)}>
+        <select id={id} className="wslcfg-field-control" value={selected} onChange={e => onChange(e.target.value)}>
           <option value="">Default</option>
           {all.map(o => <option key={o} value={o}>{o}</option>)}
         </select>
@@ -40,6 +41,7 @@ function FieldRow({ field, value, onChange }: {
     }
     return (
       <input
+        id={id}
         className="wslcfg-field-control"
         value={value}
         onChange={e => onChange(e.target.value)}
@@ -52,7 +54,7 @@ function FieldRow({ field, value, onChange }: {
   return (
     <div className="wslcfg-field">
       <div className="wslcfg-field-head">
-        <span className="wslcfg-field-label">{field.label}</span>
+        <label className="wslcfg-field-label" htmlFor={id}>{field.label}</label>
         <code className="wslcfg-field-key">{field.key}</code>
       </div>
       {control()}

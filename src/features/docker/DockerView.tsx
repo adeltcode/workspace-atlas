@@ -6,6 +6,7 @@ import {
 import { openUrl } from '@tauri-apps/plugin-opener'
 import clsx from 'clsx'
 import { useAppStore, type DockerTab } from '../../store/appStore'
+import { useVisiblePoll } from '../../hooks/useVisiblePoll'
 import { useDockerData } from './hooks'
 import * as api from './api'
 import type { ContainerStats } from './types'
@@ -82,9 +83,11 @@ export default function DockerView() {
     // containers, so accumulated sparkline data survives a manual Refresh cleanly.
     // History is only wiped in the !online branch above (engine went offline).
     pollStats()
-    const id = setInterval(pollStats, 5000)
-    return () => clearInterval(id)
   }, [online, composeTick]) // eslint-disable-line
+
+  // Poll only while the engine is up and the window is actually on screen.
+  useVisiblePoll(pollStats, 5000, online)
+
   const subtitle = TAB_SUBTITLES[dockerTab] ?? ''
 
   // Ctrl+R / Cmd+R → Refresh

@@ -275,6 +275,7 @@ export default function VolumesTab({
           className="img-search"
           type="search"
           placeholder="Filter by name or driver…"
+          aria-label="Filter volumes"
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
@@ -339,7 +340,7 @@ export default function VolumesTab({
           <thead>
             <tr>
               <th className="img-th img-th-check">
-                <input type="checkbox" className="row-checkbox"
+                <input type="checkbox" className="row-checkbox" aria-label="Select all volumes"
                   checked={allVolSelected}
                   ref={el => { if (el) el.indeterminate = someVolSelected }}
                   onChange={toggleSelectAllVol}
@@ -371,7 +372,7 @@ export default function VolumesTab({
                     title="Click to view backups"
                   >
                     <td className="img-td img-td-check" onClick={e => e.stopPropagation()}>
-                      <input type="checkbox" className="row-checkbox"
+                      <input type="checkbox" className="row-checkbox" aria-label={`Select volume ${v.name}`}
                         checked={isSelected}
                         onChange={() => toggleVolSelect(v.name)}
                       />

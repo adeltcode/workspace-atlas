@@ -267,6 +267,7 @@ export default function Terminal() {
               <input
                 ref={inputRef}
                 className="terminal-input"
+                aria-label="Terminal command"
                 value={input}
                 onChange={e => { setInput(e.target.value); histIdxRef.current = -1 }}
                 onKeyDown={handleKeyDown}

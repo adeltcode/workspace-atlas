@@ -9,6 +9,7 @@ import { readWslConfig } from '../api'
 import { getIniValue } from '../ini'
 import type { WslDistro, DistroMetrics } from '../types'
 import { bytesToHuman, formatDuration } from '../../../utils/format'
+import { useVisiblePoll } from '../../../hooks/useVisiblePoll'
 
 type BarColor = 'accent' | 'success' | 'warning' | 'danger'
 
@@ -174,14 +175,12 @@ export default function WslDashboardTab({ distros, onReload }: {
       .catch(() => {})
   }, [])
 
-  // Poll every 10 s while a running, non-transitioning distro is selected.
+  // Poll every 10 s while a running, non-transitioning distro is selected and
+  // the window is on screen.
   useEffect(() => {
-    if (!shouldPoll) return
-    let active = true
-    load()
-    const id = setInterval(() => { if (active) load() }, POLL_MS)
-    return () => { active = false; clearInterval(id) }
+    if (shouldPoll) load()
   }, [shouldPoll, load])
+  useVisiblePoll(load, POLL_MS, shouldPoll)
 
   if (distros.length === 0) {
     return <p className="empty-state" style={{ marginTop: 8 }}>No distributions found.</p>

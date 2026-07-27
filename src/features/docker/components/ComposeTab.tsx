@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import * as api from '../api'
+import ModalShell from '../../../components/ModalShell'
 import { useAppStore } from '../../../store/appStore'
 import { emptyMeta, type ComposeProject, type ComposeBackupEntry, type DockerContainer, type ContainerStats, type AppProjectMeta, type DetectedFile, type EditorInfo } from '../types'
 import { bytesToHuman, formatDate, hostPorts } from '../../../utils/format'
@@ -336,7 +337,7 @@ function InspectDrawer({ container, onClose }: { container: DockerContainer; onC
   const ports = hostPorts(container.ports)
 
   return (
-    <div className="compose-inspect-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <ModalShell className="compose-inspect-overlay" onClose={onClose}>
       <div className="compose-inspect-drawer">
         <div className="compose-inspect-header">
           <span className="compose-inspect-title">
@@ -365,7 +366,7 @@ function InspectDrawer({ container, onClose }: { container: DockerContainer; onC
           <dd>{container.created_since}</dd>
         </dl>
       </div>
-    </div>
+    </ModalShell>
   )
 }
 
@@ -375,7 +376,13 @@ function WipeConfirmModal({ projectName, onConfirm, onCancel, running }: {
   projectName: string; onConfirm: () => void; onCancel: () => void; running: boolean
 }) {
   return (
-    <div className="compose-modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onCancel() }}>
+    // Not dismissable while the wipe is running: closing mid-run would hide a
+    // destructive operation the user can no longer follow.
+    <ModalShell
+      className="compose-modal-backdrop"
+      onClose={running ? undefined : onCancel}
+      closeOnBackdrop={!running}
+    >
       <div className="compose-modal-box">
         <h3 className="compose-modal-title">Wipe volumes for "{projectName}"?</h3>
         <p className="compose-modal-body">
@@ -394,7 +401,7 @@ function WipeConfirmModal({ projectName, onConfirm, onCancel, running }: {
           </button>
         </div>
       </div>
-    </div>
+    </ModalShell>
   )
 }
 
@@ -1250,9 +1257,9 @@ export default function ComposeTab({
               <div className="compose-left-header">
                 <div className="compose-active-file" title={activeFile}>
                   {fileType === 'dockerfile'
-                    ? <FileCode2 size={12} style={{ color: '#60a5fa', flexShrink: 0 }} />
+                    ? <FileCode2 size={12} style={{ color: 'var(--chart-4)', flexShrink: 0 }} />
                     : fileType === 'env'
-                      ? <FileKey size={12} style={{ color: '#f0a500', flexShrink: 0 }} />
+                      ? <FileKey size={12} style={{ color: 'var(--color-warning)', flexShrink: 0 }} />
                       : <PathOriginLine path={activeFile} />}
                   <span className="compose-active-file-name">{relLabel(activeFile, composeBaseDir)}</span>
                   {isModified && <span className="compose-modified-dot" title="Unsaved changes" />}
@@ -1439,7 +1446,7 @@ export default function ComposeTab({
                               <button className="compose-meta-tag-remove" onClick={() => saveMeta({ tags: meta.tags.filter(t => t !== tag) })}><X size={8} /></button>
                             </span>
                           ))}
-                          <input className="compose-meta-tag-input" placeholder="Add tag…" value={metaTagInput}
+                          <input className="compose-meta-tag-input" aria-label="Add tag" placeholder="Add tag…" value={metaTagInput}
                             onChange={e => setMetaTagInput(e.target.value)}
                             onKeyDown={e => {
                               if ((e.key === 'Enter' || e.key === ',') && metaTagInput.trim()) {
@@ -1533,7 +1540,7 @@ export default function ComposeTab({
 
       {/* ── IDE picker modal ─────────────────────────────────────────────────── */}
       {idePickerOpen && (
-        <div className="compose-modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setIdePickerOpen(false) }}>
+        <ModalShell className="compose-modal-backdrop" onClose={() => setIdePickerOpen(false)}>
           <div className="compose-modal-box" style={{ maxWidth: 340 }}>
             <h3 className="compose-modal-title">Open in Editor</h3>
             <p className="compose-modal-body" style={{ marginBottom: 12 }}>
@@ -1561,7 +1568,7 @@ export default function ComposeTab({
               <button className="btn-refresh" onClick={() => setIdePickerOpen(false)}>Cancel</button>
             </div>
           </div>
-        </div>
+        </ModalShell>
       )}
     </div>
   )

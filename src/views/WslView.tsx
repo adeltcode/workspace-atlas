@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { HardDrive, RefreshCw, Upload, Star } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore, type WslDistroTab } from '../store/appStore'
+import { useVisiblePoll } from '../hooks/useVisiblePoll'
 import { useWslData } from '../features/wsl/hooks'
 import DistroSwitcher from '../features/wsl/components/DistroSwitcher'
 import WslHome from '../features/wsl/components/WslHome'
@@ -71,11 +72,12 @@ export default function WslView() {
     if (didMount.current) refresh()
     else didMount.current = true
 
-    const id = setInterval(refreshRunning, 5000)
     const onFocus = () => refresh()
     window.addEventListener('focus', onFocus)
-    return () => { clearInterval(id); window.removeEventListener('focus', onFocus) }
+    return () => window.removeEventListener('focus', onFocus)
   }, [available, wslView, refresh, refreshRunning])
+
+  useVisiblePoll(refreshRunning, 5000, available)
 
   const subtitle =
     wslView === 'dashboard'  ? 'All distributions at a glance: manage, clone, export, and optimize'

@@ -15,6 +15,7 @@ import { bytesToHuman, formatDuration, timeAgo } from '../../../utils/format'
 import { Modal, Field } from './Dialog'
 import { DistroLogo } from '../DistroLogo'
 import { useAsyncAction } from '../../../hooks/useAsyncAction'
+import { useVisiblePoll } from '../../../hooks/useVisiblePoll'
 import LiveMetricsCharts, { getChartColors } from '../../../components/LiveMetricsCharts'
 
 type StateFilter = 'all' | 'running' | 'stopped'
@@ -110,33 +111,32 @@ export default function WslHome({ distros, loading, onReload }: {
   // inside the distro, so it would reboot one that's mid-stop — exclude the busy
   // distro from the poll set. The probe itself takes ~1 s (jiffies delta).
   const runningKey = distros.filter(d => d.running && d.name !== busyDistro).map(d => d.name).join('|')
-  useEffect(() => {
+  const poll = useCallback(async () => {
     const running = runningKey ? runningKey.split('|') : []
-    if (running.length === 0) { setStatHistory(new Map()); return }
-    let active = true
-    const poll = async () => {
-      const results = await Promise.all(running.map(async name => {
-        try { return { name, s: await api.wslDistroStats(name) } } catch { return null }
-      }))
-      if (!active) return
-      setStatHistory(prev => {
-        const next = new Map(prev)
-        for (const k of next.keys()) if (!running.includes(k)) next.delete(k)
-        for (const r of results) {
-          if (!r) continue
-          const h = next.get(r.name) ?? { cpu: [], mem: [] }
-          next.set(r.name, {
-            cpu: [...h.cpu.slice(-14), r.s.cpu_pct],
-            mem: [...h.mem.slice(-14), r.s.mem_used_bytes],
-          })
-        }
-        return next
-      })
-    }
-    poll()
-    const id = setInterval(poll, 10_000)
-    return () => { active = false; clearInterval(id) }
+    if (running.length === 0) return
+    const results = await Promise.all(running.map(async name => {
+      try { return { name, s: await api.wslDistroStats(name) } } catch { return null }
+    }))
+    setStatHistory(prev => {
+      const next = new Map(prev)
+      for (const k of next.keys()) if (!running.includes(k)) next.delete(k)
+      for (const r of results) {
+        if (!r) continue
+        const h = next.get(r.name) ?? { cpu: [], mem: [] }
+        next.set(r.name, {
+          cpu: [...h.cpu.slice(-14), r.s.cpu_pct],
+          mem: [...h.mem.slice(-14), r.s.mem_used_bytes],
+        })
+      }
+      return next
+    })
   }, [runningKey])
+
+  useEffect(() => {
+    if (!runningKey) { setStatHistory(new Map()); return }
+    poll()
+  }, [runningKey, poll])
+  useVisiblePoll(poll, 10_000, !!runningKey)
 
   // Capacity of every drive that hosts a VHD, for the Docker-style disk bars.
   const driveLetters = [...new Set(distros.filter(d => d.vhd_path).map(d => d.vhd_path.slice(0, 1).toUpperCase()))].join('|')
@@ -267,6 +267,7 @@ export default function WslHome({ distros, loading, onReload }: {
           <input
             className="wsl-distros-search-input"
             placeholder="Find a distribution…"
+            aria-label="Find a distribution"
             value={query}
             onChange={e => setQuery(e.target.value)}
             spellCheck={false}
@@ -480,16 +481,16 @@ export default function WslHome({ distros, loading, onReload }: {
           <p className="modal-body">Create a new distro from a <code>.tar</code> archive. Use a new name to clone, or a new location to relocate.</p>
           <Field label="Source archive">
             <div className="wsl-import-row">
-              <input className="settings-dir-input" value={importTar} readOnly placeholder="Choose a .tar file…" />
+              <input className="settings-dir-input" aria-label="Source archive" value={importTar} readOnly placeholder="Choose a .tar file…" />
               <button className="settings-dir-btn" onClick={async () => { const p = await api.pickTarFile(); if (p) setImportTar(p) }}>Browse…</button>
             </div>
           </Field>
           <Field label="New distro name">
-            <input className="settings-dir-input" value={importName} onChange={e => setImportName(e.target.value)} placeholder="e.g. Ubuntu-Dev" spellCheck={false} />
+            <input className="settings-dir-input" aria-label="New distro name" value={importName} onChange={e => setImportName(e.target.value)} placeholder="e.g. Ubuntu-Dev" spellCheck={false} />
           </Field>
           <Field label="Install location">
             <div className="wsl-import-row">
-              <input className="settings-dir-input" value={importDir} readOnly placeholder="Choose a folder…" />
+              <input className="settings-dir-input" aria-label="Install location" value={importDir} readOnly placeholder="Choose a folder…" />
               <button className="settings-dir-btn" onClick={async () => { const p = await api.pickDirectory(); if (p) setImportDir(p) }}>Browse…</button>
             </div>
           </Field>

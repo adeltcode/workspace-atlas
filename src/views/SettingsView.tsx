@@ -189,6 +189,7 @@ export default function SettingsView() {
               <Folder size={13} className="settings-dir-icon" />
               <input
                 className="settings-dir-input"
+                aria-label="Backup directory path"
                 value={dirInput}
                 onChange={e => { setDirInput(e.target.value); setPendingDir(null); setStatusMsg(null) }}
                 onBlur={handleApplyDir}

@@ -16,26 +16,37 @@
   --color-border-light:  rgba(255,255,255,0.05);
   --color-border-strong: rgba(255,255,255,0.18);
 
-  /* ── Text */
-  --color-text-primary:   #eaeafa;
-  --color-text-secondary: #7878a0;
-  --color-text-tertiary:  #6b6d95;   /* lifted for legibility; still dimmer than secondary */
+  /* ── Text — every value meets WCAG AA (4.5:1) against every background it
+     lands on, including --color-bg-hover, which is the lightest surface. */
+  --color-text-primary:   #eaeafa;   /* 15.1:1 on card */
+  --color-text-secondary: #a6a6c0;   /*  7.6:1 on card */
+  --color-text-tertiary:  #8789a9;   /*  5.3:1 on card, 4.6:1 on hover */
 
-  /* ── Accent (indigo-blue) */
+  /* ── Accent (indigo-blue)
+     --color-accent is the *text and border* value: bright enough to read on a
+     dark surface. --color-accent-fill is the *background* value: dark enough
+     that white sits on it at 4.6:1. One colour cannot do both jobs. */
   --color-accent:        #6c71ff;
+  --color-accent-fill:   #5b60ff;
   --color-accent-hover:  #8b90ff;
   --color-accent-subtle: rgba(108,113,255,0.12);
 
-  /* ── Semantic */
+  /* ── Semantic — as above, the base value is tuned for text on dark and the
+     -fill value for white text on top of it. */
   --color-success:        #36c85a;
   --color-success-subtle: rgba(54,200,90,0.1);
   --color-warning:        #f0a500;
   --color-warning-subtle: rgba(240,165,0,0.1);
   --color-danger:         #ff5050;
+  --color-danger-fill:    #eb0000;
   --color-danger-subtle:  rgba(255,80,80,0.1);
 
-  /* ── On-brand & border shades */
+  /* ── On-brand & border shades
+     --color-on-fill is the foreground for the bright semantic fills (success,
+     warning). They are far too light for white text, so in dark mode they take
+     near-black; the light theme flips it. */
   --color-on-brand:      #fff;
+  --color-on-fill:       #05050c;
   --color-accent-border: color-mix(in srgb, var(--color-accent) 30%, transparent);
   --color-danger-border: color-mix(in srgb, var(--color-danger) 20%, transparent);
 
@@ -88,7 +99,7 @@
   --chart-8: #34d399;   /* emerald */
 
   /* ── Disk-usage neutral segments (other apps / free) */
-  --disk-other: #54566f;
+  --disk-other: #5f627e;   /* 3.0:1 vs panel — WCAG 1.4.11 non-text minimum */
   --disk-free:  #2a2c46;
 }
 
@@ -106,24 +117,29 @@
   --color-border-light:  rgba(0,0,0,0.04);
   --color-border-strong: rgba(0,0,0,0.14);
 
-  --color-text-primary:   #0e0f1e;
-  --color-text-secondary: #5a5c80;
-  --color-text-tertiary:  #797ba4;   /* darkened for legibility on light surfaces */
+  --color-text-primary:   #0e0f1e;   /* 19.0:1 on white */
+  --color-text-secondary: #5a5c80;   /*  6.4:1 on white */
+  --color-text-tertiary:  #636592;   /*  5.5:1 on white, 4.5:1 on hover */
 
   /* ── Disk-usage neutral segments (other apps / free) */
-  --disk-other: #b6b8cc;
+  --disk-other: #898cad;   /* 3.0:1 vs panel — WCAG 1.4.11 non-text minimum */
   --disk-free:  #e4e6f0;
 
+  /* Light-theme fills are already dark, so white sits on all of them and the
+     -fill values collapse back onto the base ones. */
   --color-accent:        #4f52e8;
+  --color-accent-fill:   #4f52e8;
   --color-accent-hover:  #3e42cc;
   --color-accent-subtle: rgba(79,82,232,0.08);
 
-  --color-success:        #1a9440;
-  --color-success-subtle: rgba(26,148,64,0.08);
-  --color-warning:        #b07a00;
-  --color-warning-subtle: rgba(176,122,0,0.08);
+  --color-success:        #167e37;   /* 5.2:1 on white */
+  --color-success-subtle: rgba(22,126,55,0.08);
+  --color-warning:        #926500;   /* 5.1:1 on white */
+  --color-warning-subtle: rgba(146,101,0,0.08);
   --color-danger:         #cc2828;
+  --color-danger-fill:    #cc2828;
   --color-danger-subtle:  rgba(204,40,40,0.08);
+  --color-on-fill:        #ffffff;
 
   /* Chrome areas — full light theme */
   --color-sidebar-bg:    #e4e5f2;
@@ -144,8 +160,8 @@
   --shadow-lg:   0 12px 40px rgba(0,0,0,0.14);
 
   --chart-1: #4f52e8;
-  --chart-2: #1a9440;
-  --chart-3: #b07a00;
+  --chart-2: #167e37;
+  --chart-3: #926500;
   --chart-4: #0284c7;
   --chart-5: #7c3aed;
   --chart-6: #cc2828;
@@ -168,8 +184,11 @@ html, body, #root {
   overflow: hidden;
 }
 
+/* Segoe UI Variable ships with Windows 11, so it costs no bytes, needs no
+   network, and is optically sized for UI at these small sizes. "Text" is the
+   optical size for 12-28px, which is where nearly all of this app lives. */
 body {
-  font-family: "Inter", "SF Pro Text", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  font-family: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
   background: var(--color-bg-base);
   color: var(--color-text-primary);
   font-size: 13px;
@@ -180,7 +199,7 @@ body {
 }
 
 code, pre, kbd, .mono {
-  font-family: "JetBrains Mono", "Cascadia Code", "Cascadia Mono", "Consolas", monospace;
+  font-family: "Cascadia Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
 }
 
 input, textarea {
@@ -264,8 +283,8 @@ ul, ol { list-style: none; }
 .titlebar-logo {
   width: 22px;
   height: 22px;
-  background: var(--color-accent);
-  color: #fff;
+  background: var(--color-accent-fill);
+  color: var(--color-on-brand);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: -0.5px;
@@ -738,7 +757,7 @@ ul, ol { list-style: none; }
   font-size: 10px;
   color: var(--chrome-text-subtle);
   font-variant-numeric: tabular-nums;
-  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+  font-family: "Cascadia Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
 }
 
 .sidebar-settings-btn {
@@ -846,6 +865,10 @@ ul, ol { list-style: none; }
   overflow: hidden;
 }
 
+/* These meter fills animate `width`, not `transform: scaleX()`. Deliberate: the
+   fill sits in a fixed-size clipping track so nothing around it reflows, while
+   scaleX would distort the corner radii and cannot express the stacked disk
+   segments at all (siblings there depend on real width for layout). */
 .sys-bar-fill {
   height: 100%;
   border-radius: 3px;
@@ -1111,7 +1134,7 @@ ul, ol { list-style: none; }
   align-items: center;
   gap: 6px;
   padding: 7px 14px;
-  background: var(--color-accent);
+  background: var(--color-accent-fill);
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   color: var(--color-on-brand);
@@ -1187,10 +1210,12 @@ ul, ol { list-style: none; }
   color: var(--color-on-brand);
   transition: filter var(--transition-fast);
 }
-.btn-filled--accent  { background: var(--color-accent); }
-.btn-filled--success { background: var(--color-success); }
-.btn-filled--warning { background: var(--color-warning); }
-.btn-filled--danger  { background: var(--color-danger); }
+/* Each fill names its own foreground. A single on-brand white fails badly on
+   the bright ones — white on the dark-theme amber is 2.1:1. */
+.btn-filled--accent  { background: var(--color-accent-fill); color: var(--color-on-brand); }
+.btn-filled--success { background: var(--color-success);     color: var(--color-on-fill);  }
+.btn-filled--warning { background: var(--color-warning);     color: var(--color-on-fill);  }
+.btn-filled--danger  { background: var(--color-danger-fill); color: var(--color-on-brand); }
 .btn-filled:hover:not(:disabled) { filter: brightness(1.1); }
 /* Disabled filled buttons read as clearly inert — a neutral grey, not a faded
    primary colour that still looks clickable. */
@@ -1834,6 +1859,25 @@ ul, ol { list-style: none; }
 /* =============================================================
    Docker — Confirmation Modal
    ============================================================= */
+/* Every modal is a native <dialog> opened with showModal(), which brings focus
+   trapping, focus restore, Escape, and inertness of the page behind it. The
+   dialog element itself plays the overlay, so these resets strip the UA's
+   centred-box defaults and let the existing overlay rules below stand. */
+dialog.modal-overlay,
+dialog.compose-modal-backdrop,
+dialog.compose-inspect-overlay {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: none;
+  color: inherit;
+}
+/* The dim lives on the dialog itself, so the real backdrop stays out of it. */
+dialog::backdrop { background: transparent; }
+
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -1919,8 +1963,10 @@ ul, ol { list-style: none; }
   border-radius: var(--radius-md);
   overflow: hidden;
 }
-.log-card-ok  { border-left: 3px solid var(--color-success); }
-.log-card-err { border-left: 3px solid var(--color-danger); }
+/* Outcome reads from the whole card's border rather than a 3px left stripe.
+   Same information, and it stops every log entry wearing the status-card tab. */
+.log-card-ok  { border-color: color-mix(in srgb, var(--color-success) 45%, transparent); }
+.log-card-err { border-color: color-mix(in srgb, var(--color-danger) 45%, transparent); }
 
 .log-card-header {
   display: flex;
@@ -2079,7 +2125,7 @@ ul, ol { list-style: none; }
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
-  animation: pip-pop 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: pip-pop 0.2s cubic-bezier(0.25, 1, 0.5, 1);
 }
 @keyframes pip-pop {
   from { transform: scale(0); opacity: 0; }
@@ -2116,8 +2162,18 @@ ul, ol { list-style: none; }
    Global interactive polish
    ============================================================= */
 button { transition: opacity var(--transition-fast); }
-button:focus-visible {
-  outline: 2px solid var(--color-accent);
+
+/* One focus ring for every focusable thing. Individual rules further down set
+   `outline: none` on inputs and textareas to suppress the UA default; this
+   selector is more specific than a bare element rule and carries !important so
+   the ring survives them. Without it, tabbing into the terminal input, the
+   compose editor, or the log search leaves no visible focus at all. */
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex]:not([tabindex="-1"]):focus-visible {
+  outline: 2px solid var(--color-accent) !important;
   outline-offset: 2px;
 }
 
@@ -2136,16 +2192,22 @@ button:focus-visible {
   border-top: 1px solid var(--chrome-divider);
   display: flex;
   flex-direction: column;
-  transition: height var(--transition-slow);
-  height: 32px;
   overflow: hidden;
+
+  /* The panel is always full height and slides out of view when closed, so the
+     open/close toggle is a compositor transform rather than a height animation
+     that relayouts the scrollback on every frame. The body is unmounted while
+     closed (see Terminal.tsx), so nothing focusable hides below the fold. */
+  height: var(--terminal-height);
+  transform: translateY(calc(var(--terminal-height) - 32px));
+  transition: transform var(--transition-slow);
 }
 
 .terminal-panel.open {
-  height: var(--terminal-height);
+  transform: translateY(0);
 }
 
-/* No height animation while dragging the resize handle. */
+/* No animation while dragging the resize handle. */
 .app-content.resizing-terminal .terminal-panel {
   transition: none;
 }
@@ -2180,7 +2242,7 @@ button:focus-visible {
   text-transform: uppercase;
   letter-spacing: 0.07em;
   color: var(--chrome-text-muted);
-  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+  font-family: "Cascadia Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
 }
 
 .terminal-line-count {
@@ -2247,7 +2309,7 @@ button:focus-visible {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+  font-family: "Cascadia Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
   cursor: pointer;
   border-bottom: 2px solid transparent;
   transition: color var(--transition-fast), background var(--transition-fast), border-color var(--transition-fast);
@@ -2308,7 +2370,7 @@ button:focus-visible {
 .terminal-empty {
   font-size: 11px;
   color: var(--chrome-text-subtle);
-  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+  font-family: "Cascadia Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
   padding: 8px 0;
 }
 
@@ -2316,7 +2378,7 @@ button:focus-visible {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  font-family: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
+  font-family: "Cascadia Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
   font-size: 11.5px;
   line-height: 1.7;
   animation: tl-appear 0.1s ease both;
@@ -2368,7 +2430,7 @@ button:focus-visible {
 }
 
 .terminal-prompt {
-  font-family: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
+  font-family: "Cascadia Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
   font-size: 12px;
   color: var(--color-accent);
   flex-shrink: 0;
@@ -2382,7 +2444,7 @@ button:focus-visible {
   border: none;
   outline: none;
   color: var(--chrome-text);
-  font-family: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
+  font-family: "Cascadia Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
   font-size: 11.5px;
   line-height: 1.6;
   caret-color: var(--color-accent);
@@ -2509,11 +2571,11 @@ button:focus-visible {
 /* =============================================================
    Responsive layout
    ============================================================= */
+/* The window floor is 900x600 (tauri.conf.json), so a breakpoint below 900 can
+   never fire. 1000px is the narrowest useful step: at that width the sidebar
+   still takes 200-360px, leaving a genuinely tight content column. */
 @media (max-width: 1000px) {
   .bar-grid      { grid-template-columns: repeat(3, 1fr); }
-}
-@media (max-width: 720px) {
-  .bar-grid      { grid-template-columns: repeat(2, 1fr); }
   .module-grid   { grid-template-columns: repeat(1, 1fr); }
 }
 
@@ -2620,7 +2682,7 @@ button:focus-visible {
   bottom: 0;
   left: 0;
   right: 0;
-  transition: height 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: height 0.7s cubic-bezier(0.25, 1, 0.5, 1);
 }
 .bar-fill--accent  { background: var(--color-accent); }
 .bar-fill--success { background: var(--color-success); }
@@ -4550,7 +4612,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 /* ── Syntax-highlighted YAML code view ──────────────────────── */
 .compose-code-wrap {
   display: flex;
-  font-family: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
+  font-family: "Cascadia Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
   font-size: 12px;
   line-height: 1.7;
   background: var(--color-bg-primary);
@@ -4791,7 +4853,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
-  font-family: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
+  font-family: "Cascadia Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
 }
 .env-th {
   padding: 5px 14px;
@@ -5086,7 +5148,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .log-viewer-body {
   max-height: 340px;
   overflow-y: auto;
-  font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', ui-monospace, monospace;
+  font-family: "Cascadia Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
   font-size: 11.5px;
   line-height: 1.55;
   padding: 6px 0;
@@ -5556,7 +5618,8 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   scrollbar-gutter: stable;
 }
 
-@media (max-width: 860px) {
+/* Was 860px, which is below the 900px window floor and so never fired. */
+@media (max-width: 1000px) {
   .compose-project-layout { flex-direction: column; }
   .compose-project-right {
     width: 100%;
@@ -6105,7 +6168,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   outline: none;
   background: transparent;
   color: var(--color-text-primary);
-  font-family: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
+  font-family: "Cascadia Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
   font-size: 12px;
   line-height: 1.7;
   padding: 14px 16px;
@@ -6152,7 +6215,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   background: transparent;
   color: transparent;
   caret-color: var(--color-text-primary);
-  font-family: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
+  font-family: "Cascadia Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
   font-size: 12px;
   line-height: 1.7;
   padding: 14px 16px;
@@ -7358,9 +7421,9 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   color: var(--color-accent);
 }
 .wsl-bcard-primary:hover:not(:disabled) {
-  background: var(--color-accent);
+  background: var(--color-accent-fill);
   border-color: var(--color-accent);
-  color: #fff;
+  color: var(--color-on-brand);
 }
 
 .wsl-home-bottom {
@@ -8123,7 +8186,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   color: var(--color-text-tertiary);
 }
 .wiz-step--active .wiz-step-num {
-  background: var(--color-accent);
+  background: var(--color-accent-fill);
   border-color: transparent;
   color: var(--color-on-brand);
   box-shadow: 0 0 0 3px var(--color-accent-subtle);
@@ -8221,7 +8284,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: var(--color-accent);
+  background: var(--color-accent-fill);
   color: var(--color-on-brand);
   flex-shrink: 0;
 }
@@ -8385,3 +8448,48 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   margin-top: 12px;
 }
 
+
+/* =============================================================
+   Reduced motion
+   -------------------------------------------------------------
+   Honours prefers-reduced-motion, which is what the Windows "Show animations"
+   setting maps to. Deliberately NOT a blanket animation kill: the looping
+   opacity pulses are the only signal that a distro is booting, a service is
+   restarting, or a prune is running, and destroying them would remove state,
+   not motion. What goes is everything that actually travels — spin, slide,
+   shimmer, scale, and the marching indeterminate bar.
+
+   The neutralised animations are redefined by name rather than by selector so
+   that any future rule reusing the name inherits the reduced variant too.
+   ============================================================= */
+@media (prefers-reduced-motion: reduce) {
+  /* Transitions end at the correct state, so making them instant loses
+     nothing. This also stops the terminal panel height animation. */
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Entrances: keep the fade, drop the travel. */
+  @keyframes slide-down      { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes tab-fade-in     { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes view-fade-in    { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes tl-appear       { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes wsl-switcher-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes pip-pop         { from { opacity: 0; } to { opacity: 1; } }
+
+  /* Flourish with nothing to say once the motion is gone. */
+  @keyframes pin-pop { from { transform: none; } to { transform: none; } }
+
+  /* "Working" indicators: pulse in place instead of rotating or travelling. */
+  @keyframes spin       { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+  @keyframes sk-shimmer { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+  @keyframes vol-stripe { 0%, 100% { opacity: 1; } 50% { opacity: 0.7;  } }
+
+  /* A frozen 40%-wide bar would read as "40% complete", so the indeterminate
+     bar fills its track and pulses instead. */
+  .wiz-progress-fill--indet {
+    width: 100%;
+    animation: wiz-pulse 1.6s ease-in-out infinite;
+  }
+}

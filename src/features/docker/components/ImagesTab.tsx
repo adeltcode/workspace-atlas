@@ -69,6 +69,7 @@ export default function ImagesTab({ images, loading }: { images: DockerImage[]; 
           className="img-search"
           type="search"
           placeholder="Filter by name, tag, or ID…"
+          aria-label="Filter images"
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
@@ -76,7 +77,7 @@ export default function ImagesTab({ images, loading }: { images: DockerImage[]; 
           <span className="age-label">
             Age ≤ {maxAge >= 3650 ? 'any' : maxAge >= 365 ? `${Math.round(maxAge / 365)}y` : `${maxAge}d`}
           </span>
-          <input type="range" min={1} max={3650} value={maxAge} onChange={e => setMaxAge(Number(e.target.value))} className="age-slider" />
+          <input type="range" min={1} max={3650} aria-label="Maximum image age in days" value={maxAge} onChange={e => setMaxAge(Number(e.target.value))} className="age-slider" />
         </div>
         <span className="img-count">{rows.length} image{rows.length !== 1 ? 's' : ''}</span>
       </div>

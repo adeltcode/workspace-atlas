@@ -80,6 +80,7 @@ export default function NetworksTab() {
           className="img-search"
           type="search"
           placeholder="Filter by name or driver…"
+          aria-label="Filter networks"
           value={search}
           onChange={e => setSearch(e.target.value)}
         />

@@ -4,6 +4,7 @@ import { Shield, Layers, Zap, Eye, Play, RotateCcw, AlertTriangle } from 'lucide
 import clsx from 'clsx'
 import { useAppStore } from '../../../store/appStore'
 import { dockerPrunePreview, dockerPruneRun } from '../api'
+import ModalShell from '../../../components/ModalShell'
 import type { PrunePreview, LogEntry } from '../types'
 
 const LEVELS = [
@@ -169,7 +170,7 @@ export default function PruneTab({ onDone }: { onDone: () => void }) {
       )}
 
       {pruneState === 'confirming' && (
-        <div className="modal-overlay">
+        <ModalShell className="modal-overlay" onClose={() => { setPruneState('idle'); setConfirmText('') }}>
           <div className="modal">
             <div className="modal-header">
               <div className="modal-icon-wrap danger"><Zap size={16} /></div>
@@ -180,13 +181,13 @@ export default function PruneTab({ onDone }: { onDone: () => void }) {
               all unused volumes, and all build cache.
               Type <strong>I understand</strong> to proceed.
             </p>
-            <input ref={confirmRef} className="modal-input" type="text" placeholder='Type "I understand"' value={confirmText} onChange={e => setConfirmText(e.target.value)} />
+            <input ref={confirmRef} className="modal-input" type="text" aria-label='Type "I understand" to confirm' placeholder='Type "I understand"' value={confirmText} onChange={e => setConfirmText(e.target.value)} />
             <div className="modal-actions">
               <button className="btn-secondary" onClick={() => { setPruneState('idle'); setConfirmText('') }}>Cancel</button>
               <button className="btn-filled btn-filled--danger" disabled={confirmText !== 'I understand'} onClick={runPrune}>Execute Nuclear Prune</button>
             </div>
           </div>
-        </div>
+        </ModalShell>
       )}
     </div>
   )
