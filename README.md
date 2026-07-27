@@ -8,24 +8,24 @@ Built with Tauri v2 (Rust) + React 19 + TypeScript + Vite + Tailwind v4.
 
 ### Docker & Containers
 
-- **Overview** — engine status, live CPU/memory charts, disk usage breakdown
-- **Images / Containers / Volumes / Networks** — browse, inspect, start/stop/remove, container logs, shell into a container
-- **Compose** — project list with live service status, per-project logs, in-app editing of compose files, Dockerfiles, and `.env`, open in your editor
-- **Prune** — three levels with a dry-run estimate before anything is removed:
+- **Overview**: engine status, live CPU/memory charts, disk usage breakdown
+- **Images / Containers / Volumes / Networks**: browse, inspect, start/stop/remove, container logs, shell into a container
+- **Compose**: project list with live service status, per-project logs, in-app editing of compose files, Dockerfiles, and `.env`, open in your editor
+- **Prune**: three levels with a dry-run estimate before anything is removed:
   - Level 1 Safe: dangling images only
   - Level 2 Deep: all unused images not in the keep-list
   - Level 3 Nuclear: containers, images, volumes, build cache (requires typed confirmation)
-- **Backup** — volume and compose-project backup/restore to a chosen folder
-- **Log** — history of every prune run
+- **Backup**: volume and compose-project backup/restore to a chosen folder
+- **Log**: history of every prune run
 
 ### WSL
 
-- **Dashboard** — per-distro live CPU/memory charts, Docker-style disk usage per drive, `.wslconfig` limit-vs-actual
-- **Per-distro pages** — start / restart / stop, open terminal or files, export, clone, migrate to another drive, VHD compact with before/after delta
-- **Startup** — systemd unit list with enable/disable toggles
-- **Performance** — cold-boot benchmark history and shell-profile timing (detects nvm, conda, pyenv, oh-my-zsh, sdkman, and friends)
-- **Install distro** — catalog browse and download
-- **`.wslconfig` / `wsl.conf`** — editors with backup and restore
+- **Dashboard**: per-distro live CPU/memory charts, Docker-style disk usage per drive, `.wslconfig` limit-vs-actual
+- **Per-distro pages**: start / restart / stop, open terminal or files, export, clone, migrate to another drive, VHD compact with before/after delta
+- **Startup**: systemd unit list with enable/disable toggles
+- **Performance**: cold-boot benchmark history and shell-profile timing (detects nvm, conda, pyenv, oh-my-zsh, sdkman, and friends)
+- **Install distro**: catalog browse and download
+- **`.wslconfig` / `wsl.conf`**: editors with backup and restore
 
 ## Ground rules
 
