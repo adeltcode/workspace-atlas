@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   LayoutDashboard, ListChecks, Gauge, FileCog, Star, Terminal, FolderOpen,
-  Download, Copy, ArrowRightLeft, Zap, ShieldAlert, SlidersHorizontal, ChevronDown,
+  Download, Copy, ArrowRightLeft, Zap, ShieldAlert, SlidersHorizontal, ChevronDown, Trash2,
 } from 'lucide-react'
 import { useAppStore, type WslDistroTab } from '../../../store/appStore'
 import * as api from '../api'
@@ -40,9 +40,9 @@ export default function WslDistroPage({ distros, onReload }: {
 
   const d = distros.find(x => x.name === selected)
 
-  // ── Management state (export / optimize / clone / migrate) ────────────────
+  // ── Management state (export / optimize / clone / migrate / delete) ───────
   const [extras, setExtras]   = useState<DistroExtras | null>(null)
-  const [busyOp, setBusyOp]   = useState<'export' | 'optimize' | 'clone' | 'migrate' | null>(null)
+  const [busyOp, setBusyOp]   = useState<'export' | 'optimize' | 'clone' | 'migrate' | 'delete' | null>(null)
   const [status, setStatus]   = useState<PageStatus>(null)
   const [confirmOpt, setConfirmOpt] = useState(false)
   const [showClone, setShowClone]   = useState(false)
@@ -52,6 +52,9 @@ export default function WslDistroPage({ distros, onReload }: {
   const [showMigrate, setShowMigrate] = useState(false)
   const [migrateDir, setMigrateDir]   = useState('')
   const [migrateErr, setMigrateErr]   = useState<string | null>(null)
+  const [showDelete, setShowDelete]     = useState(false)
+  const [deleteText, setDeleteText]     = useState('')
+  const [deleteErr, setDeleteErr]       = useState<string | null>(null)
   // Shared re-entry guard for the management ops (export/optimize/clone/migrate),
   // and per-button guards for the fire-and-forget terminal/file launches.
   const op    = useAsyncAction()
@@ -65,6 +68,7 @@ export default function WslDistroPage({ distros, onReload }: {
   useEffect(() => {
     setExtras(null); setStatus(null)
     setConfirmOpt(false); setShowClone(false); setShowMigrate(false); setManageOpen(false)
+    setShowDelete(false); setDeleteText(''); setDeleteErr(null)
   }, [selected])
 
   // Close the Manage menu on outside-click / Escape.
@@ -158,6 +162,27 @@ export default function WslDistroPage({ distros, onReload }: {
     } finally { setBusyOp(null) }
   })
 
+  // The typed name must match exactly (trailing whitespace from a paste aside).
+  // The backend re-checks it, so this only decides when the button lights up.
+  const deleteArmed = deleteText.trim() === d.name
+
+  const runDelete = () => op.run(async () => {
+    if (!deleteArmed) return
+    setBusyOp('delete'); setDeleteErr(null)
+    try {
+      await api.wslUnregisterDistro(d.name, deleteText.trim())
+      addActivity({ module: 'wsl', action: `Deleted ${d.name}`, outcome: 'success', detail: `unregistered · ${bytesToHuman(d.vhd_size_bytes)} freed` })
+      setShowDelete(false); setDeleteText('')
+      // The page we're on no longer has a distro behind it, so leave for the
+      // dashboard before the reload drops it from the list.
+      useAppStore.getState().setWslView('dashboard')
+      onReload()
+    } catch (e) {
+      setDeleteErr(String(e))
+      addActivity({ module: 'wsl', action: `Deleted ${d.name}`, outcome: 'failure', detail: String(e) })
+    } finally { setBusyOp(null) }
+  })
+
   const busy = busyOp !== null
 
   return (
@@ -210,6 +235,16 @@ export default function WslDistroPage({ distros, onReload }: {
                     <ShieldAlert size={12} className="btn-admin-badge wsl-menu-badge" />
                   </button>
                 )}
+                {/* Destructive, so it sits below a divider at the end of the
+                    menu rather than next to the reversible operations. */}
+                <div className="wsl-menu-sep" role="separator" />
+                <button
+                  className="wsl-menu-item wsl-menu-item--danger"
+                  role="menuitem"
+                  onClick={() => { setManageOpen(false); setDeleteErr(null); setDeleteText(''); setShowDelete(true) }}
+                >
+                  <Trash2 size={14} /> Delete distro…
+                </button>
               </div>
             )}
           </div>
@@ -311,6 +346,55 @@ export default function WslDistroPage({ distros, onReload }: {
             <button className="btn-secondary" onClick={() => setShowMigrate(false)} disabled={busyOp === 'migrate'}>Cancel</button>
             <button className="btn-filled btn-filled--accent" onClick={runMigrate} disabled={busyOp === 'migrate' || !migrateDir}>
               <ArrowRightLeft size={13} /> {busyOp === 'migrate' ? 'Migrating…' : 'Migrate'}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Delete is the one action with no rollback artifact: no backup .tar, no
+          recycle bin, no undo. It is gated on typing the distro name exactly,
+          so it cannot be reached by muscle memory or a stray Enter. The dialog
+          stays open (and undismissable) while the unregister runs. */}
+      {showDelete && (
+        <Modal
+          icon={<Trash2 size={16} />}
+          iconDanger
+          title={`Delete ${d.name}?`}
+          onClose={() => { setShowDelete(false); setDeleteText('') }}
+          closable={busyOp !== 'delete'}
+        >
+          <p className="modal-body">
+            This runs <code>wsl --unregister {d.name}</code>, which permanently destroys the
+            distribution and <strong>every file inside it</strong>. There is no undo and no backup.
+            {d.is_default && <> This is also your <strong>default distribution</strong>.</>}
+          </p>
+          <div className="wsl-estimate">
+            <div className="wsl-estimate-row"><span>Disk freed</span><strong>{bytesToHuman(d.vhd_size_bytes)}</strong></div>
+            <div className="wsl-estimate-row"><span>Install folder deleted</span><strong className="wsl-estimate-path">{d.base_path}</strong></div>
+          </div>
+          <p className="wsl-estimate-note">
+            Keeping a copy? Cancel and run <strong>Manage → Export to .tar</strong> first.
+          </p>
+          <label className="wsl-import-label" htmlFor="wsl-delete-confirm" style={{ marginTop: 12 }}>
+            Type <strong>{d.name}</strong> to confirm
+          </label>
+          <input
+            id="wsl-delete-confirm"
+            className="modal-input"
+            type="text"
+            autoFocus
+            spellCheck={false}
+            autoComplete="off"
+            placeholder={d.name}
+            value={deleteText}
+            onChange={e => setDeleteText(e.target.value)}
+            disabled={busyOp === 'delete'}
+          />
+          {deleteErr && <div className="settings-status settings-status--error">{deleteErr}</div>}
+          <div className="modal-actions">
+            <button className="btn-secondary" onClick={() => { setShowDelete(false); setDeleteText('') }} disabled={busyOp === 'delete'}>Cancel</button>
+            <button className="btn-filled btn-filled--danger" onClick={runDelete} disabled={!deleteArmed || busyOp === 'delete'}>
+              <Trash2 size={13} /> {busyOp === 'delete' ? 'Deleting…' : 'Delete permanently'}
             </button>
           </div>
         </Modal>

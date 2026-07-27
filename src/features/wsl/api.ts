@@ -26,6 +26,10 @@ export const wslCloneDistro = (source: string, newName: string, installDir: stri
   invoke<void>('wsl_clone_distro', { source, newName, installDir, version })
 export const wslMigrateDistro = (distro: string, newDir: string, wasDefault: boolean, currentBase: string, version: number) =>
   invoke<MigrateResult>('wsl_migrate_distro', { distro, newDir, wasDefault, currentBase, version })
+/** Permanently delete a distro (`wsl --unregister`). `confirm` is the name the
+ *  user typed; the backend rejects the call unless it matches. No undo. */
+export const wslUnregisterDistro = (distro: string, confirm: string) =>
+  invoke<void>('wsl_unregister_distro', { distro, confirm })
 
 export const wslListServices  = (distro: string) => invoke<ServiceList>('wsl_list_services', { distro })
 export const wslServiceDetail = (distro: string, service: string) =>

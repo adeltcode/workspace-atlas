@@ -1539,6 +1539,70 @@ pub async fn wsl_migrate_distro(
     .map_err(|e| e.to_string())?
 }
 
+/// Names of every registered distro (`wsl -l -q`). Used to check that a name the
+/// frontend sends is really a registered distro before it is handed to `wsl.exe`.
+fn registered_distro_names() -> Vec<String> {
+    Command::new("wsl")
+        .env("WSL_UTF8", "1")
+        .args(["-l", "-q"])
+        .output()
+        .ok()
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The two guards on unregister, kept out of the command so they can be tested
+/// without a live WSL install:
+///  * `confirm` is the distro name the user typed into the dialog. It is checked
+///    here as well as in the UI, because this command is reachable from any code
+///    running in the webview: the guard belongs on the side that runs the
+///    destructive command, not only on the side that draws the button.
+///  * the name must still be registered, so a stale or crafted value cannot reach
+///    `wsl.exe` (a leading `-`, for instance, would be read there as a flag).
+fn check_unregister(distro: &str, confirm: &str, registered: &[String]) -> Result<(), String> {
+    if confirm.trim() != distro {
+        return Err("Confirmation does not match the distribution name.".to_string());
+    }
+    if !registered.iter().any(|n| n == distro) {
+        return Err(format!("{} is not a registered distribution.", distro));
+    }
+    Ok(())
+}
+
+/// Permanently delete a distro: `wsl --unregister <distro>`. This destroys the
+/// distro's disk and every file inside it, and there is no undo.
+#[tauri::command]
+pub async fn wsl_unregister_distro(
+    app: tauri::AppHandle,
+    distro: String,
+    confirm: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        check_unregister(&distro, &confirm, &registered_distro_names())?;
+
+        emit_line(&app, format!("# Deleting {}: destroys its disk and every file in it, with no undo", distro), false);
+        emit_line(&app, format!("$ wsl --terminate {}", distro), false);
+        run_wsl(&["--terminate", &distro]).ok(); // already stopped is fine
+
+        emit_line(&app, format!("$ wsl --unregister {}", distro), false);
+        run_wsl(&["--unregister", &distro]).map_err(|e| {
+            emit_line(&app, format!("  ✗ {}", e), true);
+            e
+        })?;
+
+        emit_line(&app, format!("  ✓ deleted {}", distro), false);
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Startup manager (systemd services)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2033,6 +2097,20 @@ $list | ConvertTo-Json -Compress -Depth 3
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unregister_needs_an_exact_typed_name_and_a_real_distro() {
+        let registered = vec!["Ubuntu-24.04".to_string(), "kali-linux".to_string()];
+        assert!(check_unregister("Ubuntu-24.04", "Ubuntu-24.04", &registered).is_ok());
+        // Trailing whitespace from a paste is forgiven; nothing else is.
+        assert!(check_unregister("Ubuntu-24.04", "Ubuntu-24.04\n", &registered).is_ok());
+        assert!(check_unregister("Ubuntu-24.04", "ubuntu-24.04", &registered).is_err());
+        assert!(check_unregister("Ubuntu-24.04", "Ubuntu-24.0", &registered).is_err());
+        assert!(check_unregister("Ubuntu-24.04", "", &registered).is_err());
+        // A name that is not registered never reaches wsl.exe, even when the
+        // confirmation matches it.
+        assert!(check_unregister("--help", "--help", &registered).is_err());
+    }
 
     #[test]
     fn parses_distro_metrics() {
