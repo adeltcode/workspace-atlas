@@ -105,7 +105,7 @@ export default function Sidebar() {
                 <span className="sidebar-item-label">{label}</span>
               </button>
 
-              {/* Docker child nav — only when Docker module is active */}
+              {/* Docker child nav - only when Docker module is active */}
               {view === 'docker' && activeView === 'docker' && (
                 <ul className="sidebar-children">
                   {DOCKER_TABS.map(({ id, label: tabLabel }) => {
@@ -120,10 +120,10 @@ export default function Sidebar() {
                           {badge && <span className="sidebar-child-badge">{badge}</span>}
                         </button>
 
-                        {/* Compose project grandchild items — only when Compose tab is active */}
+                        {/* Compose project grandchild items - only when Compose tab is active */}
                         {id === 'compose' && dockerTab === 'compose' && composeProjectsNav.length > 0 && (
                           <ul className="sidebar-grandchildren">
-                            {/* Overview item — always first */}
+                            {/* Overview item - always first */}
                             <li>
                               <button
                                 className={clsx('sidebar-grandchild-item', composeActiveProject === null && 'active')}
@@ -141,7 +141,7 @@ export default function Sidebar() {
                                   <button
                                     className={clsx('sidebar-grandchild-item', isActive && 'active')}
                                     onClick={() => goComposeProject(p.name)}
-                                    title={`${p.name} — ${running}/${total} running`}
+                                    title={`${p.name} - ${running}/${total} running`}
                                   >
                                     <span className={clsx('sidebar-compose-dot', dot)} />
                                     <span className="sidebar-grandchild-label">{p.name}</span>
@@ -157,7 +157,7 @@ export default function Sidebar() {
                                     )}
                                   </button>
 
-                                  {/* Project files — sidebar menu in place of editor tabs */}
+                                  {/* Project files - sidebar menu in place of editor tabs */}
                                   {isActive && composeFilesNav.length > 0 && (
                                     <ul className="sidebar-files">
                                       {composeFilesNav.map(f => (
@@ -189,7 +189,7 @@ export default function Sidebar() {
                 </ul>
               )}
 
-              {/* WSL child nav — only when WSL module is active */}
+              {/* WSL child nav - only when WSL module is active */}
               {view === 'wsl' && activeView === 'wsl' && (
                 <ul className="sidebar-children">
                   <li>
@@ -203,7 +203,7 @@ export default function Sidebar() {
                       )}
                     </button>
 
-                    {/* Distro grandchildren — each distribution is its own page */}
+                    {/* Distro grandchildren - each distribution is its own page */}
                     {(wslView === 'dashboard' || wslView === 'distro') && wslDistrosNav.length > 0 && (
                       <ul className="sidebar-grandchildren">
                         {wslDistrosNav.map(d => (

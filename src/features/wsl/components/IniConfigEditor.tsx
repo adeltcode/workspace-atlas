@@ -78,7 +78,7 @@ export default function IniConfigEditor({
   const addTerminalLine = useAppStore(s => s.addTerminalLine)
 
   const [path, setPath]         = useState('')
-  const [text, setText]         = useState('')   // raw file text — single source of truth
+  const [text, setText]         = useState('')   // raw file text - single source of truth
   const [original, setOriginal] = useState('')
   const [exists, setExists]     = useState(true)
   const [loading, setLoading]   = useState(true)
@@ -203,7 +203,7 @@ export default function IniConfigEditor({
       await wslShutdown()
       addTerminalLine('  ✓ all distributions stopped', 'success')
       addActivity({ module: 'wsl', action: 'WSL shutdown', outcome: 'success' })
-      setStatus({ type: 'success', text: 'WSL restarted — changes are now applied.' })
+      setStatus({ type: 'success', text: 'WSL restarted - changes are now applied.' })
       onAfterShutdown()
     } catch (e) {
       addTerminalLine(`  ✗ ${String(e)}`, 'error')

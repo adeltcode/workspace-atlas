@@ -196,7 +196,7 @@ export default function WslDistroPage({ distros, onReload }: {
         </span>
         <span className="wsl-ver-badge">WSL {d.version === 1 ? '1' : '2'}</span>
         <div className="wsl-identity-actions">
-          {/* Quick actions — the daily-use buttons stay inline. */}
+          {/* Quick actions - the daily-use buttons stay inline. */}
           <button className="btn-secondary wsl-bcard-primary" onClick={() => term.run(openTerminal)} disabled={term.pending} title="Open a terminal in this distro">
             <Terminal size={13} /> Terminal
           </button>
@@ -204,7 +204,7 @@ export default function WslDistroPage({ distros, onReload }: {
             <FolderOpen size={13} /> Files
           </button>
 
-          {/* Manage — the heavier, less-frequent image ops, grouped to keep the
+          {/* Manage - the heavier, less-frequent image ops, grouped to keep the
               strip uncluttered and the actions logically organized. */}
           <div className="wsl-menu" ref={manageRef}>
             <button

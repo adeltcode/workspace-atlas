@@ -209,7 +209,7 @@ pub struct PrunePreview {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helpers — path routing (Windows / WSL mount / pure WSL)
+// Helpers - path routing (Windows / WSL mount / pure WSL)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// True for paths like `C:\...` or `C:/...`
@@ -283,7 +283,7 @@ fn read_via_wsl(path: &str, max_bytes: usize) -> Result<Vec<u8>, String> {
         .args(["cat", path])
         .output()
         .map_err(|e| format!(
-            "WSL is not available — cannot read '{}': {}",
+            "WSL is not available - cannot read '{}': {}",
             path, e
         ))?;
 
@@ -297,7 +297,7 @@ fn read_via_wsl(path: &str, max_bytes: usize) -> Result<Vec<u8>, String> {
 
     if output.stdout.len() > max_bytes {
         return Err(format!(
-            "File too large ({} KB) — only files under {} KB are shown inline",
+            "File too large ({} KB) - only files under {} KB are shown inline",
             output.stdout.len() / 1024,
             max_bytes / 1024
         ));
@@ -307,7 +307,7 @@ fn read_via_wsl(path: &str, max_bytes: usize) -> Result<Vec<u8>, String> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helpers — backup / pause
+// Helpers - backup / pause
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Returns IDs of containers that are currently **running** and have `volume_name`
@@ -332,7 +332,7 @@ fn get_running_containers_for_volume(volume_name: &str) -> Vec<String> {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helpers — parsing
+// Helpers - parsing
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Extract a single label value from a comma-separated `key=value,...` label string.
@@ -473,7 +473,7 @@ fn parse_age_days(created_since: &str) -> i64 {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helpers — data fetching (sync, called from async commands via spawn_blocking)
+// Helpers - data fetching (sync, called from async commands via spawn_blocking)
 // ─────────────────────────────────────────────────────────────────────────────
 
 fn get_all_images_sync() -> Result<Vec<DockerImage>, String> {
@@ -706,7 +706,7 @@ fn run_streaming(app: &tauri::AppHandle, mut cmd: Command, tag_stderr: bool) -> 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tauri commands — Phase 1
+// Tauri commands - Phase 1
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -740,7 +740,7 @@ pub async fn docker_check() -> DockerStatus {
             }
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            // `docker` binary not in PATH — check common install paths before
+            // `docker` binary not in PATH - check common install paths before
             // declaring it truly absent (Docker Desktop may not update PATH yet)
             let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
             let candidates = [
@@ -801,7 +801,7 @@ pub async fn docker_system_df() -> Result<DockerSystemDf, String> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tauri commands — Phase 2
+// Tauri commands - Phase 2
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -991,7 +991,7 @@ pub async fn docker_prune_run(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tauri commands — Phase 3: Containers & Volumes
+// Tauri commands - Phase 3: Containers & Volumes
 // ─────────────────────────────────────────────────────────────────────────────
 
 fn get_containers_sync() -> Result<Vec<DockerContainer>, String> {
@@ -1059,7 +1059,7 @@ fn get_volumes_sync() -> Result<Vec<DockerVolume>, String> {
         return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
     }
 
-    // Docker's own reference-counting filter — the only reliable source of truth
+    // Docker's own reference-counting filter - the only reliable source of truth
     // for whether a volume is referenced by at least one container.
     // `dangling=true` means "not referenced by any container (running or stopped)".
     let dangling: HashSet<String> = Command::new("docker")
@@ -1086,7 +1086,7 @@ fn get_volumes_sync() -> Result<Vec<DockerVolume>, String> {
         let name = v["Name"].as_str().unwrap_or("").to_string();
 
         // `in_use` = referenced by any container (running or stopped).
-        // Determined via Docker's dangling filter — the authoritative source.
+        // Determined via Docker's dangling filter - the authoritative source.
         let in_use = !dangling.contains(&name);
 
         // `containers` = names of RUNNING containers that mount this volume.
@@ -1228,7 +1228,7 @@ pub async fn docker_network_remove(id: String) -> Result<(), String> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tauri commands — Phase 4: Compose viewer & Volume backup
+// Tauri commands - Phase 4: Compose viewer & Volume backup
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Manifest helpers ──────────────────────────────────────────────────────────
@@ -1454,7 +1454,7 @@ pub async fn write_file_content(path: String, content: String) -> Result<(), Str
                 .map_err(|e| format!("Write error: {}", e))
 
         } else {
-            // Pure WSL path — pipe content through `wsl tee`
+            // Pure WSL path - pipe content through `wsl tee`
             use std::io::Write as _;
             let mut child = Command::new("wsl")
                 .args(["tee", &path])
@@ -1556,7 +1556,7 @@ pub async fn docker_stats() -> Result<Vec<ContainerStats>, String> {
 }
 
 /// Query total and free bytes for the drive that contains `path` (Windows only).
-/// Uses PowerShell's `[System.IO.DriveInfo]` — no extra crates needed.
+/// Uses PowerShell's `[System.IO.DriveInfo]` - no extra crates needed.
 #[tauri::command]
 pub async fn get_disk_stats(path: String) -> Result<DiskStats, String> {
     // Extract drive letter from a Windows path (e.g. "C:\Users\..." → 'C').
@@ -1612,7 +1612,7 @@ fn dir_size_recursive(path: &std::path::Path) -> u64 {
 }
 
 /// Recursively sum the sizes of all files under `{backup_dir}/docker/`.
-/// Only the Docker-specific subfolder is counted — the Atlas backup root may
+/// Only the Docker-specific subfolder is counted - the Atlas backup root may
 /// contain unrelated categories (e.g. WSL, other tools) in the future.
 /// Returns 0 if the directory does not exist or is not set.
 #[tauri::command]
@@ -1641,7 +1641,7 @@ pub async fn read_file_content(path: String) -> Result<String, String> {
             .map_err(|e| format!("Cannot access '{}': {}", path, e))?;
         if meta.len() > MAX_BYTES as u64 {
             return Err(format!(
-                "File too large ({} KB) — only files under 512 KB are shown inline",
+                "File too large ({} KB) - only files under 512 KB are shown inline",
                 meta.len() / 1024
             ));
         }
@@ -1653,7 +1653,7 @@ pub async fn read_file_content(path: String) -> Result<String, String> {
             .map_err(|e| format!("Cannot access '{}': {}", win_path, e))?;
         if meta.len() > MAX_BYTES as u64 {
             return Err(format!(
-                "File too large ({} KB) — only files under 512 KB are shown inline",
+                "File too large ({} KB) - only files under 512 KB are shown inline",
                 meta.len() / 1024
             ));
         }
@@ -1760,7 +1760,7 @@ pub async fn docker_volume_backup(
         let skipped = running.len() - paused.len();
         if skipped > 0 {
             emit_bp(&app, vol,
-                &format!("{} container(s) could not be paused — backup continues", skipped),
+                &format!("{} container(s) could not be paused - backup continues", skipped),
                 35, false, None, None, None);
         }
     }
@@ -1813,7 +1813,7 @@ pub async fn docker_volume_backup(
     });
     write_manifest(&backup_dir, &manifest).ok();
 
-    emit_bp(&app, vol, &format!("Done — saved as '{}'", filename), 100, true, None, Some(filename.clone()), None);
+    emit_bp(&app, vol, &format!("Done - saved as '{}'", filename), 100, true, None, Some(filename.clone()), None);
     Ok(filename)
 }
 
@@ -1848,7 +1848,7 @@ pub async fn docker_volume_restore(
 
     // ── Stop running containers that use the volume ──────────────────────────
     // Unlike backup (where pause is safe for a consistent snapshot), restore
-    // replaces volume data entirely — containers must be fully stopped first.
+    // replaces volume data entirely - containers must be fully stopped first.
     let running = get_running_containers_for_volume(vol);
     let mut stopped: Vec<String> = Vec::new();
 
@@ -1868,7 +1868,7 @@ pub async fn docker_volume_restore(
                 stopped.push(id.clone());
             } else {
                 emit_bp(&app, vol,
-                    &format!("Warning: could not stop '{}' — restore continues", id),
+                    &format!("Warning: could not stop '{}' - restore continues", id),
                     18, false, None, None, None);
             }
         }
@@ -1929,7 +1929,7 @@ pub async fn docker_volume_restore(
         return Err(err);
     }
 
-    emit_bp(&app, vol, &format!("Restore complete — '{}' is ready", vol), 100, true, None, None, None);
+    emit_bp(&app, vol, &format!("Restore complete - '{}' is ready", vol), 100, true, None, None, None);
     Ok(())
 }
 
@@ -1977,7 +1977,7 @@ pub async fn docker_backup_compose(
         if let Some(prev) = last {
             if std::path::Path::new(&prev.path).exists() {
                 if fs::read_to_string(&prev.path).ok().as_deref() == Some(&content) {
-                    continue; // unchanged — skip
+                    continue; // unchanged - skip
                 }
             }
         }
@@ -2233,7 +2233,7 @@ pub async fn pick_backup_folder() -> Option<String> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// App Metadata System — per-project metadata (favorites, tags, notes, etc.)
+// App Metadata System - per-project metadata (favorites, tags, notes, etc.)
 // Stored as JSON in the Tauri app-data directory.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -2306,7 +2306,7 @@ pub async fn metadata_save_project(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Project file detection — Dockerfiles and .env files in a compose project dir
+// Project file detection - Dockerfiles and .env files in a compose project dir
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[derive(serde::Serialize, Clone)]
@@ -2355,7 +2355,7 @@ fn scan_dockerfiles_win(dir: &std::path::Path, depth: usize, max_depth: usize, o
 
 /// Scan the directory containing `config_file` for Dockerfiles and .env files.
 /// Dockerfiles are found recursively (depth-limited) so files referenced from
-/// subdirectories — e.g. ./nginx/Dockerfile, ./php/Dockerfile — are detected,
+/// subdirectories - e.g. ./nginx/Dockerfile, ./php/Dockerfile - are detected,
 /// not only ones sitting next to the compose file. .env is matched at the root
 /// only. Handles Windows, WSL-mount, and pure-WSL paths.
 #[tauri::command]
@@ -2379,7 +2379,7 @@ pub async fn detect_compose_project_files(config_file: String) -> Vec<DetectedFi
         let mut results: Vec<DetectedFile> = Vec::new();
 
         if is_windows_absolute(&config_file) || wsl_mount_to_windows(&config_file).is_some() {
-            // Windows-accessible path — recurse for Dockerfiles, root-only for .env
+            // Windows-accessible path - recurse for Dockerfiles, root-only for .env
             let base = std::path::Path::new(&dir);
             scan_dockerfiles_win(base, 0, MAX_DEPTH, &mut results);
             if let Ok(entries) = std::fs::read_dir(base) {
@@ -2392,7 +2392,7 @@ pub async fn detect_compose_project_files(config_file: String) -> Vec<DetectedFi
                 }
             }
         } else {
-            // Pure WSL — recursive `find` for Dockerfiles, root `ls` for .env
+            // Pure WSL - recursive `find` for Dockerfiles, root `ls` for .env
             let safe_dir = dir.replace('\'', "'\\''");
             let find_cmd = format!(
                 "find '{}' -maxdepth {} \\( -name node_modules -o -name .git -o -name vendor -o -name target -o -name dist -o -name build \\) -prune -o -type f \\( -name Dockerfile -o -name 'Dockerfile.*' -o -name '*.dockerfile' \\) -print 2>/dev/null",
@@ -2440,7 +2440,7 @@ pub async fn detect_compose_project_files(config_file: String) -> Vec<DetectedFi
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Editor detection — find code editors available in PATH
+// Editor detection - find code editors available in PATH
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[derive(serde::Serialize, Clone)]
@@ -2480,7 +2480,7 @@ pub async fn detect_editors() -> Vec<EditorInfo> {
 /// Open a file in an external editor, detached from the app process.
 ///
 /// Two Windows pitfalls handled here:
-///  1. Editor CLIs like VS Code's `code` are `.cmd` shims — `Command::new("code")`
+///  1. Editor CLIs like VS Code's `code` are `.cmd` shims - `Command::new("code")`
 ///     fails with "is not a valid Win32 application" because the loader only
 ///     auto-appends `.exe`. Going through `cmd /C` lets PATHEXT resolve the shim.
 ///  2. A pure-WSL path (`/home/…`) means nothing to a Windows editor, so it is
@@ -2494,7 +2494,7 @@ pub async fn open_in_editor(path: String, editor_cmd: String) -> Result<(), Stri
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
-            c.creation_flags(0x0800_0000); // CREATE_NO_WINDOW — no flashing console
+            c.creation_flags(0x0800_0000); // CREATE_NO_WINDOW - no flashing console
         }
         c.spawn()
             .map(|_| ())
@@ -2531,7 +2531,7 @@ pub async fn reveal_path(path: String) -> Result<(), String> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Compose config validator — docker compose config
+// Compose config validator - docker compose config
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Run `docker compose config` and return the resolved YAML string.
@@ -2555,7 +2555,7 @@ pub async fn docker_compose_config(config_file: String) -> Result<String, String
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Log multiplexer — stream compose logs with Rust-side batching (75 ms)
+// Log multiplexer - stream compose logs with Rust-side batching (75 ms)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Managed state holding the currently-running log stream process.
@@ -2634,7 +2634,7 @@ pub async fn compose_logs_watch(
                     last = std::time::Instant::now();
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                    // Both reader threads exited — process ended
+                    // Both reader threads exited - process ended
                     if !buf.is_empty() {
                         app.emit("compose-log-batch", buf.clone()).ok();
                     }
@@ -2662,7 +2662,7 @@ pub async fn compose_logs_stop(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tests — pure parsers only (no Docker, WSL, or filesystem access)
+// Tests - pure parsers only (no Docker, WSL, or filesystem access)
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

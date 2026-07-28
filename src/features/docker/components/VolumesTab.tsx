@@ -269,7 +269,7 @@ export default function VolumesTab({
 
   return (
     <div className="img-tab">
-      {/* ── Toolbar (bulk controls live here — no layout shift) ────── */}
+      {/* ── Toolbar (bulk controls live here - no layout shift) ────── */}
       <div className="img-toolbar">
         <input
           className="img-search"
@@ -365,7 +365,7 @@ export default function VolumesTab({
 
               return (
                 <Fragment key={v.name}>
-                  {/* ── Volume row — entire row is clickable ──────────────── */}
+                  {/* ── Volume row - entire row is clickable ──────────────── */}
                   <tr
                     className={clsx('img-row img-row--clickable', isExpanded && 'img-row--expanded', isSelected && 'row-selected')}
                     onClick={() => toggleVolBackups(v.name)}
@@ -426,7 +426,7 @@ export default function VolumesTab({
                             <span className="vol-backup-state">Loading backups…</span>
                           )}
 
-                          {/* No backup dir — link to settings */}
+                          {/* No backup dir - link to settings */}
                           {!backupDir && (
                             <div className="vol-backup-state vol-backup-no-dir">
                               No backup directory configured.{' '}
@@ -439,7 +439,7 @@ export default function VolumesTab({
 
                           {/* Empty */}
                           {backupDir && !vp && loadingBackup !== v.name && entries.length === 0 && (
-                            <span className="vol-backup-state">No backups yet — click Backup to create the first one.</span>
+                            <span className="vol-backup-state">No backups yet - click Backup to create the first one.</span>
                           )}
 
                           {/* Backup list */}

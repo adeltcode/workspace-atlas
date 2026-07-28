@@ -4,7 +4,7 @@ import type { WslStatus, WslDistro, WslConfig, OptimizeResult, ExportResult, Wsl
 export const wslCheck       = () => invoke<WslStatus>('wsl_check')
 /** Pass `silent` for background polling so the list command stays out of the terminal panel. */
 export const wslListDistros = (silent = false) => invoke<WslDistro[]>('wsl_list_distros', { silent })
-/** Cheap running-state poll (`wsl -l --running -q`) — names of currently-running distros. */
+/** Cheap running-state poll (`wsl -l --running -q`) - names of currently-running distros. */
 export const wslRunningNames = () => invoke<string[]>('wsl_running_names')
 
 /** Installable distros resolved from Microsoft's ModernDistributions manifest. */

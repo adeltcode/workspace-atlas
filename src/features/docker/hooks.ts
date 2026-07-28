@@ -108,7 +108,7 @@ export function useDockerData() {
   const refresh = useCallback(() => fetchData(true), [fetchData])
 
   /**
-   * Refresh only the containers list — used after a single container
+   * Refresh only the containers list - used after a single container
    * start/stop/remove so we don't reload images, volumes, and df.
    */
   const refreshContainers = useCallback(async () => {
@@ -119,7 +119,7 @@ export function useDockerData() {
       addTerminalLine(`  ✓ ${ctrData.length} container(s)`, 'success')
       setContainers(ctrData)
       // Keep cache in sync so the next full refresh doesn't undo this.
-      // Preserve the original fetchedAt — only containers were refreshed, so the
+      // Preserve the original fetchedAt - only containers were refreshed, so the
       // freshness window for images/df/volumes must not be extended.
       const st = useAppStore.getState()
       if (st.dockerCache) {
@@ -128,10 +128,10 @@ export function useDockerData() {
     } catch (e) {
       addTerminalLine(`  ✗ ${String(e)}`, 'error')
     }
-  }, []) // eslint-disable-line — setContainers is stable (from useState)
+  }, []) // eslint-disable-line - setContainers is stable (from useState)
 
   /**
-   * Refresh only the volumes list — used after a single volume remove/prune
+   * Refresh only the volumes list - used after a single volume remove/prune
    * so we don't reload everything else.
    */
   const refreshVolumes = useCallback(async () => {
@@ -141,7 +141,7 @@ export function useDockerData() {
       const volData = await api.dockerVolumes()
       addTerminalLine(`  ✓ ${volData.length} volume(s)`, 'success')
       setVolumes(volData)
-      // Preserve the original fetchedAt — only volumes were refreshed here.
+      // Preserve the original fetchedAt - only volumes were refreshed here.
       const st = useAppStore.getState()
       if (st.dockerCache) {
         st.setDockerCache({ ...st.dockerCache, volumes: volData })
@@ -149,7 +149,7 @@ export function useDockerData() {
     } catch (e) {
       addTerminalLine(`  ✗ ${String(e)}`, 'error')
     }
-  }, []) // eslint-disable-line — setVolumes is stable (from useState)
+  }, []) // eslint-disable-line - setVolumes is stable (from useState)
 
   useEffect(() => { fetchData() }, [fetchData])
 

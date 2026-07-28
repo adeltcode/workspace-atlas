@@ -312,7 +312,7 @@ export default function SettingsView() {
               <span className="settings-about-label">Privacy</span>
               <span className="settings-about-value settings-about-privacy">
                 <Shield size={12} />
-                Fully offline — no telemetry, no account
+                Fully offline - no telemetry, no account
               </span>
             </div>
           </div>

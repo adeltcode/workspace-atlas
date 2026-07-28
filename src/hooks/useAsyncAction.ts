@@ -6,7 +6,7 @@ import { useCallback, useRef, useState } from 'react'
  * impatient second press while the backend is still working).
  *
  * `run` drops any call made while one is already in flight, checked synchronously
- * via a ref — so it also catches a same-frame double-click that fires before React
+ * via a ref - so it also catches a same-frame double-click that fires before React
  * has re-rendered the `disabled` state. `pending` drives the button's `disabled`
  * attribute and any "working…" label.
  */

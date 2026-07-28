@@ -32,7 +32,7 @@ export default function Terminal() {
   const [history, setHistory] = useState<string[]>([])
 
   // Use refs for values that must be read live inside async callbacks or
-  // event handlers — avoids stale-closure double-submit and history bugs.
+  // event handlers - avoids stale-closure double-submit and history bugs.
   const histIdxRef = useRef(-1)
   const runningRef = useRef(false)
 
@@ -116,13 +116,13 @@ export default function Terminal() {
   // ── Kill running command ─────────────────────────────────────────────────────
   const killCommand = useCallback(async () => {
     try { await invoke('shell_kill') }
-    catch { /* ignore — process may have already exited */ }
+    catch { /* ignore - process may have already exited */ }
   }, [])
 
   // ── Submit command ───────────────────────────────────────────────────────────
   const submit = useCallback(async () => {
     const cmd = input.trim()
-    // Read from ref — not the closure-captured boolean — so rapid Enter presses
+    // Read from ref - not the closure-captured boolean - so rapid Enter presses
     // cannot bypass the guard before React re-renders with running=true.
     if (!cmd || runningRef.current) return
 
@@ -141,7 +141,7 @@ export default function Terminal() {
       // The exit line and running=false are handled by the shell-done listener.
       await invoke('shell_run', { cmd })
     } catch (e) {
-      // Process failed to start — no shell-done will fire, handle inline
+      // Process failed to start - no shell-done will fire, handle inline
       addLine(`  error: ${String(e)}`, 'error')
       runningRef.current = false
       setRunning(false)
@@ -166,7 +166,7 @@ export default function Terminal() {
     }
   }
 
-  // Ctrl+C at the panel level — only fires kill when nothing is selected
+  // Ctrl+C at the panel level - only fires kill when nothing is selected
   // (so Ctrl+C still works as "copy" when the user has text highlighted)
   const handlePanelKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (running && e.ctrlKey && e.key === 'c' && !window.getSelection()?.toString()) {
@@ -199,10 +199,10 @@ export default function Terminal() {
             <button
               className={clsx('terminal-tab', activeTab === 'logs' && 'active')}
               onClick={() => { setTerminalTab('logs'); if (!terminalOpen) setTerminalOpen(true) }}
-              title={`Logs — ${composeLogContext.project.name}`}
+              title={`Logs - ${composeLogContext.project.name}`}
             >
               <ScrollText size={12} />
-              <span className="terminal-tab-label">Logs — {composeLogContext.project.name}</span>
+              <span className="terminal-tab-label">Logs - {composeLogContext.project.name}</span>
               <span
                 className="terminal-tab-close"
                 onClick={e => { e.stopPropagation(); closeComposeLogs() }}
@@ -214,7 +214,7 @@ export default function Terminal() {
           )}
         </div>
 
-        {/* Empty strip — click to expand / collapse the panel */}
+        {/* Empty strip - click to expand / collapse the panel */}
         <div className="terminal-header-grip" onClick={toggleTerminal} />
 
         <div className="terminal-header-right" onClick={e => e.stopPropagation()}>
@@ -244,9 +244,9 @@ export default function Terminal() {
 
       {terminalOpen && (
         <>
-          {/* Shell tab — hidden (not unmounted) while the logs tab is active */}
+          {/* Shell tab - hidden (not unmounted) while the logs tab is active */}
           <div className="terminal-shell" style={{ display: activeTab === 'shell' ? 'flex' : 'none' }}>
-            {/* Output — user-select: text so lines can be selected and copied */}
+            {/* Output - user-select: text so lines can be selected and copied */}
             <div className="terminal-body" ref={bodyRef} tabIndex={-1}>
               {terminalLines.length === 0
                 ? (
@@ -281,7 +281,7 @@ export default function Terminal() {
             </div>
           </div>
 
-          {/* Logs tab — kept mounted while a project's log context exists so the
+          {/* Logs tab - kept mounted while a project's log context exists so the
               streamed buffer survives switching back to the shell tab. */}
           {composeLogContext && (
             <div className="terminal-logs-host" style={{ display: activeTab === 'logs' ? 'flex' : 'none' }}>

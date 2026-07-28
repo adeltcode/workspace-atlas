@@ -133,7 +133,7 @@ export default function WslInstallWizard({ distros, onReload }: {
       {/* A download started from an earlier visit is still running in the background. */}
       {wslInstalling && !installing && (
         <div className="wiz-inflight-note">
-          <RotateCw size={13} className="spin" /> Installing {wslInstalling} in the background — wait for it to finish before starting another.
+          <RotateCw size={13} className="spin" /> Installing {wslInstalling} in the background - wait for it to finish before starting another.
         </div>
       )}
 

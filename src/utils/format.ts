@@ -27,9 +27,9 @@ export function bytesToHuman(b: number): string {
   return `${b} B`
 }
 
-/** Like bytesToHuman but returns '—' for zero / falsy values. */
+/** Like bytesToHuman but returns '-' for zero / falsy values. */
 export function fmtBytes(b: number): string {
-  return b ? bytesToHuman(b) : '—'
+  return b ? bytesToHuman(b) : '-'
 }
 
 /** Compact relative time from a millisecond timestamp: "just now", "5m ago", "3h ago", "2d ago". */
@@ -45,7 +45,7 @@ export function timeAgo(ms: number): string {
 
 /** Compact duration from a second count: "5m", "3h 12m", "2d 4h". For uptimes. */
 export function formatDuration(secs: number): string {
-  if (secs <= 0) return '—'
+  if (secs <= 0) return '-'
   const d = Math.floor(secs / 86400)
   const h = Math.floor((secs % 86400) / 3600)
   const m = Math.floor((secs % 3600) / 60)

@@ -223,7 +223,7 @@ function ProjectCard({
             />
           ))}
           {projectContainers.length === 0 && (
-            <span className="compose-service-dots-empty">{health.total === 0 ? 'no containers' : '—'}</span>
+            <span className="compose-service-dots-empty">{health.total === 0 ? 'no containers' : '-'}</span>
           )}
         </div>
         <span className="compose-card-frac">

@@ -1,7 +1,7 @@
 {
   "name": "workspace-atlas",
   "version": "0.1.0",
-  "description": "A Windows developer utility for managing Docker, WSL2, and packages — your dev environment, mapped and managed.",
+  "description": "A Windows developer utility for managing Docker, WSL2, and packages - your dev environment, mapped and managed.",
   "author": "Patrick James Garcia",
   "license": "MIT",
   "homepage": "https://github.com/adeltcode/workspace-atlas",

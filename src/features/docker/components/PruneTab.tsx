@@ -10,7 +10,7 @@ import type { PrunePreview, LogEntry } from '../types'
 const LEVELS = [
   { level: 1 as const, icon: Shield, label: 'Safe',    sublabel: 'Dangling images only',  desc: 'Removes untagged images with no containers. Zero risk.',                                 color: 'success' },
   { level: 2 as const, icon: Layers, label: 'Deep',    sublabel: 'All unused images',      desc: 'Removes every unused image not in your keep-list.',                                     color: 'warning' },
-  { level: 3 as const, icon: Zap,    label: 'Nuclear', sublabel: 'Full system cleanup',    desc: 'Containers, images, volumes, build cache — keep-list respected.',                       color: 'danger'  },
+  { level: 3 as const, icon: Zap,    label: 'Nuclear', sublabel: 'Full system cleanup',    desc: 'Containers, images, volumes, build cache - keep-list respected.',                       color: 'danger'  },
 ] as const
 
 type PruneState = 'idle' | 'previewing' | 'confirming' | 'running' | 'done'
@@ -53,7 +53,7 @@ export default function PruneTab({ onDone }: { onDone: () => void }) {
 
     const lines: string[] = []
     const startTime = Date.now()
-    addTerminalLine(`─── Prune Level ${selectedLevel} — executing ───`, 'info')
+    addTerminalLine(`─── Prune Level ${selectedLevel} - executing ───`, 'info')
 
     const unlistenLog = await listen<string>('docker-log', (e) => {
       lines.push(e.payload)
@@ -75,7 +75,7 @@ export default function PruneTab({ onDone }: { onDone: () => void }) {
     addDockerLog({ id: `${startTime}`, timestamp: startTime, level: selectedLevel, dry_run: false, lines, success } satisfies LogEntry)
     addActivity({
       module: 'docker',
-      action: `Prune — ${LEVELS[selectedLevel - 1].label}`,
+      action: `Prune - ${LEVELS[selectedLevel - 1].label}`,
       outcome: success ? 'success' : 'failure',
       detail: success && preview.reclaim_bytes > 0 ? `~${preview.reclaim_size} reclaimable` : undefined,
     })
@@ -104,7 +104,7 @@ export default function PruneTab({ onDone }: { onDone: () => void }) {
               <Icon size={14} /><span>{level}</span>
             </div>
             <div className="prune-level-text">
-              <p className="prune-level-label">{label}<span className="prune-level-sublabel"> — {sublabel}</span></p>
+              <p className="prune-level-label">{label}<span className="prune-level-sublabel"> - {sublabel}</span></p>
               <p className="prune-level-desc">{desc}</p>
             </div>
             {selectedLevel === level && <div className={clsx('prune-selected-pip', `prune-pip--${color}`)} />}
@@ -131,7 +131,7 @@ export default function PruneTab({ onDone }: { onDone: () => void }) {
         {(preview || previewError) && (
           <button className="btn-ghost" onClick={reset} disabled={running}><RotateCcw size={12} />Reset</button>
         )}
-        {running && <span className="prune-running-notice">Running — see Terminal panel below</span>}
+        {running && <span className="prune-running-notice">Running - see Terminal panel below</span>}
       </div>
 
       {previewError && (
@@ -157,7 +157,7 @@ export default function PruneTab({ onDone }: { onDone: () => void }) {
               <p className="prune-image-list-heading">{preview.image_names.length} image{preview.image_names.length !== 1 ? 's' : ''} to remove</p>
               <ul>{preview.image_names.map(name => <li key={name} className="prune-image-item">{name}</li>)}</ul>
             </div>
-          ) : <p className="prune-nothing">No images match this level — nothing to remove.</p>}
+          ) : <p className="prune-nothing">No images match this level - nothing to remove.</p>}
           {preview.level === 3 && (preview.container_count > 0 || preview.volume_count > 0) && (
             <div className="prune-extras">
               <AlertTriangle size={11} className="prune-extras-icon" />
@@ -174,7 +174,7 @@ export default function PruneTab({ onDone }: { onDone: () => void }) {
           <div className="modal">
             <div className="modal-header">
               <div className="modal-icon-wrap danger"><Zap size={16} /></div>
-              <h2 className="modal-title">Nuclear Prune — Confirm</h2>
+              <h2 className="modal-title">Nuclear Prune - Confirm</h2>
             </div>
             <p className="modal-body">
               This removes stopped containers, all unused images outside your keep-list,

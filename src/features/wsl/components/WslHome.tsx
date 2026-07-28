@@ -55,11 +55,11 @@ export default function WslHome({ distros, loading, onReload }: {
   // ── Lifecycle ────────────────────────────────────────────────────────────
   // Two concerns, deliberately separate:
   //  • `busyAction` (local) drives this dashboard's button-disable + "Working…"
-  //    labels — only dashboard-initiated start/stop/restart.
+  //    labels - only dashboard-initiated start/stop/restart.
   //  • `wslBusyDistro` (store) tells in-distro pollers everywhere to skip a distro
   //    that's transitioning (here and on the distro/perf pages) so a probe can't
   //    reboot it. Set by every op that boots/stops a distro, not just dashboard
-  //    ones — which is why it must not gate the dashboard's buttons.
+  //    ones - which is why it must not gate the dashboard's buttons.
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const busyDistro    = useAppStore(s => s.wslBusyDistro)
   const setBusyDistro = useAppStore(s => s.setWslBusyDistro)
@@ -108,7 +108,7 @@ export default function WslHome({ distros, loading, onReload }: {
   }, [distros, extras, extrasBusy, extrasFailed, loadExtras, busyDistro])
 
   // Poll live CPU/memory for every running distro. The probe runs a command
-  // inside the distro, so it would reboot one that's mid-stop — exclude the busy
+  // inside the distro, so it would reboot one that's mid-stop - exclude the busy
   // distro from the poll set. The probe itself takes ~1 s (jiffies delta).
   const runningKey = distros.filter(d => d.running && d.name !== busyDistro).map(d => d.name).join('|')
   const poll = useCallback(async () => {
@@ -318,14 +318,14 @@ export default function WslHome({ distros, loading, onReload }: {
         </div>
         {monItems.length === 0 ? (
           distros.some(d => d.running) ? (
-            // Running distros exist but the first sample (~1s probe) hasn't landed —
+            // Running distros exist but the first sample (~1s probe) hasn't landed -
             // show a chart-shaped skeleton rather than a misleading "no data" notice.
             <div className="wsl-mon-skeleton">
               <div className="sk-box wsl-mon-sk" />
               <div className="sk-box wsl-mon-sk" />
             </div>
           ) : (
-            <p className="wsl-bpanel-empty">No running distributions — start one to see live metrics.</p>
+            <p className="wsl-bpanel-empty">No running distributions - start one to see live metrics.</p>
           )
         ) : (
           <>

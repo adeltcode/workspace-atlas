@@ -50,7 +50,7 @@ pub async fn shell_run(
             .spawn()
             .map_err(|e| format!("Failed to start shell: {}", e))?;
 
-        // Take pipes before storing child — the stored handle is used only for
+        // Take pipes before storing child - the stored handle is used only for
         // kill() / try_wait(); taking pipes doesn't affect those.
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
@@ -58,7 +58,7 @@ pub async fn shell_run(
         // Store child for kill support
         *child_arc.lock().unwrap() = Some(child);
 
-        // Spawn reader threads — each line is emitted as a shell-out event
+        // Spawn reader threads - each line is emitted as a shell-out event
         let stdout_app = app.clone();
         let stdout_handle = stdout.map(|out| {
             thread::spawn(move || {
@@ -124,7 +124,7 @@ pub async fn shell_run(
 pub async fn shell_kill(state: tauri::State<'_, ShellState>) -> Result<(), String> {
     let mut guard = state.0.lock().map_err(|_| "state lock poisoned".to_string())?;
     if let Some(ref mut child) = *guard {
-        // Ignore errors — process may have already exited between the check and the kill
+        // Ignore errors - process may have already exited between the check and the kill
         child.kill().ok();
     }
     Ok(())

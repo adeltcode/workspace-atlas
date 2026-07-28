@@ -25,7 +25,7 @@ function LogCard({ entry }: { entry: LogEntry }) {
       <div className="log-card-header">
         <div className="log-card-left">
           <span className={clsx('log-level-badge', `log-badge--${color}`)}>
-            <Icon size={11} />Level {entry.level} — {label}
+            <Icon size={11} />Level {entry.level} - {label}
           </span>
           <span className="log-ts">{formatTime(entry.timestamp)}</span>
         </div>
@@ -51,7 +51,7 @@ export default function LogTab() {
     return (
       <div className="log-empty">
         <p className="empty-state">No prune runs yet.</p>
-        <p className="empty-sub">Run a prune from the Prune tab — history appears here.</p>
+        <p className="empty-sub">Run a prune from the Prune tab - history appears here.</p>
       </div>
     )
   }

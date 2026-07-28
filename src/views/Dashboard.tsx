@@ -50,7 +50,7 @@ function MetricCard({ icon: Icon, label, pct, sub, color }: {
       <div className="sys-card-head">
         <Icon size={13} className="sys-card-icon" />
         <span className="sys-card-label">{label}</span>
-        <span className="sys-card-val">{pct === null ? '—' : `${Math.round(pct)}%`}</span>
+        <span className="sys-card-val">{pct === null ? '-' : `${Math.round(pct)}%`}</span>
       </div>
       <div className="sys-bar">
         <div className={clsx('sys-bar-fill', `sys-bar--${color}`)} style={{ width: `${width}%` }} />
@@ -165,7 +165,7 @@ export default function Dashboard() {
 
       <div className="dashboard-notice">
         <span className="notice-dot" />
-        Fully offline — no telemetry, no cloud, no account required.
+        Fully offline - no telemetry, no cloud, no account required.
       </div>
     </div>
   )

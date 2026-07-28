@@ -154,7 +154,7 @@ function CleanupRow({
         <span className="cleanup-row-label">{label}</span>
         {count != null && <span className="cleanup-row-count">{count}</span>}
         <span className="cleanup-row-size">
-          {size ?? '—'}
+          {size ?? '-'}
           {sizeEst && size && <span className="cleanup-row-size-note"> est.</span>}
         </span>
         {expandable
@@ -403,7 +403,7 @@ export default function OverviewTab({
                 {status?.available ? 'Running' : 'Stopped'}
               </span>
               <span className="hero-tile-sub">
-                {status?.available ? `v${status.version ?? '—'}` : (status?.error ?? '—')}
+                {status?.available ? `v${status.version ?? '-'}` : (status?.error ?? '-')}
               </span>
             </div>
 
@@ -430,12 +430,12 @@ export default function OverviewTab({
               aria-label={`Images: ${images.length}`}>
               <span className="hero-tile-label">Images</span>
               <span className="hero-tile-value">{images.length}</span>
-              <span className="hero-tile-sub">{df?.images.size ?? '—'}</span>
+              <span className="hero-tile-sub">{df?.images.size ?? '-'}</span>
             </button>
 
             <div className="hero-tile">
               <span className="hero-tile-label">Total Disk</span>
-              <span className="hero-tile-value">{totalRow?.size ?? '—'}</span>
+              <span className="hero-tile-value">{totalRow?.size ?? '-'}</span>
               {hasFree && <span className="hero-tile-sub">{totalFree} freeable</span>}
             </div>
 
@@ -459,13 +459,13 @@ export default function OverviewTab({
             {restarting.length > 0 && (
               <button className="hero-warning-row hero-warning-row--critical" onClick={() => setDockerTab('containers')}>
                 <AlertTriangle size={13} />
-                {restarting.length} container{restarting.length !== 1 ? 's' : ''} in restart loop — view Containers
+                {restarting.length} container{restarting.length !== 1 ? 's' : ''} in restart loop - view Containers
               </button>
             )}
             {dead.length > 0 && (
               <button className="hero-warning-row hero-warning-row--critical" onClick={() => setDockerTab('containers')}>
                 <AlertTriangle size={13} />
-                {dead.length} dead container{dead.length !== 1 ? 's' : ''} — view Containers
+                {dead.length} dead container{dead.length !== 1 ? 's' : ''} - view Containers
               </button>
             )}
           </div>
@@ -494,7 +494,7 @@ export default function OverviewTab({
           </div>
         ) : composeProjects.length === 0 ? (
           <p className="overview-empty-row">
-            No compose projects found — create a compose.yaml file to manage multi-container apps.
+            No compose projects found - create a compose.yaml file to manage multi-container apps.
           </p>
         ) : (
           <div className="project-cards">
@@ -733,7 +733,7 @@ export default function OverviewTab({
                 {totalFreeableBytes > 0 && (
                   <span className="disk-summary-free">{bytesToHuman(totalFreeableBytes)} freeable</span>
                 )}
-                <span className="disk-summary-note" title="docker system df — may not include Buildx cache on Docker Desktop for Windows">
+                <span className="disk-summary-note" title="docker system df - may not include Buildx cache on Docker Desktop for Windows">
                   via docker system df
                 </span>
               </div>

@@ -8,7 +8,7 @@ import { ConfirmRemoveButton } from './TableBits'
 /** Format an ISO date string as relative ("3 months ago") for recent dates,
  *  or a short absolute date for older ones. */
 function fmtDate(raw: string): string {
-  if (!raw) return '—'
+  if (!raw) return '-'
   const d = new Date(raw)
   if (isNaN(d.getTime())) return raw   // fallback: return as-is
   const diffMs  = Date.now() - d.getTime()
@@ -142,7 +142,7 @@ export default function NetworksTab() {
                   <td className="img-td img-age">{fmtDate(n.created)}</td>
                   <td className="img-td ctr-td-actions">
                     {isProtected ? (
-                      <span className="img-colon" title="Built-in network — cannot be removed">—</span>
+                      <span className="img-colon" title="Built-in network - cannot be removed">-</span>
                     ) : (
                       <ConfirmRemoveButton
                         onConfirm={() => doRemove(n.id)}

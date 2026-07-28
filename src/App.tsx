@@ -20,7 +20,7 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])
 
-  // ── Sidebar resize — direct DOM write during drag, store only on release ──
+  // ── Sidebar resize - direct DOM write during drag, store only on release ──
   const onSidebarResize = (e: React.MouseEvent) => {
     e.preventDefault()
     const startX    = e.clientX
@@ -43,7 +43,7 @@ export default function App() {
     document.addEventListener('mouseup', onUp)
   }
 
-  // ── Terminal resize — drive the --terminal-height var during drag, store on release ─
+  // ── Terminal resize - drive the --terminal-height var during drag, store on release ─
   // The terminal (absolute) and its resize handle both read --terminal-height,
   // so updating that one variable moves them together.
   const onTerminalResize = (e: React.MouseEvent) => {

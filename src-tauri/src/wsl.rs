@@ -74,7 +74,7 @@ fn wslconfig_path() -> Result<String, String> {
     Ok(format!("{}\\.wslconfig", home))
 }
 
-/// Read %USERPROFILE%\.wslconfig. A missing file is not an error — it returns
+/// Read %USERPROFILE%\.wslconfig. A missing file is not an error - it returns
 /// `exists: false` with empty content so the UI can offer a template.
 #[tauri::command]
 pub async fn read_wslconfig(app: tauri::AppHandle) -> Result<WslConfig, String> {
@@ -172,7 +172,7 @@ pub async fn wslconfig_backup(app: tauri::AppHandle, backup_dir: String) -> Resu
     let existing = list_wslconfig_backups_sync(&backup_dir);
     if let Some(latest) = existing.first() {
         if std::fs::read_to_string(&latest.path).ok().as_deref() == Some(content.as_str()) {
-            emit_line(&app, format!("# .wslconfig unchanged — keeping {}", latest.filename), false);
+            emit_line(&app, format!("# .wslconfig unchanged - keeping {}", latest.filename), false);
             return Ok(latest.clone());
         }
     }
@@ -223,7 +223,7 @@ pub async fn wslconfig_restore(app: tauri::AppHandle, backup_path: String) -> Re
 // ── /etc/wsl.conf (per-distro) read / write / backup / restore ──────────────────
 //
 // wsl.conf lives inside the distro's Linux filesystem. Reading boots the distro;
-// writing needs root inside it (`wsl -u root tee`) — no Windows UAC. WSL_UTF8
+// writing needs root inside it (`wsl -u root tee`) - no Windows UAC. WSL_UTF8
 // keeps output readable.
 
 /// Read a distro's `/etc/wsl.conf` (no event emission). Returns (content, exists).
@@ -328,7 +328,7 @@ pub async fn wsl_conf_backup(app: tauri::AppHandle, distro: String, backup_dir: 
         let existing = list_wslconf_backups_sync(&backup_dir, &distro);
         if let Some(latest) = existing.first() {
             if std::fs::read_to_string(&latest.path).ok().as_deref() == Some(content.as_str()) {
-                emit_line(&app, format!("# wsl.conf unchanged — keeping {}", latest.filename), false);
+                emit_line(&app, format!("# wsl.conf unchanged - keeping {}", latest.filename), false);
                 return Ok(latest.clone());
             }
         }
@@ -396,7 +396,7 @@ pub async fn wsl_conf_delete_backup(app: tauri::AppHandle, backup_path: String) 
 }
 
 /// Shut down all running distros (`wsl --shutdown`) so .wslconfig changes apply.
-/// Not elevated, but stops every running distro — the UI warns first.
+/// Not elevated, but stops every running distro - the UI warns first.
 #[tauri::command]
 pub async fn wsl_shutdown() -> Result<(), String> {
     run_wsl(&["--shutdown"])
@@ -440,7 +440,7 @@ pub async fn wsl_optimize_vhd(
         let script_str = script_path.to_string_lossy().to_string();
         let result_str = result_path.to_string_lossy().to_string();
 
-        // Stale result from a previous run would be misread — remove it first.
+        // Stale result from a previous run would be misread - remove it first.
         std::fs::remove_file(&result_path).ok();
 
         // Inner script runs elevated. Placeholders avoid format! brace-escaping.
@@ -450,7 +450,7 @@ pub async fn wsl_optimize_vhd(
         std::fs::write(&script_path, inner)
             .map_err(|e| format!("Cannot write optimize script: {}", e))?;
 
-        emit_line(&app, format!("# Optimizing {} — administrator approval required", vhd_path), false);
+        emit_line(&app, format!("# Optimizing {} - administrator approval required", vhd_path), false);
         emit_line(&app, "$ wsl --shutdown", false);
 
         // Outer (unprivileged) launches the elevated child and waits for it.
@@ -851,7 +851,7 @@ pub async fn wsl_install_download(
             let actual = sha256_of(&tmp_str)?;
             if !actual.eq_ignore_ascii_case(&sha256) {
                 std::fs::remove_file(&tmp).ok();
-                let msg = "Checksum mismatch — the download may be corrupted. Nothing was installed.".to_string();
+                let msg = "Checksum mismatch - the download may be corrupted. Nothing was installed.".to_string();
                 emit_line(&app, format!("  ✗ {}", msg), true);
                 return Err(msg);
             }
@@ -929,7 +929,7 @@ fn run_in_distro_as(distro: &str, user: Option<&str>, script: &str) -> Result<St
 #[derive(serde::Serialize, Clone)]
 pub struct TopProc {
     pub cpu_pct: f32,
-    /// Resident set size in KiB — shown in the UI as a real MB figure, since the
+    /// Resident set size in KiB - shown in the UI as a real MB figure, since the
     /// per-process mem% rounds to 0.0 on a large-RAM VM.
     pub rss_kb: u64,
     pub command: String,
@@ -950,7 +950,7 @@ pub struct DistroMetrics {
     pub disk_total_bytes: u64,
     /// Name of pid 1 (e.g. "systemd" or "init").
     pub pid1: String,
-    /// True when systemd is pid 1 (the reliable check — `is-system-running`
+    /// True when systemd is pid 1 (the reliable check - `is-system-running`
     /// returns non-zero on "degraded").
     pub systemd: bool,
     /// Raw `systemctl is-system-running` output (running/degraded/…), if any.
@@ -1001,7 +1001,7 @@ fn parse_distro_metrics(out: &str) -> DistroMetrics {
             continue;
         }
         if in_top {
-            // "pcpu pmem rss comm…" (pmem is skipped — it rounds to 0 on big VMs)
+            // "pcpu pmem rss comm…" (pmem is skipped - it rounds to 0 on big VMs)
             let mut it = line.split_whitespace();
             let cpu = it.next().and_then(|s| s.parse().ok());
             let rss = it.nth(1).and_then(|s| s.parse().ok());
@@ -1112,7 +1112,7 @@ pub async fn wsl_distro_stats(distro: String) -> Result<DistroStats, String> {
 
 /// Snapshot a distro's live CPU/memory/swap/disk/network/process/service state.
 /// Read-only and polled (every 10 s by the UI), so it intentionally does not emit
-/// terminal lines — mirroring the silent `get_system_metrics` host poll. Selecting
+/// terminal lines - mirroring the silent `get_system_metrics` host poll. Selecting
 /// a stopped distro boots it.
 #[tauri::command]
 pub async fn wsl_distro_metrics(distro: String) -> Result<DistroMetrics, String> {
@@ -1284,7 +1284,7 @@ fn parse_distro_extras(out: &str) -> DistroExtras {
 }
 
 /// Open an interactive shell into a distro. Prefers Windows Terminal; falls back
-/// to a console window. Detached — the GUI does not wait on it. `--cd ~` starts in
+/// to a console window. Detached - the GUI does not wait on it. `--cd ~` starts in
 /// the Linux user's home directory rather than the Windows path the app launched
 /// from (which would land the shell on a /mnt/… mount).
 #[tauri::command]
@@ -1293,7 +1293,7 @@ pub async fn wsl_open_terminal(app: tauri::AppHandle, distro: String) -> Result<
     if Command::new("wt.exe").args(["wsl.exe", "-d", &distro, "--cd", "~"]).spawn().is_ok() {
         return Ok(());
     }
-    // No Windows Terminal — open a classic console window instead.
+    // No Windows Terminal - open a classic console window instead.
     Command::new("cmd")
         .args(["/c", "start", "", "wsl.exe", "-d", &distro, "--cd", "~"])
         .spawn()
@@ -1319,7 +1319,7 @@ pub async fn wsl_open_distro_folder(app: tauri::AppHandle, distro: String) -> Re
 
 /// Package count + manager + uptime for the comparison table. Reads inside the
 /// distro, so the caller should only invoke this for running distros (otherwise
-/// it boots the distro). Read-only — no terminal emission.
+/// it boots the distro). Read-only - no terminal emission.
 #[tauri::command]
 pub async fn wsl_distro_extras(distro: String) -> Result<DistroExtras, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -1465,7 +1465,7 @@ pub async fn wsl_migrate_distro(
         let dest_n = norm(&new_dir);
         let base_n = norm(&current_base);
         if !base_n.is_empty() && (dest_n == base_n || dest_n.starts_with(&format!("{}/", base_n))) {
-            return Err("Choose a destination outside the distro's current install folder — migrating into it would delete the backup.".to_string());
+            return Err("Choose a destination outside the distro's current install folder - migrating into it would delete the backup.".to_string());
         }
 
         std::fs::create_dir_all(&new_dir)
@@ -1479,7 +1479,7 @@ pub async fn wsl_migrate_distro(
         let temp_name = format!("{}_atlas_migrate", distro);
         let temp_dir = format!("{}/__atlas_migrate_verify", new_dir.replace('\\', "/"));
 
-        emit_line(&app, format!("# Migrating {} to {} — exporting a backup first", distro, new_dir), false);
+        emit_line(&app, format!("# Migrating {} to {} - exporting a backup first", distro, new_dir), false);
         emit_line(&app, format!("$ wsl --terminate {}", distro), false);
         run_wsl(&["--terminate", &distro]).ok();
 
@@ -1499,16 +1499,16 @@ pub async fn wsl_migrate_distro(
 
         emit_line(&app, format!("$ wsl -d {} -u root true   # verify boot", temp_name), false);
         if let Err(e) = run_wsl(&["-d", &temp_name, "-u", "root", "true"]) {
-            emit_line(&app, format!("  ✗ migrated copy failed to boot: {} — keeping original, backup at {}", e, backup), true);
+            emit_line(&app, format!("  ✗ migrated copy failed to boot: {} - keeping original, backup at {}", e, backup), true);
             run_wsl(&["--unregister", &temp_name]).ok();
             std::fs::remove_dir_all(&temp_dir).ok();
             return Err(format!("Migrated copy failed to boot; original left untouched. Backup: {}", backup));
         }
 
-        // Verified bootable — now replace the original at the new location.
+        // Verified bootable - now replace the original at the new location.
         emit_line(&app, format!("$ wsl --unregister {}", distro), false);
         if let Err(e) = run_wsl(&["--unregister", &distro]) {
-            emit_line(&app, format!("  ✗ {} — original intact, backup at {}", e, backup), true);
+            emit_line(&app, format!("  ✗ {} - original intact, backup at {}", e, backup), true);
             run_wsl(&["--unregister", &temp_name]).ok();
             std::fs::remove_dir_all(&temp_dir).ok();
             return Err(e);
@@ -1516,7 +1516,7 @@ pub async fn wsl_migrate_distro(
 
         emit_line(&app, format!("$ wsl --import {} \"{}\" \"{}\"{}", distro, new_dir, backup, version_flag(version)), false);
         if let Err(e) = import_distro(&distro, &new_dir, &backup, version) {
-            emit_line(&app, format!("  ✗ re-import failed: {} — recover with: wsl --import {} \"{}\" \"{}\"", e, distro, new_dir, backup), true);
+            emit_line(&app, format!("  ✗ re-import failed: {} - recover with: wsl --import {} \"{}\" \"{}\"", e, distro, new_dir, backup), true);
             return Err(format!("Re-import failed: {}. Recover from the backup: {}", e, backup));
         }
 
@@ -1711,7 +1711,7 @@ fn parse_services(out: &str) -> ServiceList {
 }
 
 /// List a distro's systemd services (enabled + active state). Reads inside the
-/// distro, so it boots a stopped one — the caller gates on user intent.
+/// distro, so it boots a stopped one - the caller gates on user intent.
 #[tauri::command]
 pub async fn wsl_list_services(distro: String) -> Result<ServiceList, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -1767,7 +1767,7 @@ fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
-/// Enable or disable a service (`systemctl enable|disable`). Mutating —
+/// Enable or disable a service (`systemctl enable|disable`). Mutating -
 /// the UI confirms first.
 #[tauri::command]
 pub async fn wsl_service_set(
@@ -1813,7 +1813,7 @@ pub struct BenchmarkResult {
 pub async fn wsl_benchmark_boot(app: tauri::AppHandle, distro: String) -> Result<BenchmarkResult, String> {
     use std::time::{Duration, Instant};
     tauri::async_runtime::spawn_blocking(move || {
-        emit_line(&app, format!("# Cold-boot benchmark — terminating {} first", distro), false);
+        emit_line(&app, format!("# Cold-boot benchmark - terminating {} first", distro), false);
         emit_line(&app, format!("$ wsl --terminate {}", distro), false);
         run_wsl(&["--terminate", &distro]).ok(); // already-stopped is fine
 
@@ -1862,14 +1862,14 @@ pub struct ShellProfile {
 /// Fixed optimization suggestion for a detected slow startup item.
 fn suggestion_for(tool: &str) -> String {
     match tool {
-        "nvm" => "nvm sourcing nvm.sh eagerly adds 100ms+ — lazy-load it so node/npm/nvm load it on first use.",
+        "nvm" => "nvm sourcing nvm.sh eagerly adds 100ms+ - lazy-load it so node/npm/nvm load it on first use.",
         "conda" => "Disable base auto-activation (`conda config --set auto_activate_base false`) or lazy-init conda.",
         "pyenv" => "Defer pyenv: use `pyenv init - --no-rehash` and keep virtualenv-init off the hot path.",
         "rbenv" => "Use `rbenv init - --no-rehash` to skip the rehash on every shell start.",
-        "oh-my-zsh" => "Trim oh-my-zsh plugins and theme — each plugin adds measurable startup cost.",
-        "sdkman" => "SDKMAN sources a large init script — lazy-load it on first `sdk` use.",
+        "oh-my-zsh" => "Trim oh-my-zsh plugins and theme - each plugin adds measurable startup cost.",
+        "sdkman" => "SDKMAN sources a large init script - lazy-load it on first `sdk` use.",
         "nodenv" => "Use `nodenv init - --no-rehash` to cut the per-shell rehash cost.",
-        _ => "Review this item — it runs on every shell startup.",
+        _ => "Review this item - it runs on every shell startup.",
     }
     .to_string()
 }

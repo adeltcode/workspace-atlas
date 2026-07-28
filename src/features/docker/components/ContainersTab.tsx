@@ -34,7 +34,7 @@ function parsePorts(raw: string): PortMapping[] {
 
 function PortChips({ raw }: { raw: string }) {
   const ports = parsePorts(raw)
-  if (!ports.length) return <span className="img-colon">—</span>
+  if (!ports.length) return <span className="img-colon">-</span>
   return (
     <div className="ctr-port-chips">
       {ports.map((p, i) => (
@@ -270,7 +270,7 @@ export default function ContainersTab({
 
   return (
     <div className="img-tab">
-      {/* ── Toolbar (bulk controls live here — no layout shift) ────── */}
+      {/* ── Toolbar (bulk controls live here - no layout shift) ────── */}
       <div className="img-toolbar">
         <input
           className="img-search"
@@ -357,7 +357,7 @@ export default function ContainersTab({
 
               return (
                 <React.Fragment key={c.id}>
-                  {/* ── Container row — full row clickable for logs ── */}
+                  {/* ── Container row - full row clickable for logs ── */}
                   <tr
                     className={clsx('img-row img-row--clickable', showLogs && 'row-logs-open', isSelected && 'row-selected')}
                     onClick={() => setLogsId(showLogs ? null : c.id)}

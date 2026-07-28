@@ -117,7 +117,7 @@ export default function ImagesTab({ images, loading }: { images: DockerImage[]; 
                     <button
                       className={clsx('pin-btn', pinned && 'pinned')}
                       onClick={() => pinned ? removeFromKeepList(img.id) : addToKeepList(img.id)}
-                      title={pinned ? 'Unpin from keep-list' : 'Pin — never prune this image'}
+                      title={pinned ? 'Unpin from keep-list' : 'Pin - never prune this image'}
                     >
                       {pinned ? <PinOff size={13} /> : <Pin size={13} />}
                     </button>
@@ -132,7 +132,7 @@ export default function ImagesTab({ images, loading }: { images: DockerImage[]; 
       {dockerKeepList.length > 0 && (
         <div className="keeplist-notice">
           <Pin size={12} />
-          {dockerKeepList.length} image{dockerKeepList.length !== 1 ? 's' : ''} pinned — never pruned
+          {dockerKeepList.length} image{dockerKeepList.length !== 1 ? 's' : ''} pinned - never pruned
         </div>
       )}
     </div>

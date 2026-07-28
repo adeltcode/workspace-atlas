@@ -65,7 +65,7 @@ export default function ComposeLogPanel({ project, containers, configFile, initi
   }, [])
 
   // Pin to the bottom when not searching. Sets scrollTop directly (no smooth
-  // behavior) so opening the panel lands at the latest line instantly — no
+  // behavior) so opening the panel lands at the latest line instantly - no
   // top-to-bottom scroll animation, and it never scrolls the page.
   useEffect(() => {
     if (!search && !paused && bodyRef.current) {
@@ -106,7 +106,7 @@ export default function ComposeLogPanel({ project, containers, configFile, initi
     <div className="log-panel">
       {/* Header */}
       <div className="log-panel-header">
-        <span className="log-panel-title">Logs — {project.name}</span>
+        <span className="log-panel-title">Logs - {project.name}</span>
 
         {/* Service filter chips */}
         <div className="log-panel-chips">
@@ -175,7 +175,7 @@ export default function ComposeLogPanel({ project, containers, configFile, initi
         })}
         {paused && bufferRef.current.length > 0 && (
           <div className="log-paused-badge">
-            {bufferRef.current.length} lines buffered — click Resume to show
+            {bufferRef.current.length} lines buffered - click Resume to show
           </div>
         )}
       </div>

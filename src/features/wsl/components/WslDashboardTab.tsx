@@ -26,11 +26,11 @@ const TIP = {
   cpu:     'Load average ÷ logical cores. 100% means the run queue equals the core count.',
   mem:     'Used vs total RAM in the distro’s VM. Linux uses free RAM as cache, so “available” already accounts for reclaimable cache.',
   swap:    'WSL2’s on-disk swap file for the whole VM. Linux pages memory out here when RAM fills up.',
-  disk:    'Used / total of the ext4 root filesystem inside the distro — not the .vhdx file size on Windows, and not your Windows drive.',
-  init:    'systemd is PID 1. “degraded” means systemd is up but one or more units failed to start — the distro still works.',
+  disk:    'Used / total of the ext4 root filesystem inside the distro - not the .vhdx file size on Windows, and not your Windows drive.',
+  init:    'systemd is PID 1. “degraded” means systemd is up but one or more units failed to start - the distro still works.',
   zombies: 'Defunct Linux processes that exited but were not reaped by their parent. A few are normal; many point to a buggy parent process.',
   net:     'Interface and DNS are refreshed live every 10s. The traffic figures are cumulative totals since the distro booted, not a live rate.',
-  limits:  '“Actual” is what the running VM has now. “Cap” is the limit set in %USERPROFILE%\\.wslconfig — “none” means WSL chose the default.',
+  limits:  '“Actual” is what the running VM has now. “Cap” is the limit set in %USERPROFILE%\\.wslconfig - “none” means WSL chose the default.',
 }
 
 function InfoDot({ tip }: { tip: string }) {
@@ -59,7 +59,7 @@ function Gauge({ icon: Icon, label, value, pct, sub, color, tip }: {
       </div>
       <div className="wsl-gauge-sub">
         <span className="wsl-gauge-sublabel">{sub}</span>
-        <span className="wsl-gauge-pct">{pct === null ? '—' : `${Math.round(pct)}%`}</span>
+        <span className="wsl-gauge-pct">{pct === null ? '-' : `${Math.round(pct)}%`}</span>
       </div>
       <div className="wsl-gauge-track">
         <div className={clsx('wsl-gauge-fill', `wsl-gauge-fill--${color}`)} style={{ width: `${width}%` }} />
@@ -103,7 +103,7 @@ function ProcList({ procs, kind, limit }: {
   )
 }
 
-/** Status colour for the systemd init chip — never contradicts the word shown. */
+/** Status colour for the systemd init chip - never contradicts the word shown. */
 function initChipClass(m: DistroMetrics): string {
   if (!m.systemd) return 'wsl-chip--muted'
   const s = m.systemd_state
@@ -119,7 +119,7 @@ export default function WslDashboardTab({ distros, onReload }: {
   const busyDistro = useAppStore(s => s.wslBusyDistro)
   // Metrics are cached per distro in the store, so reopening this page (tab switch,
   // distro switch, leaving and returning) shows the last sample immediately and
-  // refreshes in the background — no skeleton flash every time.
+  // refreshes in the background - no skeleton flash every time.
   const metrics = useAppStore(s => s.wslMetrics[selected]) ?? null
   const setWslMetric = useAppStore(s => s.setWslMetric)
   const [error, setError]     = useState<string | null>(null)
@@ -235,18 +235,18 @@ export default function WslDashboardTab({ distros, onReload }: {
                 sub={`${metrics.cpu_count} cores · ${metrics.load5.toFixed(2)} / ${metrics.load15.toFixed(2)} (5m/15m)`}
                 color={loadPct === null ? 'accent' : levelColor(loadPct)} />
               <Gauge icon={MemoryStick} label="Memory" tip={TIP.mem}
-                value={memPct === null ? '—' : `${Math.round(memPct)}%`} pct={memPct}
+                value={memPct === null ? '-' : `${Math.round(memPct)}%`} pct={memPct}
                 sub={`${bytesToHuman(memUsedKb * 1024)} / ${bytesToHuman(metrics.mem_total_kb * 1024)}`}
                 color={memPct === null ? 'accent' : levelColor(memPct)} />
               <Gauge icon={ArrowDownUp} label="Swap" tip={TIP.swap}
-                value={metrics.swap_total_kb === 0 ? 'off' : swapPct === null ? '—' : `${Math.round(swapPct)}%`}
+                value={metrics.swap_total_kb === 0 ? 'off' : swapPct === null ? '-' : `${Math.round(swapPct)}%`}
                 pct={swapPct}
                 sub={metrics.swap_total_kb > 0
                   ? `${bytesToHuman(swapUsedKb * 1024)} / ${bytesToHuman(metrics.swap_total_kb * 1024)}`
                   : 'no swap configured'}
                 color={swapPct === null ? 'accent' : levelColor(swapPct)} />
               <Gauge icon={HardDrive} label="Disk (/)" tip={TIP.disk}
-                value={diskPct === null ? '—' : `${Math.round(diskPct)}%`} pct={diskPct}
+                value={diskPct === null ? '-' : `${Math.round(diskPct)}%`} pct={diskPct}
                 sub={`${bytesToHuman(metrics.disk_used_bytes)} / ${bytesToHuman(metrics.disk_total_bytes)}`}
                 color={diskPct === null ? 'accent' : levelColor(diskPct)} />
             </div>
@@ -308,7 +308,7 @@ export default function WslDashboardTab({ distros, onReload }: {
                     <Network size={14} className="wsl-net-icon" />
                     <div className="wsl-net-text">
                       <span className="wsl-net-k">{metrics.iface || 'interface'}</span>
-                      <span className="wsl-net-v">{metrics.ip || '—'}</span>
+                      <span className="wsl-net-v">{metrics.ip || '-'}</span>
                     </div>
                   </div>
                   <div className="wsl-net-item">

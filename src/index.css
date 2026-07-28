@@ -1,13 +1,13 @@
 @import "tailwindcss";
 
 /* =============================================================
-   Design Tokens — Dark (default)
+   Design Tokens - Dark (default)
    ============================================================= */
 :root {
-  /* ── Backgrounds — three distinct layers create depth */
+  /* ── Backgrounds - three distinct layers create depth */
   --color-bg-base:       #05050c;   /* body / outermost */
   --color-bg-primary:    #09091a;   /* main panel */
-  --color-bg-secondary:  #141528;   /* card surface — clearly lighter */
+  --color-bg-secondary:  #141528;   /* card surface - clearly lighter */
   --color-bg-tertiary:   #1c1d35;   /* elevated / inputs */
   --color-bg-hover:      #21223c;   /* hover states */
 
@@ -16,7 +16,7 @@
   --color-border-light:  rgba(255,255,255,0.05);
   --color-border-strong: rgba(255,255,255,0.18);
 
-  /* ── Text — every value meets WCAG AA (4.5:1) against every background it
+  /* ── Text - every value meets WCAG AA (4.5:1) against every background it
      lands on, including --color-bg-hover, which is the lightest surface. */
   --color-text-primary:   #eaeafa;   /* 15.1:1 on card */
   --color-text-secondary: #a6a6c0;   /*  7.6:1 on card */
@@ -31,7 +31,7 @@
   --color-accent-hover:  #8b90ff;
   --color-accent-subtle: rgba(108,113,255,0.12);
 
-  /* ── Semantic — as above, the base value is tuned for text on dark and the
+  /* ── Semantic - as above, the base value is tuned for text on dark and the
      -fill value for white text on top of it. */
   --color-success:        #36c85a;
   --color-success-subtle: rgba(54,200,90,0.1);
@@ -58,7 +58,7 @@
   --color-titlebar-bg:   #080910;
   --color-terminal-bg:   #06060d;
 
-  /* ── Chrome text/surface tokens — dark defaults */
+  /* ── Chrome text/surface tokens - dark defaults */
   --chrome-text:          rgba(255,255,255,0.85);
   --chrome-text-muted:    rgba(255,255,255,0.45);
   --chrome-text-subtle:   rgba(255,255,255,0.22);
@@ -88,7 +88,7 @@
   --transition-base: 0.18s ease;
   --transition-slow: 0.3s ease;
 
-  /* ── Chart series colors — 8 slots, theme-aware */
+  /* ── Chart series colors - 8 slots, theme-aware */
   --chart-1: #6c71ff;   /* accent */
   --chart-2: #36c85a;   /* success-green */
   --chart-3: #f0a500;   /* warning-amber */
@@ -99,12 +99,12 @@
   --chart-8: #34d399;   /* emerald */
 
   /* ── Disk-usage neutral segments (other apps / free) */
-  --disk-other: #5f627e;   /* 3.0:1 vs panel — WCAG 1.4.11 non-text minimum */
+  --disk-other: #5f627e;   /* 3.0:1 vs panel - WCAG 1.4.11 non-text minimum */
   --disk-free:  #2a2c46;
 }
 
 /* =============================================================
-   Design Tokens — Light
+   Design Tokens - Light
    ============================================================= */
 [data-theme="light"] {
   --color-bg-base:       #edeef5;
@@ -122,7 +122,7 @@
   --color-text-tertiary:  #636592;   /*  5.5:1 on white, 4.5:1 on hover */
 
   /* ── Disk-usage neutral segments (other apps / free) */
-  --disk-other: #898cad;   /* 3.0:1 vs panel — WCAG 1.4.11 non-text minimum */
+  --disk-other: #898cad;   /* 3.0:1 vs panel - WCAG 1.4.11 non-text minimum */
   --disk-free:  #e4e6f0;
 
   /* Light-theme fills are already dark, so white sits on all of them and the
@@ -141,12 +141,12 @@
   --color-danger-subtle:  rgba(204,40,40,0.08);
   --color-on-fill:        #ffffff;
 
-  /* Chrome areas — full light theme */
+  /* Chrome areas - full light theme */
   --color-sidebar-bg:    #e4e5f2;
   --color-titlebar-bg:   #e4e5f2;
   --color-terminal-bg:   #e4e5f2;
 
-  /* ── Chrome text/surface tokens — light overrides */
+  /* ── Chrome text/surface tokens - light overrides */
   --chrome-text:          rgba(0,0,0,0.80);
   --chrome-text-muted:    rgba(0,0,0,0.50);
   --chrome-text-subtle:   rgba(0,0,0,0.28);
@@ -274,7 +274,7 @@ ul, ol { list-style: none; }
   padding-left: 16px;
 }
 
-/* Flex-grow spacer that fills the middle of the titlebar — also a drag region */
+/* Flex-grow spacer that fills the middle of the titlebar - also a drag region */
 .titlebar-spacer {
   flex: 1;
   height: 100%;
@@ -306,7 +306,7 @@ ul, ol { list-style: none; }
   display: flex;
   align-items: center;
   height: 100%;
-  /* no-drag counterpart also removed — no longer needed without the parent drag region */
+  /* no-drag counterpart also removed - no longer needed without the parent drag region */
 }
 
 .titlebar-btn {
@@ -335,7 +335,7 @@ ul, ol { list-style: none; }
   color: #fff;
 }
 
-/* Titlebar stays dark — no light overrides needed */
+/* Titlebar stays dark - no light overrides needed */
 
 /* =============================================================
    Sidebar
@@ -440,7 +440,7 @@ ul, ol { list-style: none; }
 
 .sidebar-item-label { flex: 1; }
 
-/* Child navigation — tree connector style */
+/* Child navigation - tree connector style */
 
 .sidebar-children {
   position: relative;
@@ -545,7 +545,7 @@ ul, ol { list-style: none; }
 }
 
 /*
- * Grandchild navigation — mirrors the child level exactly.
+ * Grandchild navigation - mirrors the child level exactly.
  *
  * Level 2 geometry:  trunk@23, branch left=24 width=13, dot@35, text@47
  * Level 3 geometry:  trunk@47, branch left=48 width=13, dot@59, text@71
@@ -564,7 +564,7 @@ ul, ol { list-style: none; }
   list-style: none;
 }
 
-/* Vertical trunk — sits at x=47, same fade as .sidebar-children::before */
+/* Vertical trunk - sits at x=47, same fade as .sidebar-children::before */
 .sidebar-grandchildren::before {
   content: '';
   position: absolute;
@@ -741,7 +741,7 @@ ul, ol { list-style: none; }
 .sidebar-compose-frac.frac--warn { color: var(--color-warning); }
 .sidebar-compose-frac.frac--off  { color: var(--chrome-text-subtle); }
 
-/* Footer — matches terminal-header height (32px) */
+/* Footer - matches terminal-header height (32px) */
 .sidebar-footer {
   height: 32px;
   min-height: 32px;
@@ -775,7 +775,7 @@ ul, ol { list-style: none; }
 .sidebar-settings-btn:hover { background: rgba(255,255,255,0.08); color: var(--chrome-text); }
 .sidebar-settings-btn.active { color: var(--color-accent); background: rgba(108,113,255,0.15); }
 
-/* Sidebar stays dark — no light overrides needed */
+/* Sidebar stays dark - no light overrides needed */
 
 /* =============================================================
    Main Panel
@@ -788,7 +788,7 @@ ul, ol { list-style: none; }
   /* Reserve the scrollbar's space at all times so content doesn't shift
      horizontally when the scrollbar appears/disappears between views. */
   scrollbar-gutter: stable;
-  /* Guaranteed breathing room below every page when scrolled to the end — set on
+  /* Guaranteed breathing room below every page when scrolled to the end - set on
      the scroll container so it isn't clipped the way a last child's space can be. */
   padding-bottom: 24px;
 }
@@ -1104,7 +1104,7 @@ ul, ol { list-style: none; }
 }
 
 /* =============================================================
-   Docker — Status indicators & toolbar buttons
+   Docker - Status indicators & toolbar buttons
    ============================================================= */
 .status-dot {
   width: 7px;
@@ -1173,7 +1173,7 @@ ul, ol { list-style: none; }
 /* =============================================================
    Shared Button System
    btn-secondary / btn-ghost / btn-filled / btn-icon
-   ctr-action-btn (row icon buttons — shared across all tabs)
+   ctr-action-btn (row icon buttons - shared across all tabs)
    ============================================================= */
 
 .btn-secondary {
@@ -1211,13 +1211,13 @@ ul, ol { list-style: none; }
   transition: filter var(--transition-fast);
 }
 /* Each fill names its own foreground. A single on-brand white fails badly on
-   the bright ones — white on the dark-theme amber is 2.1:1. */
+   the bright ones - white on the dark-theme amber is 2.1:1. */
 .btn-filled--accent  { background: var(--color-accent-fill); color: var(--color-on-brand); }
 .btn-filled--success { background: var(--color-success);     color: var(--color-on-fill);  }
 .btn-filled--warning { background: var(--color-warning);     color: var(--color-on-fill);  }
 .btn-filled--danger  { background: var(--color-danger-fill); color: var(--color-on-brand); }
 .btn-filled:hover:not(:disabled) { filter: brightness(1.1); }
-/* Disabled filled buttons read as clearly inert — a neutral grey, not a faded
+/* Disabled filled buttons read as clearly inert - a neutral grey, not a faded
    primary colour that still looks clickable. */
 .btn-filled:disabled {
   background: var(--color-bg-tertiary);
@@ -1267,7 +1267,7 @@ ul, ol { list-style: none; }
 .spin { animation: spin 0.8s linear infinite; }
 
 /* =============================================================
-   Docker — Error / Offline States
+   Docker - Error / Offline States
    ============================================================= */
 .error-banner {
   display: flex;
@@ -1392,7 +1392,7 @@ ul, ol { list-style: none; }
 }
 
 /* =============================================================
-   Docker — In-content tab strip
+   Docker - In-content tab strip
    ============================================================= */
 
 /* Docker view fills the main panel so the compose project page can size its
@@ -1406,7 +1406,7 @@ ul, ol { list-style: none; }
   flex: 1;
   min-height: 0;
 }
-/* Keep-alive wrapper around ComposeTab — fills the tab content area. */
+/* Keep-alive wrapper around ComposeTab - fills the tab content area. */
 .docker-pane-fill {
   height: 100%;
 }
@@ -1418,7 +1418,7 @@ ul, ol { list-style: none; }
   flex-shrink: 0;
 }
 
-/* Tab strip — bleeds to view-container edges (padding: 28px 32px) */
+/* Tab strip - bleeds to view-container edges (padding: 28px 32px) */
 .docker-tab-strip {
   display: flex;
   align-items: center;
@@ -1470,11 +1470,11 @@ ul, ol { list-style: none; }
 }
 
 /* =============================================================
-   Docker — Images Tab
+   Docker - Images Tab
    ============================================================= */
 .img-tab { display: flex; flex-direction: column; gap: 16px; }
 
-/* Pre-filter banner — shown when navigated from overview cleanup panel */
+/* Pre-filter banner - shown when navigated from overview cleanup panel */
 .prefilter-banner {
   display: flex;
   align-items: center;
@@ -1560,7 +1560,7 @@ ul, ol { list-style: none; }
 .img-th.sortable { cursor: pointer; }
 .img-th.sortable:hover { color: var(--color-text-primary); }
 .img-th.active { color: var(--color-accent); }
-/* Sort header — th keeps display:table-cell; inner div is flex */
+/* Sort header - th keeps display:table-cell; inner div is flex */
 .img-th-sort {
   cursor: pointer;
   user-select: none;
@@ -1593,17 +1593,17 @@ ul, ol { list-style: none; }
   accent-color: var(--color-accent);
 }
 
-/* Volume name header — offset for chevron space (11px icon + 5px gap = 16px) */
+/* Volume name header - offset for chevron space (11px icon + 5px gap = 16px) */
 .img-th-vol-name { padding-left: 28px; }
 
 .img-th-pin { width: 44px; }
 
-/* Row selected state — set on tr so there are no inter-cell gaps */
+/* Row selected state - set on tr so there are no inter-cell gaps */
 .row-selected { background: var(--color-accent-subtle) !important; }
 .row-selected td { background: transparent !important; }
 .row-selected:hover { filter: brightness(1.05); }
 
-/* Row with logs open — tr-level bg + accent left border */
+/* Row with logs open - tr-level bg + accent left border */
 .row-logs-open {
   background: var(--color-accent-subtle) !important;
   box-shadow: inset 3px 0 0 var(--color-accent);
@@ -1689,7 +1689,7 @@ ul, ol { list-style: none; }
 .img-loading { font-size: 13px; color: var(--color-text-tertiary); padding: 24px 0; }
 
 /* =============================================================
-   Docker — Prune Tab
+   Docker - Prune Tab
    ============================================================= */
 .prune-tab { display: flex; flex-direction: column; gap: 16px; }
 
@@ -1857,7 +1857,7 @@ ul, ol { list-style: none; }
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 
 /* =============================================================
-   Docker — Confirmation Modal
+   Docker - Confirmation Modal
    ============================================================= */
 /* Every modal is a native <dialog> opened with showModal(), which brings focus
    trapping, focus restore, Escape, and inertness of the page behind it. The
@@ -1932,7 +1932,7 @@ dialog::backdrop { background: transparent; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
 
 /* =============================================================
-   Docker — Log Tab
+   Docker - Log Tab
    ============================================================= */
 .log-tab { display: flex; flex-direction: column; gap: 16px; }
 
@@ -2048,7 +2048,7 @@ dialog::backdrop { background: transparent; }
   transform: scale(0.97);
 }
 
-/* Module card lift — override existing */
+/* Module card lift - override existing */
 .module-card {
   transition: border-color 0.15s ease, background 0.15s ease,
               transform 0.15s ease, box-shadow 0.15s ease;
@@ -2059,7 +2059,7 @@ dialog::backdrop { background: transparent; }
 }
 
 /* =============================================================
-   Prune level cards — improved selection state
+   Prune level cards - improved selection state
    ============================================================= */
 .prune-level-card {
   display: flex;
@@ -2336,7 +2336,7 @@ select:focus-visible,
 }
 .terminal-tab-close:hover { background: var(--chrome-surface-hover); color: var(--color-danger); }
 
-/* Empty strip between tabs and controls — click to expand/collapse */
+/* Empty strip between tabs and controls - click to expand/collapse */
 .terminal-header-grip { flex: 1; align-self: stretch; cursor: pointer; min-width: 8px; }
 
 /* Tab bodies */
@@ -2413,7 +2413,7 @@ select:focus-visible,
 }
 
 /* =============================================================
-   Terminal — interactive input row
+   Terminal - interactive input row
    ============================================================= */
 .terminal-input-row {
   display: flex;
@@ -2690,7 +2690,7 @@ select:focus-visible,
 .bar-fill--danger  { background: var(--color-danger); }
 .bar-fill--total   { background: var(--color-text-secondary); }
 
-/* Footer — two-column layout: freeable (left) / total (right) */
+/* Footer - two-column layout: freeable (left) / total (right) */
 .bar-foot {
   display: flex;
   align-items: flex-end;
@@ -2709,7 +2709,7 @@ select:focus-visible,
 .bar-pct--warning { color: var(--color-warning); }
 .bar-pct--danger  { color: var(--color-danger); }
 .bar-pct--total   { color: var(--color-text-secondary); }
-/* muted = nothing reclaimable — neutral, not an alarm color */
+/* muted = nothing reclaimable - neutral, not an alarm color */
 .bar-pct--muted   { color: var(--color-text-tertiary); }
 
 /* Sub-label under each metric */
@@ -2762,7 +2762,7 @@ select:focus-visible,
 .sk-line.w-12   { width: 48px; }
 
 /* =============================================================
-   Overview — Hero status strip
+   Overview - Hero status strip
    ============================================================= */
 
 .hero-grid {
@@ -2857,7 +2857,7 @@ select:focus-visible,
 }
 
 /* =============================================================
-   Overview — running containers + attention sections
+   Overview - running containers + attention sections
    ============================================================= */
 
 .overview-section {
@@ -2992,7 +2992,7 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
 }
 
 /* =============================================================
-   Overview — Cleanup rows
+   Overview - Cleanup rows
    ============================================================= */
 
 .cleanup-rows {
@@ -3109,7 +3109,7 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
   margin-top: 4px;
 }
 
-/* Category dot — matches bar card colors */
+/* Category dot - matches bar card colors */
 .cleanup-dot {
   width: 8px;
   height: 8px;
@@ -3160,7 +3160,7 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
 }
 
 /* =============================================================
-   Overview — Resource usage (stats grid)
+   Overview - Resource usage (stats grid)
    ============================================================= */
 
 /* Resource Monitoring tab strip */
@@ -3226,7 +3226,7 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
 }
 .stats-row:last-child { margin-bottom: 0; }
 
-/* Live Activity — one row per container with CPU + mem sparklines */
+/* Live Activity - one row per container with CPU + mem sparklines */
 .realtime-body {
   padding: 10px 14px;
 }
@@ -3322,7 +3322,7 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
 .overview-prune-btn:hover { filter: brightness(1.12); }
 
 /* =============================================================
-   Overview — Quick Actions Bar
+   Overview - Quick Actions Bar
    ============================================================= */
 
 .quick-actions-bar {
@@ -3368,7 +3368,7 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
 }
 
 /* =============================================================
-   Overview — Active Projects (rich compose stack cards)
+   Overview - Active Projects (rich compose stack cards)
    ============================================================= */
 
 .project-cards {
@@ -3455,7 +3455,7 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
 }
 
 /* =============================================================
-   Overview — Two-column layout (Health + Resource Monitoring)
+   Overview - Two-column layout (Health + Resource Monitoring)
    ============================================================= */
 
 .overview-two-col {
@@ -3470,7 +3470,7 @@ button.overview-chip--warn:hover { background: rgba(240, 165, 0, 0.2); }
 }
 
 /* =============================================================
-   Overview — Health & Alerts Panel
+   Overview - Health & Alerts Panel
    ============================================================= */
 
 .health-panel {
@@ -3516,7 +3516,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 /* =============================================================
-   Overview — System Insights Grid
+   Overview - System Insights Grid
    ============================================================= */
 
 .insights-grid {
@@ -3565,11 +3565,11 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 /* =============================================================
-   Overview — Disk usage stacked horizontal bar
+   Overview - Disk usage stacked horizontal bar
    ============================================================= */
 
 /* =============================================================
-   Live Charts — dual CPU / Memory charts with hover
+   Live Charts - dual CPU / Memory charts with hover
    ============================================================= */
 
 .live-charts {
@@ -3704,7 +3704,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   padding: 12px 14px 4px;
 }
 
-/* Grid of drive columns — each drive gets its own column */
+/* Grid of drive columns - each drive gets its own column */
 .drive-bars-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -3748,7 +3748,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   margin-bottom: 12px;
 }
 
-/* Each segment — color variants */
+/* Each segment - color variants */
 .disk-seg {
   height: 100%;
   border-radius: 2px;
@@ -3761,7 +3761,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .disk-seg--cache      { background: var(--color-danger); }
 .disk-seg--backups    { background: #8b5cf6; }
 /* "Other apps" and "free" must read as clearly distinct greys (and distinct from
-   the track) — shared with the legend keys via the same tokens. */
+   the track) - shared with the legend keys via the same tokens. */
 .disk-seg--other      { background: var(--disk-other); }
 .disk-seg--free       { background: var(--disk-free); }
 
@@ -3850,7 +3850,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 /* =============================================================
-   Docker — State badges (shared by Containers + Images)
+   Docker - State badges (shared by Containers + Images)
    ============================================================= */
 .badge-running {
   background: var(--color-success-subtle);
@@ -3866,7 +3866,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 /* =============================================================
-   Docker — Containers & Volumes shared toolbar controls
+   Docker - Containers & Volumes shared toolbar controls
    ============================================================= */
 
 /* Segmented filter (All / Running / Stopped) */
@@ -3896,7 +3896,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 /* =============================================================
-   Docker — Containers Tab
+   Docker - Containers Tab
    ============================================================= */
 .ctr-th-actions { width: 76px; text-align: center; }
 
@@ -3920,7 +3920,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 
 
 /* =============================================================
-   Docker — Volumes Tab
+   Docker - Volumes Tab
    ============================================================= */
 
 /* Clickable row style */
@@ -4141,7 +4141,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .btn-prune-unused:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* =============================================================
-   Docker — Compose Tab
+   Docker - Compose Tab
    ============================================================= */
 .compose-tab {
   height: 100%;
@@ -4304,7 +4304,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   border-color: var(--color-border);
 }
 
-/* Full path text — direction rtl so the filename end is always visible */
+/* Full path text - direction rtl so the filename end is always visible */
 .compose-file-path-text {
   font-family: "Cascadia Code", "Consolas", monospace;
   font-size: 11px;
@@ -4407,7 +4407,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .compose-toolbar-status.error   { color: var(--color-danger);  }
 .compose-toolbar-status.info    { color: var(--color-text-tertiary); }
 
-/* Backup accordion — no separate head, just the list */
+/* Backup accordion - no separate head, just the list */
 .compose-backup-accordion {
   border-top: 1px solid var(--color-border);
   background: var(--color-bg-secondary);
@@ -4421,7 +4421,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   margin: 0;
 }
 
-/* "Run Backup" — secondary accent style, not green */
+/* "Run Backup" - secondary accent style, not green */
 .compose-run-backup-btn {
   display: inline-flex;
   align-items: center;
@@ -4706,15 +4706,15 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 
 /* YAML token colors */
 .yaml-comment  { color: #6b737e; font-style: italic; }
-.yaml-key-root { color: #7dd3fc; font-weight: 600; }  /* top-level key — light blue */
-.yaml-key      { color: #a5d6ff; }                     /* nested key — softer blue */
+.yaml-key-root { color: #7dd3fc; font-weight: 600; }  /* top-level key - light blue */
+.yaml-key      { color: #a5d6ff; }                     /* nested key - softer blue */
 .yaml-colon    { color: var(--color-text-tertiary); }
 .yaml-value    { color: var(--color-text-primary); }
-.yaml-string   { color: #fbbf24; }                     /* quoted string — amber */
-.yaml-bool     { color: #c084fc; }                     /* true/false/null — purple */
-.yaml-number   { color: #34d399; }                     /* numeric — green */
+.yaml-string   { color: #fbbf24; }                     /* quoted string - amber */
+.yaml-bool     { color: #c084fc; }                     /* true/false/null - purple */
+.yaml-number   { color: #34d399; }                     /* numeric - green */
 .yaml-dash     { color: var(--color-text-tertiary); }
-.yaml-env      { color: #fb923c; font-style: italic; } /* ${VAR} — orange */
+.yaml-env      { color: #fb923c; font-style: italic; } /* ${VAR} - orange */
 
 [data-theme="light"] .yaml-comment  { color: #6b7280; }
 [data-theme="light"] .yaml-key-root { color: #1d4ed8; }
@@ -4940,7 +4940,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 /* =============================================================
-   Backup — per-volume progress bar
+   Backup - per-volume progress bar
    ============================================================= */
 
 .vol-progress-wrap {
@@ -5011,12 +5011,12 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .vol-progress-label.err { color: var(--color-danger); }
 
 /* =============================================================
-   Keep-alive tab wrapper — hidden but mounted
+   Keep-alive tab wrapper - hidden but mounted
    ============================================================= */
 .tab-hidden { display: none !important; }
 
 /* =============================================================
-   Sidebar — tab count badges
+   Sidebar - tab count badges
    ============================================================= */
 .sidebar-child-item {
   display: flex;
@@ -5044,7 +5044,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 /* =============================================================
-   Port chips — Containers tab
+   Port chips - Containers tab
    ============================================================= */
 .ctr-port-chips {
   display: flex;
@@ -5081,7 +5081,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 /* =============================================================
-   Log viewer — inline row panel
+   Log viewer - inline row panel
    ============================================================= */
 
 /* Log viewer row: left accent stripe ties it visually to the active row */
@@ -5205,7 +5205,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   font-family: ui-monospace, monospace;
   margin-top: 1px;
 }
-/* Flags moved inline with network name — column removed */
+/* Flags moved inline with network name - column removed */
 .net-name-row {
   display: flex;
   align-items: center;
@@ -5495,7 +5495,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 /* =============================================================
-   Compose — Two-column project layout
+   Compose - Two-column project layout
    ============================================================= */
 
 .compose-project-topbar {
@@ -5771,7 +5771,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   overflow: auto;
   max-height: 320px;
 }
-/* Log panel inside sidebar — remove its own border, constrain height */
+/* Log panel inside sidebar - remove its own border, constrain height */
 .compose-sidebar-panel .log-panel {
   border: none;
   max-height: 460px;
@@ -5787,7 +5787,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 /* =============================================================
-   Compose — Back button (project detail view)
+   Compose - Back button (project detail view)
    ============================================================= */
 
 .compose-back-btn {
@@ -5819,7 +5819,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 /* =============================================================
-   Compose — Main overview page
+   Compose - Main overview page
    ============================================================= */
 
 .compose-page {
@@ -6147,7 +6147,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 /* =============================================================
-   Compose — Inline editor (Area 3d)
+   Compose - Inline editor (Area 3d)
    ============================================================= */
 
 .compose-editor-wrap {
@@ -6157,9 +6157,9 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   overflow: hidden;
 }
 .compose-line-nums--edit {
-  /* Reuse existing line-nums styles; no change needed — same font + sizing */
+  /* Reuse existing line-nums styles; no change needed - same font + sizing */
 }
-/* Plain textarea editor (Dockerfile / .env) — typography matched to the
+/* Plain textarea editor (Dockerfile / .env) - typography matched to the
    read-only viewer so switching into edit mode no longer shifts the text. */
 .compose-editor-textarea {
   flex: 1;
@@ -6188,7 +6188,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   min-width: 0;
   align-self: stretch;
 }
-/* Highlight layer — same box as .compose-code-body, taken out of flow and
+/* Highlight layer - same box as .compose-code-body, taken out of flow and
    scroll-mirrored from the textarea on top. */
 .compose-editor-highlight {
   position: absolute;
@@ -6199,7 +6199,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   user-select: none;
   tab-size: 2;
 }
-/* Transparent textarea overlay — text is invisible (the highlight shows
+/* Transparent textarea overlay - text is invisible (the highlight shows
    through), only the caret and selection render. Typography MUST match
    .compose-code-wrap / .compose-code-body exactly for the caret to line up. */
 .compose-overlay-textarea {
@@ -6288,7 +6288,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 /* =============================================================
-   Compose — Down split button (Area 3g)
+   Compose - Down split button (Area 3g)
    ============================================================= */
 
 .compose-split-btn-wrap {
@@ -6355,7 +6355,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .compose-split-dropdown-item--danger:hover { color: var(--color-danger); background: var(--color-danger-subtle); }
 
 /* =============================================================
-   Compose — Service table (Area 3f)
+   Compose - Service table (Area 3f)
    ============================================================= */
 
 .compose-service-section {
@@ -6476,7 +6476,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .cst-btn--inspect:hover:not(:disabled) { color: var(--color-accent);  border-color: var(--color-accent-border); background: var(--color-accent-subtle); }
 
 /* =============================================================
-   Compose — Inspect drawer (Area 3f)
+   Compose - Inspect drawer (Area 3f)
    ============================================================= */
 
 .compose-inspect-overlay {
@@ -6551,7 +6551,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .inspect-state--stopped    { color: var(--color-text-tertiary); }
 
 /* =============================================================
-   Compose — Wipe confirmation modal (Area 3g)
+   Compose - Wipe confirmation modal (Area 3g)
    ============================================================= */
 
 .compose-modal-backdrop {
@@ -6617,7 +6617,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .compose-modal-btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* =============================================================
-   Compose — Toolbar secondary action buttons (Area 3e/3h/3i)
+   Compose - Toolbar secondary action buttons (Area 3e/3h/3i)
    ============================================================= */
 
 .compose-toolbar-action-btn {
@@ -6653,7 +6653,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 /* =============================================================
-   Compose — .env first-class tab (Area 3b)
+   Compose - .env first-class tab (Area 3b)
    ============================================================= */
 
 .env-tab-wrap {
@@ -6723,7 +6723,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 /* =============================================================
-   Compose — Dockerfile viewer (Area 3c)
+   Compose - Dockerfile viewer (Area 3c)
    ============================================================= */
 
 .dockerfile-instr { color: #60a5fa; font-weight: 600; }
@@ -6748,7 +6748,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 /* =============================================================
-   Compose — Log multiplexer panel (Area 3h)
+   Compose - Log multiplexer panel (Area 3h)
    ============================================================= */
 
 .log-panel {
@@ -6853,7 +6853,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 /* =============================================================
-   Compose — Project Metadata panel (Area 3j)
+   Compose - Project Metadata panel (Area 3j)
    ============================================================= */
 
 .compose-meta-panel {
@@ -6948,7 +6948,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 /* =============================================================
-   Compose — Config validator drawer (Area 3i)
+   Compose - Config validator drawer (Area 3i)
    ============================================================= */
 
 .compose-validator-drawer {
@@ -6974,7 +6974,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 /* =============================================================
-   Compose — Open in IDE picker (Area 3e)
+   Compose - Open in IDE picker (Area 3e)
    ============================================================= */
 
 .compose-ide-pick-btn {
@@ -7167,7 +7167,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 /* ── WSL tabs + .wslconfig editor ─────────────────────────────────────── */
-/* Tab content wrapper — consistent top rhythm regardless of which tab renders. */
+/* Tab content wrapper - consistent top rhythm regardless of which tab renders. */
 .wsl-tab-content { margin-top: 20px; }
 
 /* ── Header active-distro switcher (custom dropdown) ────────────────────── */
@@ -7258,7 +7258,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wsl-switcher-item-state { margin-left: auto; font-size: 10.5px; color: var(--color-text-tertiary); }
 .wsl-switcher-check { color: var(--color-accent); flex-shrink: 0; }
 
-/* ── Bento home: toolbar (flat — the search field and segments carry their
+/* ── Bento home: toolbar (flat - the search field and segments carry their
    own surfaces, so no box-in-box container) ─────────────────────────────── */
 .wsl-distros-toolbar {
   display: flex;
@@ -7810,7 +7810,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 .wsl-viewall:hover { text-decoration: underline; }
 
-/* Resource-monitoring band — header + standalone gauge cards, no outer panel. */
+/* Resource-monitoring band - header + standalone gauge cards, no outer panel. */
 .wsl-dash-rm { margin-bottom: 16px; }
 .wsl-gauges {
   display: grid;
@@ -7873,7 +7873,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   border-bottom: 1px solid var(--color-border-light);
 }
 
-/* Network & DNS — vertical, icon + stacked label/value. */
+/* Network & DNS - vertical, icon + stacked label/value. */
 .wsl-net { display: flex; flex-direction: column; gap: 14px; }
 .wsl-net-item { display: flex; gap: 11px; align-items: flex-start; }
 .wsl-net-icon { color: var(--color-text-tertiary); flex-shrink: 0; margin-top: 1px; }
@@ -8369,7 +8369,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wiz-location { display: flex; flex-direction: column; gap: 6px; }
 .wiz-location-label { font-size: 11.5px; font-weight: 600; color: var(--color-text-secondary); }
 
-/* Install / result step — centred status block. */
+/* Install / result step - centred status block. */
 .wiz-status {
   display: flex;
   flex-direction: column;
@@ -8466,7 +8466,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
    setting maps to. Deliberately NOT a blanket animation kill: the looping
    opacity pulses are the only signal that a distro is booting, a service is
    restarting, or a prune is running, and destroying them would remove state,
-   not motion. What goes is everything that actually travels — spin, slide,
+   not motion. What goes is everything that actually travels - spin, slide,
    shimmer, scale, and the marching indeterminate bar.
 
    The neutralised animations are redefined by name rather than by selector so

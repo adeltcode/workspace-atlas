@@ -157,7 +157,7 @@ export interface BackupProgress {
   done: boolean
   error: string | null
   filename: string | null
-  /** Raw Docker command being executed — display in terminal. */
+  /** Raw Docker command being executed - display in terminal. */
   cmd: string | null
 }
 

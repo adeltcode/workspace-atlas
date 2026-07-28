@@ -183,7 +183,7 @@ export default function WslStartupTab({ distros, onReload, onGoToConf }: {
   }
 
   useEffect(() => { setData(null); setError(null); setQuery(''); setFilter('all') }, [selected])
-  // Load services only for a running, non-transitioning distro — the probe would
+  // Load services only for a running, non-transitioning distro - the probe would
   // otherwise boot a distro that's being stopped.
   useEffect(() => { if (running && selected !== busyDistro) load() }, [running, busyDistro, selected, load])
 

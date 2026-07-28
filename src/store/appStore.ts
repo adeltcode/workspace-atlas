@@ -25,13 +25,13 @@ export type ActivityModule  = 'docker' | 'wsl'
 export type ActivityOutcome = 'success' | 'failure' | 'dry-run' | 'info'
 
 /** One cross-module operation record for the unified activity log. Lightweight
- *  by design — a human summary, not full command output (that lives in the
+ *  by design - a human summary, not full command output (that lives in the
  *  Terminal / Docker run-log). Every module appends to this. */
 export interface ActivityEntry {
   id: string
   ts: number
   module: ActivityModule
-  /** Short action label, e.g. "Prune — Nuclear", "Volume backup". */
+  /** Short action label, e.g. "Prune - Nuclear", "Volume backup". */
   action: string
   outcome: ActivityOutcome
   /** Optional one-line detail, e.g. "~1.2 GB reclaimed". */
@@ -106,7 +106,7 @@ interface AppState {
   backupDir: string
   setBackupDir: (dir: string) => void
 
-  // ── Tab pre-filters — set before navigating, consumed once by target tab (ephemeral)
+  // ── Tab pre-filters - set before navigating, consumed once by target tab (ephemeral)
   imagesFilter: 'dangling' | 'unused-tagged' | null
   volumesFilter: 'unused' | null
   composePreselect: string | null
@@ -114,13 +114,13 @@ interface AppState {
   setVolumesFilter:   (f: 'unused' | null) => void
   setComposePreselect: (name: string | null) => void
 
-  // ── Docker sidebar nav data (ephemeral — updated by DockerView / ComposeTab)
+  // ── Docker sidebar nav data (ephemeral - updated by DockerView / ComposeTab)
   dockerBadges: { images: number; containers: string; volumes: string } | null
   setDockerBadges: (b: { images: number; containers: string; volumes: string } | null) => void
   composeProjectsNav: Array<{ name: string; status: string }>
   setComposeProjectsNav: (projects: Array<{ name: string; status: string }>) => void
   // Compose projects we have seen (name → config files), persisted so a project
-  // that is `down` — and thus drops out of `docker compose ls` — still shows in
+  // that is `down` - and thus drops out of `docker compose ls` - still shows in
   // the list and can be started again.
   knownComposeProjects: Record<string, string[]>
   rememberComposeProjects: (projects: Array<{ name: string; config_files: string[] }>) => void
@@ -329,7 +329,7 @@ export const useAppStore = create<AppState>()(
             { id: `${++_lineId}`, text, type, ts: Date.now() },
           ].slice(-MAX_TERMINAL_LINES),
         })),
-      // Batch variant — one set() call for many lines, avoids per-line re-renders
+      // Batch variant - one set() call for many lines, avoids per-line re-renders
       addTerminalLines: (items) =>
         set((s) => ({
           terminalLines: [

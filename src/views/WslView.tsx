@@ -64,7 +64,7 @@ export default function WslView() {
   //  • a cheap running-state poll every 5s catches start/stop (the common case),
   //  • a full silent refresh on sub-view navigation + window focus catches distros
   //    added/removed outside the app.
-  // The initial mount is skipped — useWslData already did the full load — so we
+  // The initial mount is skipped - useWslData already did the full load - so we
   // don't double-fetch on open.
   const didMount = useRef(false)
   useEffect(() => {

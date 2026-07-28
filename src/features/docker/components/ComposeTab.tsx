@@ -244,7 +244,7 @@ function parseDockerfileRefs(yaml: string): string[] {
     const indent = m[1].length
     const inline = clean(m[2])
     if (inline) { refs.push(refRelFrom(inline, 'Dockerfile')); i++; continue }
-    // Block form — scan deeper-indented context/dockerfile keys
+    // Block form - scan deeper-indented context/dockerfile keys
     let context = '.', dockerfile = 'Dockerfile'
     i++
     while (i < lines.length) {
@@ -276,7 +276,7 @@ function dockerfileMatchesRefs(path: string, refRels: string[], dirName: string)
 }
 
 // Editable YAML with live syntax highlighting (highlighted layer behind a
-// transparent textarea — see CodeOverlayEditor). Keeps the view ⇄ edit
+// transparent textarea - see CodeOverlayEditor). Keeps the view ⇄ edit
 // transition visually seamless.
 function YamlEditor({ value, onChange, initialScrollTop, onScrollTop }: {
   value: string; onChange: (v: string) => void
@@ -386,8 +386,8 @@ function WipeConfirmModal({ projectName, onConfirm, onCancel, running }: {
       <div className="compose-modal-box">
         <h3 className="compose-modal-title">Wipe volumes for "{projectName}"?</h3>
         <p className="compose-modal-body">
-          This permanently deletes all named volumes for this project — including database
-          data — and runs <code>docker compose down -v</code>. This cannot be undone.
+          This permanently deletes all named volumes for this project - including database
+          data - and runs <code>docker compose down -v</code>. This cannot be undone.
         </p>
         <div className="compose-modal-actions">
           <button className="btn-refresh" onClick={onCancel} disabled={running}>Cancel</button>
@@ -510,7 +510,7 @@ export default function ComposeTab({
   const [wipeConfirmOpen, setWipeConfirmOpen] = useState(false)
   const [wipeRunning, setWipeRunning]         = useState(false)
 
-  // (legacy .env accordion state removed — .env is now a first-class tab)
+  // (legacy .env accordion state removed - .env is now a first-class tab)
 
   // ── Detected extra project files (Dockerfiles, .env), filtered to those the
   //    compose file references and cached per project. Built once and preloaded
@@ -537,7 +537,7 @@ export default function ComposeTab({
   const [validatorRunning, setValidatorRunning] = useState(false)
   const [validatorResult,  setValidatorResult]  = useState<{ yaml?: string; error?: string } | null>(null)
 
-  // ── Logs — routed to the bottom Terminal panel's "Logs" tab ────────────────
+  // ── Logs - routed to the bottom Terminal panel's "Logs" tab ────────────────
   const composeLogContext = useAppStore(s => s.composeLogContext)
   const terminalTab       = useAppStore(s => s.terminalTab)
 
@@ -574,12 +574,12 @@ export default function ComposeTab({
     : 'partial'
   const headerPorts = useMemo(() => runningHostPorts(projectContainers).slice(0, 6), [projectContainers])
 
-  // Directory holding the compose file — used to label nested project files
+  // Directory holding the compose file - used to label nested project files
   const composeBaseDir = useMemo(() => dirOf(selected?.config_files[0] ?? ''), [selected])
   const composeDirName = useMemo(() => dirNameOf(selected?.config_files[0] ?? ''), [selected])
 
   // The selected project's referenced Dockerfiles / .env files, straight from
-  // the preloaded cache — stable, so the sidebar menu never flickers.
+  // the preloaded cache - stable, so the sidebar menu never flickers.
   const visibleProjectFiles = filesByProject[selected?.name ?? ''] ?? EMPTY_FILES
 
   // Open the Dockerfile referenced on a `dockerfile:` line as a tab
@@ -594,7 +594,7 @@ export default function ComposeTab({
       setActiveFile(match.path); setEditMode(false); loadExtraFile(match.path)
       return
     }
-    // Fallback — resolve relative to the compose dir (preserve case) and open
+    // Fallback - resolve relative to the compose dir (preserve case) and open
     if (!composeBaseDir || !selected) return
     const sep = composeBaseDir.includes('\\') ? '\\' : '/'
     const abs = `${composeBaseDir.replace(/[/\\]+$/, '')}${sep}${v.replace(/^\.\//, '').replace(/\//g, sep)}`
@@ -610,7 +610,7 @@ export default function ComposeTab({
 
   const composeFileSelect = useAppStore(s => s.composeFileSelect)
 
-  // Open a file by path — handles both config files and detected extra files.
+  // Open a file by path - handles both config files and detected extra files.
   // Re-selecting the active file is a no-op unless it failed to load, in which
   // case clicking it again retries.
   const openFile = (path: string) => {
@@ -643,7 +643,7 @@ export default function ComposeTab({
     openFile(composeFileSelect)
   }, [composeFileSelect]) // eslint-disable-line
 
-  // (envFilePath no longer used — .env is now a detected first-class tab)
+  // (envFilePath no longer used - .env is now a detected first-class tab)
 
   // ── File type from active file path ──────────────────────────────────────
 
@@ -675,7 +675,7 @@ export default function ComposeTab({
       )
       setFilesByProject(prev => ({ ...prev, [project.name]: visible }))
     } catch {
-      /* leave uncached — a later select will retry */
+      /* leave uncached - a later select will retry */
     } finally {
       detectingRef.current.delete(project.name)
     }
@@ -762,7 +762,7 @@ export default function ComposeTab({
       useAppStore.getState().setComposePreselect(null)
       const target = projects.find(p => p.name === composePreselect)
       if (target) selectProject(target)
-      // Don't auto-select first project on initial load — show overview instead
+      // Don't auto-select first project on initial load - show overview instead
     }
   }, [projects, composePreselect]) // eslint-disable-line
 
@@ -772,7 +772,7 @@ export default function ComposeTab({
     setViewMode('project')
     useAppStore.getState().setComposeActiveProject(project.name)
     // Re-selecting the project that's already open must not tear down and reload
-    // content that is already on screen — that re-render is the visible flicker.
+    // content that is already on screen - that re-render is the visible flicker.
     if (selected?.name === project.name) return
 
     // Publish the new project's file menu in the same render as setSelected, from
@@ -1092,7 +1092,7 @@ export default function ComposeTab({
       const saved = await api.dockerBackupCompose(selected.name, selected.config_files, backupDir)
       if (saved.length === 0) {
         addTerminalLine(`  → already up to date`, 'info')
-        setBackupMsg({ type: 'info', text: 'Already up to date — no changes to back up' })
+        setBackupMsg({ type: 'info', text: 'Already up to date - no changes to back up' })
       } else {
         setBackupMsg({ type: 'success', text: `${saved.length} file${saved.length !== 1 ? 's' : ''} backed up` })
         await loadComposeBackups(selected.name)
@@ -1379,7 +1379,7 @@ export default function ComposeTab({
                       <ChevronDown size={10} className={clsx('compose-sidebar-tool-chevron', backupOpen && 'open')} />
                     </button>
                   )}
-                  {/* Only meaningful for a project that is down (no containers) — it is
+                  {/* Only meaningful for a project that is down (no containers) - it is
                       kept in the list from memory and can be dropped from it here. */}
                   {projectContainers.length === 0 && (
                     <button className="compose-sidebar-tool-btn" onClick={handleForgetProject}
