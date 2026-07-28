@@ -1,5 +1,6 @@
 mod config;
 mod docker;
+mod packages;
 mod shell;
 mod system;
 mod wsl;
@@ -59,6 +60,8 @@ pub fn run() {
             system::get_system_metrics,
             config::export_config,
             config::import_config,
+            packages::pkg_scan,
+            packages::pkg_export_csv,
             wsl::wsl_check,
             wsl::wsl_list_distros,
             wsl::wsl_running_names,

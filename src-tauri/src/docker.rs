@@ -2449,7 +2449,7 @@ pub struct EditorInfo {
     pub command: String,
 }
 
-fn is_in_path(cmd: &str) -> bool {
+pub(crate) fn is_in_path(cmd: &str) -> bool {
     Command::new("where.exe")
         .arg(cmd)
         .output()

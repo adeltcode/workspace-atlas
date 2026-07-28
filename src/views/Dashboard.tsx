@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Box, HardDrive, ArrowRight, Cpu, MemoryStick } from 'lucide-react'
+import { Box, HardDrive, Package, ArrowRight, Cpu, MemoryStick } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore, type View, type ActivityModule } from '../store/appStore'
 import { useVisiblePoll } from '../hooks/useVisiblePoll'
@@ -7,7 +7,7 @@ import { getSystemMetrics, type SystemMetrics } from '../features/system/api'
 import { bytesToHuman, timeAgo } from '../utils/format'
 
 const MODULE_ICON: Record<ActivityModule, typeof Box> = {
-  docker: Box, wsl: HardDrive,
+  docker: Box, wsl: HardDrive, packages: Package,
 }
 
 const MODULES = [
@@ -26,6 +26,14 @@ const MODULES = [
     description: 'Monitor distros live, manage systemd services, benchmark startup, and compact or migrate VHDs.',
     tags: ['Dashboard', 'Distros', 'Startup', 'Performance'],
     color: 'success',
+  },
+  {
+    view: 'packages' as View,
+    icon: Package,
+    title: 'Packages',
+    description: 'Everything installed across winget, npm, and pip in one searchable list, exportable as CSV.',
+    tags: ['Scan', 'Search', 'Outdated', 'CSV'],
+    color: 'warning',
   },
 ] as const
 

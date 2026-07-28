@@ -8460,6 +8460,71 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 
 
 /* =============================================================
+   Packages
+   -------------------------------------------------------------
+   The list reuses the Docker table (.img-table and friends) and the
+   segmented source filter (.ctr-state-filter); only what has no
+   equivalent there is defined here.
+   ============================================================= */
+.pkg-tab { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; }
+
+/* Ids run long (winget's ARP\Machine\… entries), so the column truncates and
+   carries the full value in its title attribute. */
+.pkg-id {
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pkg-dash { color: var(--color-text-tertiary); }
+
+/* Manager names are lowercase brands (npm, pip), so the shared segmented
+   filter's capitalization is switched off here. */
+.pkg-src-btn { text-transform: none; }
+
+/* An available upgrade is an attention state, not a healthy one, so it takes
+   the warning tone rather than the success badge used for "in use". */
+.pkg-avail {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 20px;
+  letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
+  background: var(--color-warning-subtle);
+  color: var(--color-warning);
+}
+
+/* Standalone toggle. The segmented filter next to it is a one-of-many choice,
+   this is an independent on/off, so it reads as its own control. */
+.pkg-toggle {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.pkg-toggle:hover:not(:disabled) { background: var(--color-bg-hover); color: var(--color-text-primary); }
+.pkg-toggle.active {
+  background: var(--color-warning-subtle);
+  color: var(--color-warning);
+  border-color: var(--color-warning);
+}
+.pkg-toggle:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.pkg-note { font-size: 11.5px; color: var(--color-text-tertiary); line-height: 1.5; }
+
+
+/* =============================================================
    Reduced motion
    -------------------------------------------------------------
    Honours prefers-reduced-motion, which is what the Windows "Show animations"

@@ -4,7 +4,7 @@ import type { LogEntry, DockerStatus, DockerSystemDf, DockerImage, DockerContain
 import type { DistroMetrics } from '../features/wsl/types'
 import type { TerminalLine } from '../types/terminal'
 
-export type View      = 'dashboard' | 'docker' | 'wsl' | 'settings'
+export type View      = 'dashboard' | 'docker' | 'wsl' | 'packages' | 'settings'
 export type Theme     = 'dark' | 'light'
 export type DockerTab = 'overview' | 'images' | 'containers' | 'volumes' | 'networks' | 'compose' | 'prune' | 'log'
 export type WslView      = 'dashboard' | 'distro' | 'wslconfig' | 'install'
@@ -21,7 +21,7 @@ const MAX_DOCKER_LOGS    = 10
 const MAX_TERMINAL_LINES = 500
 const MAX_ACTIVITY       = 50
 
-export type ActivityModule  = 'docker' | 'wsl'
+export type ActivityModule  = 'docker' | 'wsl' | 'packages'
 export type ActivityOutcome = 'success' | 'failure' | 'dry-run' | 'info'
 
 /** One cross-module operation record for the unified activity log. Lightweight
@@ -374,7 +374,7 @@ export const useAppStore = create<AppState>()(
           // Guard against a malformed/partial imported config missing theme.
           if (state.theme === 'dark' || state.theme === 'light') applyTheme(state.theme)
           // Migrate persisted values whose views/tabs no longer exist.
-          if (!['dashboard', 'docker', 'wsl', 'settings'].includes(state.activeView)) {
+          if (!['dashboard', 'docker', 'wsl', 'packages', 'settings'].includes(state.activeView)) {
             state.activeView = 'dashboard'
           }
           if (['backup', 'backup-volumes', 'backup-compose'].includes(state.dockerTab as string)) {
