@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '../../utils/errors'
 import type { DockerStatus, DiskStats, DockerSystemDf, DockerImage, DockerContainer, DockerVolume, DockerNetwork, ContainerStats, ComposeProject, VolumeBackupEntry, PrunePreview, TransferResult, ComposeBackupEntry, AppProjectMeta, DetectedFile, EditorInfo } from './types'
 
 export const dockerCheck          = () => invoke<DockerStatus>('docker_check')

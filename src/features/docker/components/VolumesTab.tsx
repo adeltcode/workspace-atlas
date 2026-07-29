@@ -1,13 +1,14 @@
 import { useState, useMemo, useEffect, Fragment } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
-import { Trash2, HardDriveDownload, ChevronRight, ChevronDown, RotateCcw, FolderOpen, X } from 'lucide-react'
+import { Trash2, HardDriveDownload, ChevronRight, ChevronDown, RotateCcw, FolderOpen, X, Database } from 'lucide-react'
 import clsx from 'clsx'
 import * as api from '../api'
 import { useAppStore } from '../../../store/appStore'
 import type { DockerVolume, VolumeBackupEntry, BackupProgress } from '../types'
 import { fmtBytes, formatDate } from '../../../utils/format'
 import { ConfirmRemoveButton } from './TableBits'
+import { SearchField, Segmented, SegmentedItem, EmptyState, ErrorBanner, ConfirmDestructive, Button } from '../../../components/ui'
 
 type UsageFilter = 'all' | 'in-use' | 'unused'
 type VolStatus   = 'running' | 'done' | 'error'
@@ -44,7 +45,7 @@ function ProgressBar({ p }: { p: VolumeProgress }) {
             p.status === 'done'    && 'done',
             p.status === 'error'   && 'error',
           )}
-          style={{ width: `${p.progress}%` }}
+          style={{ transform: `scaleX(${p.progress / 100})` }}
         />
       </div>
       <div className={clsx('vol-progress-label', p.status === 'done' && 'ok', p.status === 'error' && 'err')}>
@@ -81,7 +82,10 @@ export default function VolumesTab({
   }, [volumesFilterSignal])
   const [busy, setBusy]               = useState<string | null>(null)
   const [pruningAll, setPruningAll]   = useState(false)
-  const [actionError, setActionError] = useState<string | null>(null)
+  const [confirmPrune, setConfirmPrune] = useState(false)
+  // Holds the caught value rather than `String(e)`, so the banner can draw the
+  // recovery hint and the raw Docker text the backend classified.
+  const [actionError, setActionError] = useState<unknown>(null)
 
   // Expand / collapse inline backup panel
   const [expandedVol, setExpandedVol]       = useState<string | null>(null)
@@ -221,7 +225,11 @@ export default function VolumesTab({
       .filter(v => !q || v.name.toLowerCase().includes(q) || v.driver.toLowerCase().includes(q))
   }, [volumes, search, usageFilter])
 
-  const unusedCount = volumes.filter(v => !v.in_use).length
+  // `docker volume prune` takes every unused volume on the engine, not the
+  // filtered view, so the dialog must name that set and not what is on screen.
+  const unusedVols  = useMemo(() => volumes.filter(v => !v.in_use), [volumes])
+  const unusedCount = unusedVols.length
+  const unusedBytes = useMemo(() => unusedVols.reduce((n, v) => n + v.size_bytes, 0), [unusedVols])
 
   // Bulk selection helpers (after filtered is defined)
   const toggleVolSelect    = (name: string) => setSelectedVols(prev => { const s = new Set(prev); s.has(name) ? s.delete(name) : s.add(name); return s })
@@ -232,6 +240,15 @@ export default function VolumesTab({
     if (!backupDir) { setActiveView('settings'); return }
     for (const name of selectedVols) await doBackup(name)
     setSelectedVols(new Set())
+  }
+
+  /** The safe path out of the prune dialog. Backups stream their own progress
+   *  into the rows, so the dialog closes rather than sitting over the evidence. */
+  const backupUnusedFirst = async () => {
+    if (!backupDir) { setConfirmPrune(false); setActiveView('settings'); return }
+    setConfirmPrune(false)
+    setUsageFilter('unused')
+    for (const v of unusedVols) await doBackup(v.name)
   }
 
   const doRemove = async (name: string) => {
@@ -255,45 +272,49 @@ export default function VolumesTab({
     addTerminalLine('$ docker volume prune -f', 'cmd')
     try {
       await api.dockerVolumesPrune()
-      addTerminalLine('  ✓ unused volumes pruned', 'success')
+      addTerminalLine(`  ✓ ${unusedVols.length} volume(s) removed, ${fmtBytes(unusedBytes)} reclaimed`, 'success')
+      setConfirmPrune(false)
       onRefresh()
     } catch (e) {
       addTerminalLine(`  ✗ ${String(e)}`, 'error')
-      setActionError(String(e))
+      setActionError(e)
+      setConfirmPrune(false)
     }
     finally { setPruningAll(false) }
   }
 
   if (loading) return <div className="img-loading">Loading volumes…</div>
-  if (!volumes.length) return <p className="empty-state">No volumes found.</p>
+  if (!volumes.length) return (
+    <EmptyState
+      icon={Database}
+      title="No volumes on this engine"
+      description="Volumes hold the data your containers keep between restarts. One appears here as soon as a container or compose project creates it."
+    />
+  )
 
   return (
     <div className="img-tab">
       {/* ── Toolbar (bulk controls live here - no layout shift) ────── */}
       <div className="img-toolbar">
-        <input
-          className="img-search"
-          type="search"
-          placeholder="Filter by name or driver…"
-          aria-label="Filter volumes"
+        <SearchField
           value={search}
-          onChange={e => setSearch(e.target.value)}
+          onChange={setSearch}
+          placeholder="Search volumes"
+          label="Search volumes by name or driver"
         />
-        <div className="ctr-state-filter">
+        <Segmented label="Filter by usage">
           {(['all', 'in-use', 'unused'] as UsageFilter[]).map(f => (
-            <button
-              key={f}
-              className={clsx('ctr-filter-btn', usageFilter === f && 'active')}
-              onClick={() => setUsageFilter(f)}
-            >{f}</button>
+            <SegmentedItem key={f} active={usageFilter === f} onClick={() => setUsageFilter(f)}>
+              {f === 'in-use' ? 'In use' : f[0].toUpperCase() + f.slice(1)}
+            </SegmentedItem>
           ))}
-        </div>
+        </Segmented>
         {unusedCount > 0 && (
           <button
             className="btn-prune-unused"
-            onClick={doPruneAll}
+            onClick={() => setConfirmPrune(true)}
             disabled={pruningAll}
-            title={`Remove all ${unusedCount} unused volumes`}
+            aria-label={`Remove all ${unusedCount} unused volumes, freeing ${fmtBytes(unusedBytes)}`}
           >
             <Trash2 size={11} />
             {pruningAll ? 'Removing…' : `Remove unused (${unusedCount})`}
@@ -328,11 +349,8 @@ export default function VolumesTab({
         </span>
       </div>
 
-      {actionError && (
-        <div className="error-banner" style={{ marginBottom: 0 }}>
-          <span className="error-title">Error</span>
-          <span className="error-msg">{actionError}</span>
-        </div>
+      {actionError != null && (
+        <ErrorBanner className="error-banner--flush" error={actionError} />
       )}
 
       <div className="img-table-wrap">
@@ -521,6 +539,35 @@ export default function VolumesTab({
           </tbody>
         </table>
       </div>
+
+      {confirmPrune && (
+        <ConfirmDestructive
+          title={`Remove ${unusedCount} unused volume${unusedCount === 1 ? '' : 's'}?`}
+          consequence={
+            <>
+              A volume is where a container keeps the data it is supposed to survive a
+              restart: a database, an upload directory, a cache it paid to build. Removing
+              it deletes that data from this machine, and nothing here can bring it back.
+            </>
+          }
+          command="docker volume prune -f"
+          summary={`${unusedCount} volume${unusedCount === 1 ? '' : 's'} · ${fmtBytes(unusedBytes)}`}
+          items={unusedVols.map(v => ({
+            name: fmtVolName(v.name).full ?? v.name,
+            meta: v.size_bytes > 0 ? fmtBytes(v.size_bytes) : undefined,
+          }))}
+          confirmLabel={`Remove ${unusedCount} volume${unusedCount === 1 ? '' : 's'}`}
+          onConfirm={doPruneAll}
+          onCancel={() => setConfirmPrune(false)}
+          busy={pruningAll}
+          escape={
+            <Button onClick={backupUnusedFirst} disabled={pruningAll}>
+              <HardDriveDownload size={12} />
+              {backupDir ? 'Back these up first' : 'Set a backup folder'}
+            </Button>
+          }
+        />
+      )}
     </div>
   )
 }

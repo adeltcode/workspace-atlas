@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react'
-import { Play, Square, Trash2, ChevronDown, FileText, RefreshCw, X } from 'lucide-react'
+import { Play, Square, Trash2, ChevronDown, FileText, RefreshCw, X, Box } from 'lucide-react'
 import clsx from 'clsx'
 import * as api from '../api'
 import type { DockerContainer } from '../types'
 import { useAppStore } from '../../../store/appStore'
 import { SortHeader, ConfirmRemoveButton } from './TableBits'
+import { SearchField, Segmented, SegmentedItem, EmptyState, ErrorBanner, ConfirmDestructive } from '../../../components/ui'
 
 type SortKey    = 'name' | 'image' | 'state' | 'created_since'
 type SortDir    = 'asc' | 'desc'
@@ -166,6 +167,7 @@ export default function ContainersTab({
   // Bulk selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkBusy, setBulkBusy]       = useState(false)
+  const [confirmRemove, setConfirmRemove] = useState(false)
 
   const handleSort = (key: SortKey) => {
     if (key === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -233,6 +235,7 @@ export default function ContainersTab({
     if (!selectedStopped.length || bulkBusy) return
     setBulkBusy(true)
     const { addTerminalLine } = useAppStore.getState()
+    setConfirmRemove(false)
     for (const c of selectedStopped) {
       addTerminalLine(`$ docker rm ${c.id.slice(0, 12)}`, 'cmd')
       try {
@@ -266,26 +269,31 @@ export default function ContainersTab({
   }
 
   if (loading) return <div className="img-loading">Loading containers…</div>
-  if (!containers.length) return <p className="empty-state">No containers found.</p>
+  if (!containers.length) return (
+    <EmptyState
+      icon={Box}
+      title="No containers on this engine"
+      description="Nothing is running and nothing is stopped. Start a compose project or run a container and it appears here, running or not."
+    />
+  )
 
   return (
     <div className="img-tab">
       {/* ── Toolbar (bulk controls live here - no layout shift) ────── */}
       <div className="img-toolbar">
-        <input
-          className="img-search"
-          type="search"
-          placeholder="Filter by name, image, or ID…"
-          aria-label="Filter containers"
+        <SearchField
           value={search}
-          onChange={e => setSearch(e.target.value)}
+          onChange={setSearch}
+          placeholder="Search containers"
+          label="Search containers by name, image, or ID"
         />
-        <div className="ctr-state-filter">
+        <Segmented label="Filter by state">
           {(['all', 'running', 'stopped'] as StateFilter[]).map(f => (
-            <button key={f} className={clsx('ctr-filter-btn', stateFilter === f && 'active')}
-              onClick={() => setStateFilter(f)}>{f}</button>
+            <SegmentedItem key={f} active={stateFilter === f} onClick={() => setStateFilter(f)}>
+              {f[0].toUpperCase() + f.slice(1)}
+            </SegmentedItem>
           ))}
-        </div>
+        </Segmented>
 
         {selectedIds.size > 0 && (
           <>
@@ -304,7 +312,7 @@ export default function ContainersTab({
               </button>
             )}
             {selectedStopped.length > 0 && (
-              <button className="toolbar-bulk-btn toolbar-bulk-btn--danger" onClick={bulkRemove} disabled={bulkBusy}>
+              <button className="toolbar-bulk-btn toolbar-bulk-btn--danger" onClick={() => setConfirmRemove(true)} disabled={bulkBusy}>
                 <Trash2 size={11} />
                 Remove {selectedStopped.length}
               </button>
@@ -319,10 +327,7 @@ export default function ContainersTab({
       </div>
 
       {actionError && (
-        <div className="error-banner" style={{ marginBottom: 0 }}>
-          <span className="error-title">Error</span>
-          <span className="error-msg">{actionError}</span>
-        </div>
+        <ErrorBanner className="error-banner--flush" error={actionError} />
       )}
 
       {/* ── Table ─────────────────────────────────────────────────── */}
@@ -417,6 +422,29 @@ export default function ContainersTab({
           </tbody>
         </table>
       </div>
+
+      {confirmRemove && (
+        <ConfirmDestructive
+          title={`Remove ${selectedStopped.length} container${selectedStopped.length === 1 ? '' : 's'}?`}
+          consequence={
+            <>
+              This deletes the containers and anything written inside them that is not on a
+              volume, including their logs. Images and volumes are untouched, so a compose
+              project can recreate these - a container built by hand cannot.
+            </>
+          }
+          command={`docker rm ${selectedStopped.map(c => c.id.slice(0, 12)).join(' ')}`}
+          summary={`${selectedStopped.length} stopped container${selectedStopped.length === 1 ? '' : 's'}`}
+          items={selectedStopped.map(c => ({
+            name: c.name || c.id.slice(0, 12),
+            meta: c.image,
+          }))}
+          confirmLabel={`Remove ${selectedStopped.length}`}
+          onConfirm={bulkRemove}
+          onCancel={() => setConfirmRemove(false)}
+          busy={bulkBusy}
+        />
+      )}
     </div>
   )
 }

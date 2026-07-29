@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Settings, Folder, RefreshCw, MoveRight, HardDriveDownload, Info, ExternalLink, Shield, Upload, Download } from 'lucide-react'
+import { Folder, RefreshCw, MoveRight, HardDriveDownload, Info, ExternalLink, Shield, Upload, Download } from 'lucide-react'
 import { useAppStore } from '../store/appStore'
+import { SheetHead } from '../components/ui'
 import * as api from '../features/docker/api'
 import { exportConfig, importConfig } from '../features/config/api'
 
@@ -159,17 +160,18 @@ export default function SettingsView() {
 
   return (
     <div className="view-container">
-      <div className="view-header">
-        <div className="view-header-icon"><Settings size={18} /></div>
-        <div style={{ flex: 1 }}>
-          <div className="view-header-title-row">
-            <h1 className="view-title">Settings</h1>
-          </div>
-          <p className="view-subtitle">Configure application preferences and backup options</p>
-        </div>
+      <div className="page-head">
+        <SheetHead
+          crumbs={[
+            { label: 'Overview', onClick: () => useAppStore.getState().setActiveView('dashboard') },
+            { label: 'Settings' },
+          ]}
+          title="Settings"
+          subtitle="Preferences, backup location, and configuration transfer."
+        />
       </div>
 
-      <div className="settings-body">
+      <div className="page-scroll settings-body">
 
         {/* ── Backup Location ─────────────────────────────────────────────── */}
         <div className="settings-card">

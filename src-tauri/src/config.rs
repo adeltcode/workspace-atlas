@@ -1,10 +1,11 @@
 use std::fs;
+use crate::error::AtlasError;
 
 /// Open a save dialog and write `contents` to the chosen file.
 /// Returns the saved path, or `None` if the user cancelled.
 #[tauri::command]
-pub async fn export_config(contents: String) -> Result<Option<String>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn export_config(contents: String) -> Result<Option<String>, AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<Option<String>, AtlasError> {
         let Some(path) = rfd::FileDialog::new()
             .set_file_name("workspace-atlas-config.json")
             .add_filter("JSON", &["json"])
@@ -22,8 +23,8 @@ pub async fn export_config(contents: String) -> Result<Option<String>, String> {
 /// Open a file dialog and return the chosen file's contents.
 /// Returns `None` if the user cancelled.
 #[tauri::command]
-pub async fn import_config() -> Result<Option<String>, String> {
-    tauri::async_runtime::spawn_blocking(|| {
+pub async fn import_config() -> Result<Option<String>, AtlasError> {
+    tauri::async_runtime::spawn_blocking(|| -> Result<Option<String>, AtlasError> {
         let Some(path) = rfd::FileDialog::new()
             .add_filter("JSON", &["json"])
             .pick_file()

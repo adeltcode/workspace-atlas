@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '../../utils/errors'
 
 /** Write the given config JSON to a user-chosen file. Returns the saved path, or null if cancelled. */
 export const exportConfig = (contents: string) =>

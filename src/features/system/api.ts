@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '../../utils/errors'
 
 export interface DiskInfo {
   /** Mount point, e.g. "C:\\". */

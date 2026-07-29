@@ -5,6 +5,7 @@ import { useAppStore } from '../../../store/appStore'
 import * as api from '../api'
 import type { WslDistro, ServiceList, Service, ServiceDetail } from '../types'
 import { Modal } from './Dialog'
+import { ErrorBanner } from '../../../components/ui'
 
 type Filter = 'all' | 'enabled' | 'disabled' | 'running' | 'failed'
 
@@ -251,10 +252,7 @@ export default function WslStartupTab({ distros, onReload, onGoToConf }: {
       )}
 
       {running && error && (
-        <div className="error-banner" style={{ marginTop: 16 }}>
-          <span className="error-title">Error</span>
-          <span className="error-msg">{error}</span>
-        </div>
+        <ErrorBanner error={error} />
       )}
 
       {running && data?.init.is_systemd && (

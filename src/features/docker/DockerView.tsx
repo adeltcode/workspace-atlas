@@ -1,8 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import {
-  Box, RefreshCw,
-  Play, ExternalLink, Download,
-} from 'lucide-react'
+import { RefreshCw, Play, ExternalLink } from 'lucide-react'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import clsx from 'clsx'
 import { useAppStore, type DockerTab } from '../../store/appStore'
@@ -18,6 +15,7 @@ import NetworksTab    from './components/NetworksTab'
 import ComposeTab     from './components/ComposeTab'
 import PruneTab       from './components/PruneTab'
 import LogTab         from './components/LogTab'
+import { SheetHead, Prerequisite, Button, ErrorBanner } from '../../components/ui'
 
 // ── Tab subtitles ──────────────────────────────────────────────────────────────
 
@@ -32,10 +30,13 @@ const TAB_SUBTITLES: Partial<Record<DockerTab, string>> = {
   log:        'View recent Docker and Atlas activity',
 }
 
+const FILLING_TABS = new Set<DockerTab>(['images', 'containers', 'volumes', 'networks', 'compose'])
+
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export default function DockerView() {
-  const dockerTab = useAppStore(s => s.dockerTab)
+  const dockerTab     = useAppStore(s => s.dockerTab)
+  const setActiveView = useAppStore(s => s.setActiveView)
   const { status, df, images, containers, volumes, loading, error, refresh, refreshContainers, refreshVolumes } = useDockerData()
   const [composeTick, setComposeTick] = useState(0)
   const [starting, setStarting]       = useState(false)
@@ -134,120 +135,105 @@ export default function DockerView() {
     })
   }, [images.length, containers, volumes])
 
+  // A table section scrolls its own table under a pinned header row, and the
+  // compose page sizes its columns with flexbox; both need a body that fills
+  // rather than scrolls. Everything else scrolls as one column.
+  const fills = FILLING_TABS.has(dockerTab)
+
   return (
     <div className="view-container docker-view">
 
-      {/* ── View header ──────────────────────────────────────────────── */}
-      <div className="view-header docker-view-header">
-        <div className="view-header-icon"><Box size={18} /></div>
-        <div style={{ flex: 1 }}>
-          <div className="view-header-title-row">
-            <h1 className="view-title">Docker & Containers</h1>
-            {loading && !status && (
-              <span className="status-text">Connecting…</span>
-            )}
-            {status && (
-              <>
+      {/* The eight sections live in the rail, and only in the rail. They were
+          briefly in both places at once, which put the same eight controls on
+          screen twice. */}
+      <div className="page-head">
+      <SheetHead
+        crumbs={[
+          { label: 'Overview', onClick: () => setActiveView('dashboard') },
+          { label: 'Docker' },
+        ]}
+        title="Docker"
+        subtitle={subtitle}
+        status={
+          loading && !status
+            ? <span className="status-text">Connecting…</span>
+            : status && (
+              <span className="status-text" style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)' }}>
                 <span className={clsx('status-dot', online ? 'online' : 'offline')} />
-                <span className="status-text">
-                  {online ? `v${status.version ?? 'unknown'}` : 'not running'}
-                </span>
-              </>
-            )}
-          </div>
-          {subtitle && <p className="view-subtitle">{subtitle}</p>}
-        </div>
-        <button
-          className="btn-refresh"
-          onClick={handleRefresh}
-          disabled={loading}
-          title="Refresh data (Ctrl+R)"
-        >
-          <RefreshCw size={13} className={loading ? 'spin' : ''} />
-          Refresh
-        </button>
+                {online ? `v${status.version ?? 'unknown'}` : 'not running'}
+              </span>
+            )
+        }
+        actions={
+          <Button onClick={handleRefresh} disabled={loading}>
+            <RefreshCw size={13} className={loading ? 'spin' : ''} />
+            Refresh
+          </Button>
+        }
+      />
       </div>
 
+      <div className={clsx(fills ? 'page-fill' : 'page-scroll', 'docker-tab-content')}>
       {/* ── Error / offline states ───────────────────────────────────── */}
-      {error && (
-        <div className="error-banner" style={{ marginTop: 20 }}>
-          <span className="error-title">Error</span>
-          <span className="error-msg">{error}</span>
-        </div>
-      )}
+      {error && <ErrorBanner>{error}</ErrorBanner>}
 
       {!loading && status && !online && status.state === 'not_installed' && (
-        <div className="docker-install-card" style={{ marginTop: 20 }}>
-          <div className="docker-install-icon"><Download size={28} /></div>
-          <h2 className="docker-install-title">Docker is not installed</h2>
-          <p className="docker-install-desc">
-            Docker Desktop is required to use this application. Download and install it for Windows, then restart the app.
-          </p>
-          <ol className="docker-install-steps">
-            <li>Download <strong>Docker Desktop for Windows</strong> from docker.com</li>
-            <li>Run the installer and follow the on-screen instructions</li>
-            <li>Start Docker Desktop and wait for the engine to come online</li>
-            <li>Return here and click <strong>Refresh</strong></li>
-          </ol>
-          <div className="docker-install-actions">
-            <button
-              className="btn-primary"
-              onClick={() => openUrl('https://www.docker.com/products/docker-desktop/')}
-            >
-              <ExternalLink size={14} />
-              Download Docker Desktop
-            </button>
-            <button className="btn-refresh" onClick={handleRefresh}>
-              <RefreshCw size={13} />
-              Refresh
-            </button>
-          </div>
-        </div>
+        <Prerequisite
+          title="Docker is not installed"
+          description="This module needs Docker Desktop. It is a separate download from Docker, and the rest of Workspace Atlas keeps working without it."
+          steps={[
+            'Download Docker Desktop for Windows from docker.com',
+            'Run the installer and follow the on-screen instructions',
+            'Start Docker Desktop and wait for the engine to come online',
+            'Return here and refresh',
+          ]}
+          actions={
+            <>
+              <Button variant="primary" onClick={() => openUrl('https://www.docker.com/products/docker-desktop/')}>
+                <ExternalLink size={13} />
+                Download Docker Desktop
+              </Button>
+              <Button onClick={handleRefresh}>
+                <RefreshCw size={13} />
+                Refresh
+              </Button>
+            </>
+          }
+        />
       )}
 
       {!loading && status && !online && status.state === 'stopped' && (
-        <div className="offline-card" style={{ marginTop: 20 }}>
-          <p className="offline-title">Docker Desktop is not running</p>
-          {starting ? (
-            <p className="offline-desc">
-              <RefreshCw size={13} className="spin" style={{ display: 'inline', marginRight: 6 }} />
-              Starting Docker Desktop… this can take up to a minute.
-            </p>
-          ) : (
-            <p className="offline-desc">
-              Docker Desktop is installed but the engine is stopped.
-              Start it below or from the system tray, then click Refresh.
-            </p>
-          )}
-          {startError && <code className="offline-code" style={{ color: 'var(--color-danger)' }}>{startError}</code>}
-          {status.error && !startError && <code className="offline-code">{status.error}</code>}
-          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            <button
-              className="btn-primary"
-              onClick={handleStartDocker}
-              disabled={starting}
-            >
-              <Play size={13} />
-              {starting ? 'Starting…' : 'Start Docker Desktop'}
-            </button>
-            <button className="btn-refresh" onClick={handleRefresh} disabled={loading}>
-              <RefreshCw size={13} className={loading ? 'spin' : ''} />
-              Refresh
-            </button>
-          </div>
-        </div>
+        <Prerequisite
+          title="Docker Desktop is not running"
+          description={starting
+            ? 'Starting Docker Desktop. This can take up to a minute.'
+            : 'Docker Desktop is installed but the engine is stopped. Start it here or from the system tray, then refresh.'}
+          command={startError ?? status.error ?? undefined}
+          actions={
+            <>
+              <Button variant="primary" onClick={handleStartDocker} disabled={starting}>
+                <Play size={13} />
+                {starting ? 'Starting…' : 'Start Docker Desktop'}
+              </Button>
+              <Button onClick={handleRefresh} disabled={loading}>
+                <RefreshCw size={13} className={loading ? 'spin' : ''} />
+                Refresh
+              </Button>
+            </>
+          }
+        />
       )}
 
       {/* ── Tab content ──────────────────────────────────────────────── */}
       {(online || loading) && (
-        <div className="docker-tab-content">
+        <>
           {dockerTab === 'overview'   && <OverviewTab df={df} containers={containers} images={images} volumes={volumes} status={status} loading={loading} refreshTick={composeTick} onRefresh={refresh} containerStats={containerStats} statsLoading={statsLoading} statsError={statsError} statHistory={statHistory} onPollStats={pollStats} />}
           {dockerTab === 'images'     && <ImagesTab images={images} loading={loading} />}
           {dockerTab === 'containers' && <ContainersTab containers={containers} loading={loading} onRefresh={refreshContainers} />}
 
           {/* VolumesTab stays mounted while Docker is online so that in-progress
               backups, event listeners, and progress state survive tab switches. */}
-          <div className={dockerTab !== 'volumes' ? 'tab-hidden' : undefined}>
+          <div className={clsx('docker-pane-fill', dockerTab !== 'volumes' && 'tab-hidden')}>
             <VolumesTab volumes={volumes} loading={loading} onRefresh={refreshVolumes} />
           </div>
 
@@ -265,8 +251,9 @@ export default function DockerView() {
 
           {dockerTab === 'prune'      && <PruneTab onDone={refresh} />}
           {dockerTab === 'log'        && <LogTab />}
-        </div>
+        </>
       )}
+      </div>
     </div>
   )
 }

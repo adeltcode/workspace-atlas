@@ -187,14 +187,12 @@ export default function WslDistroPage({ distros, onReload }: {
 
   return (
     <div className="wsl-distro-page">
+      {/* The page header above already names this distro and states whether it
+          is running, so this row is the logo and the actions, not a second
+          copy of the identity. */}
       <div className="wsl-identity">
-        <DistroLogo name={d.name} size={32} dimmed={!d.running} />
-        <span className="wsl-identity-name">{d.name}</span>
+        <DistroLogo name={d.name} size={24} dimmed={!d.running} />
         {d.is_default && <Star size={11} className="wsl-distro-star" />}
-        <span className={clsx('wsl-state-pill', d.running ? 'wsl-state-pill--running' : 'wsl-state-pill--stopped')}>
-          <span className="wsl-state-pill-dot" />{d.running ? 'Running' : 'Stopped'}
-        </span>
-        <span className="wsl-ver-badge">WSL {d.version === 1 ? '1' : '2'}</span>
         <div className="wsl-identity-actions">
           {/* Quick actions - the daily-use buttons stay inline. */}
           <button className="btn-secondary wsl-bcard-primary" onClick={() => term.run(openTerminal)} disabled={term.pending} title="Open a terminal in this distro">
@@ -307,7 +305,7 @@ export default function WslDistroPage({ distros, onReload }: {
       )}
 
       {showClone && (
-        <Modal icon={<Copy size={16} />} title={`Clone ${d.name}`} onClose={() => setShowClone(false)} closable>
+        <Modal icon={<Copy size={16} />} title={`Clone ${d.name}`} onClose={() => setShowClone(false)}>
           <p className="modal-body">Export <strong>{d.name}</strong> and re-import it as an independent copy. The source distro is left unchanged.</p>
           <Field label="New distro name">
             <input className="settings-dir-input" aria-label="New distro name" value={cloneName} onChange={e => setCloneName(e.target.value)} placeholder={`e.g. ${d.name}-clone`} spellCheck={false} />
@@ -329,7 +327,7 @@ export default function WslDistroPage({ distros, onReload }: {
       )}
 
       {showMigrate && (
-        <Modal icon={<ArrowRightLeft size={16} />} iconWarning title={`Migrate ${d.name}`} onClose={() => setShowMigrate(false)} closable>
+        <Modal icon={<ArrowRightLeft size={16} />} iconWarning title={`Migrate ${d.name}`} onClose={() => setShowMigrate(false)}>
           <p className="modal-body">
             Move <strong>{d.name}</strong> to another drive or folder. The flow is safe: it exports a
             <code> .tar</code> backup, imports + boot-verifies the copy at the new location, and only then unregisters
@@ -361,7 +359,7 @@ export default function WslDistroPage({ distros, onReload }: {
           iconDanger
           title={`Delete ${d.name}?`}
           onClose={() => { setShowDelete(false); setDeleteText('') }}
-          closable={busyOp !== 'delete'}
+          blocking={busyOp === 'delete'}
         >
           <p className="modal-body">
             This runs <code>wsl --unregister {d.name}</code>, which permanently destroys the

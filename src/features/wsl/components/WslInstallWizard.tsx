@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
 import { listen } from '@tauri-apps/api/event'
 import {
-  Search, Check, Download, Terminal, LayoutDashboard, RotateCw,
+  Check, Download, Terminal, LayoutDashboard, RotateCw,
   ChevronRight, ChevronLeft, ShieldCheck, FolderOpen, CircleCheck, TriangleAlert,
 } from 'lucide-react'
 import { useAppStore } from '../../../store/appStore'
@@ -11,6 +11,7 @@ import type { WslDistro, CatalogDistro, InstallProgress } from '../types'
 import { bytesToHuman } from '../../../utils/format'
 import { useAsyncAction } from '../../../hooks/useAsyncAction'
 import { DistroLogo } from '../DistroLogo'
+import { Toolbar, SearchField, Button, ErrorBanner } from '../../../components/ui'
 
 type Step = 'select' | 'review' | 'install'
 
@@ -140,28 +141,21 @@ export default function WslInstallWizard({ distros, onReload }: {
       {/* ── Step 1: choose ───────────────────────────────────────────── */}
       {step === 'select' && (
         <div className="wiz-panel">
-          <div className="wsl-distros-toolbar">
-            <div className="wsl-distros-search">
-              <Search size={14} className="wsl-distros-search-icon" />
-              <input
-                className="wsl-distros-search-input"
-                placeholder="Search distributions…"
-                aria-label="Search distributions"
-                value={query}
-                onChange={e => setQuery(e.target.value)}
-                spellCheck={false}
-              />
-            </div>
-            <button className="btn-refresh" onClick={loadCatalog} disabled={catalog === null && !loadErr} title="Re-fetch the catalog">
+          <Toolbar>
+            <SearchField
+              value={query}
+              onChange={setQuery}
+              placeholder="Search distros"
+              label="Search installable distributions"
+            />
+            <div className="toolbar-spacer" />
+            <Button onClick={loadCatalog} disabled={catalog === null && !loadErr} title="Re-fetch the catalog">
               <RotateCw size={13} className={catalog === null && !loadErr ? 'spin' : ''} /> Refresh catalog
-            </button>
-          </div>
+            </Button>
+          </Toolbar>
 
           {loadErr ? (
-            <div className="error-banner">
-              <span className="error-title">Error</span>
-              <span className="error-msg">{loadErr}</span>
-            </div>
+            <ErrorBanner>{loadErr}</ErrorBanner>
           ) : catalog === null ? (
             <div className="wiz-grid">
               {[0, 1, 2, 3, 4, 5].map(i => (

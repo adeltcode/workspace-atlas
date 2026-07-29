@@ -4,6 +4,7 @@ use std::process::{Command, Stdio};
 use std::thread;
 
 use tauri::Emitter;
+use crate::error::{AtlasError, ErrorKind};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -278,7 +279,7 @@ fn compose_base(config_file: &str) -> (Command, Option<String>) {
 }
 
 /// Read a file that lives inside WSL via `wsl cat`. Capped at `max_bytes`.
-fn read_via_wsl(path: &str, max_bytes: usize) -> Result<Vec<u8>, String> {
+fn read_via_wsl(path: &str, max_bytes: usize) -> Result<Vec<u8>, AtlasError> {
     let output = Command::new("wsl")
         .args(["cat", path])
         .output()
@@ -292,7 +293,7 @@ fn read_via_wsl(path: &str, max_bytes: usize) -> Result<Vec<u8>, String> {
             "Cannot read WSL file '{}': {}",
             path,
             String::from_utf8_lossy(&output.stderr).trim()
-        ));
+        ).into());
     }
 
     if output.stdout.len() > max_bytes {
@@ -300,7 +301,7 @@ fn read_via_wsl(path: &str, max_bytes: usize) -> Result<Vec<u8>, String> {
             "File too large ({} KB) - only files under {} KB are shown inline",
             output.stdout.len() / 1024,
             max_bytes / 1024
-        ));
+        ).into());
     }
 
     Ok(output.stdout)
@@ -405,7 +406,7 @@ fn split_df_line(line: &str) -> Vec<String> {
     cols
 }
 
-fn parse_system_df(output: &str) -> Result<DockerSystemDf, String> {
+fn parse_system_df(output: &str) -> Result<DockerSystemDf, AtlasError> {
     let lines: Vec<&str> = output
         .lines()
         .filter(|l| !l.trim().is_empty())
@@ -416,13 +417,13 @@ fn parse_system_df(output: &str) -> Result<DockerSystemDf, String> {
             "Unexpected docker system df output ({} lines):\n{}",
             lines.len(),
             output
-        ));
+        ).into());
     }
 
-    let parse_row = |line: &str| -> Result<DiskUsageRow, String> {
+    let parse_row = |line: &str| -> Result<DiskUsageRow, AtlasError> {
         let cols = split_df_line(line);
         if cols.len() < 5 {
-            return Err(format!("Cannot parse row: {:?}", line));
+            return Err(format!("Cannot parse row: {:?}", line).into());
         }
         Ok(DiskUsageRow {
             r#type: cols[0].clone(),
@@ -476,14 +477,14 @@ fn parse_age_days(created_since: &str) -> i64 {
 // Helpers - data fetching (sync, called from async commands via spawn_blocking)
 // ─────────────────────────────────────────────────────────────────────────────
 
-fn get_all_images_sync() -> Result<Vec<DockerImage>, String> {
+fn get_all_images_sync() -> Result<Vec<DockerImage>, AtlasError> {
     let output = Command::new("docker")
         .args(["images", "--format", "{{json .}}"])
         .output()
         .map_err(|e| format!("Failed to run docker: {}", e))?;
 
     if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string().into());
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -621,14 +622,14 @@ fn parse_volume_sizes_text(text: &str) -> std::collections::HashMap<String, u64>
     sizes
 }
 
-fn get_networks_sync() -> Result<Vec<DockerNetwork>, String> {
+fn get_networks_sync() -> Result<Vec<DockerNetwork>, AtlasError> {
     let output = Command::new("docker")
         .args(["network", "ls", "--format", "{{json .}}"])
         .output()
         .map_err(|e| format!("Failed to run docker network ls: {}", e))?;
 
     if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string().into());
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -667,7 +668,7 @@ fn get_networks_sync() -> Result<Vec<DockerNetwork>, String> {
 /// With `tag_stderr`, stderr lines are prefixed "[err] " so the frontend can
 /// colour them red. Pass `false` for `docker compose`, which writes all its
 /// informational progress output to stderr by design.
-fn run_streaming(app: &tauri::AppHandle, mut cmd: Command, tag_stderr: bool) -> Result<(), String> {
+fn run_streaming(app: &tauri::AppHandle, mut cmd: Command, tag_stderr: bool) -> Result<(), AtlasError> {
     let mut child = cmd
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -767,7 +768,7 @@ pub async fn docker_check() -> DockerStatus {
 /// Try to launch Docker Desktop on Windows. Returns an error string if the
 /// executable cannot be located or spawned.
 #[tauri::command]
-pub async fn launch_docker_desktop() -> Result<(), String> {
+pub async fn launch_docker_desktop() -> Result<(), AtlasError> {
     let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
     let candidates = [
         r"C:\Program Files\Docker\Docker\Docker Desktop.exe".to_string(),
@@ -776,25 +777,26 @@ pub async fn launch_docker_desktop() -> Result<(), String> {
 
     for path in &candidates {
         if std::path::Path::new(path).exists() {
-            return std::process::Command::new(path)
+            return Ok(std::process::Command::new(path)
                 .spawn()
                 .map(|_| ())
-                .map_err(|e| format!("Failed to start Docker Desktop: {}", e));
+                .map_err(|e| format!("Failed to start Docker Desktop: {}", e))?);
         }
     }
 
-    Err("Docker Desktop executable not found. Please launch it from the Start Menu.".to_string())
+    Err(AtlasError::new(ErrorKind::DockerDown, "Docker Desktop is not installed where this app looks for it.")
+        .hint("Launch it from the Start Menu once. If it is installed elsewhere, starting it by hand is enough - this app only needs the engine running."))
 }
 
 #[tauri::command]
-pub async fn docker_system_df() -> Result<DockerSystemDf, String> {
+pub async fn docker_system_df() -> Result<DockerSystemDf, AtlasError> {
     let output = Command::new("docker")
         .args(["system", "df"])
         .output()
         .map_err(|e| format!("Failed to run docker: {}", e))?;
 
     if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string().into());
     }
 
     parse_system_df(&String::from_utf8_lossy(&output.stdout))
@@ -805,7 +807,7 @@ pub async fn docker_system_df() -> Result<DockerSystemDf, String> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn docker_images() -> Result<Vec<DockerImage>, String> {
+pub async fn docker_images() -> Result<Vec<DockerImage>, AtlasError> {
     tauri::async_runtime::spawn_blocking(get_all_images_sync)
         .await
         .map_err(|e| e.to_string())?
@@ -815,8 +817,8 @@ pub async fn docker_images() -> Result<Vec<DockerImage>, String> {
 pub async fn docker_prune_preview(
     level: u8,
     keep_list: Vec<String>,
-) -> Result<PrunePreview, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+) -> Result<PrunePreview, AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<PrunePreview, AtlasError> {
         let images = get_all_images_sync()?;
 
         let unused_not_kept: Vec<&DockerImage> = images
@@ -913,7 +915,7 @@ pub async fn docker_prune_preview(
                 })
             }
 
-            _ => Err(format!("Invalid prune level: {}", level)),
+            _ => Err(AtlasError::invalid(format!("Prune level {} does not exist. Levels are 1, 2 and 3.", level))),
         }
     })
     .await
@@ -925,8 +927,8 @@ pub async fn docker_prune_run(
     app: tauri::AppHandle,
     level: u8,
     image_ids: Vec<String>,
-) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
+) -> Result<(), AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
         let emit = |line: &str| {
             app.emit("docker-log", line).ok();
         };
@@ -980,7 +982,7 @@ pub async fn docker_prune_run(
                 run_streaming(&app, cmd, true)?;
             }
 
-            _ => return Err(format!("Invalid level: {}", level)),
+            _ => return Err(AtlasError::invalid(format!("Prune level {} does not exist. Levels are 1, 2 and 3.", level))),
         }
 
         app.emit("docker-done", true).ok();
@@ -994,14 +996,14 @@ pub async fn docker_prune_run(
 // Tauri commands - Phase 3: Containers & Volumes
 // ─────────────────────────────────────────────────────────────────────────────
 
-fn get_containers_sync() -> Result<Vec<DockerContainer>, String> {
+fn get_containers_sync() -> Result<Vec<DockerContainer>, AtlasError> {
     let output = Command::new("docker")
         .args(["ps", "-a", "--format", "{{json .}}"])
         .output()
         .map_err(|e| format!("Failed to run docker: {}", e))?;
 
     if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string().into());
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -1049,14 +1051,14 @@ fn get_containers_sync() -> Result<Vec<DockerContainer>, String> {
     Ok(containers)
 }
 
-fn get_volumes_sync() -> Result<Vec<DockerVolume>, String> {
+fn get_volumes_sync() -> Result<Vec<DockerVolume>, AtlasError> {
     let output = Command::new("docker")
         .args(["volume", "ls", "--format", "{{json .}}"])
         .output()
         .map_err(|e| format!("Failed to run docker: {}", e))?;
 
     if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string().into());
     }
 
     // Docker's own reference-counting filter - the only reliable source of truth
@@ -1129,14 +1131,14 @@ fn get_volumes_sync() -> Result<Vec<DockerVolume>, String> {
 }
 
 #[tauri::command]
-pub async fn docker_containers() -> Result<Vec<DockerContainer>, String> {
+pub async fn docker_containers() -> Result<Vec<DockerContainer>, AtlasError> {
     tauri::async_runtime::spawn_blocking(get_containers_sync)
         .await
         .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub async fn docker_volumes() -> Result<Vec<DockerVolume>, String> {
+pub async fn docker_volumes() -> Result<Vec<DockerVolume>, AtlasError> {
     // Fetch volume list and disk sizes concurrently so the tab stays fast.
     let vols_task  = tauri::async_runtime::spawn_blocking(get_volumes_sync);
     let sizes_task = tauri::async_runtime::spawn_blocking(get_volume_sizes_sync);
@@ -1153,7 +1155,7 @@ pub async fn docker_volumes() -> Result<Vec<DockerVolume>, String> {
 }
 
 /// Run a one-shot `docker <args>` command: Ok on success, trimmed stderr on failure.
-fn docker_run_ok(args: &[&str]) -> Result<(), String> {
+fn docker_run_ok(args: &[&str]) -> Result<(), AtlasError> {
     let output = Command::new("docker")
         .args(args)
         .output()
@@ -1161,36 +1163,36 @@ fn docker_run_ok(args: &[&str]) -> Result<(), String> {
     if output.status.success() {
         Ok(())
     } else {
-        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string().into())
     }
 }
 
 #[tauri::command]
-pub async fn docker_container_action(id: String, action: String) -> Result<(), String> {
+pub async fn docker_container_action(id: String, action: String) -> Result<(), AtlasError> {
     let sub = match action.as_str() {
         "start"  => "start",
         "stop"   => "stop",
         "remove" => "rm",
-        _ => return Err(format!("Unknown action: {}", action)),
+        _ => return Err(AtlasError::invalid(format!("\"{}\" is not a container action this app performs.", action))),
     };
     docker_run_ok(&[sub, &id])
 }
 
 #[tauri::command]
-pub async fn docker_volume_remove(name: String) -> Result<(), String> {
+pub async fn docker_volume_remove(name: String) -> Result<(), AtlasError> {
     docker_run_ok(&["volume", "rm", &name])
 }
 
 #[tauri::command]
-pub async fn docker_volumes_prune() -> Result<(), String> {
+pub async fn docker_volumes_prune() -> Result<(), AtlasError> {
     docker_run_ok(&["volume", "prune", "-f"])
 }
 
 /// Stream the last `tail` log lines from a container.
 /// `--timestamps` adds RFC3339 prefixes so both stdout+stderr sort correctly.
 #[tauri::command]
-pub async fn docker_container_logs(id: String, tail: u32) -> Result<Vec<String>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn docker_container_logs(id: String, tail: u32) -> Result<Vec<String>, AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<String>, AtlasError> {
         let tail_str = tail.to_string();
         let output = Command::new("docker")
             .args(["logs", "--tail", &tail_str, "--timestamps", &id])
@@ -1216,14 +1218,14 @@ pub async fn docker_container_logs(id: String, tail: u32) -> Result<Vec<String>,
 }
 
 #[tauri::command]
-pub async fn docker_networks() -> Result<Vec<DockerNetwork>, String> {
+pub async fn docker_networks() -> Result<Vec<DockerNetwork>, AtlasError> {
     tauri::async_runtime::spawn_blocking(get_networks_sync)
         .await
         .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub async fn docker_network_remove(id: String) -> Result<(), String> {
+pub async fn docker_network_remove(id: String) -> Result<(), AtlasError> {
     docker_run_ok(&["network", "rm", &id])
 }
 
@@ -1259,12 +1261,12 @@ fn read_manifest(root: &str) -> BackupManifest {
         .unwrap_or_default()
 }
 
-fn write_manifest(root: &str, manifest: &BackupManifest) -> Result<(), String> {
+fn write_manifest(root: &str, manifest: &BackupManifest) -> Result<(), AtlasError> {
     let dir = format!("{}/docker", root);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = format!("{}/manifest.json", dir);
     let json = serde_json::to_string_pretty(manifest).map_err(|e| e.to_string())?;
-    std::fs::write(path, json).map_err(|e| e.to_string())
+    Ok(std::fs::write(path, json).map_err(|e| e.to_string())?)
 }
 
 fn read_compose_manifest(root: &str) -> ComposeBackupManifest {
@@ -1275,26 +1277,26 @@ fn read_compose_manifest(root: &str) -> ComposeBackupManifest {
         .unwrap_or_default()
 }
 
-fn write_compose_manifest(root: &str, manifest: &ComposeBackupManifest) -> Result<(), String> {
+fn write_compose_manifest(root: &str, manifest: &ComposeBackupManifest) -> Result<(), AtlasError> {
     let dir = format!("{}/docker/compose", root);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = format!("{}/manifest.json", dir);
     let json = serde_json::to_string_pretty(manifest).map_err(|e| e.to_string())?;
-    std::fs::write(path, json).map_err(|e| e.to_string())
+    Ok(std::fs::write(path, json).map_err(|e| e.to_string())?)
 }
 
 /// Read a source file as a UTF-8 string, handling Windows / WSL-mount / pure-WSL paths.
-fn read_source_as_string(src: &str) -> Result<String, String> {
+fn read_source_as_string(src: &str) -> Result<String, AtlasError> {
     if is_windows_absolute(src) {
-        std::fs::read_to_string(src)
-            .map_err(|e| format!("Cannot read '{}': {}", src, e))
+        Ok(std::fs::read_to_string(src)
+            .map_err(|e| format!("Cannot read '{}': {}", src, e))?)
     } else if let Some(win) = wsl_mount_to_windows(src) {
-        std::fs::read_to_string(&win)
-            .map_err(|e| format!("Cannot read '{}': {}", win, e))
+        Ok(std::fs::read_to_string(&win)
+            .map_err(|e| format!("Cannot read '{}': {}", win, e))?)
     } else {
         read_via_wsl(src, 512_000).and_then(|bytes| {
-            String::from_utf8(bytes)
-                .map_err(|_| "File contains non-UTF-8 characters".to_string())
+            Ok(String::from_utf8(bytes)
+                .map_err(|_| "File contains non-UTF-8 characters".to_string())?)
         })
     }
 }
@@ -1303,14 +1305,14 @@ fn read_source_as_string(src: &str) -> Result<String, String> {
 
 /// List Docker Compose projects via `docker compose ls --all --format json`.
 #[tauri::command]
-pub async fn docker_compose_ls() -> Result<Vec<ComposeProject>, String> {
+pub async fn docker_compose_ls() -> Result<Vec<ComposeProject>, AtlasError> {
     let output = Command::new("docker")
         .args(["compose", "ls", "--all", "--format", "json"])
         .output()
         .map_err(|e| format!("Failed to run docker compose: {}", e))?;
 
     if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string().into());
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -1352,15 +1354,15 @@ pub async fn docker_compose_action(
     app: tauri::AppHandle,
     config_file: String,
     action: String,
-) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
+) -> Result<(), AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
         let extra_args: &[&str] = match action.as_str() {
             "up"           => &["up", "-d"],
             "down"         => &["down"],
             "down-volumes" => &["down", "-v"],
             "restart"      => &["restart"],
             "rebuild"      => &["up", "-d", "--build"],
-            other          => return Err(format!("Unknown compose action: {}", other)),
+            other          => return Err(AtlasError::invalid(format!("\"{}\" is not a compose action this app performs.", other))),
         };
 
         // Display the command as it will actually run
@@ -1390,13 +1392,13 @@ pub async fn docker_compose_service_action(
     config_file: String,
     action: String,
     service: String,
-) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
+) -> Result<(), AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
         let base: &[&str] = match action.as_str() {
             "up"      => &["up", "-d"],
             "stop"    => &["stop"],
             "restart" => &["restart"],
-            other     => return Err(format!("Unknown service action: {}", other)),
+            other     => return Err(AtlasError::invalid(format!("\"{}\" is not a service action this app performs.", other))),
         };
 
         // Build final arg list: base_args + [service]
@@ -1424,7 +1426,7 @@ pub async fn docker_compose_service_action(
 /// Open an interactive shell inside a running container in a new system terminal window.
 /// Tries `sh`; the user can switch shells manually if needed.
 #[tauri::command]
-pub async fn open_container_shell(container_name: String) -> Result<(), String> {
+pub async fn open_container_shell(container_name: String) -> Result<(), AtlasError> {
     let docker_cmd = format!("docker exec -it {} sh", container_name);
 
     // Try Windows Terminal first; fall back to a plain PowerShell window.
@@ -1443,15 +1445,15 @@ pub async fn open_container_shell(container_name: String) -> Result<(), String> 
 
 /// Write text content to a file. Handles Windows, WSL-mount, and pure WSL paths.
 #[tauri::command]
-pub async fn write_file_content(path: String, content: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn write_file_content(path: String, content: String) -> Result<(), AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
         if is_windows_absolute(&path) {
-            std::fs::write(&path, content.as_bytes())
-                .map_err(|e| format!("Write error: {}", e))
+            Ok(std::fs::write(&path, content.as_bytes())
+                .map_err(|e| format!("Write error: {}", e))?)
 
         } else if let Some(win_path) = wsl_mount_to_windows(&path) {
-            std::fs::write(&win_path, content.as_bytes())
-                .map_err(|e| format!("Write error: {}", e))
+            Ok(std::fs::write(&win_path, content.as_bytes())
+                .map_err(|e| format!("Write error: {}", e))?)
 
         } else {
             // Pure WSL path - pipe content through `wsl tee`
@@ -1471,7 +1473,7 @@ pub async fn write_file_content(path: String, content: String) -> Result<(), Str
 
             let status = child.wait().map_err(|e| e.to_string())?;
             if !status.success() {
-                return Err(format!("WSL write exited with status {}", status));
+                return Err(format!("WSL write exited with status {}", status).into());
             }
             Ok(())
         }
@@ -1517,7 +1519,7 @@ fn parse_mem_used(s: &str) -> u64 {
     parse_iec_bytes(s.splitn(2, '/').next().unwrap_or("").trim())
 }
 
-fn get_stats_sync() -> Result<Vec<ContainerStats>, String> {
+fn get_stats_sync() -> Result<Vec<ContainerStats>, AtlasError> {
     let output = Command::new("docker")
         .args(["stats", "--no-stream", "--format", "{{json .}}"])
         .output()
@@ -1525,7 +1527,7 @@ fn get_stats_sync() -> Result<Vec<ContainerStats>, String> {
 
     if !output.status.success() {
         let err = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("docker stats: {}", err.trim()));
+        return Err(format!("docker stats: {}", err.trim()).into());
     }
 
     let mut stats = Vec::new();
@@ -1549,7 +1551,7 @@ fn get_stats_sync() -> Result<Vec<ContainerStats>, String> {
 
 /// Run `docker stats --no-stream` and return resource usage for all running containers.
 #[tauri::command]
-pub async fn docker_stats() -> Result<Vec<ContainerStats>, String> {
+pub async fn docker_stats() -> Result<Vec<ContainerStats>, AtlasError> {
     tauri::async_runtime::spawn_blocking(get_stats_sync)
         .await
         .map_err(|e| e.to_string())?
@@ -1558,7 +1560,7 @@ pub async fn docker_stats() -> Result<Vec<ContainerStats>, String> {
 /// Query total and free bytes for the drive that contains `path` (Windows only).
 /// Uses PowerShell's `[System.IO.DriveInfo]` - no extra crates needed.
 #[tauri::command]
-pub async fn get_disk_stats(path: String) -> Result<DiskStats, String> {
+pub async fn get_disk_stats(path: String) -> Result<DiskStats, AtlasError> {
     // Extract drive letter from a Windows path (e.g. "C:\Users\..." → 'C').
     // Fall back to %SYSTEMDRIVE% if the path is empty or has no letter.
     let drive = path
@@ -1592,7 +1594,7 @@ pub async fn get_disk_stats(path: String) -> Result<DiskStats, String> {
         .collect();
 
     if parts.len() < 2 {
-        return Err(format!("unexpected powershell output: {:?}", out.trim()));
+        return Err(format!("unexpected powershell output: {:?}", out.trim()).into());
     }
 
     Ok(DiskStats {
@@ -1632,7 +1634,7 @@ pub async fn get_backup_size(backup_dir: String) -> u64 {
 ///   - Pure WSL (`/home/...` etc.)    → `wsl cat <path>`
 /// All variants are capped at 512 KB.
 #[tauri::command]
-pub async fn read_file_content(path: String) -> Result<String, String> {
+pub async fn read_file_content(path: String) -> Result<String, AtlasError> {
     const MAX_BYTES: usize = 512_000;
 
     let bytes: Vec<u8> = if is_windows_absolute(&path) {
@@ -1643,7 +1645,7 @@ pub async fn read_file_content(path: String) -> Result<String, String> {
             return Err(format!(
                 "File too large ({} KB) - only files under 512 KB are shown inline",
                 meta.len() / 1024
-            ));
+            ).into());
         }
         std::fs::read(&path).map_err(|e| format!("Read error: {}", e))?
 
@@ -1655,7 +1657,7 @@ pub async fn read_file_content(path: String) -> Result<String, String> {
             return Err(format!(
                 "File too large ({} KB) - only files under 512 KB are shown inline",
                 meta.len() / 1024
-            ));
+            ).into());
         }
         std::fs::read(&win_path).map_err(|e| format!("Read error: {}", e))?
 
@@ -1664,8 +1666,8 @@ pub async fn read_file_content(path: String) -> Result<String, String> {
         read_via_wsl(&path, MAX_BYTES)?
     };
 
-    String::from_utf8(bytes)
-        .map_err(|_| "File contains non-UTF-8 characters and cannot be displayed".to_string())
+    Ok(String::from_utf8(bytes)
+        .map_err(|_| "File contains non-UTF-8 characters and cannot be displayed".to_string())?)
 }
 
 /// Returns the OS-appropriate default backup root directory.
@@ -1681,7 +1683,7 @@ pub async fn get_default_backup_dir() -> String {
 /// List all volume backups tracked in the manifest under `{root}/docker/manifest.json`.
 /// Entries whose archive files no longer exist on disk are silently filtered out.
 #[tauri::command]
-pub async fn docker_list_backups(backup_dir: String) -> Result<Vec<VolumeBackupEntry>, String> {
+pub async fn docker_list_backups(backup_dir: String) -> Result<Vec<VolumeBackupEntry>, AtlasError> {
     let manifest = read_manifest(&backup_dir);
     Ok(manifest
         .backups
@@ -1697,7 +1699,7 @@ pub async fn docker_volume_backup(
     app: tauri::AppHandle,
     volume_name: String,
     backup_dir: String,
-) -> Result<String, String> {
+) -> Result<String, AtlasError> {
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -1735,7 +1737,7 @@ pub async fn docker_volume_backup(
         if !pull.status.success() {
             let err = String::from_utf8_lossy(&pull.stderr).trim().to_string();
             emit_bp(&app, vol, "Failed to pull alpine", 10, true, Some(err.clone()), None, None);
-            return Err(err);
+            return Err(err.into());
         }
     }
 
@@ -1797,7 +1799,7 @@ pub async fn docker_volume_backup(
     if !output.status.success() {
         let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
         emit_bp(&app, vol, "Backup failed", 50, true, Some(err.clone()), None, None);
-        return Err(err);
+        return Err(err.into());
     }
 
     let size_bytes = fs::metadata(&backup_path).map(|m| m.len()).unwrap_or(0);
@@ -1824,12 +1826,13 @@ pub async fn docker_volume_restore(
     app: tauri::AppHandle,
     volume_name: String,
     backup_file: String,
-) -> Result<(), String> {
+) -> Result<(), AtlasError> {
     let vol = &volume_name;
 
     let src_path = std::path::Path::new(&backup_file);
     if !src_path.exists() {
-        return Err(format!("Backup file not found: {}", backup_file));
+        return Err(AtlasError::new(ErrorKind::NotFound, format!("The backup file is gone: {}", backup_file))
+            .hint("Refresh the backup list. The file may have been moved or deleted outside the app."));
     }
 
     let backup_dir = src_path
@@ -1888,7 +1891,7 @@ pub async fn docker_volume_restore(
             Command::new("docker").args(["start", id]).output().ok();
         }
         emit_bp(&app, vol, "Failed to prepare volume", 25, true, Some(err.clone()), None, None);
-        return Err(err);
+        return Err(err.into());
     }
 
     // `find -mindepth 1 -delete` removes all content without removing the
@@ -1926,7 +1929,7 @@ pub async fn docker_volume_restore(
     if !output.status.success() {
         let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
         emit_bp(&app, vol, "Restore failed", 45, true, Some(err.clone()), None, None);
-        return Err(err);
+        return Err(err.into());
     }
 
     emit_bp(&app, vol, &format!("Restore complete - '{}' is ready", vol), 100, true, None, None, None);
@@ -1946,7 +1949,7 @@ pub async fn docker_backup_compose(
     project: String,
     config_files: Vec<String>,
     backup_dir: String,
-) -> Result<Vec<ComposeBackupEntry>, String> {
+) -> Result<Vec<ComposeBackupEntry>, AtlasError> {
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -2049,7 +2052,7 @@ pub async fn docker_backup_compose(
 pub async fn docker_list_compose_backups(
     backup_dir: String,
     project: String,
-) -> Result<Vec<ComposeBackupEntry>, String> {
+) -> Result<Vec<ComposeBackupEntry>, AtlasError> {
     let mut entries: Vec<_> = read_compose_manifest(&backup_dir)
         .backups
         .into_iter()
@@ -2065,7 +2068,7 @@ pub async fn docker_delete_compose_backup(
     app: tauri::AppHandle,
     backup_dir: String,
     filename: String,
-) -> Result<(), String> {
+) -> Result<(), AtlasError> {
     let mut manifest = read_compose_manifest(&backup_dir);
 
     let path = manifest.backups.iter()
@@ -2107,7 +2110,7 @@ fn is_effectively_empty(path: &std::path::Path) -> bool {
 /// Tries atomic rename first; falls back to copy+delete for cross-filesystem moves.
 /// After transfer, removes the old directory tree if it is entirely empty.
 #[tauri::command]
-pub async fn transfer_backups(from_dir: String, to_dir: String) -> Result<TransferResult, String> {
+pub async fn transfer_backups(from_dir: String, to_dir: String) -> Result<TransferResult, AtlasError> {
     use std::fs;
 
     if from_dir == to_dir {
@@ -2187,7 +2190,7 @@ pub async fn docker_delete_backup(
     app: tauri::AppHandle,
     backup_dir: String,
     filename: String,
-) -> Result<(), String> {
+) -> Result<(), AtlasError> {
     let mut manifest = read_manifest(&backup_dir);
 
     // Find the stored path from the manifest so we delete the right file.
@@ -2252,7 +2255,7 @@ struct AppMetadataStore {
     projects: std::collections::HashMap<String, AppProjectMeta>,
 }
 
-fn metadata_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+fn metadata_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, AtlasError> {
     use tauri::Manager;
     let mut path = app.path()
         .app_data_dir()
@@ -2269,20 +2272,20 @@ fn read_metadata(app: &tauri::AppHandle) -> AppMetadataStore {
         .unwrap_or_default()
 }
 
-fn write_metadata(app: &tauri::AppHandle, store: &AppMetadataStore) -> Result<(), String> {
+fn write_metadata(app: &tauri::AppHandle, store: &AppMetadataStore) -> Result<(), AtlasError> {
     let path = metadata_path(app)?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let json = serde_json::to_string_pretty(store).map_err(|e| e.to_string())?;
-    std::fs::write(&path, json).map_err(|e| e.to_string())
+    Ok(std::fs::write(&path, json).map_err(|e| e.to_string())?)
 }
 
 /// Load all project metadata as a map keyed by project name.
 #[tauri::command]
 pub async fn metadata_load(
     app: tauri::AppHandle,
-) -> Result<std::collections::HashMap<String, AppProjectMeta>, String> {
+) -> Result<std::collections::HashMap<String, AppProjectMeta>, AtlasError> {
     let store = tauri::async_runtime::spawn_blocking(move || read_metadata(&app))
         .await
         .map_err(|e| e.to_string())?;
@@ -2295,8 +2298,8 @@ pub async fn metadata_save_project(
     app: tauri::AppHandle,
     name: String,
     meta: AppProjectMeta,
-) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
+) -> Result<(), AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
         let mut store = read_metadata(&app);
         store.projects.insert(name, meta);
         write_metadata(&app, &store)
@@ -2486,8 +2489,8 @@ pub async fn detect_editors() -> Vec<EditorInfo> {
 ///  2. A pure-WSL path (`/home/…`) means nothing to a Windows editor, so it is
 ///     first converted to its `\\wsl.localhost\…` UNC form.
 #[tauri::command]
-pub async fn open_in_editor(path: String, editor_cmd: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn open_in_editor(path: String, editor_cmd: String) -> Result<(), AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
         let win_path = to_windows_path(&path);
         let mut c = Command::new("cmd");
         c.args(["/C", &editor_cmd, &win_path]);
@@ -2496,9 +2499,9 @@ pub async fn open_in_editor(path: String, editor_cmd: String) -> Result<(), Stri
             use std::os::windows::process::CommandExt;
             c.creation_flags(0x0800_0000); // CREATE_NO_WINDOW - no flashing console
         }
-        c.spawn()
+        Ok(c.spawn()
             .map(|_| ())
-            .map_err(|e| format!("Failed to open '{}' with '{}': {}", win_path, editor_cmd, e))
+            .map_err(|e| format!("Failed to open '{}' with '{}': {}", win_path, editor_cmd, e))?)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -2507,8 +2510,8 @@ pub async fn open_in_editor(path: String, editor_cmd: String) -> Result<(), Stri
 /// Reveal a file in Windows Explorer (selecting it), converting WSL paths to
 /// their UNC form first so `/home/…` files open correctly.
 #[tauri::command]
-pub async fn reveal_path(path: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn reveal_path(path: String) -> Result<(), AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
         let win = to_windows_path(&path);
         let mut c = Command::new("explorer");
         #[cfg(windows)]
@@ -2522,9 +2525,9 @@ pub async fn reveal_path(path: String) -> Result<(), String> {
         }
         // explorer.exe returns a non-zero exit code even on success, so we only
         // surface a spawn failure.
-        c.spawn()
+        Ok(c.spawn()
             .map(|_| ())
-            .map_err(|e| format!("Failed to reveal '{}': {}", win, e))
+            .map_err(|e| format!("Failed to reveal '{}': {}", win, e))?)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -2537,17 +2540,17 @@ pub async fn reveal_path(path: String) -> Result<(), String> {
 /// Run `docker compose config` and return the resolved YAML string.
 /// On error, returns the stderr as the Err string.
 #[tauri::command]
-pub async fn docker_compose_config(config_file: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn docker_compose_config(config_file: String) -> Result<String, AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<String, AtlasError> {
         let (mut cmd, _) = compose_base(&config_file);
         let output = cmd.arg("config").output()
             .map_err(|e| format!("Failed to run docker compose config: {}", e))?;
 
         if output.status.success() {
-            String::from_utf8(output.stdout)
-                .map_err(|_| "Output contains non-UTF8 characters".to_string())
+            Ok(String::from_utf8(output.stdout)
+                .map_err(|_| "Output contains non-UTF8 characters".to_string())?)
         } else {
-            Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+            Err(String::from_utf8_lossy(&output.stderr).trim().to_string().into())
         }
     })
     .await
@@ -2570,7 +2573,7 @@ pub async fn compose_logs_watch(
     state:       tauri::State<'_, ComposeLogState>,
     config_file: String,
     services:    Vec<String>,
-) -> Result<(), String> {
+) -> Result<(), AtlasError> {
     // Kill any previous stream
     {
         let mut guard = state.0.lock().unwrap();
@@ -2580,7 +2583,7 @@ pub async fn compose_logs_watch(
 
     let child_arc = state.0.clone();
 
-    tauri::async_runtime::spawn_blocking(move || {
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
         let svc_refs: Vec<&str> = services.iter().map(|s| s.as_str()).collect();
 
         let (mut cmd, _) = compose_base(&config_file);
@@ -2654,7 +2657,7 @@ pub async fn compose_logs_watch(
 #[tauri::command]
 pub async fn compose_logs_stop(
     state: tauri::State<'_, ComposeLogState>,
-) -> Result<(), String> {
+) -> Result<(), AtlasError> {
     let mut guard = state.0.lock().unwrap();
     if let Some(ref mut child) = *guard { child.kill().ok(); }
     *guard = None;

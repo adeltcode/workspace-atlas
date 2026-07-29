@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Package as PackageIcon, RefreshCw, Download } from 'lucide-react'
+import { RefreshCw, Download } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../../store/appStore'
 import { SortHeader } from '../docker/components/TableBits'
+import {
+  SheetHead, Prerequisite, Button, SearchField, ErrorBanner, Toolbar,
+  Segmented, SegmentedItem, EmptyState,
+} from '../../components/ui'
 import * as api from './api'
 import type { Package, SourceResult } from './types'
 
@@ -108,97 +112,82 @@ export default function PackagesView() {
 
   return (
     <div className="view-container">
-      <div className="view-header">
-        <div className="view-header-icon"><PackageIcon size={18} /></div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="view-header-title-row">
-            <h1 className="view-title">Packages</h1>
-            {results && (
-              <>
-                <span className={clsx('status-dot', found.length ? 'online' : 'offline')} />
-                <span className="status-text">
-                  {found.length
-                    ? `${all.length} installed across ${found.length} source${found.length !== 1 ? 's' : ''}`
-                    : 'no package managers found'}
-                </span>
-              </>
-            )}
-          </div>
-          <p className="view-subtitle">Everything winget, npm, and pip have installed on this machine.</p>
-        </div>
-        <button className="btn-refresh" onClick={scan} disabled={loading} title="Rescan (Ctrl+R)">
-          <RefreshCw size={13} className={loading ? 'spin' : ''} />
-          Rescan
-        </button>
-        <button
-          className="btn-secondary"
-          onClick={exportCsv}
-          disabled={exporting || loading || rows.length === 0}
-          title="Save the rows currently shown as CSV"
-        >
-          <Download size={13} /> {exporting ? 'Saving…' : 'Export CSV'}
-        </button>
+      <div className="page-head">
+      <SheetHead
+        crumbs={[
+          { label: 'Overview', onClick: () => useAppStore.getState().setActiveView('dashboard') },
+          { label: 'Packages' },
+        ]}
+        title="Packages"
+        subtitle="Everything winget, npm, and pip have installed on this machine."
+        status={results && (
+          <span className="status-text" style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <span className={clsx('status-dot', found.length ? 'online' : 'offline')} />
+            {found.length
+              ? `${all.length} installed across ${found.length} source${found.length !== 1 ? 's' : ''}`
+              : 'no package managers found'}
+          </span>
+        )}
+        actions={
+          <>
+            <Button
+              onClick={exportCsv}
+              disabled={exporting || loading || rows.length === 0}
+            >
+              <Download size={13} /> {exporting ? 'Saving…' : 'Export CSV'}
+            </Button>
+            <Button onClick={scan} disabled={loading}>
+              <RefreshCw size={13} className={loading ? 'spin' : ''} />
+              Rescan
+            </Button>
+          </>
+        }
+      />
       </div>
 
-      {error && (
-        <div className="error-banner" style={{ marginTop: 20 }}>
-          <span className="error-title">Error</span>
-          <span className="error-msg">{error}</span>
-        </div>
-      )}
+      <div className={found.length > 0 ? 'page-fill' : 'page-scroll'}>
+      {error && <ErrorBanner>{error}</ErrorBanner>}
 
       {failed.map(r => (
-        <div key={r.id} className="error-banner" style={{ marginTop: 20 }}>
-          <span className="error-title">{r.label}</span>
-          <span className="error-msg">{r.error}</span>
-        </div>
+        <ErrorBanner key={r.id} title={r.label}>{r.error}</ErrorBanner>
       ))}
 
       {loading && !results && <div className="img-loading">Scanning package managers…</div>}
 
       {results && found.length === 0 && !loading && (
-        <div className="offline-card" style={{ marginTop: 20 }}>
-          <p className="offline-title">No package managers found</p>
-          <p className="offline-desc">
-            None of the supported managers are on PATH. Install one, then rescan.
-          </p>
-          <code className="offline-code">winget list</code>
-        </div>
+        <Prerequisite
+          title="No package managers found"
+          description="None of winget, npm, or pip are on PATH. winget ships with Windows 11; if it is missing, install App Installer from the Microsoft Store. Verify with the command below, then rescan."
+          command="winget list"
+          actions={<Button onClick={scan} disabled={loading}><RefreshCw size={13} /> Rescan</Button>}
+        />
       )}
 
       {found.length > 0 && (
         <div className="pkg-tab">
-          <div className="img-toolbar">
-            <input
-              className="img-search"
-              type="search"
-              placeholder="Search by name or id…"
-              aria-label="Search packages"
+          <Toolbar>
+            <SearchField
               value={query}
-              onChange={e => setQuery(e.target.value)}
-              spellCheck={false}
+              onChange={setQuery}
+              placeholder="Search packages"
             />
 
-            <div className="ctr-state-filter" role="group" aria-label="Filter by source">
-              <button
-                className={clsx('ctr-filter-btn pkg-src-btn', source === 'all' && 'active')}
-                onClick={() => setSource('all')}
-                aria-pressed={source === 'all'}
-              >
-                All {all.length}
-              </button>
+            <Segmented label="Filter by source">
+              <SegmentedItem active={source === 'all'} count={all.length} onClick={() => setSource('all')}>
+                All
+              </SegmentedItem>
               {found.map(r => (
-                <button
+                <SegmentedItem
                   key={r.id}
-                  className={clsx('ctr-filter-btn pkg-src-btn', source === r.id && 'active')}
+                  active={source === r.id}
+                  count={r.packages.length}
                   onClick={() => setSource(r.id)}
-                  aria-pressed={source === r.id}
                   title={r.command}
                 >
-                  {r.label} {r.packages.length}
-                </button>
+                  {r.label}
+                </SegmentedItem>
               ))}
-            </div>
+            </Segmented>
 
             <button
               className={clsx('pkg-toggle', outdatedOnly && 'active')}
@@ -206,14 +195,18 @@ export default function PackagesView() {
               aria-pressed={outdatedOnly}
               title="Show only packages with a newer version available"
             >
-              Updates {outdatedCount}
+              Updates <span className="num">{outdatedCount}</span>
             </button>
 
             <span className="img-count">{rows.length} shown</span>
-          </div>
+          </Toolbar>
 
           {rows.length === 0 ? (
-            <p className="empty-state">No packages match this search.</p>
+            <EmptyState
+              title="No packages match this search"
+              description="Try a shorter search, a different source, or clear the Updates filter."
+              actions={<Button onClick={() => { setQuery(''); setSource('all'); setOutdatedOnly(false) }}>Clear filters</Button>}
+            />
           ) : (
             <div className="img-table-wrap">
               <table className="img-table">
@@ -253,6 +246,7 @@ export default function PackagesView() {
           </p>
         </div>
       )}
+      </div>
     </div>
   )
 }

@@ -1,6 +1,7 @@
 use std::sync::Mutex;
 
 use sysinfo::{Disks, System};
+use crate::error::AtlasError;
 
 /// Long-lived `System` so CPU usage is measured as a delta between polls.
 /// The first reading after startup reports 0% until a second poll provides a delta.
@@ -30,7 +31,7 @@ pub struct SystemMetrics {
 #[tauri::command]
 pub async fn get_system_metrics(
     state: tauri::State<'_, SysState>,
-) -> Result<SystemMetrics, String> {
+) -> Result<SystemMetrics, AtlasError> {
     let (cpu_pct, cpu_count, mem_used_bytes, mem_total_bytes) = {
         let mut sys = state.0.lock().map_err(|_| "system state poisoned".to_string())?;
         sys.refresh_cpu_usage();

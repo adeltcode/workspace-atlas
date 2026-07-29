@@ -4,6 +4,7 @@ import * as api from '../api'
 import type { DockerNetwork } from '../types'
 import { useAppStore } from '../../../store/appStore'
 import { ConfirmRemoveButton } from './TableBits'
+import { SearchField, EmptyState, Button, ErrorBanner } from '../../../components/ui'
 
 /** Format an ISO date string as relative ("3 months ago") for recent dates,
  *  or a short absolute date for older ones. */
@@ -76,13 +77,11 @@ export default function NetworksTab() {
   return (
     <div className="img-tab">
       <div className="img-toolbar">
-        <input
-          className="img-search"
-          type="search"
-          placeholder="Filter by name or driver…"
-          aria-label="Filter networks"
+        <SearchField
           value={search}
-          onChange={e => setSearch(e.target.value)}
+          onChange={setSearch}
+          placeholder="Search networks"
+          label="Search networks by name or driver"
         />
         <span className="img-count">
           {filtered.length} network{filtered.length !== 1 ? 's' : ''}
@@ -90,21 +89,21 @@ export default function NetworksTab() {
       </div>
 
       {error && (
-        <div className="error-banner" style={{ marginBottom: 0 }}>
-          <span className="error-title">Error</span>
-          <span className="error-msg">{error}</span>
-        </div>
+        <ErrorBanner className="error-banner--flush" error={error} />
       )}
 
       {actionError && (
-        <div className="error-banner" style={{ marginBottom: 0 }}>
-          <span className="error-title">Error</span>
-          <span className="error-msg">{actionError}</span>
-        </div>
+        <ErrorBanner className="error-banner--flush" error={actionError} />
       )}
 
       {filtered.length === 0 && !error && (
-        <p className="empty-state">No networks found.</p>
+        <EmptyState
+          title={search ? 'No networks match this search' : 'No custom networks'}
+          description={search
+            ? 'Try a shorter search, or clear it to see every network.'
+            : 'Only Docker’s three built-in networks exist. A compose project creates its own, and it appears here.'}
+          actions={search ? <Button onClick={() => setSearch('')}>Clear search</Button> : undefined}
+        />
       )}
 
       <div className="img-table-wrap">

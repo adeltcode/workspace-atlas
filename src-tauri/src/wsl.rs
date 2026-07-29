@@ -4,6 +4,7 @@ use tauri::Emitter;
 
 use crate::docker::bytes_to_human;
 use crate::shell::ShellOut;
+use crate::error::{AtlasError, ErrorKind};
 
 fn emit_line(app: &tauri::AppHandle, text: impl Into<String>, stderr: bool) {
     app.emit("shell-out", ShellOut { text: text.into(), stderr }).ok();
@@ -69,7 +70,7 @@ pub struct WslConfig {
 // Commands
 // ─────────────────────────────────────────────────────────────────────────────
 
-fn wslconfig_path() -> Result<String, String> {
+fn wslconfig_path() -> Result<String, AtlasError> {
     let home = std::env::var("USERPROFILE").map_err(|_| "USERPROFILE is not set".to_string())?;
     Ok(format!("{}\\.wslconfig", home))
 }
@@ -77,7 +78,7 @@ fn wslconfig_path() -> Result<String, String> {
 /// Read %USERPROFILE%\.wslconfig. A missing file is not an error - it returns
 /// `exists: false` with empty content so the UI can offer a template.
 #[tauri::command]
-pub async fn read_wslconfig(app: tauri::AppHandle) -> Result<WslConfig, String> {
+pub async fn read_wslconfig(app: tauri::AppHandle) -> Result<WslConfig, AtlasError> {
     let path = wslconfig_path()?;
     let win = path.replace('/', "\\");
     emit_line(&app, format!("$ Get-Content \"{}\"", win), false);
@@ -90,13 +91,13 @@ pub async fn read_wslconfig(app: tauri::AppHandle) -> Result<WslConfig, String> 
             emit_line(&app, "  # .wslconfig does not exist yet", false);
             Ok(WslConfig { path, content: String::new(), exists: false })
         }
-        Err(e) => Err(format!("Cannot read .wslconfig: {}", e)),
+        Err(e) => Err(format!("Cannot read .wslconfig: {}", e).into()),
     }
 }
 
 /// Write %USERPROFILE%\.wslconfig. Changes take effect after `wsl --shutdown`.
 #[tauri::command]
-pub async fn write_wslconfig(app: tauri::AppHandle, content: String) -> Result<(), String> {
+pub async fn write_wslconfig(app: tauri::AppHandle, content: String) -> Result<(), AtlasError> {
     let path = wslconfig_path()?;
     let win = path.replace('/', "\\");
     emit_write_block(&app, format!("Set-Content -Path \"{}\" -Value @'", win), &content, "'@".to_string());
@@ -108,7 +109,7 @@ pub async fn write_wslconfig(app: tauri::AppHandle, content: String) -> Result<(
         Err(e) => {
             let msg = format!("Cannot write .wslconfig: {}", e);
             emit_line(&app, format!("  ✗ {}", msg), true);
-            Err(msg)
+            Err(msg.into())
         }
     }
 }
@@ -161,7 +162,7 @@ fn list_wslconfig_backups_sync(root: &str) -> Vec<WslConfigBackup> {
 /// Skips writing a duplicate if the newest backup is byte-identical. Keeps the 20
 /// most recent. Errors if `.wslconfig` does not exist yet.
 #[tauri::command]
-pub async fn wslconfig_backup(app: tauri::AppHandle, backup_dir: String) -> Result<WslConfigBackup, String> {
+pub async fn wslconfig_backup(app: tauri::AppHandle, backup_dir: String) -> Result<WslConfigBackup, AtlasError> {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     let src = wslconfig_path()?;
@@ -203,14 +204,14 @@ pub async fn wslconfig_backup(app: tauri::AppHandle, backup_dir: String) -> Resu
 
 /// List all `.wslconfig` backups, most-recent first.
 #[tauri::command]
-pub async fn wslconfig_list_backups(backup_dir: String) -> Result<Vec<WslConfigBackup>, String> {
+pub async fn wslconfig_list_backups(backup_dir: String) -> Result<Vec<WslConfigBackup>, AtlasError> {
     Ok(list_wslconfig_backups_sync(&backup_dir))
 }
 
 /// Restore a backup over `.wslconfig`, returning the restored content so the UI
 /// can refresh. Changes take effect after `wsl --shutdown`.
 #[tauri::command]
-pub async fn wslconfig_restore(app: tauri::AppHandle, backup_path: String) -> Result<String, String> {
+pub async fn wslconfig_restore(app: tauri::AppHandle, backup_path: String) -> Result<String, AtlasError> {
     let dest = wslconfig_path()?;
     let content = std::fs::read_to_string(&backup_path)
         .map_err(|e| format!("Cannot read backup: {}", e))?;
@@ -239,7 +240,7 @@ fn cat_wsl_conf(distro: &str) -> (String, bool) {
 }
 
 /// Write a distro's `/etc/wsl.conf` as root via `tee` (no event emission).
-fn tee_wsl_conf(distro: &str, content: &str) -> Result<(), String> {
+fn tee_wsl_conf(distro: &str, content: &str) -> Result<(), AtlasError> {
     use std::io::Write as _;
     let mut child = Command::new("wsl")
         .env("WSL_UTF8", "1")
@@ -256,14 +257,14 @@ fn tee_wsl_conf(distro: &str, content: &str) -> Result<(), String> {
     if out.status.success() {
         Ok(())
     } else {
-        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+        Err(String::from_utf8_lossy(&out.stderr).trim().to_string().into())
     }
 }
 
 /// Read `/etc/wsl.conf` from a distro. A missing file is reported, not an error.
 #[tauri::command]
-pub async fn read_wsl_conf(app: tauri::AppHandle, distro: String) -> Result<WslConfig, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn read_wsl_conf(app: tauri::AppHandle, distro: String) -> Result<WslConfig, AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<WslConfig, AtlasError> {
         let display_path = format!("\\\\wsl.localhost\\{}\\etc\\wsl.conf", distro);
         emit_line(&app, format!("$ wsl -d {} -u root cat /etc/wsl.conf", distro), false);
         let (content, exists) = cat_wsl_conf(&distro);
@@ -280,8 +281,8 @@ pub async fn read_wsl_conf(app: tauri::AppHandle, distro: String) -> Result<WslC
 
 /// Write `/etc/wsl.conf` inside a distro as root. Takes effect after `wsl --shutdown`.
 #[tauri::command]
-pub async fn write_wsl_conf(app: tauri::AppHandle, distro: String, content: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn write_wsl_conf(app: tauri::AppHandle, distro: String, content: String) -> Result<(), AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
         emit_write_block(&app, "@'".to_string(), &content, format!("'@ | wsl -d {} -u root tee /etc/wsl.conf", distro));
         match tee_wsl_conf(&distro, &content) {
             Ok(()) => {
@@ -316,13 +317,13 @@ fn list_wslconf_backups_sync(root: &str, distro: &str) -> Vec<WslConfigBackup> {
 /// Snapshot a distro's `/etc/wsl.conf` to `{root}/wsl/wslconf/{distro}_{ts}.conf`.
 /// De-dups against the newest backup; keeps the 20 most recent per distro.
 #[tauri::command]
-pub async fn wsl_conf_backup(app: tauri::AppHandle, distro: String, backup_dir: String) -> Result<WslConfigBackup, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn wsl_conf_backup(app: tauri::AppHandle, distro: String, backup_dir: String) -> Result<WslConfigBackup, AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<WslConfigBackup, AtlasError> {
         use std::time::{SystemTime, UNIX_EPOCH};
 
         let (content, exists) = cat_wsl_conf(&distro);
         if !exists {
-            return Err("No wsl.conf to back up yet.".to_string());
+            return Err("No wsl.conf to back up yet.".to_string().into());
         }
 
         let existing = list_wslconf_backups_sync(&backup_dir, &distro);
@@ -355,17 +356,17 @@ pub async fn wsl_conf_backup(app: tauri::AppHandle, distro: String, backup_dir: 
 
 /// List a distro's wsl.conf backups, most-recent first.
 #[tauri::command]
-pub async fn wsl_conf_list_backups(distro: String, backup_dir: String) -> Result<Vec<WslConfigBackup>, String> {
+pub async fn wsl_conf_list_backups(distro: String, backup_dir: String) -> Result<Vec<WslConfigBackup>, AtlasError> {
     Ok(list_wslconf_backups_sync(&backup_dir, &distro))
 }
 
 /// Restore a backup into a distro's `/etc/wsl.conf`, returning the restored content.
 #[tauri::command]
-pub async fn wsl_conf_restore(app: tauri::AppHandle, distro: String, backup_path: String) -> Result<String, String> {
+pub async fn wsl_conf_restore(app: tauri::AppHandle, distro: String, backup_path: String) -> Result<String, AtlasError> {
     let content = std::fs::read_to_string(&backup_path)
         .map_err(|e| format!("Cannot read backup: {}", e))?;
     let returned = content.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
         emit_line(&app, format!("$ Get-Content \"{}\" | wsl -d {} -u root tee /etc/wsl.conf", backup_path.replace('/', "\\"), distro), false);
         match tee_wsl_conf(&distro, &content) {
             Ok(()) => {
@@ -385,7 +386,7 @@ pub async fn wsl_conf_restore(app: tauri::AppHandle, distro: String, backup_path
 
 /// Delete a single config backup file (used for both .wslconfig and wsl.conf backups).
 #[tauri::command]
-pub async fn wsl_conf_delete_backup(app: tauri::AppHandle, backup_path: String) -> Result<(), String> {
+pub async fn wsl_conf_delete_backup(app: tauri::AppHandle, backup_path: String) -> Result<(), AtlasError> {
     emit_line(&app, format!("$ Remove-Item \"{}\"", backup_path.replace('/', "\\")), false);
     if std::path::Path::new(&backup_path).exists() {
         std::fs::remove_file(&backup_path)
@@ -398,7 +399,7 @@ pub async fn wsl_conf_delete_backup(app: tauri::AppHandle, backup_path: String) 
 /// Shut down all running distros (`wsl --shutdown`) so .wslconfig changes apply.
 /// Not elevated, but stops every running distro - the UI warns first.
 #[tauri::command]
-pub async fn wsl_shutdown() -> Result<(), String> {
+pub async fn wsl_shutdown() -> Result<(), AtlasError> {
     run_wsl(&["--shutdown"])
 }
 
@@ -428,8 +429,8 @@ fn ps_single_quote(s: &str) -> String {
 pub async fn wsl_optimize_vhd(
     app: tauri::AppHandle,
     vhd_path: String,
-) -> Result<OptimizeResult, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+) -> Result<OptimizeResult, AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<OptimizeResult, AtlasError> {
         let before = std::fs::metadata(&vhd_path)
             .map(|m| m.len())
             .map_err(|e| format!("Cannot read VHD '{}': {}", vhd_path, e))?;
@@ -468,7 +469,8 @@ pub async fn wsl_optimize_vhd(
 
         if status.code() == Some(1223) {
             emit_line(&app, "  ✗ administrator access was cancelled", true);
-            return Err("Administrator access was cancelled.".to_string());
+            return Err(AtlasError::new(ErrorKind::Elevation, "Administrator approval was not given, so nothing was changed.")
+                .hint("Compacting a VHD is a disk-level operation and Windows requires elevation for it. Run it again and approve the prompt."));
         }
 
         let result_raw = std::fs::read_to_string(&result_path).unwrap_or_default();
@@ -479,7 +481,7 @@ pub async fn wsl_optimize_vhd(
 
         if let Some(err) = result.lines().find_map(|l| l.strip_prefix("error=")) {
             emit_line(&app, format!("  ✗ {}", err.trim()), true);
-            return Err(err.trim().to_string());
+            return Err(err.trim().to_string().into());
         }
 
         let method = result
@@ -553,8 +555,8 @@ pub async fn pick_directory() -> Option<String> {
 pub async fn wsl_export_distro(
     app: tauri::AppHandle,
     name: String,
-) -> Result<Option<ExportResult>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+) -> Result<Option<ExportResult>, AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<Option<ExportResult>, AtlasError> {
         let Some(dest) = rfd::FileDialog::new()
             .set_file_name(format!("{}.tar", name))
             .add_filter("TAR archive", &["tar"])
@@ -576,7 +578,7 @@ pub async fn wsl_export_distro(
             let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
             let err = if err.is_empty() { "Export failed".to_string() } else { err };
             emit_line(&app, format!("  ✗ {}", err), true);
-            return Err(err);
+            return Err(err.into());
         }
 
         let size = std::fs::metadata(&dest).map(|m| m.len()).unwrap_or(0);
@@ -596,8 +598,8 @@ pub async fn wsl_import_distro(
     name: String,
     install_dir: String,
     tar_path: String,
-) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
+) -> Result<(), AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
         std::fs::create_dir_all(&install_dir)
             .map_err(|e| format!("Cannot create install directory: {}", e))?;
 
@@ -613,7 +615,7 @@ pub async fn wsl_import_distro(
             let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
             let err = if err.is_empty() { "Import failed".to_string() } else { err };
             emit_line(&app, format!("  ✗ {}", err), true);
-            return Err(err);
+            return Err(err.into());
         }
 
         emit_line(&app, format!("  ✓ imported {}", name), false);
@@ -693,8 +695,8 @@ fn parse_manifest(json: &str, amd64: bool) -> Vec<CatalogDistro> {
 
 /// Fetch and parse the install catalog for this host's architecture.
 #[tauri::command]
-pub async fn wsl_install_catalog(app: tauri::AppHandle) -> Result<Vec<CatalogDistro>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn wsl_install_catalog(app: tauri::AppHandle) -> Result<Vec<CatalogDistro>, AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<CatalogDistro>, AtlasError> {
         emit_line(&app, format!("$ GET {}", MANIFEST_URL), false);
         let body = http_agent()
             .get(MANIFEST_URL)
@@ -704,7 +706,7 @@ pub async fn wsl_install_catalog(app: tauri::AppHandle) -> Result<Vec<CatalogDis
             .map_err(|e| format!("Could not read the distro catalog: {}", e))?;
         let list = parse_manifest(&body, host_is_amd64());
         if list.is_empty() {
-            return Err("The distro catalog was empty or in an unexpected format.".to_string());
+            return Err("The distro catalog was empty or in an unexpected format.".to_string().into());
         }
         emit_line(&app, format!("  ✓ {} distro(s) in catalog", list.len()), false);
         Ok(list)
@@ -714,13 +716,13 @@ pub async fn wsl_install_catalog(app: tauri::AppHandle) -> Result<Vec<CatalogDis
 }
 
 /// Default install location for a downloaded distro: %LOCALAPPDATA%\WSL\<name>.
-fn default_install_dir(name: &str) -> Result<String, String> {
+fn default_install_dir(name: &str) -> Result<String, AtlasError> {
     let base = std::env::var("LOCALAPPDATA").map_err(|_| "LOCALAPPDATA is not set".to_string())?;
     Ok(format!("{}\\WSL\\{}", base, safe_name(name)))
 }
 
 #[tauri::command]
-pub async fn wsl_default_install_dir(name: String) -> Result<String, String> {
+pub async fn wsl_default_install_dir(name: String) -> Result<String, AtlasError> {
     default_install_dir(&name)
 }
 
@@ -753,14 +755,14 @@ fn http_agent() -> ureq::Agent {
 
 /// SHA-256 of a file via PowerShell's Get-FileHash (uppercase hex). Avoids pulling
 /// in a hashing crate just for one verification step.
-fn sha256_of(path: &str) -> Result<String, String> {
+fn sha256_of(path: &str) -> Result<String, AtlasError> {
     let cmd = format!("(Get-FileHash -Algorithm SHA256 -LiteralPath '{}').Hash", ps_single_quote(path));
     let out = Command::new("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", &cmd])
         .output()
         .map_err(|e| format!("Get-FileHash failed: {}", e))?;
     if !out.status.success() {
-        return Err("Could not compute the file checksum.".to_string());
+        return Err("Could not compute the file checksum.".to_string().into());
     }
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
@@ -775,13 +777,14 @@ pub async fn wsl_install_download(
     url: String,
     sha256: String,
     install_dir: String,
-) -> Result<(), String> {
+) -> Result<(), AtlasError> {
     use std::io::{Read, Write};
     use std::time::{Duration, Instant};
 
-    tauri::async_runtime::spawn_blocking(move || {
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
         if !url.starts_with("https://") {
-            return Err("Refusing to download from a non-HTTPS URL.".to_string());
+            return Err(AtlasError::invalid("That catalog entry points at a plain HTTP address, so the download was refused.")
+                .hint("This is a safety stop, not a network fault. Report the catalog entry rather than retrying."));
         }
 
         let dir = if install_dir.trim().is_empty() {
@@ -821,12 +824,12 @@ pub async fn wsl_install_download(
                     std::fs::remove_file(&tmp).ok();
                     let msg = format!("Download interrupted: {}", e);
                     emit_line(&app, format!("  ✗ {}", msg), true);
-                    return Err(msg);
+                    return Err(msg.into());
                 }
             };
             if let Err(e) = file.write_all(&buf[..n]) {
                 std::fs::remove_file(&tmp).ok();
-                return Err(format!("Cannot write download: {}", e));
+                return Err(format!("Cannot write download: {}", e).into());
             }
             downloaded += n as u64;
 
@@ -853,7 +856,7 @@ pub async fn wsl_install_download(
                 std::fs::remove_file(&tmp).ok();
                 let msg = "Checksum mismatch - the download may be corrupted. Nothing was installed.".to_string();
                 emit_line(&app, format!("  ✗ {}", msg), true);
-                return Err(msg);
+                return Err(msg.into());
             }
             emit_line(&app, "  ✓ checksum verified (SHA-256)", false);
         }
@@ -862,7 +865,7 @@ pub async fn wsl_install_download(
         emit_progress(&app, InstallProgress { phase: "importing".into(), downloaded, total: downloaded, bytes_per_sec: 0, percent: 100.0 });
         if let Err(e) = std::fs::create_dir_all(&dir) {
             std::fs::remove_file(&tmp).ok();
-            return Err(format!("Cannot create install directory: {}", e));
+            return Err(format!("Cannot create install directory: {}", e).into());
         }
         emit_line(&app, format!("$ wsl --import {} \"{}\" \"{}\" --version 2", name, dir, tmp_str), false);
         let imported = import_distro(&name, &dir, &tmp_str, 2);
@@ -885,7 +888,7 @@ pub async fn wsl_install_download(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Run a bash script inside a distro as root. See `run_in_distro_as`.
-fn run_in_distro(distro: &str, script: &str) -> Result<String, String> {
+fn run_in_distro(distro: &str, script: &str) -> Result<String, AtlasError> {
     run_in_distro_as(distro, Some("root"), script)
 }
 
@@ -898,7 +901,7 @@ fn run_in_distro(distro: &str, script: &str) -> Result<String, String> {
 /// Prefers bash but falls back to sh, so busybox-based distros (Alpine,
 /// docker-desktop) still run the POSIX-compatible probe scripts. Scripts that
 /// genuinely need bash must guard themselves (see PROFILE_SCRIPT).
-fn run_in_distro_as(distro: &str, user: Option<&str>, script: &str) -> Result<String, String> {
+fn run_in_distro_as(distro: &str, user: Option<&str>, script: &str) -> Result<String, AtlasError> {
     use std::io::Write as _;
     let mut cmd = Command::new("wsl");
     cmd.env("WSL_UTF8", "1").arg("-d").arg(distro);
@@ -922,7 +925,7 @@ fn run_in_distro_as(distro: &str, user: Option<&str>, script: &str) -> Result<St
         Ok(String::from_utf8_lossy(&out.stdout).to_string())
     } else {
         let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
-        Err(if err.is_empty() { "Command failed inside distro".to_string() } else { err })
+        Err(if err.is_empty() { "Command failed inside distro".to_string().into() } else { err.into() })
     }
 }
 
@@ -1101,8 +1104,8 @@ fn parse_distro_stats(out: &str) -> DistroStats {
 /// Lightweight live CPU/memory snapshot for one distro (the home dashboard
 /// polls this for every running distro). Read-only, no terminal emission.
 #[tauri::command]
-pub async fn wsl_distro_stats(distro: String) -> Result<DistroStats, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn wsl_distro_stats(distro: String) -> Result<DistroStats, AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<DistroStats, AtlasError> {
         let out = run_in_distro(&distro, STATS_SCRIPT)?;
         Ok(parse_distro_stats(&out))
     })
@@ -1115,8 +1118,8 @@ pub async fn wsl_distro_stats(distro: String) -> Result<DistroStats, String> {
 /// terminal lines - mirroring the silent `get_system_metrics` host poll. Selecting
 /// a stopped distro boots it.
 #[tauri::command]
-pub async fn wsl_distro_metrics(distro: String) -> Result<DistroMetrics, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn wsl_distro_metrics(distro: String) -> Result<DistroMetrics, AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<DistroMetrics, AtlasError> {
         let out = run_in_distro(&distro, METRICS_SCRIPT)?;
         Ok(parse_distro_metrics(&out))
     })
@@ -1130,7 +1133,7 @@ pub async fn wsl_distro_metrics(distro: String) -> Result<DistroMetrics, String>
 
 /// Run `wsl <args>` with UTF-8 output, mapping a non-zero exit to an error.
 /// wsl.exe sometimes writes its error text to stdout, so both streams are checked.
-fn run_wsl(args: &[&str]) -> Result<(), String> {
+fn run_wsl(args: &[&str]) -> Result<(), AtlasError> {
     let out = Command::new("wsl")
         .env("WSL_UTF8", "1")
         .args(args)
@@ -1145,7 +1148,7 @@ fn run_wsl(args: &[&str]) -> Result<(), String> {
     } else {
         err
     };
-    Err(if err.is_empty() { "wsl command failed".to_string() } else { err })
+    Err(if err.is_empty() { "wsl command failed".to_string().into() } else { err.into() })
 }
 
 /// Whether `wsl -l --running -q` currently lists the distro. Used to confirm a
@@ -1178,15 +1181,15 @@ fn wait_for_running_state(distro: &str, want: bool) {
 /// the UI runs frequently to keep running/stopped status fresh without the heavy
 /// registry + per-VHD list scan. No terminal emission (it would flood the panel).
 #[tauri::command]
-pub async fn wsl_running_names() -> Result<Vec<String>, String> {
-    tauri::async_runtime::spawn_blocking(|| {
+pub async fn wsl_running_names() -> Result<Vec<String>, AtlasError> {
+    tauri::async_runtime::spawn_blocking(|| -> Result<Vec<String>, AtlasError> {
         let out = Command::new("wsl")
             .env("WSL_UTF8", "1")
             .args(["-l", "--running", "-q"])
             .output()
             .map_err(|e| format!("Failed to list running distros: {}", e))?;
         if !out.status.success() {
-            return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+            return Err(String::from_utf8_lossy(&out.stderr).trim().to_string().into());
         }
         Ok(String::from_utf8_lossy(&out.stdout)
             .lines()
@@ -1221,7 +1224,7 @@ fn version_flag(version: u32) -> String {
 
 /// `wsl --import`, preserving the source WSL version when known (1 or 2) so a
 /// WSL1 distro is not silently upgraded to WSL2 (or vice-versa).
-fn import_distro(name: &str, dir: &str, tar: &str, version: u32) -> Result<(), String> {
+fn import_distro(name: &str, dir: &str, tar: &str, version: u32) -> Result<(), AtlasError> {
     let v = version.to_string();
     let mut args = vec!["--import", name, dir, tar];
     if version == 1 || version == 2 {
@@ -1288,7 +1291,7 @@ fn parse_distro_extras(out: &str) -> DistroExtras {
 /// the Linux user's home directory rather than the Windows path the app launched
 /// from (which would land the shell on a /mnt/… mount).
 #[tauri::command]
-pub async fn wsl_open_terminal(app: tauri::AppHandle, distro: String) -> Result<(), String> {
+pub async fn wsl_open_terminal(app: tauri::AppHandle, distro: String) -> Result<(), AtlasError> {
     emit_line(&app, format!("$ wt wsl -d {} --cd ~", distro), false);
     if Command::new("wt.exe").args(["wsl.exe", "-d", &distro, "--cd", "~"]).spawn().is_ok() {
         return Ok(());
@@ -1306,7 +1309,7 @@ pub async fn wsl_open_terminal(app: tauri::AppHandle, distro: String) -> Result<
 
 /// Open a distro's Linux filesystem in Explorer via the `\\wsl.localhost` share.
 #[tauri::command]
-pub async fn wsl_open_distro_folder(app: tauri::AppHandle, distro: String) -> Result<(), String> {
+pub async fn wsl_open_distro_folder(app: tauri::AppHandle, distro: String) -> Result<(), AtlasError> {
     let path = format!("\\\\wsl.localhost\\{}", distro);
     emit_line(&app, format!("$ explorer \"{}\"", path), false);
     // explorer.exe returns a non-zero exit code even on success, so don't check it.
@@ -1321,8 +1324,8 @@ pub async fn wsl_open_distro_folder(app: tauri::AppHandle, distro: String) -> Re
 /// distro, so the caller should only invoke this for running distros (otherwise
 /// it boots the distro). Read-only - no terminal emission.
 #[tauri::command]
-pub async fn wsl_distro_extras(distro: String) -> Result<DistroExtras, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn wsl_distro_extras(distro: String) -> Result<DistroExtras, AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<DistroExtras, AtlasError> {
         let out = run_in_distro(&distro, EXTRAS_SCRIPT)?;
         Ok(parse_distro_extras(&out))
     })
@@ -1332,8 +1335,8 @@ pub async fn wsl_distro_extras(distro: String) -> Result<DistroExtras, String> {
 
 /// Stop a distro: `wsl --terminate <distro>`. It stays stopped until next access.
 #[tauri::command]
-pub async fn wsl_terminate_distro(app: tauri::AppHandle, distro: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn wsl_terminate_distro(app: tauri::AppHandle, distro: String) -> Result<(), AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
         emit_line(&app, format!("$ wsl --terminate {}", distro), false);
         run_wsl(&["--terminate", &distro]).map_err(|e| {
             emit_line(&app, format!("  ✗ {}", e), true);
@@ -1349,9 +1352,9 @@ pub async fn wsl_terminate_distro(app: tauri::AppHandle, distro: String) -> Resu
 
 /// Restart a distro: terminate it, then boot it straight back up.
 #[tauri::command]
-pub async fn wsl_restart_distro(app: tauri::AppHandle, distro: String) -> Result<(), String> {
+pub async fn wsl_restart_distro(app: tauri::AppHandle, distro: String) -> Result<(), AtlasError> {
     use std::time::Duration;
-    tauri::async_runtime::spawn_blocking(move || {
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
         emit_line(&app, format!("$ wsl --terminate {}", distro), false);
         run_wsl(&["--terminate", &distro]).map_err(|e| {
             emit_line(&app, format!("  ✗ {}", e), true);
@@ -1373,8 +1376,8 @@ pub async fn wsl_restart_distro(app: tauri::AppHandle, distro: String) -> Result
 
 /// Boot a stopped distro (a no-op command brings the VM up).
 #[tauri::command]
-pub async fn wsl_start_distro(app: tauri::AppHandle, distro: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn wsl_start_distro(app: tauri::AppHandle, distro: String) -> Result<(), AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
         emit_line(&app, format!("$ wsl -d {} -u root true   # start", distro), false);
         run_wsl(&["-d", &distro, "-u", "root", "true"]).map_err(|e| {
             emit_line(&app, format!("  ✗ {}", e), true);
@@ -1397,8 +1400,8 @@ pub async fn wsl_clone_distro(
     new_name: String,
     install_dir: String,
     version: u32,
-) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
+) -> Result<(), AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
         std::fs::create_dir_all(&install_dir)
             .map_err(|e| format!("Cannot create install directory: {}", e))?;
 
@@ -1454,9 +1457,9 @@ pub async fn wsl_migrate_distro(
     was_default: bool,
     current_base: String,
     version: u32,
-) -> Result<MigrateResult, String> {
+) -> Result<MigrateResult, AtlasError> {
     use std::time::{SystemTime, UNIX_EPOCH};
-    tauri::async_runtime::spawn_blocking(move || {
+    tauri::async_runtime::spawn_blocking(move || -> Result<MigrateResult, AtlasError> {
         // Refuse to migrate into the distro's current install folder (or a subfolder
         // of it): `wsl --unregister` deletes that tree, which would take the backup
         // .tar with it and leave no way to recover. Compare case-insensitively with
@@ -1465,7 +1468,7 @@ pub async fn wsl_migrate_distro(
         let dest_n = norm(&new_dir);
         let base_n = norm(&current_base);
         if !base_n.is_empty() && (dest_n == base_n || dest_n.starts_with(&format!("{}/", base_n))) {
-            return Err("Choose a destination outside the distro's current install folder - migrating into it would delete the backup.".to_string());
+            return Err("Choose a destination outside the distro's current install folder - migrating into it would delete the backup.".to_string().into());
         }
 
         std::fs::create_dir_all(&new_dir)
@@ -1502,7 +1505,7 @@ pub async fn wsl_migrate_distro(
             emit_line(&app, format!("  ✗ migrated copy failed to boot: {} - keeping original, backup at {}", e, backup), true);
             run_wsl(&["--unregister", &temp_name]).ok();
             std::fs::remove_dir_all(&temp_dir).ok();
-            return Err(format!("Migrated copy failed to boot; original left untouched. Backup: {}", backup));
+            return Err(format!("Migrated copy failed to boot; original left untouched. Backup: {}", backup).into());
         }
 
         // Verified bootable - now replace the original at the new location.
@@ -1517,7 +1520,9 @@ pub async fn wsl_migrate_distro(
         emit_line(&app, format!("$ wsl --import {} \"{}\" \"{}\"{}", distro, new_dir, backup, version_flag(version)), false);
         if let Err(e) = import_distro(&distro, &new_dir, &backup, version) {
             emit_line(&app, format!("  ✗ re-import failed: {} - recover with: wsl --import {} \"{}\" \"{}\"", e, distro, new_dir, backup), true);
-            return Err(format!("Re-import failed: {}. Recover from the backup: {}", e, backup));
+            return Err(AtlasError::new(ErrorKind::Unknown, format!("The migrated copy could not be re-imported: {}", e))
+                .hint(format!("Your data is intact. Restore it with: wsl --import {} <destination> \"{}\"", distro, backup))
+                .detail(backup.clone()));
         }
 
         // Clean up the temp verification copy.
@@ -1565,12 +1570,13 @@ fn registered_distro_names() -> Vec<String> {
 ///    destructive command, not only on the side that draws the button.
 ///  * the name must still be registered, so a stale or crafted value cannot reach
 ///    `wsl.exe` (a leading `-`, for instance, would be read there as a flag).
-fn check_unregister(distro: &str, confirm: &str, registered: &[String]) -> Result<(), String> {
+fn check_unregister(distro: &str, confirm: &str, registered: &[String]) -> Result<(), AtlasError> {
     if confirm.trim() != distro {
-        return Err("Confirmation does not match the distribution name.".to_string());
+        return Err(AtlasError::invalid("The typed name does not match the distribution, so nothing was deleted."));
     }
     if !registered.iter().any(|n| n == distro) {
-        return Err(format!("{} is not a registered distribution.", distro));
+        return Err(AtlasError::new(ErrorKind::NotFound, format!("{} is not a registered distribution.", distro))
+            .hint("Refresh the distro list. It may have been unregistered from another window or a terminal."));
     }
     Ok(())
 }
@@ -1582,8 +1588,8 @@ pub async fn wsl_unregister_distro(
     app: tauri::AppHandle,
     distro: String,
     confirm: String,
-) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
+) -> Result<(), AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
         check_unregister(&distro, &confirm, &registered_distro_names())?;
 
         emit_line(&app, format!("# Deleting {}: destroys its disk and every file in it, with no undo", distro), false);
@@ -1713,8 +1719,8 @@ fn parse_services(out: &str) -> ServiceList {
 /// List a distro's systemd services (enabled + active state). Reads inside the
 /// distro, so it boots a stopped one - the caller gates on user intent.
 #[tauri::command]
-pub async fn wsl_list_services(distro: String) -> Result<ServiceList, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn wsl_list_services(distro: String) -> Result<ServiceList, AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<ServiceList, AtlasError> {
         let out = run_in_distro(&distro, SERVICES_SCRIPT)?;
         Ok(parse_services(&out))
     })
@@ -1749,8 +1755,8 @@ fn parse_service_detail(out: &str) -> ServiceDetail {
 
 /// Detailed status for one service (dependencies, path, PID).
 #[tauri::command]
-pub async fn wsl_service_detail(distro: String, service: String) -> Result<ServiceDetail, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn wsl_service_detail(distro: String, service: String) -> Result<ServiceDetail, AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<ServiceDetail, AtlasError> {
         let script = format!(
             "systemctl show {} -p FragmentPath,MainPID,Requires,After 2>/dev/null",
             shell_quote(&service)
@@ -1775,8 +1781,8 @@ pub async fn wsl_service_set(
     distro: String,
     service: String,
     enable: bool,
-) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
+) -> Result<(), AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
         let verb = if enable { "enable" } else { "disable" };
         emit_line(&app, format!("$ wsl -d {} -u root systemctl {} {}", distro, verb, service), false);
         // No `2>&1`: systemctl writes its symlink notice to stderr even on success,
@@ -1810,9 +1816,9 @@ pub struct BenchmarkResult {
 /// time the first access (`wsl -d <distro> -u root true`) from the host. Mutating
 /// (terminates the distro), so the UI confirms first.
 #[tauri::command]
-pub async fn wsl_benchmark_boot(app: tauri::AppHandle, distro: String) -> Result<BenchmarkResult, String> {
+pub async fn wsl_benchmark_boot(app: tauri::AppHandle, distro: String) -> Result<BenchmarkResult, AtlasError> {
     use std::time::{Duration, Instant};
-    tauri::async_runtime::spawn_blocking(move || {
+    tauri::async_runtime::spawn_blocking(move || -> Result<BenchmarkResult, AtlasError> {
         emit_line(&app, format!("# Cold-boot benchmark - terminating {} first", distro), false);
         emit_line(&app, format!("$ wsl --terminate {}", distro), false);
         run_wsl(&["--terminate", &distro]).ok(); // already-stopped is fine
@@ -1943,8 +1949,8 @@ fn parse_shell_profile(out: &str) -> ShellProfile {
 
 /// Profile the default user's shell startup. Read-only (boots a stopped distro).
 #[tauri::command]
-pub async fn wsl_profile_shell(distro: String) -> Result<ShellProfile, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn wsl_profile_shell(distro: String) -> Result<ShellProfile, AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<ShellProfile, AtlasError> {
         let out = run_in_distro_as(&distro, None, PROFILE_SCRIPT)?;
         Ok(parse_shell_profile(&out))
     })
@@ -2010,8 +2016,8 @@ pub async fn wsl_check() -> WslStatus {
 /// `silent` skips terminal-output events so background polling does not flood the
 /// terminal panel with a list command every few seconds.
 #[tauri::command]
-pub async fn wsl_list_distros(app: tauri::AppHandle, silent: bool) -> Result<Vec<WslDistro>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn wsl_list_distros(app: tauri::AppHandle, silent: bool) -> Result<Vec<WslDistro>, AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<WslDistro>, AtlasError> {
         if !silent {
             emit_line(&app, "$ Get-ChildItem 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Lxss'", false);
             emit_line(&app, "$ wsl -l --running", false);
@@ -2053,7 +2059,7 @@ $list | ConvertTo-Json -Compress -Depth 3
             .map_err(|e| format!("powershell: {}", e))?;
 
         if !out.status.success() {
-            return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+            return Err(String::from_utf8_lossy(&out.stderr).trim().to_string().into());
         }
 
         let text = String::from_utf8_lossy(&out.stdout);

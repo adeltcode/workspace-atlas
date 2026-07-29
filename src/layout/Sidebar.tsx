@@ -1,18 +1,13 @@
-import { LayoutDashboard, Box, HardDrive, Package, Settings, FileText, FileCode2, FileKey } from 'lucide-react'
+/* The rail.
+ *
+ * Modules with their children nested underneath, because a compose project's
+ * status and a distro's size are things you read at a glance rather than go and
+ * look up. The guide line carries the nesting instead of deep indentation, so
+ * three levels stay readable at 212px. */
+import { LayoutDashboard, Box, HardDrive, Package, Settings, Keyboard } from 'lucide-react'
 import clsx from 'clsx'
-import { useAppStore, type View, type DockerTab, type WslView } from '../store/appStore'
+import { useAppStore, type DockerTab, type WslView } from '../store/appStore'
 import { composeStatusLabel } from '../utils/format'
-
-// ── Top-level module nav ──────────────────────────────────────────────────────
-
-const TOP_NAV: { view: View; label: string; icon: React.ElementType }[] = [
-  { view: 'dashboard',  label: 'Dashboard', icon: LayoutDashboard },
-  { view: 'docker',     label: 'Docker',    icon: Box             },
-  { view: 'wsl',        label: 'WSL',       icon: HardDrive       },
-  { view: 'packages',   label: 'Packages',  icon: Package         },
-]
-
-// ── Docker child tabs ─────────────────────────────────────────────────────────
 
 const DOCKER_TABS: { id: DockerTab; label: string }[] = [
   { id: 'overview',   label: 'Overview'   },
@@ -22,237 +17,174 @@ const DOCKER_TABS: { id: DockerTab; label: string }[] = [
   { id: 'networks',   label: 'Networks'   },
   { id: 'compose',    label: 'Compose'    },
   { id: 'prune',      label: 'Prune'      },
-  { id: 'log',        label: 'Log'        },
+  { id: 'log',        label: 'Run log'    },
 ]
 
-// ── WSL child nav ───────────────────────────────────────────────────────────────
-// Dashboard (bento overview, distros nested under it) + the machine-wide
-// .wslconfig editor. Per-distro tabs live inside the distro page, not here.
-
-// ── Component ─────────────────────────────────────────────────────────────────
-
 export default function Sidebar() {
-  const activeView           = useAppStore(s => s.activeView)
-  const setActiveView        = useAppStore(s => s.setActiveView)
-  const dockerTab            = useAppStore(s => s.dockerTab)
-  const setDockerTab         = useAppStore(s => s.setDockerTab)
-  const dockerBadges         = useAppStore(s => s.dockerBadges)
+  const activeView    = useAppStore(s => s.activeView)
+  const setActiveView = useAppStore(s => s.setActiveView)
+  const dockerTab     = useAppStore(s => s.dockerTab)
+  const setDockerTab  = useAppStore(s => s.setDockerTab)
+  const dockerBadges  = useAppStore(s => s.dockerBadges)
   const composeProjectsNav   = useAppStore(s => s.composeProjectsNav)
   const composeActiveProject = useAppStore(s => s.composeActiveProject)
-  const composeFilesNav      = useAppStore(s => s.composeFilesNav)
-  const composeActiveFilePath = useAppStore(s => s.composeActiveFilePath)
-  const wslView              = useAppStore(s => s.wslView)
-  const setWslView           = useAppStore(s => s.setWslView)
-  const wslSelectedDistro    = useAppStore(s => s.wslSelectedDistro)
-  const wslDistrosNav        = useAppStore(s => s.wslDistrosNav)
-  const wslBadges            = useAppStore(s => s.wslBadges)
+  const wslView       = useAppStore(s => s.wslView)
+  const setWslView    = useAppStore(s => s.setWslView)
+  const wslSelectedDistro = useAppStore(s => s.wslSelectedDistro)
+  const wslDistrosNav = useAppStore(s => s.wslDistrosNav)
+  const wslBadges     = useAppStore(s => s.wslBadges)
+  const setShortcutsOpen = useAppStore(s => s.setShortcutsOpen)
 
-  const goDockerTab = (id: DockerTab) => {
-    setActiveView('docker')
-    setDockerTab(id)
-  }
-
-  const goWslView = (v: WslView) => {
-    setActiveView('wsl')
-    setWslView(v)
-  }
-
+  const goDockerTab = (id: DockerTab) => { setActiveView('docker'); setDockerTab(id) }
+  const goWslView   = (v: WslView)    => { setActiveView('wsl'); setWslView(v) }
   const goWslDistro = (name: string) => {
     setActiveView('wsl')
     useAppStore.getState().setWslSelectedDistro(name)
     setWslView('distro')
   }
-
   const goComposeProject = (name: string) => {
     setActiveView('docker')
     setDockerTab('compose')
     useAppStore.getState().setComposePreselect(name)
   }
 
-  const goComposeOverview = () => {
-    setActiveView('docker')
-    setDockerTab('compose')
-    useAppStore.getState().setComposeShowOverview(true)
-    useAppStore.getState().setComposeActiveProject(null)
-  }
-
-  const openComposeFile = (path: string) => {
-    setActiveView('docker')
-    setDockerTab('compose')
-    useAppStore.getState().setComposeFileSelect(path)
-  }
-
-  const childBadge = (id: DockerTab): string | undefined => {
+  const tabCount = (id: DockerTab): string | undefined => {
     if (!dockerBadges) return undefined
-    if (id === 'images'     && dockerBadges.images > 0)  return String(dockerBadges.images)
-    if (id === 'containers' && dockerBadges.containers)  return dockerBadges.containers
-    if (id === 'volumes'    && dockerBadges.volumes)     return dockerBadges.volumes
+    if (id === 'images'     && dockerBadges.images > 0) return String(dockerBadges.images)
+    if (id === 'containers' && dockerBadges.containers) return dockerBadges.containers
+    if (id === 'volumes'    && dockerBadges.volumes)    return dockerBadges.volumes
     return undefined
   }
 
   return (
-    <nav className="sidebar">
-      <div className="sidebar-nav-group">
-        <span className="sidebar-section-label">Modules</span>
-        <ul className="sidebar-nav">
-          {TOP_NAV.map(({ view, label, icon: Icon }) => (
-            <li key={view}>
-              <button
-                className={clsx('sidebar-item', activeView === view && 'active')}
-                onClick={() => setActiveView(view)}
-                aria-current={activeView === view ? 'page' : undefined}
-              >
-                <span className="sidebar-item-icon-wrap"><Icon size={15} /></span>
-                <span className="sidebar-item-label">{label}</span>
-              </button>
-
-              {/* Docker child nav - only when Docker module is active */}
-              {view === 'docker' && activeView === 'docker' && (
-                <ul className="sidebar-children">
-                  {DOCKER_TABS.map(({ id, label: tabLabel }) => {
-                    const badge = childBadge(id)
-                    return (
-                      <li key={id}>
-                        <button
-                          className={clsx('sidebar-child-item', dockerTab === id && 'active')}
-                          onClick={() => goDockerTab(id)}
-                        >
-                          <span className="sidebar-child-label">{tabLabel}</span>
-                          {badge && <span className="sidebar-child-badge">{badge}</span>}
-                        </button>
-
-                        {/* Compose project grandchild items - only when Compose tab is active */}
-                        {id === 'compose' && dockerTab === 'compose' && composeProjectsNav.length > 0 && (
-                          <ul className="sidebar-grandchildren">
-                            {/* Overview item - always first */}
-                            <li>
-                              <button
-                                className={clsx('sidebar-grandchild-item', composeActiveProject === null && 'active')}
-                                onClick={goComposeOverview}
-                              >
-                                <span className="sidebar-compose-dot" style={{ background: 'var(--color-text-tertiary)', opacity: 0.5 }} />
-                                <span className="sidebar-grandchild-label">Overview</span>
-                              </button>
-                            </li>
-                            {composeProjectsNav.map(p => {
-                              const { dot, running, total } = composeStatusLabel(p.status)
-                              const isActive = dockerTab === 'compose' && composeActiveProject === p.name
-                              return (
-                                <li key={p.name}>
-                                  <button
-                                    className={clsx('sidebar-grandchild-item', isActive && 'active')}
-                                    onClick={() => goComposeProject(p.name)}
-                                    title={`${p.name} - ${running}/${total} running`}
-                                  >
-                                    <span className={clsx('sidebar-compose-dot', dot)} />
-                                    <span className="sidebar-grandchild-label">{p.name}</span>
-                                    {total > 0 && (
-                                      <span className={clsx(
-                                        'sidebar-compose-frac',
-                                        dot === 'running' ? 'frac--ok'
-                                          : dot === 'partial' ? 'frac--warn'
-                                          : 'frac--off',
-                                      )}>
-                                        {running}/{total}
-                                      </span>
-                                    )}
-                                  </button>
-
-                                  {/* Project files - sidebar menu in place of editor tabs */}
-                                  {isActive && composeFilesNav.length > 0 && (
-                                    <ul className="sidebar-files">
-                                      {composeFilesNav.map(f => (
-                                        <li key={f.path}>
-                                          <button
-                                            className={clsx('sidebar-file-item', composeActiveFilePath === f.path && 'active')}
-                                            onClick={() => openComposeFile(f.path)}
-                                            title={f.path}
-                                          >
-                                            <span className="sidebar-file-icon">
-                                              {f.kind === 'dockerfile' ? <FileCode2 size={12} />
-                                                : f.kind === 'env' ? <FileKey size={12} />
-                                                : <FileText size={12} />}
-                                            </span>
-                                            <span className="sidebar-file-label">{f.label}</span>
-                                          </button>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  )}
-                                </li>
-                              )
-                            })}
-                          </ul>
-                        )}
-                      </li>
-                    )
-                  })}
-                </ul>
-              )}
-
-              {/* WSL child nav - only when WSL module is active */}
-              {view === 'wsl' && activeView === 'wsl' && (
-                <ul className="sidebar-children">
-                  <li>
-                    <button
-                      className={clsx('sidebar-child-item', (wslView === 'dashboard' || wslView === 'distro') && 'active')}
-                      onClick={() => goWslView('dashboard')}
-                    >
-                      <span className="sidebar-child-label">Dashboard</span>
-                      {wslBadges?.distros && (
-                        <span className="sidebar-child-badge">{wslBadges.distros}</span>
-                      )}
-                    </button>
-
-                    {/* Distro grandchildren - each distribution is its own page */}
-                    {(wslView === 'dashboard' || wslView === 'distro') && wslDistrosNav.length > 0 && (
-                      <ul className="sidebar-grandchildren">
-                        {wslDistrosNav.map(d => (
-                          <li key={d.name}>
-                            <button
-                              className={clsx('sidebar-grandchild-item', wslView === 'distro' && wslSelectedDistro === d.name && 'active')}
-                              onClick={() => goWslDistro(d.name)}
-                              title={`${d.name}${d.is_default ? ' (default)' : ''} · ${d.running ? 'running' : 'stopped'}`}
-                            >
-                              <span className={clsx('sidebar-compose-dot', d.running ? 'running' : 'stopped')} />
-                              <span className="sidebar-grandchild-label">{d.name}</span>
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </li>
-                  <li>
-                    <button
-                      className={clsx('sidebar-child-item', wslView === 'install' && 'active')}
-                      onClick={() => goWslView('install')}
-                    >
-                      <span className="sidebar-child-label">Install distro</span>
-                    </button>
-                  </li>
-                  <li>
-                    <button
-                      className={clsx('sidebar-child-item', wslView === 'wslconfig' && 'active')}
-                      onClick={() => goWslView('wslconfig')}
-                    >
-                      <span className="sidebar-child-label">.wslconfig</span>
-                    </button>
-                  </li>
-                </ul>
-              )}
-            </li>
-          ))}
-        </ul>
+    <nav className="sidebar" aria-label="Modules">
+      <div className="rail-group">
+        <button
+          className={clsx('rail-item', activeView === 'dashboard' && 'active')}
+          onClick={() => setActiveView('dashboard')}
+          aria-current={activeView === 'dashboard' ? 'page' : undefined}
+        >
+          <span className="rail-icon"><LayoutDashboard size={15} /></span>
+          <span className="rail-label">Overview</span>
+        </button>
       </div>
 
-      <div className="sidebar-footer">
-        <span className="sidebar-version">v0.1.0-dev</span>
+      <span className="rail-section">Environments</span>
+      <div className="rail-group">
         <button
-          className={clsx('sidebar-settings-btn', activeView === 'settings' && 'active')}
-          onClick={() => setActiveView('settings')}
-          title="Settings"
+          className={clsx('rail-item', activeView === 'docker' && 'active')}
+          onClick={() => setActiveView('docker')}
+          aria-current={activeView === 'docker' ? 'page' : undefined}
         >
-          <Settings size={14} />
+          <span className="rail-icon"><Box size={15} /></span>
+          <span className="rail-label">Docker</span>
+          {dockerBadges?.containers && <span className="rail-count">{dockerBadges.containers}</span>}
+        </button>
+
+        {activeView === 'docker' && (
+          <div className="rail-kids">
+            {DOCKER_TABS.map(({ id, label }) => (
+              <div key={id}>
+                <button
+                  className={clsx('rail-kid', dockerTab === id && 'active')}
+                  onClick={() => goDockerTab(id)}
+                  style={{ width: '100%' }}
+                >
+                  <span className="rail-kid-label">{label}</span>
+                  {tabCount(id) && <span className="rail-frac">{tabCount(id)}</span>}
+                </button>
+
+                {/* Compose projects: the grandchild level, with live state. */}
+                {id === 'compose' && dockerTab === 'compose' && composeProjectsNav.length > 0 && (
+                  <div className="rail-kids">
+                    {composeProjectsNav.map(p => {
+                      const { dot, running, total } = composeStatusLabel(p.status)
+                      return (
+                        <button
+                          key={p.name}
+                          className={clsx('rail-kid', composeActiveProject === p.name && 'active')}
+                          onClick={() => goComposeProject(p.name)}
+                          style={{ width: '100%' }}
+                        >
+                          <span className={clsx('rail-dot', dot)} />
+                          <span className="rail-kid-label">{p.name}</span>
+                          {total > 0 && <span className="rail-frac">{running}/{total}</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button
+          className={clsx('rail-item', activeView === 'wsl' && 'active')}
+          onClick={() => setActiveView('wsl')}
+          aria-current={activeView === 'wsl' ? 'page' : undefined}
+        >
+          <span className="rail-icon"><HardDrive size={15} /></span>
+          <span className="rail-label">WSL</span>
+          {wslBadges?.distros && <span className="rail-count">{wslBadges.distros}</span>}
+        </button>
+
+        {activeView === 'wsl' && (
+          <div className="rail-kids">
+            {wslDistrosNav.map(d => (
+              <button
+                key={d.name}
+                className={clsx('rail-kid', wslView === 'distro' && wslSelectedDistro === d.name && 'active')}
+                onClick={() => goWslDistro(d.name)}
+                style={{ width: '100%' }}
+              >
+                <span className={clsx('rail-dot', d.running ? 'running' : 'stopped')} />
+                <span className="rail-kid-label">{d.name}</span>
+                {d.is_default && <span className="rail-frac">default</span>}
+              </button>
+            ))}
+            <button
+              className={clsx('rail-kid', wslView === 'install' && 'active')}
+              onClick={() => goWslView('install')}
+              style={{ width: '100%' }}
+            >
+              <span className="rail-kid-label">Install distro</span>
+            </button>
+            <button
+              className={clsx('rail-kid', wslView === 'wslconfig' && 'active')}
+              onClick={() => goWslView('wslconfig')}
+              style={{ width: '100%' }}
+            >
+              <span className="rail-kid-label">.wslconfig</span>
+            </button>
+          </div>
+        )}
+      </div>
+
+      <span className="rail-section">System</span>
+      <div className="rail-group">
+        <button
+          className={clsx('rail-item', activeView === 'packages' && 'active')}
+          onClick={() => setActiveView('packages')}
+          aria-current={activeView === 'packages' ? 'page' : undefined}
+        >
+          <span className="rail-icon"><Package size={15} /></span>
+          <span className="rail-label">Packages</span>
+        </button>
+        <button
+          className={clsx('rail-item', activeView === 'settings' && 'active')}
+          onClick={() => setActiveView('settings')}
+          aria-current={activeView === 'settings' ? 'page' : undefined}
+        >
+          <span className="rail-icon"><Settings size={15} /></span>
+          <span className="rail-label">Settings</span>
+        </button>
+      </div>
+
+      <div className="rail-foot rail-group">
+        <button className="rail-item" onClick={() => setShortcutsOpen(true)}>
+          <span className="rail-icon"><Keyboard size={15} /></span>
+          <span className="rail-label">Keyboard</span>
         </button>
       </div>
     </nav>

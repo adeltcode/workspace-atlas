@@ -1,14 +1,14 @@
 import { useEffect, useRef } from 'react'
-import { HardDrive, RefreshCw, Upload, Star } from 'lucide-react'
+import { RefreshCw, Upload } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore, type WslDistroTab } from '../store/appStore'
 import { useVisiblePoll } from '../hooks/useVisiblePoll'
 import { useWslData } from '../features/wsl/hooks'
-import DistroSwitcher from '../features/wsl/components/DistroSwitcher'
 import WslHome from '../features/wsl/components/WslHome'
 import WslDistroPage from '../features/wsl/components/WslDistroPage'
 import WslConfigTab from '../features/wsl/components/WslConfigTab'
 import WslInstallWizard from '../features/wsl/components/WslInstallWizard'
+import { SheetHead, Prerequisite, Button, ErrorBanner } from '../components/ui'
 
 const DISTRO_TAB_SUBTITLES: Record<WslDistroTab, string> = {
   overview:    'Live CPU, memory, disk, network, and process metrics inside this distro',
@@ -26,7 +26,7 @@ export default function WslView() {
   const { status, distros, loading, error, reload, refresh, refreshRunning } = useWslData()
   const available  = status?.available ?? false
   const runningCnt = distros.filter(d => d.running).length
-  const defaultDistro = distros.find(d => d.is_default)
+  const selectedDistro = distros.find(d => d.name === selected)
 
   // Publish the distro list + badge to the store for the sidebar nav.
   useEffect(() => {
@@ -87,69 +87,84 @@ export default function WslView() {
 
   return (
     <div className="view-container wsl-view">
-      <div className="view-header">
-        <div className="view-header-icon"><HardDrive size={18} /></div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="view-header-title-row">
-            <h1 className="view-title">WSL</h1>
-            {status && (
-              <>
-                <span className={clsx('status-dot', available ? 'online' : 'offline')} />
-                <span className="status-text">
-                  {available
-                    ? `${distros.length} distro${distros.length !== 1 ? 's' : ''}${runningCnt ? ` · ${runningCnt} running` : ''}`
-                    : 'not installed'}
-                </span>
-              </>
+      <div className="page-head">
+      <SheetHead
+        crumbs={[
+          { label: 'Overview', onClick: () => useAppStore.getState().setActiveView('dashboard') },
+          ...(wslView === 'distro' && selected
+            ? [{ label: 'WSL', onClick: () => useAppStore.getState().setWslView('dashboard') }, { label: selected }]
+            : [{ label: 'WSL' }]),
+        ]}
+        title={wslView === 'distro' && selected ? selected : 'WSL'}
+        subtitle={subtitle}
+        /* On a distro page the header describes that distro, not the module: the
+           distro count, the default marker and the switcher were all repeating
+           what the rail already shows, next to a name the page repeated too. */
+        status={
+          wslView === 'distro' && selectedDistro ? (
+            <span className="pill">
+              <span className={clsx('rail-dot', selectedDistro.running ? 'running' : 'stopped')} />
+              {selectedDistro.running ? 'Running' : 'Stopped'} · WSL {selectedDistro.version === 1 ? '1' : '2'}
+            </span>
+          ) : status && (
+            <span className="pill">
+              <span className={clsx('rail-dot', available ? 'running' : 'stopped')} />
+              {available
+                ? `${distros.length} distro${distros.length !== 1 ? 's' : ''}${runningCnt ? `, ${runningCnt} running` : ''}`
+                : 'not installed'}
+            </span>
+          )
+        }
+        actions={
+          <>
+            {available && wslView === 'dashboard' && (
+              <Button variant="primary" onClick={() => useAppStore.getState().setWslImportOpen(true)}>
+                <Upload size={13} /> Import distro
+              </Button>
             )}
-            {available && defaultDistro && (
-              <span className="wsl-header-default" title={`${defaultDistro.name} is the default distribution`}>
-                <Star size={11} /> {defaultDistro.name}
-              </span>
-            )}
-            {available && wslView === 'distro' && <DistroSwitcher distros={distros} />}
-          </div>
-          <p className="view-subtitle">{subtitle}</p>
-        </div>
-        <button className="btn-refresh" onClick={reload} disabled={loading} title="Refresh (Ctrl+R)">
-          <RefreshCw size={13} className={loading ? 'spin' : ''} />
-          Refresh
-        </button>
-        {available && wslView === 'dashboard' && (
-          <button className="btn-filled btn-filled--accent" onClick={() => useAppStore.getState().setWslImportOpen(true)}>
-            <Upload size={13} /> Import distro
-          </button>
-        )}
+            <Button onClick={reload} disabled={loading}>
+              <RefreshCw size={13} className={loading ? 'spin' : ''} />
+              Refresh
+            </Button>
+          </>
+        }
+      />
       </div>
 
-      {error && (
-        <div className="error-banner" style={{ marginTop: 20 }}>
-          <span className="error-title">Error</span>
-          <span className="error-msg">{error}</span>
-        </div>
-      )}
+      <div className="page-scroll">
+      {error && <ErrorBanner>{error}</ErrorBanner>}
 
       {!loading && status && !available && (
-        <div className="offline-card" style={{ marginTop: 20 }}>
-          <p className="offline-title">WSL is not installed</p>
-          <p className="offline-desc">
-            The Windows Subsystem for Linux is required for this module.
-            Install it from an elevated terminal, then click Refresh.
-          </p>
-          <code className="offline-code">wsl --install</code>
-        </div>
+        <Prerequisite
+          title="WSL is not installed"
+          description="This module needs the Windows Subsystem for Linux. The rest of Workspace Atlas keeps working without it."
+          steps={[
+            'Open Windows Terminal or PowerShell as Administrator',
+            'Run the command below',
+            'Restart Windows when the installer asks',
+            'Return here and refresh',
+          ]}
+          command="wsl --install"
+          actions={
+            <Button onClick={reload} disabled={loading}>
+              <RefreshCw size={13} className={loading ? 'spin' : ''} />
+              Refresh
+            </Button>
+          }
+        />
       )}
 
       {available && (
-        <div className="wsl-tab-content">
+        <>
           {wslView === 'dashboard' && <WslHome distros={distros} loading={loading} onReload={reload} />}
           {wslView === 'distro'    && <WslDistroPage distros={distros} onReload={reload} />}
           {wslView === 'install'   && <WslInstallWizard distros={distros} onReload={reload} />}
           {wslView === 'wslconfig' && (
             <WslConfigTab runningNames={distros.filter(d => d.running).map(d => d.name)} onAfterShutdown={reload} />
           )}
-        </div>
+        </>
       )}
+      </div>
     </div>
   )
 }

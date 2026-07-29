@@ -182,6 +182,12 @@ interface AppState {
   composeLogContext: ComposeLogContext | null
   openComposeLogs: (ctx: ComposeLogContext) => void
   closeComposeLogs: () => void
+
+  // ── The index (Ctrl+K) and the keyboard reference (ephemeral)
+  indexOpen: boolean
+  setIndexOpen: (open: boolean) => void
+  shortcutsOpen: boolean
+  setShortcutsOpen: (open: boolean) => void
 }
 
 function getSystemTheme(): Theme {
@@ -228,7 +234,9 @@ export const useAppStore = create<AppState>()(
 
       // ── Layout sizes (sidebarWidth 0 = auto/fit-content)
       sidebarWidth:  0,
-      terminalHeight: 260,
+      // Enough to read the last few commands without the pane claiming a
+      // quarter of the window before the user has asked it to.
+      terminalHeight: 180,
       setSidebarWidth:   (sidebarWidth)   => set({ sidebarWidth }),
       setTerminalHeight: (terminalHeight) => set({ terminalHeight }),
 
@@ -321,6 +329,12 @@ export const useAppStore = create<AppState>()(
 
       // ── Terminal
       terminalLines: [],
+      // Collapsed by default, and persisted below. The claim that every
+      // operation shows its command is carried by the 32px header strip, which
+      // is visible whether the pane is open or not - so the promise is still on
+      // screen at launch without a third of the window going to a pane the user
+      // has not asked for yet. Ctrl+` opens it, and an operation that streams
+      // output (compose logs) opens it itself.
       terminalOpen: false,
       addTerminalLine: (text, type) =>
         set((s) => ({
@@ -349,6 +363,12 @@ export const useAppStore = create<AppState>()(
         set({ composeLogContext, terminalTab: 'logs', terminalOpen: true }),
       closeComposeLogs: () =>
         set({ composeLogContext: null, terminalTab: 'shell' }),
+
+      // ── The index + keyboard reference
+      indexOpen: false,
+      setIndexOpen: (indexOpen) => set({ indexOpen }),
+      shortcutsOpen: false,
+      setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
     }),
     {
       name: 'workspace-atlas-v1',
@@ -361,6 +381,7 @@ export const useAppStore = create<AppState>()(
         wslSelectedDistro: s.wslSelectedDistro,
         sidebarWidth:    s.sidebarWidth,
         terminalHeight:  s.terminalHeight,
+        terminalOpen:    s.terminalOpen,
         backupDir:       s.backupDir,
         dockerKeepList:  s.dockerKeepList,
         dockerLogs:      s.dockerLogs,

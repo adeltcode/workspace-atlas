@@ -10,6 +10,7 @@ import { getIniValue } from '../ini'
 import type { WslDistro, DistroMetrics } from '../types'
 import { bytesToHuman, formatDuration } from '../../../utils/format'
 import { useVisiblePoll } from '../../../hooks/useVisiblePoll'
+import { ErrorBanner } from '../../../components/ui'
 
 type BarColor = 'accent' | 'success' | 'warning' | 'danger'
 
@@ -62,7 +63,7 @@ function Gauge({ icon: Icon, label, value, pct, sub, color, tip }: {
         <span className="wsl-gauge-pct">{pct === null ? '-' : `${Math.round(pct)}%`}</span>
       </div>
       <div className="wsl-gauge-track">
-        <div className={clsx('wsl-gauge-fill', `wsl-gauge-fill--${color}`)} style={{ width: `${width}%` }} />
+        <div className={clsx('wsl-gauge-fill', `wsl-gauge-fill--${color}`)} style={{ transform: `scaleX(${width / 100})` }} />
         <span className={clsx('wsl-gauge-dot', `wsl-gauge-dot--${color}`)} style={{ left: `${width}%` }} />
       </div>
     </div>
@@ -212,10 +213,7 @@ export default function WslDashboardTab({ distros, onReload }: {
       )}
 
       {running && error && (
-        <div className="error-banner">
-          <span className="error-title">Error</span>
-          <span className="error-msg">{error}</span>
-        </div>
+        <ErrorBanner error={error} />
       )}
 
       {running && !metrics && !error && <DashboardSkeleton />}
@@ -267,12 +265,16 @@ export default function WslDashboardTab({ distros, onReload }: {
               <span className="wsl-chip-label">docker</span>
               <span className="wsl-chip-val">{metrics.docker_present ? `${metrics.docker_running} running` : 'not installed'}</span>
             </div>
-            <div className={clsx('wsl-chip', metrics.zombies > 0 ? 'wsl-chip--warn' : 'wsl-chip--ok')}>
-              <Skull size={12} />
-              <span className="wsl-chip-label">zombies</span>
-              <span className="wsl-chip-val">{metrics.zombies}</span>
-              <InfoDot tip={TIP.zombies} />
-            </div>
+            {/* Zombies only earn a chip when there are some. "zombies 0" is a
+                stat that reports nothing, and it sat next to three that do. */}
+            {metrics.zombies > 0 && (
+              <div className="wsl-chip wsl-chip--warn">
+                <Skull size={12} />
+                <span className="wsl-chip-label">zombies</span>
+                <span className="wsl-chip-val">{metrics.zombies}</span>
+                <InfoDot tip={TIP.zombies} />
+              </div>
+            )}
             <div className="wsl-chip wsl-chip--muted">
               <Clock size={12} />
               <span className="wsl-chip-label">uptime</span>

@@ -1,81 +1,35 @@
+/* Overview.
+ *
+ * A user arrives here because something is wrong, so the page answers what is
+ * the state of this machine, what can I get back, and what has been done to it.
+ * Reclaimable space leads, because "my disk is full" is the reason this product
+ * exists. */
 import { useEffect, useState } from 'react'
-import { Box, HardDrive, Package, ArrowRight, Cpu, MemoryStick } from 'lucide-react'
+import { Box, HardDrive, Package, Layers, Database, ChevronRight, RefreshCw } from 'lucide-react'
 import clsx from 'clsx'
-import { useAppStore, type View, type ActivityModule } from '../store/appStore'
+import { useAppStore, type ActivityModule, type DockerTab } from '../store/appStore'
 import { useVisiblePoll } from '../hooks/useVisiblePoll'
 import { getSystemMetrics, type SystemMetrics } from '../features/system/api'
 import { bytesToHuman, timeAgo } from '../utils/format'
+import { SheetHead, SectionHead, EmptyState, Button, StatCard, StatRow } from '../components/ui'
 
-const MODULE_ICON: Record<ActivityModule, typeof Box> = {
-  docker: Box, wsl: HardDrive, packages: Package,
-}
+const MODULE_ICON: Record<ActivityModule, typeof Box> = { docker: Box, wsl: HardDrive, packages: Package }
 
-const MODULES = [
-  {
-    view: 'docker' as View,
-    icon: Box,
-    title: 'Docker & Containers',
-    description: '3-level pruning engine, image browser, dry-run size estimates, and keep-list management.',
-    tags: ['Prune', 'Images', 'Disk Usage', 'Keep-List'],
-    color: 'accent',
-  },
-  {
-    view: 'wsl' as View,
-    icon: HardDrive,
-    title: 'WSL',
-    description: 'Monitor distros live, manage systemd services, benchmark startup, and compact or migrate VHDs.',
-    tags: ['Dashboard', 'Distros', 'Startup', 'Performance'],
-    color: 'success',
-  },
-  {
-    view: 'packages' as View,
-    icon: Package,
-    title: 'Packages',
-    description: 'Everything installed across winget, npm, and pip in one searchable list, exportable as CSV.',
-    tags: ['Scan', 'Search', 'Outdated', 'CSV'],
-    color: 'warning',
-  },
-] as const
-
-type BarColor = 'accent' | 'success' | 'warning' | 'danger'
-
-/** Colour a saturation gauge by severity: neutral until it gets full, then
- *  amber, then red. Keeps colour meaningful instead of merely categorical. */
-function levelColor(pct: number): BarColor {
-  if (pct >= 90) return 'danger'
-  if (pct >= 75) return 'warning'
-  return 'accent'
-}
-
-/** A labelled usage bar (CPU, memory, or a disk). */
-function MetricCard({ icon: Icon, label, pct, sub, color }: {
-  icon: typeof Cpu; label: string; pct: number | null; sub?: string
-  color: BarColor
-}) {
-  const width = pct === null ? 0 : Math.min(100, Math.max(0, pct))
-  return (
-    <div className="sys-card">
-      <div className="sys-card-head">
-        <Icon size={13} className="sys-card-icon" />
-        <span className="sys-card-label">{label}</span>
-        <span className="sys-card-val">{pct === null ? '-' : `${Math.round(pct)}%`}</span>
-      </div>
-      <div className="sys-bar">
-        <div className={clsx('sys-bar-fill', `sys-bar--${color}`)} style={{ width: `${width}%` }} />
-      </div>
-      {sub && <div className="sys-card-sub">{sub}</div>}
-    </div>
-  )
+/** Split "12.4GB (61%)" into the amount and the share, so the row can show the
+ *  number large and the qualifier small. Docker gives us this as one string. */
+function splitReclaim(s: string): { amount: string; note: string } {
+  const m = s.match(/^([^(]+?)\s*(?:\(([^)]*)\))?$/)
+  return { amount: (m?.[1] ?? s).trim(), note: m?.[2] ?? '' }
 }
 
 export default function Dashboard() {
   const setActiveView = useAppStore(s => s.setActiveView)
+  const setDockerTab  = useAppStore(s => s.setDockerTab)
   const activityLog   = useAppStore(s => s.activityLog)
+  const dockerCache   = useAppStore(s => s.dockerCache)
+  const distros       = useAppStore(s => s.wslDistrosNav)
   const [metrics, setMetrics] = useState<SystemMetrics | null>(null)
 
-  // Poll live system metrics every 2 s while the dashboard is mounted and the
-  // window is visible. The effect cleans up on navigation away, so no polling
-  // runs off-screen either.
   const poll = () => { getSystemMetrics().then(setMetrics).catch(() => {}) }
   useEffect(poll, [])
   useVisiblePoll(poll, 2000)
@@ -83,97 +37,137 @@ export default function Dashboard() {
   const memPct = metrics && metrics.mem_total_bytes > 0
     ? (metrics.mem_used_bytes / metrics.mem_total_bytes) * 100
     : null
+  const disk = metrics?.disks?.[0]
+  const diskPct = disk && disk.total_bytes > 0
+    ? ((disk.total_bytes - disk.free_bytes) / disk.total_bytes) * 100
+    : null
+
+  const goDocker = (tab: DockerTab) => { setActiveView('docker'); setDockerTab(tab) }
+
+  const df = dockerCache?.df
+  const reclaim = df ? ([
+    { key: 'images', label: 'Docker images', icon: Layers,   raw: df.images.reclaimable,      tab: 'images'  as DockerTab, sub: `${df.images.total} images, ${df.images.total - df.images.active} unused` },
+    { key: 'cache',  label: 'Build cache',   icon: Layers,   raw: df.build_cache.reclaimable, tab: 'prune'   as DockerTab, sub: 'Safe to remove entirely' },
+    { key: 'vols',   label: 'Docker volumes', icon: Database, raw: df.volumes.reclaimable,    tab: 'volumes' as DockerTab, sub: 'May contain data you want' },
+  ]).filter(r => r.raw && !/^0\s*B/i.test(r.raw)) : []
+
+  const running = distros.filter(d => d.running).length
 
   return (
     <div className="view-container">
-      <div className="dashboard-header">
-        <h1 className="dashboard-title">Workspace Atlas</h1>
-        <p className="dashboard-subtitle">Your dev environment, mapped and managed.</p>
+      <div className="page-head">
+        <SheetHead
+          crumbs={[{ label: 'Workspace Atlas' }, { label: 'Overview' }]}
+          title="Overview"
+          status={
+            <>
+              {dockerCache?.status && (
+                <span className="pill">
+                  <span className={clsx('rail-dot', dockerCache.status.state === 'running' ? 'running' : 'stopped')} />
+                  Docker {dockerCache.status.version ?? 'unknown'}
+                </span>
+              )}
+              {distros.length > 0 && (
+                <span className="pill">
+                  <span className={clsx('rail-dot', running ? 'running' : 'stopped')} />
+                  {distros.length} distro{distros.length === 1 ? '' : 's'}{running ? `, ${running} running` : ''}
+                </span>
+              )}
+            </>
+          }
+          actions={<Button onClick={poll}><RefreshCw size={13} /> Refresh</Button>}
+        />
       </div>
 
-      <section className="sys-section">
-        <p className="section-label">System</p>
-        <div className="sys-metrics">
-          <MetricCard
-            icon={Cpu}
+      <div className="page-scroll">
+        <StatRow>
+          <StatCard
             label="CPU"
+            value={metrics ? String(Math.round(metrics.cpu_pct)) : '-'}
+            unit={metrics ? '%' : undefined}
             pct={metrics ? metrics.cpu_pct : null}
             sub={metrics ? `${metrics.cpu_count} logical cores` : undefined}
-            color="accent"
           />
-          <MetricCard
-            icon={MemoryStick}
+          <StatCard
             label="Memory"
+            value={metrics ? bytesToHuman(metrics.mem_used_bytes) : '-'}
             pct={memPct}
-            sub={metrics ? `${bytesToHuman(metrics.mem_used_bytes)} / ${bytesToHuman(metrics.mem_total_bytes)}` : undefined}
-            color={memPct === null ? 'accent' : levelColor(memPct)}
+            sub={metrics ? `of ${bytesToHuman(metrics.mem_total_bytes)}${memPct === null ? '' : ` · ${Math.round(memPct)}%`}` : undefined}
           />
-          {(metrics?.disks ?? []).map(d => {
-            const used = d.total_bytes - d.free_bytes
-            const pct  = d.total_bytes > 0 ? (used / d.total_bytes) * 100 : null
-            return (
-              <MetricCard
-                key={d.mount}
-                icon={HardDrive}
-                label={d.mount.replace(/\\$/, '')}
-                pct={pct}
-                sub={`${bytesToHuman(d.free_bytes)} free of ${bytesToHuman(d.total_bytes)}`}
-                color={pct === null ? 'accent' : levelColor(pct)}
-              />
-            )
-          })}
-        </div>
-      </section>
+          {disk && (
+            <StatCard
+              label={`Disk ${disk.mount.replace(/\\$/, '')}`}
+              value={bytesToHuman(disk.free_bytes)}
+              unit="free"
+              pct={diskPct}
+              sub={`of ${bytesToHuman(disk.total_bytes)}${diskPct === null ? '' : ` · ${Math.round(diskPct)}% used`}`}
+            />
+          )}
+          {reclaim.length > 0 && (
+            <StatCard
+              label="Reclaimable"
+              value={reclaim.map(r => splitReclaim(r.raw).amount).join(' + ')}
+              pct={100}
+              tone="ok"
+              sub={`across ${reclaim.length} source${reclaim.length === 1 ? '' : 's'}`}
+              onClick={() => goDocker('prune')}
+              ariaLabel="Reclaimable space, open Prune"
+            />
+          )}
+        </StatRow>
 
-      <div className="module-grid">
-        {MODULES.map(({ view, icon: Icon, title, description, tags, color }) => (
-          <button
-            key={view}
-            className={clsx('module-card', `module-card--${color}`)}
-            onClick={() => setActiveView(view)}
-          >
-            <div className="module-card-header">
-              <div className={clsx('module-icon', `module-icon--${color}`)}>
-                <Icon size={22} />
-              </div>
-              <ArrowRight size={15} className="module-arrow" />
+        {reclaim.length > 0 && (
+          <>
+            <SectionHead title="Reclaimable space" />
+            <div className="rowlist">
+              {reclaim.map(r => {
+                const { amount, note } = splitReclaim(r.raw)
+                return (
+                  <button key={r.key} className="rowitem" onClick={() => goDocker(r.tab)}>
+                    <span className="rowitem-icon"><r.icon size={13} /></span>
+                    <span className="rowitem-main">
+                      <span className="rowitem-title">{r.label}</span>
+                      <span className="rowitem-sub" style={{ display: 'block' }}>
+                        {r.sub}{note && ` · ${note}`}
+                      </span>
+                    </span>
+                    <span className="rowitem-value num">{amount}</span>
+                    <ChevronRight size={14} className="rowitem-chev" />
+                  </button>
+                )
+              })}
             </div>
-            <h2 className="module-card-title">{title}</h2>
-            <p className="module-card-desc">{description}</p>
-            <div className="module-tags">
-              {tags.map(tag => (
-                <span key={tag} className="module-tag">{tag}</span>
-              ))}
-            </div>
-          </button>
-        ))}
-      </div>
+          </>
+        )}
 
-      <section className="activity-section">
-        <p className="section-label">Recent activity</p>
+        <SectionHead title="Recent activity" />
         {activityLog.length === 0 ? (
-          <p className="activity-empty">No recent activity yet. Operations you run will appear here.</p>
+          <EmptyState
+            title="Nothing recorded yet"
+            description="Every operation this app performs is listed here with its outcome, and the exact command it ran appears in the command pane below."
+            actions={
+              <>
+                <Button onClick={() => setActiveView('docker')}>Open Docker</Button>
+                <Button onClick={() => setActiveView('wsl')}>Open WSL</Button>
+              </>
+            }
+          />
         ) : (
-          <ul className="activity-list">
-            {activityLog.slice(0, 8).map(a => {
+          <ul>
+            {activityLog.slice(0, 12).map(a => {
               const Icon = MODULE_ICON[a.module]
               return (
-                <li key={a.id} className="activity-row">
-                  <span className={clsx('activity-dot', `activity-dot--${a.outcome}`)} />
-                  <Icon size={13} className="activity-icon" />
-                  <span className="activity-action">{a.action}</span>
-                  {a.detail && <span className="activity-detail">{a.detail}</span>}
-                  <span className="activity-time">{timeAgo(a.ts)}</span>
+                <li key={a.id} className="act-row">
+                  <span className={clsx('act-dot', `act-dot--${a.outcome}`)} />
+                  <Icon size={12} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }} />
+                  <span className="act-title">{a.action}</span>
+                  {a.detail && <span className="act-detail">{a.detail}</span>}
+                  <span className="act-time">{timeAgo(a.ts)}</span>
                 </li>
               )
             })}
           </ul>
         )}
-      </section>
-
-      <div className="dashboard-notice">
-        <span className="notice-dot" />
-        Fully offline - no telemetry, no cloud, no account required.
       </div>
     </div>
   )

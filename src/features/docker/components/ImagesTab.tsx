@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react'
-import { Pin, PinOff, X } from 'lucide-react'
+import { Pin, PinOff, X, Layers } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../../../store/appStore'
 import type { DockerImage } from '../types'
 import { SortHeader } from './TableBits'
+import { SearchField, EmptyState } from '../../../components/ui'
 
 type SortKey = 'name' | 'size_bytes' | 'age_days'
 type SortDir = 'asc' | 'desc'
@@ -50,7 +51,13 @@ export default function ImagesTab({ images, loading }: { images: DockerImage[]; 
   const rows = [...sorted.filter(i => dockerKeepList.includes(i.id)), ...sorted.filter(i => !dockerKeepList.includes(i.id))]
 
   if (loading) return <div className="img-loading">Loading images…</div>
-  if (!images.length) return <p className="empty-state">No images found.</p>
+  if (!images.length) return (
+    <EmptyState
+      icon={Layers}
+      title="No images on this engine"
+      description="Nothing has been pulled or built yet. Pull one with docker pull, or start a compose project and its images appear here."
+    />
+  )
 
   return (
     <div className="img-tab">
@@ -65,13 +72,11 @@ export default function ImagesTab({ images, loading }: { images: DockerImage[]; 
         </div>
       )}
       <div className="img-toolbar">
-        <input
-          className="img-search"
-          type="search"
-          placeholder="Filter by name, tag, or ID…"
-          aria-label="Filter images"
+        <SearchField
           value={search}
-          onChange={e => setSearch(e.target.value)}
+          onChange={setSearch}
+          placeholder="Search images"
+          label="Search images by name, tag, or ID"
         />
         <div className="age-filter">
           <span className="age-label">

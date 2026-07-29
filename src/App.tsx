@@ -1,9 +1,12 @@
 import { useEffect } from 'react'
+import clsx from 'clsx'
 import { useAppStore } from './store/appStore'
 import Titlebar  from './layout/Titlebar'
 import Sidebar   from './layout/Sidebar'
 import MainPanel from './layout/MainPanel'
 import Terminal  from './layout/Terminal'
+import CommandIndex    from './components/CommandIndex'
+import ShortcutsDialog from './components/ShortcutsDialog'
 
 const SIDEBAR_MIN  = 160
 const SIDEBAR_MAX  = 360
@@ -19,6 +22,24 @@ export default function App() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])
+
+  // ── Global keys. These are the only app-wide bindings; per-module keys (Ctrl+R)
+  // stay with the module that owns the data they refresh.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey
+      if (mod && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        const s = useAppStore.getState()
+        s.setIndexOpen(!s.indexOpen)
+      } else if (mod && e.key === '`') {
+        e.preventDefault()
+        useAppStore.getState().toggleTerminal()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   // ── Sidebar resize - direct DOM write during drag, store only on release ──
   const onSidebarResize = (e: React.MouseEvent) => {
@@ -80,8 +101,10 @@ export default function App() {
       >
         <Sidebar />
         <div className="sidebar-resize-handle" onMouseDown={onSidebarResize} />
+        {/* The open class is what reserves the terminal's height in the content
+            column, so a page's last row is never buried under the panel. */}
         <div
-          className="app-content"
+          className={clsx('app-content', terminalOpen && 'app-content--terminal-open')}
           style={{ '--terminal-height': `${terminalHeight}px` } as React.CSSProperties}
         >
           <MainPanel />
@@ -91,6 +114,8 @@ export default function App() {
           <Terminal />
         </div>
       </div>
+      <CommandIndex />
+      <ShortcutsDialog />
     </div>
   )
 }

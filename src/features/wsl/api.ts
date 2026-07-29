@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '../../utils/errors'
 import type { WslStatus, WslDistro, WslConfig, OptimizeResult, ExportResult, WslConfigBackup, DistroMetrics, DistroStats, DistroExtras, MigrateResult, ServiceList, ServiceDetail, BenchmarkResult, ShellProfile, CatalogDistro } from './types'
 
 export const wslCheck       = () => invoke<WslStatus>('wsl_check')

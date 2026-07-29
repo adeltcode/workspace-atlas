@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '../utils/errors'
 import { TerminalSquare, X, Trash2, ChevronDown, Square, ScrollText } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../store/appStore'

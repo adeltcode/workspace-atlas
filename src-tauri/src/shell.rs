@@ -5,6 +5,7 @@ use std::thread;
 use std::time::Duration;
 
 use tauri::Emitter;
+use crate::error::AtlasError;
 
 // ── Managed state ─────────────────────────────────────────────────────────────
 
@@ -39,10 +40,10 @@ pub async fn shell_run(
     app: tauri::AppHandle,
     state: tauri::State<'_, ShellState>,
     cmd: String,
-) -> Result<i32, String> {
+) -> Result<i32, AtlasError> {
     let child_arc = state.0.clone();
 
-    tauri::async_runtime::spawn_blocking(move || {
+    tauri::async_runtime::spawn_blocking(move || -> Result<i32, AtlasError> {
         let mut child = Command::new("powershell")
             .args(["-NoProfile", "-NonInteractive", "-Command", &cmd])
             .stdout(Stdio::piped())
@@ -97,7 +98,7 @@ pub async fn shell_run(
             match result {
                 Ok(Some(status)) => break status.code().unwrap_or(-1),
                 Ok(None)         => thread::sleep(Duration::from_millis(50)),
-                Err(e)           => return Err(e),
+                Err(e)           => return Err(e.into()),
             }
         };
 
@@ -121,7 +122,7 @@ pub async fn shell_run(
 
 /// Interrupt the currently running shell command.
 #[tauri::command]
-pub async fn shell_kill(state: tauri::State<'_, ShellState>) -> Result<(), String> {
+pub async fn shell_kill(state: tauri::State<'_, ShellState>) -> Result<(), AtlasError> {
     let mut guard = state.0.lock().map_err(|_| "state lock poisoned".to_string())?;
     if let Some(ref mut child) = *guard {
         // Ignore errors - process may have already exited between the check and the kill

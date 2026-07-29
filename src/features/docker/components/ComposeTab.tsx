@@ -17,6 +17,7 @@ import ComposePage from './ComposePage'
 import ComposeEnvTab from './ComposeEnvTab'
 import ComposeDockerfileViewer, { DockerfileLine } from './ComposeDockerfileViewer'
 import CodeOverlayEditor from './CodeOverlayEditor'
+import { ErrorBanner } from '../../../components/ui'
 
 // ── YAML syntax highlighter ───────────────────────────────────────────────────
 
@@ -1138,10 +1139,7 @@ export default function ComposeTab({
   return (
     <div className="compose-tab">
       {error && (
-        <div className="error-banner" style={{ margin: '0 32px 12px' }}>
-          <span className="error-title">Error</span>
-          <span className="error-msg">{error}</span>
-        </div>
+        <ErrorBanner className="error-banner--bleed" error={error} />
       )}
 
       {/* ── Main overview page ───────────────────────────────────────────── */}

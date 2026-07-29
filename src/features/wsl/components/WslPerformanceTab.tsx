@@ -5,6 +5,7 @@ import { useAppStore } from '../../../store/appStore'
 import * as api from '../api'
 import type { WslDistro, ShellProfile } from '../types'
 import { Modal } from './Dialog'
+import { Panel, Button } from '../../../components/ui'
 
 /** Format a duration given in seconds as ms or s. */
 function fmtSecs(s: number): string {
@@ -88,18 +89,15 @@ export default function WslPerformanceTab({ distros, onReload }: {
     <div className="wsl-perf">
       <div className="wsl-perf-cols">
         {/* ── Cold-boot benchmark ──────────────────────────────────────── */}
-        <div className="overview-section" style={{ margin: 0 }}>
-          <div className="overview-section-head overview-section-head--static">
+        <Panel>
+          <div className="panel-head">
             <Timer size={14} className="wsl-perf-head-icon" />
-            <span className="section-label" style={{ margin: 0 }}>Cold-boot benchmark</span>
-            <button
-              className="btn-secondary"
-              style={{ marginLeft: 'auto' }}
-              onClick={() => setConfirmBench(true)}
-              disabled={benching}
-            >
-              <Play size={12} /> {benching ? 'Booting…' : 'Run'}
-            </button>
+            <span className="panel-title">Cold-boot benchmark</span>
+            <div className="panel-actions">
+              <Button size="sm" onClick={() => setConfirmBench(true)} disabled={benching}>
+                <Play size={12} /> {benching ? 'Booting…' : 'Run'}
+              </Button>
+            </div>
           </div>
 
           {benchErr && <p className="wsl-opt-error">{benchErr}</p>}
@@ -127,21 +125,18 @@ export default function WslPerformanceTab({ distros, onReload }: {
               <p className="wsl-perf-history-note">{history.length} run{history.length !== 1 ? 's' : ''} tracked · oldest → newest</p>
             </>
           )}
-        </div>
+        </Panel>
 
         {/* ── Shell startup profiler ───────────────────────────────────── */}
-        <div className="overview-section" style={{ margin: 0 }}>
-          <div className="overview-section-head overview-section-head--static">
+        <Panel>
+          <div className="panel-head">
             <Gauge size={14} className="wsl-perf-head-icon" />
-            <span className="section-label" style={{ margin: 0 }}>Shell startup profiler</span>
-            <button
-              className="btn-secondary"
-              style={{ marginLeft: 'auto' }}
-              onClick={runProfile}
-              disabled={profiling}
-            >
-              <Play size={12} /> {profiling ? 'Profiling…' : 'Profile'}
-            </button>
+            <span className="panel-title">Shell startup profiler</span>
+            <div className="panel-actions">
+              <Button size="sm" onClick={runProfile} disabled={profiling}>
+                <Play size={12} /> {profiling ? 'Profiling…' : 'Profile'}
+              </Button>
+            </div>
           </div>
 
           {profileErr && <p className="wsl-opt-error">{profileErr}</p>}
@@ -211,7 +206,7 @@ export default function WslPerformanceTab({ distros, onReload }: {
               </div>
             </>
           )}
-        </div>
+        </Panel>
       </div>
 
       {confirmBench && (
@@ -221,10 +216,10 @@ export default function WslPerformanceTab({ distros, onReload }: {
             cold start. Any running processes inside it stop immediately.
           </p>
           <div className="modal-actions">
-            <button className="btn-secondary" onClick={() => setConfirmBench(false)}>Cancel</button>
-            <button className="btn-filled btn-filled--accent" onClick={runBenchmark}>
+            <Button onClick={() => setConfirmBench(false)}>Cancel</Button>
+            <Button variant="primary" onClick={runBenchmark}>
               <Timer size={13} /> Run benchmark
-            </button>
+            </Button>
           </div>
         </Modal>
       )}

@@ -10,6 +10,9 @@ import type {
   DockerVolume, DiskUsageRow, ComposeProject, ContainerStats,
 } from '../types'
 import { bytesToHuman, composeStatusLabel } from '../../../utils/format'
+import {
+  SectionHead, Panel, StatCard, StatRow, Button, Segmented, SegmentedItem, EmptyState,
+} from '../../../components/ui'
 import * as api from '../api'
 
 const STALE_DAYS = 7
@@ -86,15 +89,15 @@ function extractHostPort(mapping: string): string {
 
 function HeroSkeleton() {
   return (
-    <div className="hero-grid">
-      {[0, 1, 2, 3, 4, 5].map(i => (
-        <div key={i} className="hero-tile">
+    <StatRow>
+      {[0, 1, 2].map(i => (
+        <div key={i} className="stat">
           <div className="sk-line w-16" style={{ height: 9 }} />
-          <div className="sk-line w-20" style={{ height: 24, marginTop: 4 }} />
-          <div className="sk-line w-24" style={{ height: 10, marginTop: 2 }} />
+          <div className="sk-line w-20" style={{ height: 22, marginTop: 4 }} />
+          <div className="sk-line w-24" style={{ height: 10, marginTop: 4 }} />
         </div>
       ))}
-    </div>
+    </StatRow>
   )
 }
 
@@ -391,97 +394,72 @@ export default function OverviewTab({
     <div className="overview-tab">
 
       {/* ── 1. Workspace Summary ─────────────────────────────────────── */}
-      <div className="overview-section">
-        {loading ? <HeroSkeleton /> : (
-          <div className="hero-grid">
+      {/* Three facts, not six. Engine state is already in the page header,
+          project counts are already on the Active projects heading below, and
+          an "Issues: None" tile reports nothing, so it only appears when there
+          is actually something wrong. */}
+      {loading ? <HeroSkeleton /> : (
+        <StatRow>
+          <StatCard
+            label="Containers"
+            value={String(runningCtrs)}
+            sub={`running${notRunning ? ` · ${notRunning}` : ''}`}
+            onClick={() => setDockerTab('containers')}
+            ariaLabel={`Containers: ${runningCtrs} running. Open Containers.`}
+          />
+          <StatCard
+            label="Images"
+            value={String(images.length)}
+            sub={df?.images.size ?? '-'}
+            onClick={() => setDockerTab('images')}
+            ariaLabel={`Images: ${images.length}. Open Images.`}
+          />
+          <StatCard
+            label="Disk"
+            value={totalRow?.size ?? '-'}
+            sub={hasFree ? `${totalFree} reclaimable` : 'nothing to reclaim'}
+            onClick={() => setDockerTab('prune')}
+            ariaLabel={`Disk used by Docker: ${totalRow?.size ?? 'unknown'}. Open Prune.`}
+          />
+          {issueCount > 0 && (
+            <StatCard
+              label="Issues"
+              value={String(issueCount)}
+              tone="danger"
+              sub={<span className="stat-sub--err">need attention</span>}
+              onClick={() => setDockerTab('containers')}
+              ariaLabel={`${issueCount} containers need attention. Open Containers.`}
+            />
+          )}
+        </StatRow>
+      )}
 
-            <div className="hero-tile">
-              <span className="hero-tile-label">Engine</span>
-              <span className={clsx('hero-tile-value hero-tile-value--text',
-                status?.available ? 'hero-tile-value--ok' : 'hero-tile-value--err'
-              )}>
-                {status?.available ? 'Running' : 'Stopped'}
-              </span>
-              <span className="hero-tile-sub">
-                {status?.available ? `v${status.version ?? '-'}` : (status?.error ?? '-')}
-              </span>
-            </div>
-
-            <button className="hero-tile hero-tile--clickable" onClick={() => setDockerTab('containers')}
-              aria-label={`Containers: ${runningCtrs} running`}>
-              <span className="hero-tile-label">Containers</span>
-              <span className="hero-tile-value">{runningCtrs}</span>
-              <span className="hero-tile-sub">running</span>
-              {notRunning && <span className="hero-tile-sub">{notRunning}</span>}
+      {hasWarnings && (
+        <div className="hero-warnings">
+          {restarting.length > 0 && (
+            <button className="hero-warning-row hero-warning-row--critical" onClick={() => setDockerTab('containers')}>
+              <AlertTriangle size={13} aria-hidden="true" />
+              {restarting.length} container{restarting.length !== 1 ? 's' : ''} in a restart loop
+              <ChevronRight size={13} className="hero-warning-arrow" aria-hidden="true" />
             </button>
-
-            <button className="hero-tile hero-tile--clickable" onClick={() => setDockerTab('compose')}
-              aria-label={`Projects: ${runningProjects} running`}>
-              <span className="hero-tile-label">Projects</span>
-              <span className="hero-tile-value">
-                {composeLoading ? '…' : runningProjects}
-              </span>
-              <span className="hero-tile-sub">
-                {composeLoading ? 'loading' : `${composeProjects.length} total`}
-              </span>
+          )}
+          {dead.length > 0 && (
+            <button className="hero-warning-row hero-warning-row--critical" onClick={() => setDockerTab('containers')}>
+              <AlertTriangle size={13} aria-hidden="true" />
+              {dead.length} dead container{dead.length !== 1 ? 's' : ''}
+              <ChevronRight size={13} className="hero-warning-arrow" aria-hidden="true" />
             </button>
-
-            <button className="hero-tile hero-tile--clickable" onClick={() => setDockerTab('images')}
-              aria-label={`Images: ${images.length}`}>
-              <span className="hero-tile-label">Images</span>
-              <span className="hero-tile-value">{images.length}</span>
-              <span className="hero-tile-sub">{df?.images.size ?? '-'}</span>
-            </button>
-
-            <div className="hero-tile">
-              <span className="hero-tile-label">Total Disk</span>
-              <span className="hero-tile-value">{totalRow?.size ?? '-'}</span>
-              {hasFree && <span className="hero-tile-sub">{totalFree} freeable</span>}
-            </div>
-
-            <div className="hero-tile">
-              <span className="hero-tile-label">Issues</span>
-              <span className={clsx('hero-tile-value hero-tile-value--text',
-                issueCount > 0 ? 'hero-tile-value--err' : 'hero-tile-value--ok'
-              )}>
-                {issueCount > 0 ? issueCount : 'None'}
-              </span>
-              <span className="hero-tile-sub">
-                {issueCount > 0 ? 'critical' : 'all healthy'}
-              </span>
-            </div>
-
-          </div>
-        )}
-
-        {hasWarnings && (
-          <div className="hero-warnings">
-            {restarting.length > 0 && (
-              <button className="hero-warning-row hero-warning-row--critical" onClick={() => setDockerTab('containers')}>
-                <AlertTriangle size={13} />
-                {restarting.length} container{restarting.length !== 1 ? 's' : ''} in restart loop - view Containers
-              </button>
-            )}
-            {dead.length > 0 && (
-              <button className="hero-warning-row hero-warning-row--critical" onClick={() => setDockerTab('containers')}>
-                <AlertTriangle size={13} />
-                {dead.length} dead container{dead.length !== 1 ? 's' : ''} - view Containers
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {/* ── 2. Active Projects ───────────────────────────────────────── */}
-      <div className="overview-section">
-        <button className="overview-section-head" onClick={() => setDockerTab('compose')}>
-          <span className="section-label" style={{ margin: 0 }}>Active Projects</span>
-          <span className="overview-section-meta">
-            {composeLoading ? '…' : `${runningProjects} running · ${composeProjects.length} total`}
-          </span>
-          <ChevronRight size={12} className="overview-section-arrow" />
-        </button>
-
+      <SectionHead
+        title="Active projects"
+        meta={composeLoading ? '…' : `${runningProjects} running · ${composeProjects.length} total`}
+        actions={<Button size="sm" variant="ghost" onClick={() => setDockerTab('compose')}>Open Compose</Button>}
+      />
+      <Panel>
         {composeLoading ? (
           <div className="cleanup-rows">
             {[0, 1, 2].map(i => (
@@ -510,36 +488,34 @@ export default function OverviewTab({
             ))}
           </div>
         )}
-      </div>
+      </Panel>
 
       {/* ── 3. Resource Monitoring ───────────────────────────────────── */}
-      <div className="overview-section">
-        <div className="overview-section-head overview-section-head--static">
-          <span className="section-label" style={{ margin: 0 }}>Resource Monitoring</span>
-          <div className="resource-tab-strip" style={{ marginLeft: 'auto' }}>
-            <button
-              className={clsx('resource-tab', resourceView === 'all' && 'resource-tab--active')}
-              onClick={() => setResourceView('all')}
+      <SectionHead
+        title="Resource monitoring"
+        actions={
+          <>
+            <Segmented label="Resource view">
+              <SegmentedItem active={resourceView === 'all'} onClick={() => setResourceView('all')}>
+                Live activity
+              </SegmentedItem>
+              <SegmentedItem active={resourceView === 'top'} onClick={() => setResourceView('top')}>
+                Top offenders
+              </SegmentedItem>
+            </Segmented>
+            <Button
+              size="sm" variant="ghost" icon
+              onClick={onPollStats}
+              disabled={statsLoading}
+              aria-label="Refresh container stats"
+              title="Refresh stats"
             >
-              Live Activity
-            </button>
-            <button
-              className={clsx('resource-tab', resourceView === 'top' && 'resource-tab--active')}
-              onClick={() => setResourceView('top')}
-            >
-              Top Offenders
-            </button>
-          </div>
-          <button
-            className="btn-icon"
-            onClick={onPollStats}
-            disabled={statsLoading}
-            title="Refresh stats"
-          >
-            <RefreshCw size={12} className={statsLoading ? 'spin' : ''} />
-          </button>
-        </div>
-
+              <RefreshCw size={12} className={statsLoading ? 'spin' : ''} />
+            </Button>
+          </>
+        }
+      />
+      <Panel className="panel--pad">
         {statsLoading ? (
           <div className="stats-grid">
             {[0, 1].map(col => (
@@ -595,7 +571,7 @@ export default function OverviewTab({
         ) : (
           <LiveMetricsCharts items={liveItems} stepSecs={5} />
         )}
-      </div>
+      </Panel>
 
       {/* ── 4. Disk Usage ────────────────────────────────────────────── */}
       {(() => {
@@ -658,10 +634,12 @@ export default function OverviewTab({
         ].filter(r => r.bytes > 0)
 
         return (
-          <div className="overview-section">
-            <div className="overview-section-head overview-section-head--static">
-              <span className="section-label" style={{ margin: 0 }}>Disk Usage</span>
-            </div>
+          <>
+            <SectionHead
+              title="Disk usage"
+              meta={totalFreeableBytes > 0 ? `${bytesToHuman(totalFreeableBytes)} freeable` : undefined}
+            />
+            <Panel>
             <div className="disk-body">
               <div className="drive-bars-grid">
 
@@ -738,25 +716,23 @@ export default function OverviewTab({
                 </span>
               </div>
             </div>
-          </div>
+            </Panel>
+          </>
         )
       })()}
 
       {/* ── 5. Cleanup Opportunities ─────────────────────────────────── */}
-      <div className="overview-section">
-        <div className="overview-section-head overview-section-head--static">
-          <span className="section-label" style={{ margin: 0 }}>Cleanup Opportunities</span>
-          {!loading && totalFreeBytes > 0 && <>
-            <span className="overview-section-meta" style={{ marginLeft: 'auto' }}>
-              ~{bytesToHuman(totalFreeBytes)} freeable
-            </span>
-            <button className="overview-prune-btn" onClick={() => setDockerTab('prune')}>
-              <Trash2 size={11} />
-              Prune all
-            </button>
-          </>}
-        </div>
-
+      <SectionHead
+        title="Cleanup opportunities"
+        meta={!loading && totalFreeBytes > 0 ? `~${bytesToHuman(totalFreeBytes)} freeable` : undefined}
+        actions={!loading && totalFreeBytes > 0 && (
+          <Button size="sm" variant="danger-outline" onClick={() => setDockerTab('prune')}>
+            <Trash2 size={11} />
+            Prune all
+          </Button>
+        )}
+      />
+      <Panel>
         {loading ? (
           <div className="cleanup-rows">
             {[0, 1, 2].map(i => (
@@ -769,12 +745,11 @@ export default function OverviewTab({
             ))}
           </div>
         ) : allClean ? (
-          <div className="overview-attention">
-            <div className="overview-chip overview-chip--clean">
-              <CheckCircle size={12} />
-              All resources clean
-            </div>
-          </div>
+          <EmptyState
+            icon={CheckCircle}
+            title="Nothing to reclaim"
+            description="No dangling images, stale containers, unused volumes, or build cache. This is what a clean engine looks like."
+          />
         ) : (
           <div className="cleanup-rows">
             {trueDangling.length > 0 && (
@@ -857,7 +832,7 @@ export default function OverviewTab({
             )}
           </div>
         )}
-      </div>
+      </Panel>
 
     </div>
   )

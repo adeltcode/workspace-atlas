@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
 import {
-  Star, Terminal, ChevronRight, Search, HardDrive,
+  Star, Terminal, ChevronRight, HardDrive,
   RotateCw, Square, Play, Upload, Settings2, History, Activity,
 } from 'lucide-react'
 import { useAppStore } from '../../../store/appStore'
@@ -12,6 +12,7 @@ import type { DiskStats } from '../../docker/types'
 import { getIniValue } from '../ini'
 import type { WslDistro, DistroExtras } from '../types'
 import { bytesToHuman, formatDuration, timeAgo } from '../../../utils/format'
+import { Toolbar, SearchField, Segmented, SegmentedItem, EmptyState, Button } from '../../../components/ui'
 import { Modal, Field } from './Dialog'
 import { DistroLogo } from '../DistroLogo'
 import { useAsyncAction } from '../../../hooks/useAsyncAction'
@@ -252,39 +253,41 @@ export default function WslHome({ distros, loading, onReload }: {
 
   if (!loading && distros.length === 0) {
     return (
-      <p className="empty-state" style={{ marginTop: 8 }}>
-        WSL is installed but no distributions were found. Install one with <code>wsl --install -d Ubuntu</code>.
-      </p>
+      <EmptyState
+        icon={HardDrive}
+        title="No distributions installed"
+        description="WSL itself is installed, but there is nothing to run in it yet. Install one from the catalog, or run the command below."
+        actions={<code className="cmd">wsl --install -d Ubuntu</code>}
+      />
     )
   }
 
   return (
     <div className="wsl-home">
       {/* ── Search + filter ─────────────────────────────────────────── */}
-      <div className="wsl-distros-toolbar">
-        <div className="wsl-distros-search">
-          <Search size={14} className="wsl-distros-search-icon" />
-          <input
-            className="wsl-distros-search-input"
-            placeholder="Find a distribution…"
-            aria-label="Find a distribution"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            spellCheck={false}
-          />
-        </div>
-        <div className="wsl-seg">
+      <Toolbar>
+        <SearchField
+          value={query}
+          onChange={setQuery}
+          placeholder="Search distros"
+          label="Search distributions by name"
+        />
+        <Segmented label="Filter by state">
           {(['all', 'running', 'stopped'] as StateFilter[]).map(f => (
-            <button key={f} className={clsx('wsl-seg-btn', filter === f && 'wsl-seg-btn--active')} onClick={() => setFilter(f)}>
+            <SegmentedItem key={f} active={filter === f} onClick={() => setFilter(f)}>
               {f === 'all' ? 'All' : f === 'running' ? 'Running' : 'Stopped'}
-            </button>
+            </SegmentedItem>
           ))}
-        </div>
-      </div>
+        </Segmented>
+      </Toolbar>
 
       {/* ── Distro cards ────────────────────────────────────────────── */}
       {filtered.length === 0 ? (
-        <p className="empty-state" style={{ marginTop: 8 }}>No distributions match.</p>
+        <EmptyState
+          title="No distributions match"
+          description="Try a shorter search, or switch the filter back to All."
+          actions={<Button onClick={() => { setQuery(''); setFilter('all') }}>Clear filters</Button>}
+        />
       ) : (
         <div className="wsl-home-grid">
           {filtered.map(d => (
@@ -477,7 +480,7 @@ export default function WslHome({ distros, loading, onReload }: {
       )}
 
       {showImport && (
-        <Modal icon={<Upload size={16} />} title="Import distribution" onClose={() => setShowImport(false)} closable>
+        <Modal icon={<Upload size={16} />} title="Import distribution" onClose={() => setShowImport(false)}>
           <p className="modal-body">Create a new distro from a <code>.tar</code> archive. Use a new name to clone, or a new location to relocate.</p>
           <Field label="Source archive">
             <div className="wsl-import-row">
@@ -560,7 +563,7 @@ function DistroCard({
             {x ? (x.package_manager === 'unknown' ? '--' : x.package_count)
               : scanning ? <span className="sk-line wsl-bstat-sk" />
               : d.running ? '--'
-              : <button className="wsl-scan-btn" onClick={onScan} title="Reads inside the distro and starts it if stopped">Scan</button>}
+              : <button className="btn btn--sm" onClick={onScan} title="Reads inside the distro and starts it if stopped">Scan</button>}
           </span>
         </div>
         <div className="wsl-bstat">

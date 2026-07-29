@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '../../utils/errors'
 import type { SourceResult } from './types'
 
 /** Every source the backend knows how to scan. Ids it does not recognise are

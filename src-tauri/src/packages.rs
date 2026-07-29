@@ -13,6 +13,7 @@ use tauri::Emitter;
 
 use crate::docker::is_in_path;
 use crate::shell::ShellOut;
+use crate::error::AtlasError;
 
 fn emit_line(app: &tauri::AppHandle, text: impl Into<String>, stderr: bool) {
     app.emit("shell-out", ShellOut { text: text.into(), stderr }).ok();
@@ -90,7 +91,7 @@ pub struct SourceResult {
 /// A non-zero exit is deliberately not fatal here: `npm ls -g` exits non-zero
 /// over unrelated dependency warnings while still printing perfectly valid JSON
 /// on stdout. Callers decide, after parsing, whether the exit code mattered.
-fn run_capture(argv: &[&str]) -> Result<(String, String, bool), String> {
+fn run_capture(argv: &[&str]) -> Result<(String, String, bool), AtlasError> {
     // Through `cmd /C` so PATHEXT resolves the `.cmd` shims npm and friends
     // ship as. `Command::new("npm")` only auto-appends `.exe` and would fail.
     let mut c = Command::new("cmd");
@@ -138,7 +139,9 @@ fn scan_one(spec: &SourceSpec) -> SourceResult {
                 });
             }
         }
-        Err(e) => result.error = Some(e),
+        // This field is a plain string in the per-source result the UI renders
+        // inline, so it takes the classified sentence and drops the rest.
+        Err(e) => result.error = Some(e.message),
     }
     result
 }
@@ -152,7 +155,7 @@ fn scan_one(spec: &SourceSpec) -> SourceResult {
 pub async fn pkg_scan(
     app: tauri::AppHandle,
     sources: Vec<String>,
-) -> Result<Vec<SourceResult>, String> {
+) -> Result<Vec<SourceResult>, AtlasError> {
     // Ids are matched against the constant table; anything unknown is dropped
     // rather than passed on to a command line.
     let specs: Vec<&SourceSpec> = SOURCES
@@ -160,10 +163,10 @@ pub async fn pkg_scan(
         .filter(|s| sources.iter().any(|want| want == s.id))
         .collect();
     if specs.is_empty() {
-        return Err("No known package sources selected".to_string());
+        return Err("No known package sources selected".to_string().into());
     }
 
-    tauri::async_runtime::spawn_blocking(move || {
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<SourceResult>, AtlasError> {
         for spec in &specs {
             emit_line(&app, format!("$ {}", spec.argv.join(" ")), false);
         }
@@ -211,8 +214,8 @@ pub async fn pkg_scan(
 pub async fn pkg_export_csv(
     app: tauri::AppHandle,
     contents: String,
-) -> Result<Option<String>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+) -> Result<Option<String>, AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<Option<String>, AtlasError> {
         let Some(path) = rfd::FileDialog::new()
             .set_file_name("installed-packages.csv")
             .add_filter("CSV", &["csv"])
@@ -230,7 +233,7 @@ pub async fn pkg_export_csv(
             Err(e) => {
                 let msg = format!("Cannot write '{}': {}", win, e);
                 emit_line(&app, format!("  ✗ {}", msg), true);
-                Err(msg)
+                Err(msg.into())
             }
         }
     })

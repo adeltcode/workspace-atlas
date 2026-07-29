@@ -1,4 +1,5 @@
 mod config;
+mod error;
 mod docker;
 mod packages;
 mod shell;
