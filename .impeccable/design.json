@@ -1,0 +1,670 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-05T00:00:00Z",
+  "title": "Design System: Workspace Atlas",
+  "extensions": {
+    "notes": {
+      "canonicalScope": "src/index.css token layer and the THE BUTTON / THE ERROR BANNER / PRIMITIVES sections, src/components/ui.tsx, src/layout/Sidebar.tsx, src/components/CommandIndex.tsx, and the shared page shape (.view-container / .page-head / .page-scroll).",
+      "nonCanonicalScope": "Legacy per-module class families img-*, ctr-*, wsl-*, pkg-*, compose-* in src/features/docker/components/*, src/features/wsl/components/* and the Packages table. They inherit the tokens and the shared button base but predate the component vocabulary and are being migrated onto it.",
+      "frontmatterTheme": "Frontmatter colour values are the dark rendition, which is the app default (html[data-theme=\"dark\"]). The light rendition is carried per token below as lightTheme.",
+      "supersedes": "This record replaces an earlier 'Bound Record' notebook direction that was written but never implemented. PRODUCT.md commits to a developer console with no metaphor and no ornament, which is what the shipped stylesheet is."
+    },
+    "colorMeta": {
+      "bg-base": {
+        "role": "neutral",
+        "displayName": "App Ground",
+        "canonical": "#0b0c0e",
+        "lightTheme": "#f6f7f8",
+        "purpose": "The ground under everything, and the frame: rail, titlebar, terminal.",
+        "tonalRamp": [
+          "#0b0c0e",
+          "#111214",
+          "#17181b",
+          "#1e2024",
+          "#24262b",
+          "#3a3d44",
+          "#8d949e",
+          "#f2f3f5"
+        ]
+      },
+      "bg-primary": {
+        "role": "neutral",
+        "displayName": "Main Panel",
+        "canonical": "#111214",
+        "lightTheme": "#ffffff",
+        "purpose": "The page the content sits on, and the ground for inset code."
+      },
+      "bg-secondary": {
+        "role": "neutral",
+        "displayName": "Raised Surface",
+        "canonical": "#17181b",
+        "lightTheme": "#fbfbfc",
+        "purpose": "Cards, panels, stat tiles, raised rows, the default button."
+      },
+      "bg-tertiary": {
+        "role": "neutral",
+        "displayName": "Control Well",
+        "canonical": "#1e2024",
+        "lightTheme": "#f1f2f4",
+        "purpose": "Inputs, meter tracks, wells, the active state of a pressed button."
+      },
+      "bg-hover": {
+        "role": "neutral",
+        "displayName": "Pointer Ground",
+        "canonical": "#24262b",
+        "lightTheme": "#e9ebee",
+        "purpose": "A control under the pointer, and the lightest surface any text can land on. All contrast is measured here."
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "rgba(255,255,255,0.075)",
+        "lightTheme": "rgba(16,20,26,0.10)",
+        "purpose": "The default 1px separation. Does the work a shadow would do elsewhere."
+      },
+      "border-light": {
+        "role": "neutral",
+        "displayName": "Faint Hairline",
+        "canonical": "rgba(255,255,255,0.045)",
+        "lightTheme": "rgba(16,20,26,0.06)",
+        "purpose": "Row dividers inside a bordered container."
+      },
+      "border-strong": {
+        "role": "neutral",
+        "displayName": "Stated Hairline",
+        "canonical": "rgba(255,255,255,0.15)",
+        "lightTheme": "rgba(16,20,26,0.20)",
+        "purpose": "A control's border on hover, and the edge of an overlay."
+      },
+      "text-primary": {
+        "role": "neutral",
+        "displayName": "Primary Text",
+        "canonical": "#f2f3f5",
+        "lightTheme": "#16181c",
+        "purpose": "The fact itself.",
+        "contrast": "16.9:1 dark, 17.8:1 light, on the main panel"
+      },
+      "text-secondary": {
+        "role": "neutral",
+        "displayName": "Supporting Text",
+        "canonical": "#a2a9b2",
+        "lightTheme": "#5a626c",
+        "purpose": "Descriptions and supporting detail.",
+        "contrast": "7.9:1 dark, 6.2:1 light"
+      },
+      "text-tertiary": {
+        "role": "neutral",
+        "displayName": "Label Text",
+        "canonical": "#8d949e",
+        "lightTheme": "#616872",
+        "purpose": "Labels, counts, units, placeholders.",
+        "contrast": "6.1:1 dark (4.95:1 on hover), 5.6:1 light (4.7:1 on hover)"
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "Console Indigo",
+        "canonical": "#7c84e8",
+        "lightTheme": "#4a51c0",
+        "purpose": "The app's only accent: primary action, current selection, active tab underline, focus ring, command text.",
+        "tonalRamp": [
+          "#1a1d3d",
+          "#252a5c",
+          "#31377c",
+          "#3d449c",
+          "#4c53c4",
+          "#7c84e8",
+          "#959ced",
+          "#c9cdf6"
+        ]
+      },
+      "accent-fill": {
+        "role": "primary",
+        "displayName": "Indigo Fill",
+        "canonical": "#4c53c4",
+        "lightTheme": "#4c53c4",
+        "purpose": "Background value of the accent, dark enough that white sits on it at 6.3:1. Never used as small text."
+      },
+      "accent-hover": {
+        "role": "primary",
+        "displayName": "Indigo Bright",
+        "canonical": "#959ced",
+        "lightTheme": "#3a40a8",
+        "purpose": "The hover of a filled accent button, and accent text that has to survive its own tinted ground."
+      },
+      "accent-subtle": {
+        "role": "secondary",
+        "displayName": "Selection Wash",
+        "canonical": "rgba(124,132,232,0.14)",
+        "lightTheme": "rgba(76,83,196,0.10)",
+        "purpose": "Selected row, active segment, highlighted index row. The accent acting as furniture."
+      },
+      "success": {
+        "role": "tertiary",
+        "displayName": "Signal Green",
+        "canonical": "#4ec26a",
+        "lightTheme": "#1a6d36",
+        "purpose": "An operation that succeeded, a container that is running. State only.",
+        "tonalRamp": [
+          "#0c2916",
+          "#123d20",
+          "#18512b",
+          "#1a6d36",
+          "#2f9a52",
+          "#4ec26a",
+          "#7ad592",
+          "#b8ebc6"
+        ]
+      },
+      "success-subtle": {
+        "role": "tertiary",
+        "displayName": "Green Ground",
+        "canonical": "rgba(78,194,106,0.13)",
+        "lightTheme": "rgba(26,109,54,0.10)",
+        "purpose": "Ground behind green text. Must survive being applied twice."
+      },
+      "warning": {
+        "role": "tertiary",
+        "displayName": "Signal Amber",
+        "canonical": "#e0a63a",
+        "lightTheme": "#7d5307",
+        "purpose": "Caution: a restarting container, a meter past 75%, an operation with a side effect.",
+        "tonalRamp": [
+          "#2c1f05",
+          "#43300a",
+          "#5b410d",
+          "#7d5307",
+          "#b07f1e",
+          "#e0a63a",
+          "#eec173",
+          "#f7e0b4"
+        ]
+      },
+      "warning-subtle": {
+        "role": "tertiary",
+        "displayName": "Amber Ground",
+        "canonical": "rgba(224,166,58,0.13)",
+        "lightTheme": "rgba(125,83,7,0.10)",
+        "purpose": "Ground behind amber text."
+      },
+      "danger": {
+        "role": "tertiary",
+        "displayName": "Signal Red",
+        "canonical": "#f2665e",
+        "lightTheme": "#b02f28",
+        "purpose": "Failure, or an action that destroys. State only.",
+        "tonalRamp": [
+          "#33100d",
+          "#4d1814",
+          "#6b211c",
+          "#8c2b24",
+          "#b02f28",
+          "#d94b42",
+          "#f2665e",
+          "#f9aca7"
+        ]
+      },
+      "danger-fill": {
+        "role": "tertiary",
+        "displayName": "Red Fill",
+        "canonical": "#b8362e",
+        "lightTheme": "#b8362e",
+        "purpose": "The solid destructive confirm inside a dialog.",
+        "contrast": "5.8:1 with white text"
+      },
+      "danger-subtle": {
+        "role": "tertiary",
+        "displayName": "Red Ground",
+        "canonical": "rgba(242,102,94,0.13)",
+        "lightTheme": "rgba(176,47,40,0.10)",
+        "purpose": "Ground behind red text, and the outlined destructive button that opens a dialog."
+      },
+      "on-brand": {
+        "role": "neutral",
+        "displayName": "On Fill White",
+        "canonical": "#ffffff",
+        "lightTheme": "#ffffff",
+        "purpose": "The foreground of the accent and danger fills, and nothing else."
+      },
+      "on-fill": {
+        "role": "neutral",
+        "displayName": "On Bright Fill",
+        "canonical": "#0b0c0e",
+        "lightTheme": "#ffffff",
+        "purpose": "The foreground of the green and amber fills, where white measures 2.1:1 and fails."
+      },
+      "chrome-text": {
+        "role": "neutral",
+        "displayName": "Frame Text",
+        "canonical": "#f2f3f5",
+        "lightTheme": "#16181c",
+        "purpose": "Text on the rail, titlebar and terminal. Solid, never alpha."
+      },
+      "chrome-text-muted": {
+        "role": "neutral",
+        "displayName": "Frame Text Muted",
+        "canonical": "#a2a9b2",
+        "lightTheme": "#5a626c",
+        "purpose": "A rail item at rest."
+      },
+      "chrome-text-subtle": {
+        "role": "neutral",
+        "displayName": "Frame Text Subtle",
+        "canonical": "#8d949e",
+        "lightTheme": "#616872",
+        "purpose": "Counts and section labels in the frame."
+      },
+      "chrome-surface": {
+        "role": "neutral",
+        "displayName": "Frame Wash",
+        "canonical": "rgba(255,255,255,0.045)",
+        "lightTheme": "rgba(16,20,26,0.045)",
+        "purpose": "The active rail item, and the hover of a ghost button."
+      },
+      "chrome-surface-hover": {
+        "role": "neutral",
+        "displayName": "Frame Wash Hover",
+        "canonical": "rgba(255,255,255,0.075)",
+        "lightTheme": "rgba(16,20,26,0.075)",
+        "purpose": "A frame control under the pointer."
+      },
+      "chrome-divider": {
+        "role": "neutral",
+        "displayName": "Frame Divider",
+        "canonical": "rgba(255,255,255,0.075)",
+        "lightTheme": "rgba(16,20,26,0.10)",
+        "purpose": "Separation inside the frame, and the terminal scrollbar."
+      },
+      "titlebar-close": {
+        "role": "tertiary",
+        "displayName": "Windows Close Red",
+        "canonical": "#c4342b",
+        "lightTheme": "#c4342b",
+        "purpose": "The host platform's own value. The one place the app speaks Windows instead of itself, and therefore unthemed."
+      },
+      "syntax-comment": {
+        "role": "neutral",
+        "displayName": "Comment",
+        "canonical": "#7d858f",
+        "lightTheme": "#6b727c",
+        "purpose": "Compose, Dockerfile and .env comments."
+      },
+      "syntax-key": {
+        "role": "primary",
+        "displayName": "Key",
+        "canonical": "#7c84e8",
+        "lightTheme": "#4a51c0",
+        "purpose": "Top-level keys, and the Windows-path badge."
+      },
+      "syntax-key-nested": {
+        "role": "neutral",
+        "displayName": "Nested Key",
+        "canonical": "#a2a9b2",
+        "lightTheme": "#5a626c",
+        "purpose": "Keys below the first level."
+      },
+      "syntax-string": {
+        "role": "tertiary",
+        "displayName": "String",
+        "canonical": "#e0a63a",
+        "lightTheme": "#7d5307",
+        "purpose": "Quoted values."
+      },
+      "syntax-bool": {
+        "role": "tertiary",
+        "displayName": "Boolean",
+        "canonical": "#b07ce8",
+        "lightTheme": "#7b3fb5",
+        "purpose": "true / false."
+      },
+      "syntax-number": {
+        "role": "tertiary",
+        "displayName": "Number",
+        "canonical": "#4ec26a",
+        "lightTheme": "#1f7a3d",
+        "purpose": "Numeric values and ports."
+      },
+      "syntax-env": {
+        "role": "tertiary",
+        "displayName": "Env Reference",
+        "canonical": "#e08a4a",
+        "lightTheme": "#a8551f",
+        "purpose": "${VAR} interpolation, and the WSL-path badge."
+      },
+      "disk-other": {
+        "role": "neutral",
+        "displayName": "Other Apps & System",
+        "canonical": "#565d68",
+        "lightTheme": "#8c939d",
+        "purpose": "The non-Docker, non-WSL segment of a disk bar.",
+        "contrast": "3.1:1 against the panel, WCAG 1.4.11 non-text"
+      },
+      "disk-free": {
+        "role": "neutral",
+        "displayName": "Free Space",
+        "canonical": "#1e2024",
+        "lightTheme": "#e9ebee",
+        "purpose": "The empty remainder of a disk bar."
+      },
+      "shadow-ink": {
+        "role": "neutral",
+        "displayName": "Shadow Ink",
+        "canonical": "#000000",
+        "lightTheme": "#101a1a",
+        "purpose": "The only black. Cast shadow and overlay scrim only, never a surface, border or text colour."
+      }
+    },
+    "typographyMeta": {
+      "value": {
+        "displayName": "Value",
+        "purpose": "The one big tabular number on a stat card. One per card, never for prose."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "The page title in the pinned head. One per view."
+      },
+      "heading": {
+        "displayName": "Heading",
+        "purpose": "Prerequisite notices, dialog titles, the index search line."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Descriptions, empty-state copy, table cells."
+      },
+      "control": {
+        "displayName": "Control",
+        "purpose": "The working size: buttons, fields, tabs, rail items, segment labels."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Anything that names a group of facts: panel titles, table headers, section and stat labels."
+      },
+      "mono": {
+        "displayName": "Machine",
+        "purpose": "Commands, IDs, paths, terminal output. Never for emphasis or flavour."
+      }
+    },
+    "shadows": [
+      {
+        "name": "card",
+        "value": "none",
+        "purpose": "Cards, panels, tables and sections. Depth is tone and hairline, never shadow."
+      },
+      {
+        "name": "sm",
+        "value": "0 1px 2px color-mix(in srgb, #000 30%, transparent)",
+        "purpose": "A barely-there seat for small floating chrome."
+      },
+      {
+        "name": "md",
+        "value": "0 8px 24px -6px color-mix(in srgb, #000 50%, transparent)",
+        "purpose": "Popovers and dropdown menus."
+      },
+      {
+        "name": "lg",
+        "value": "0 20px 56px -16px color-mix(in srgb, #000 65%, transparent)",
+        "purpose": "Modal-scale overlays and the Ctrl+K index panel."
+      }
+    ],
+    "motion": [
+      {
+        "name": "fast",
+        "value": "0.1s ease",
+        "purpose": "Hover and colour changes on controls."
+      },
+      {
+        "name": "base",
+        "value": "0.15s ease",
+        "purpose": "The default state transition."
+      },
+      {
+        "name": "slow",
+        "value": "0.24s ease",
+        "purpose": "Panel and pane transitions."
+      },
+      {
+        "name": "overlay-in",
+        "value": "0.14s cubic-bezier(0.16,1,0.3,1)",
+        "purpose": "The index panel entrance."
+      },
+      {
+        "name": "reduced",
+        "value": "0.01ms",
+        "purpose": "Under prefers-reduced-motion. Travel is removed; state-carrying opacity pulses are kept, and animations are neutralised by keyframe name rather than by selector."
+      }
+    ],
+    "layout": [
+      {
+        "name": "titlebar-height",
+        "value": "44px"
+      },
+      {
+        "name": "sidebar-width",
+        "value": "212px",
+        "purpose": "The rail. User-resizable."
+      },
+      {
+        "name": "context-width",
+        "value": "300px",
+        "purpose": "Selection detail panel."
+      },
+      {
+        "name": "terminal-height",
+        "value": "240px",
+        "purpose": "Floats over the content column; not in its height calculation."
+      },
+      {
+        "name": "window-floor",
+        "value": "900x600",
+        "purpose": "Desktop only. There is no mobile context, so responsive behaviour is intrinsic rather than breakpoint-driven."
+      }
+    ],
+    "zIndex": [
+      {
+        "name": "sticky",
+        "value": 10
+      },
+      {
+        "name": "dropdown",
+        "value": 100
+      },
+      {
+        "name": "terminal",
+        "value": 200
+      },
+      {
+        "name": "modal",
+        "value": 500
+      },
+      {
+        "name": "palette",
+        "value": 600
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Default Button",
+      "kind": "button",
+      "refersTo": "button",
+      "description": "The neutral action. Raised ground, hairline, primary text.",
+      "html": "<button class=\"ds-btn\">Refresh</button>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 28px; padding: 0 11px; border: 1px solid var(--color-border, rgba(255,255,255,0.075)); border-radius: 6px; background: var(--color-bg-secondary, #17181b); color: var(--color-text-primary, #f2f3f5); font-family: inherit; font-size: 12px; font-weight: 500; line-height: 1; white-space: nowrap; cursor: pointer; transition: background 0.1s ease, border-color 0.1s ease, color 0.1s ease; } .ds-btn:hover { background: var(--color-bg-hover, #24262b); border-color: var(--color-border-strong, rgba(255,255,255,0.15)); } .ds-btn:active { background: var(--color-bg-tertiary, #1e2024); } .ds-btn:focus-visible { outline: 2px solid var(--color-accent, #7c84e8); outline-offset: 2px; } .ds-btn:disabled { opacity: 0.45; cursor: not-allowed; }"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one committing action on a surface. Solid indigo, white text.",
+      "html": "<button class=\"ds-btn-primary\">Execute prune</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 28px; padding: 0 11px; border: 1px solid var(--color-accent-fill, #4c53c4); border-radius: 6px; background: var(--color-accent-fill, #4c53c4); color: #fff; font-family: inherit; font-size: 12px; font-weight: 500; line-height: 1; cursor: pointer; transition: background 0.1s ease, border-color 0.1s ease; } .ds-btn-primary:hover { background: var(--color-accent-hover, #959ced); border-color: var(--color-accent-hover, #959ced); color: #fff; } .ds-btn-primary:focus-visible { outline: 2px solid var(--color-accent, #7c84e8); outline-offset: 2px; }"
+    },
+    {
+      "name": "Danger-outline Button",
+      "kind": "button",
+      "refersTo": "button-danger-outline",
+      "description": "The destructive action that opens a dialog. Deliberately lighter than the solid confirm inside it, because the most dangerous action must be the hardest to trigger.",
+      "html": "<button class=\"ds-btn-danger-outline\">Remove unused (7)</button>",
+      "css": ".ds-btn-danger-outline { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 28px; padding: 0 11px; border: 1px solid color-mix(in srgb, var(--color-danger, #f2665e) 26%, transparent); border-radius: 6px; background: var(--color-danger-subtle, rgba(242,102,94,0.13)); color: var(--color-danger, #f2665e); font-family: inherit; font-size: 12px; font-weight: 500; line-height: 1; cursor: pointer; transition: background 0.1s ease, border-color 0.1s ease; } .ds-btn-danger-outline:hover { background: color-mix(in srgb, var(--color-danger, #f2665e) 20%, transparent); border-color: color-mix(in srgb, var(--color-danger, #f2665e) 45%, transparent); } .ds-btn-danger-outline:focus-visible { outline: 2px solid var(--color-accent, #7c84e8); outline-offset: 2px; }"
+    },
+    {
+      "name": "Search Field",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "The only search control in the app, and it says one verb.",
+      "html": "<div class=\"ds-field\"><svg class=\"ds-field-icon\" width=\"13\" height=\"13\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><circle cx=\"11\" cy=\"11\" r=\"8\"></circle><path d=\"m21 21-4.3-4.3\"></path></svg><input class=\"ds-field-input\" placeholder=\"Search images\" /></div>",
+      "css": ".ds-field { display: inline-flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; width: 260px; border: 1px solid var(--color-border, rgba(255,255,255,0.075)); border-radius: 6px; background: var(--color-bg-tertiary, #1e2024); transition: border-color 0.1s ease; } .ds-field-icon { color: var(--color-text-tertiary, #8d949e); flex-shrink: 0; } .ds-field-input { flex: 1; min-width: 0; background: none; border: none; outline: none; color: var(--color-text-primary, #f2f3f5); font-family: inherit; font-size: 12px; } .ds-field-input::placeholder { color: var(--color-text-tertiary, #8d949e); } .ds-field:focus-within { outline: 2px solid var(--color-accent, #7c84e8); outline-offset: -2px; border-color: var(--color-accent, #7c84e8); }"
+    },
+    {
+      "name": "Tag",
+      "kind": "chip",
+      "refersTo": "tag",
+      "description": "A state annotation at 11px. Five tones; each takes its own colour, a mix of it for the border, and its subtle alpha for the ground.",
+      "html": "<span class=\"ds-tag\">local</span> <span class=\"ds-tag ds-tag--ok\">running</span> <span class=\"ds-tag ds-tag--warn\">restarting</span> <span class=\"ds-tag ds-tag--danger\">exited</span>",
+      "css": ".ds-tag { display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; padding: 1px 8px; border: 1px solid var(--color-border, rgba(255,255,255,0.075)); border-radius: 4px; background: var(--chrome-surface, rgba(255,255,255,0.045)); color: var(--color-text-secondary, #a2a9b2); font-family: inherit; font-size: 11px; font-weight: 500; white-space: nowrap; } .ds-tag--ok { color: var(--color-success, #4ec26a); border-color: color-mix(in srgb, var(--color-success, #4ec26a) 28%, transparent); background: var(--color-success-subtle, rgba(78,194,106,0.13)); } .ds-tag--warn { color: var(--color-warning, #e0a63a); border-color: color-mix(in srgb, var(--color-warning, #e0a63a) 28%, transparent); background: var(--color-warning-subtle, rgba(224,166,58,0.13)); } .ds-tag--danger { color: var(--color-danger, #f2665e); border-color: color-mix(in srgb, var(--color-danger, #f2665e) 26%, transparent); background: var(--color-danger-subtle, rgba(242,102,94,0.13)); }"
+    },
+    {
+      "name": "Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "A bordered group with an 11px uppercase head and tabular meta. No shadow, ever.",
+      "html": "<section class=\"ds-panel\"><div class=\"ds-panel-head\"><span class=\"ds-panel-title\">Reclaimable</span><span class=\"ds-panel-meta\">4 sources</span></div><div class=\"ds-panel-body\">Docker is holding 41.2 GB. 12.4 GB is safe to remove right now.</div></section>",
+      "css": ".ds-panel { border: 1px solid var(--color-border, rgba(255,255,255,0.075)); border-radius: 8px; background: var(--color-bg-secondary, #17181b); overflow: hidden; } .ds-panel-head { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--color-border-light, rgba(255,255,255,0.045)); } .ds-panel-title { font-family: inherit; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-tertiary, #8d949e); } .ds-panel-meta { font-size: 11px; color: var(--color-text-tertiary, #8d949e); font-variant-numeric: tabular-nums; margin-left: auto; } .ds-panel-body { padding: 12px 16px; font-size: 13px; line-height: 1.5; color: var(--color-text-primary, #f2f3f5); }"
+    },
+    {
+      "name": "Stat Card",
+      "kind": "custom",
+      "refersTo": "stat",
+      "description": "A label, one big tabular number, and a 3px meter that bands amber at 75% and red at 90%. The number is always stated, because a bar alone is not a reading.",
+      "html": "<div class=\"ds-stat\"><span class=\"ds-stat-label\">Disk C:</span><span class=\"ds-stat-value\">78<span class=\"ds-stat-unit\">%</span></span><span class=\"ds-stat-track\" role=\"meter\" aria-label=\"Disk C:\" aria-valuenow=\"78\" aria-valuemin=\"0\" aria-valuemax=\"100\"><span class=\"ds-stat-fill\"></span></span><span class=\"ds-stat-sub\">204 GB free of 931 GB</span></div>",
+      "css": ".ds-stat { display: flex; flex-direction: column; gap: 5px; width: 200px; padding: 12px 16px; background: var(--color-bg-secondary, #17181b); border: 1px solid var(--color-border, rgba(255,255,255,0.075)); border-radius: 8px; text-align: left; } .ds-stat-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-tertiary, #8d949e); } .ds-stat-value { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; color: var(--color-text-primary, #f2f3f5); font-variant-numeric: tabular-nums; } .ds-stat-unit { font-size: 12px; color: var(--color-text-tertiary, #8d949e); font-weight: 400; margin-left: 4px; letter-spacing: 0; } .ds-stat-track { display: block; height: 3px; border-radius: 2px; background: var(--color-bg-tertiary, #1e2024); overflow: hidden; } .ds-stat-fill { display: block; height: 100%; width: 100%; transform: scaleX(0.78); transform-origin: left; background: var(--color-warning, #e0a63a); } .ds-stat-sub { font-size: 11px; color: var(--color-text-tertiary, #8d949e); font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Command Block",
+      "kind": "custom",
+      "refersTo": "command",
+      "description": "The product thesis as a component: the exact command, in the machine's own face, selectable, shown before anything runs.",
+      "html": "<div class=\"ds-cmd\"><span class=\"ds-cmd-label\">Command</span><code class=\"ds-cmd-code\">docker image prune -a --filter \"until=168h\"</code></div>",
+      "css": ".ds-cmd { padding: 12px 16px; } .ds-cmd-label { display: block; font-family: inherit; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-tertiary, #8d949e); margin-bottom: 6px; } .ds-cmd-code { display: block; font-family: \"Cascadia Mono\", \"Cascadia Code\", Consolas, ui-monospace, monospace; font-size: 13px; color: var(--color-accent, #7c84e8); background: var(--color-bg-primary, #111214); padding: 8px 10px; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }"
+    },
+    {
+      "name": "Tab Strip",
+      "kind": "nav",
+      "refersTo": "tab",
+      "description": "Underline tabs with real tablist semantics: roving tabindex, arrow-key traversal, selection following focus.",
+      "html": "<div class=\"ds-tabs\" role=\"tablist\" aria-label=\"Sections\"><button class=\"ds-tab ds-tab--active\" role=\"tab\" aria-selected=\"true\" tabindex=\"0\">Overview</button><button class=\"ds-tab\" role=\"tab\" aria-selected=\"false\" tabindex=\"-1\">Startup</button><button class=\"ds-tab\" role=\"tab\" aria-selected=\"false\" tabindex=\"-1\">Performance</button></div>",
+      "css": ".ds-tabs { display: flex; align-items: center; gap: 2px; border-bottom: 1px solid var(--color-border, rgba(255,255,255,0.075)); } .ds-tab { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border: none; background: none; color: var(--color-text-tertiary, #8d949e); font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color 0.1s ease, border-color 0.1s ease; } .ds-tab:hover { color: var(--color-text-primary, #f2f3f5); } .ds-tab--active { color: var(--color-text-primary, #f2f3f5); border-bottom-color: var(--color-accent, #7c84e8); } .ds-tab:focus-visible { outline: 2px solid var(--color-accent, #7c84e8); outline-offset: -2px; }"
+    },
+    {
+      "name": "Rail Item",
+      "kind": "nav",
+      "refersTo": "rail-item",
+      "description": "One module in the flat rail. The active item takes the frame wash and carries aria-current.",
+      "html": "<nav class=\"ds-rail\" aria-label=\"Modules\"><button class=\"ds-rail-item ds-rail-item--active\" aria-current=\"page\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z\"></path></svg><span class=\"ds-rail-label\">Docker</span><span class=\"ds-rail-count\">12</span></button><button class=\"ds-rail-item\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"2\" y=\"7\" width=\"20\" height=\"10\" rx=\"2\"></rect><path d=\"M6 12h.01\"></path></svg><span class=\"ds-rail-label\">WSL</span><span class=\"ds-rail-count\">2</span></button></nav>",
+      "css": ".ds-rail { display: flex; flex-direction: column; gap: 1px; width: 212px; padding: 8px; background: var(--color-bg-base, #0b0c0e); } .ds-rail-item { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; width: 100%; border: none; border-radius: 6px; background: transparent; color: var(--chrome-text-muted, #a2a9b2); font-family: inherit; font-size: 12px; font-weight: 500; text-align: left; cursor: pointer; transition: background 0.1s ease, color 0.1s ease; } .ds-rail-item:hover { background: var(--chrome-surface, rgba(255,255,255,0.045)); color: var(--chrome-text, #f2f3f5); } .ds-rail-item--active { background: var(--chrome-surface, rgba(255,255,255,0.045)); color: var(--chrome-text, #f2f3f5); } .ds-rail-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .ds-rail-count { font-size: 11px; color: var(--chrome-text-subtle, #8d949e); font-variant-numeric: tabular-nums; } .ds-rail-item:focus-visible { outline: 2px solid var(--color-accent, #7c84e8); outline-offset: -2px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Quiet Console",
+    "overview": "This is a developer console held to the craft level of Linear, Vercel and Raycast, and that is a deliberate choice over an authored visual metaphor. The product's name is cartographic and its language is cartographic, but the interface carries no map, no notebook, no ornament. Familiarity is the feature: a developer arrives mid-incident with a full disk or a container that will not start, and they should trust the interface on sight rather than decode it. The tool disappears into the task.\n\nThe consequence is that the interface is almost entirely greyscale. Five near-neutral grounds with the barest cool cast, three weights of text, hairline borders, and exactly one accent that carries the primary action, the current selection and the focus ring. Everything else that has colour has it because the machine is in a state: green succeeded, amber is caution, red failed or will destroy. If a colour is not saying one of those things, it does not belong on the screen. Dark is the default because the scene is a developer at their desk beside a dark terminal, often at night; light is a true neutral, never a warm paper.\n\nDensity is a design position, not an accident. The whole app runs at 11 to 13px with a 28px control height and 34px table rows, because the user is comparing forty images or six distros and wants them on one screen. That density is what makes contrast and focus visibility structural rather than cosmetic: every colour token in the stylesheet carries its measured contrast ratio in a comment beside it, checked against the lightest ground it can land on rather than the average case, and the focus ring is enforced globally because at 11px there is nothing else to see it by.",
+    "keyCharacteristics": [
+      "Near-neutral greys, one indigo accent, and colour otherwise reserved for state.",
+      "Separation is a 1px hairline and a small tone shift. Cards do not float.",
+      "Four radii, none of them large; the biggest is 10px and belongs to overlays.",
+      "Seven space steps on a 4px scale, and seven type steps, six of which render.",
+      "Every number that sits in a column is tabular.",
+      "Contrast is measured and recorded in the token comment, not estimated."
+    ],
+    "rules": [
+      {
+        "name": "The Two Accents Rule",
+        "body": "accent is the text and border value; accent-fill is the background value. Never use the bright accent as a fill under white, and never use the fill accent as small text.",
+        "section": "colors"
+      },
+      {
+        "name": "The State-Only Rule",
+        "body": "Green, amber and red encode state and nothing else. They are never chrome, never a section accent, never a brand colour. If a colour is not saying \"this succeeded / take care / this failed\", it is not one of these three.",
+        "section": "colors"
+      },
+      {
+        "name": "The Fill Names Its Foreground Rule",
+        "body": "Every filled surface names its own text colour. A single on-brand white fails badly on the bright state colours (white on dark-theme amber measures 2.1:1), so green and amber fills take on-fill and only the accent and danger fills take white.",
+        "section": "colors"
+      },
+      {
+        "name": "The Solid Chrome Rule",
+        "body": "Chrome text tokens are solid hex, never alpha. A translucent chrome value composites down against whatever is behind it and fails at 11px.",
+        "section": "colors"
+      },
+      {
+        "name": "The Doubled Tint Rule",
+        "body": "A state colour has to survive its own tint applied twice: a selected card takes the subtle ground and the badge inside it takes the same ground again. That doubled ground is the darkest surface either can land on, and it is where the light-theme green and red were re-measured to 4.67:1 and 4.56:1.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Black Rule",
+        "body": "shadow-ink is the only black, and it exists for cast shadow and the scrim behind an overlay. It is unthemed, because a shadow is an absence of light in both renditions. The single exception is titlebar-close, the Windows system close-button red.",
+        "section": "colors"
+      },
+      {
+        "name": "The Annotation Palette Rule",
+        "body": "Compose files, Dockerfiles and .env are marked up in the app's own syntax-* tokens rather than an imported editor theme, and both themes read the same token names so there is no per-theme override to drift.",
+        "section": "colors"
+      },
+      {
+        "name": "The Machine Voice Rule",
+        "body": "Monospace means the string came from the machine or can be pasted back into it. Nothing is monospace for flavour.",
+        "section": "typography"
+      },
+      {
+        "name": "The Aligned Numbers Rule",
+        "body": "Every number that sits in a column takes font-variant-numeric: tabular-nums. Sizes, counts, versions, percentages and durations all line up.",
+        "section": "typography"
+      },
+      {
+        "name": "The Group Label Rule",
+        "body": "A panel title, a table header and a section label are all 11px, 600, uppercase, 0.06em, tertiary. They are the same thing wearing the same clothes. Do not introduce a fourth treatment for naming a group.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Rail Rule",
+        "body": "The module list is flat and always will be. Sections within a module live in the in-view tab strip; individual objects live in the index (Ctrl+K). The rail has to take twelve modules as easily as it takes three, which a nested tree cannot.",
+        "section": "layout"
+      },
+      {
+        "name": "The Flat Surface Rule",
+        "body": "A card, panel, table or section gets no shadow. If a thing needs a shadow it is not on the page, it is over the page, and it should be a real overlay with a scrim.",
+        "section": "elevation"
+      },
+      {
+        "name": "The One Exception",
+        "body": "The 20px titlebar mark is the single place in the app off both scales: a 10px literal on the stylesheet's only gradient. It is a logotype rather than type, exempt under WCAG 1.4.3, and it is the exception that should stay one.",
+        "section": "typography"
+      }
+    ],
+    "dos": [
+      "Do build new surfaces from src/components/ui.tsx. If the vocabulary lacks something, add it there.",
+      "Do give every view the same three-part shape: pinned head, optional tab strip, one scrolling body.",
+      "Do keep spacing on the seven-step 4px scale and pick one of the seven type steps and one of the four radii. All three scales are closed.",
+      "Do state a number as well as drawing it. Every meter prints its reading; every reclaim figure prints its size.",
+      "Do record the measured contrast ratio in a comment beside any new colour token, against the lightest ground it can land on (bg-hover), not the average case.",
+      "Do give any filled surface its own explicit foreground token.",
+      "Do show the exact command in a command block wherever the app is about to touch the machine.",
+      "Do make anything that switches panels a real tab strip via TabList / Tab, and anything that navigates a rail item with aria-current.",
+      "Do label every icon-only control with the row it belongs to, not just its verb: \"Remove volume pgdata\", not \"Remove\".",
+      "Do keep state-carrying pulses alive under reduced motion, and neutralise animations by keyframe name."
+    ],
+    "donts": [
+      "Don't reach for the legacy img-*, ctr-*, wsl-*, pkg-* or compose-* class families in new work. They inherit the tokens but not the vocabulary, and they are being migrated out.",
+      "Don't hardcode a colour, size, radius or spacing literal. Every value in this system is a token.",
+      "Don't use green, amber or red for anything that is not state.",
+      "Don't put a shadow on a card, panel, table or section. Shadows belong to real overlays only.",
+      "Don't introduce a radius above 10px, or use full on anything but the status pill and small dots.",
+      "Don't use monospace for emphasis or flavour. It means the string came from the machine.",
+      "Don't define a chrome text colour as an alpha value. It composites down against the frame and fails.",
+      "Don't nest the rail. Sections go in the tab strip, objects go in the index.",
+      "Don't ship a search control with a verb other than \"Search\", or a second empty-state or prerequisite treatment.",
+      "Don't suppress a focus ring. The global ring is deliberate and load-bearing at these type sizes.",
+      "Don't add ornament that illustrates the atlas metaphor. The metaphor governs language and information architecture; the interface stays a console."
+    ]
+  }
+}
