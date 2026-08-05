@@ -38,7 +38,17 @@ function truncFilename(name: string, max = 30): string {
 function ProgressBar({ p }: { p: VolumeProgress }) {
   return (
     <div className="vol-progress-wrap vol-progress-wrap--inline">
-      <div className="vol-progress-track">
+      {/* The bar used to communicate through `transform` alone, which is nothing
+          at all to a screen reader. */}
+      <div
+        className="vol-progress-track"
+        role="progressbar"
+        aria-label="Backup progress"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={p.progress}
+        aria-valuetext={`${p.progress}% - ${p.message}`}
+      >
         <div
           className={clsx('vol-progress-fill',
             p.status === 'running' && 'running',
@@ -48,7 +58,10 @@ function ProgressBar({ p }: { p: VolumeProgress }) {
           style={{ transform: `scaleX(${p.progress / 100})` }}
         />
       </div>
-      <div className={clsx('vol-progress-label', p.status === 'done' && 'ok', p.status === 'error' && 'err')}>
+      <div
+        className={clsx('vol-progress-label', p.status === 'done' && 'ok', p.status === 'error' && 'err')}
+        role="status"
+      >
         {p.status === 'running' && p.message}
         {p.status === 'done'    && `✓ ${p.filename ?? 'Done'}`}
         {p.status === 'error'   && `✗ ${p.error ?? p.message}`}
@@ -384,10 +397,12 @@ export default function VolumesTab({
               return (
                 <Fragment key={v.name}>
                   {/* ── Volume row - entire row is clickable ──────────────── */}
+                  {/* The row stays clickable, but the disclosure it drives now
+                      also exists as a real control in the name cell: a row is
+                      not focusable and takes no Enter key. */}
                   <tr
                     className={clsx('img-row img-row--clickable', isExpanded && 'img-row--expanded', isSelected && 'row-selected')}
                     onClick={() => toggleVolBackups(v.name)}
-                    title="Click to view backups"
                   >
                     <td className="img-td img-td-check" onClick={e => e.stopPropagation()}>
                       <input type="checkbox" className="row-checkbox" aria-label={`Select volume ${v.name}`}
@@ -396,13 +411,19 @@ export default function VolumesTab({
                       />
                     </td>
                     <td className="img-td">
-                      <div className="vol-name-cell">
+                      <button
+                        className="vol-name-cell"
+                        onClick={e => { e.stopPropagation(); toggleVolBackups(v.name) }}
+                        aria-expanded={isExpanded}
+                        aria-controls={`vol-backups-${v.name}`}
+                        aria-label={`${isExpanded ? 'Hide' : 'Show'} backups for ${volName.full}`}
+                      >
                         {isExpanded
                           ? <ChevronDown size={11} className="vol-name-chevron" />
                           : <ChevronRight size={11} className="vol-name-chevron" />
                         }
                         <span className="vol-name-text" title={volName.full}>{volName.display}</span>
-                      </div>
+                      </button>
                     </td>
                     <td className="img-td img-age">{v.driver}</td>
                     <td className="img-td img-age">{fmtBytes(v.size_bytes)}</td>
@@ -425,7 +446,7 @@ export default function VolumesTab({
                         onConfirm={() => doRemove(v.name)}
                         onArm={() => setActionError(null)}
                         disabled={isBusy || v.in_use}
-                        title={v.in_use ? 'Cannot remove: volume is in use' : 'Remove volume'}
+                        title={v.in_use ? `Cannot remove ${v.name}: it is in use` : `Remove volume ${v.name}`}
                       />
                     </td>
                   </tr>
@@ -433,7 +454,7 @@ export default function VolumesTab({
                   {/* ── Inline backup panel ────────────────────────────────── */}
                   {isExpanded && (
                     <tr className="vol-backup-expand-row">
-                      <td colSpan={6} className="vol-backup-expand-td">
+                      <td colSpan={6} className="vol-backup-expand-td" id={`vol-backups-${v.name}`}>
                         <div className="vol-backup-panel">
 
                           {/* Progress during backup */}
@@ -502,6 +523,7 @@ export default function VolumesTab({
                                             className="ctr-action-btn"
                                             onClick={() => revealItemInDir(entry.path).catch(() => {})}
                                             title="Open file location"
+                                            aria-label={`Open the folder holding ${entry.filename}`}
                                           >
                                             <FolderOpen size={12} />
                                           </button>
@@ -510,6 +532,7 @@ export default function VolumesTab({
                                             onClick={() => { setConfirmRestore(entry); setConfirmDelete(null) }}
                                             disabled={isRestoring}
                                             title="Restore from this backup"
+                                            aria-label={`Restore ${v.name} from ${entry.filename}`}
                                           >
                                             <RotateCcw size={12} />
                                           </button>
@@ -518,6 +541,7 @@ export default function VolumesTab({
                                             onClick={() => { setConfirmDelete(entry); setConfirmRestore(null) }}
                                             disabled={isDeletingEntry === entry.filename}
                                             title="Delete this backup"
+                                            aria-label={`Delete backup ${entry.filename}`}
                                           >
                                             <Trash2 size={12} />
                                           </button>

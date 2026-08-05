@@ -5,6 +5,7 @@ import { TerminalSquare, X, Trash2, ChevronDown, Square, ScrollText } from 'luci
 import clsx from 'clsx'
 import { useAppStore } from '../store/appStore'
 import ComposeLogPanel from '../features/docker/components/ComposeLogPanel'
+import { TabList, Tab } from '../components/ui'
 
 type ShellOut  = { text: string; stderr: boolean }
 type ShellDone = { exit_code: number }
@@ -183,8 +184,10 @@ export default function Terminal() {
     >
       {/* Header: tab bar + controls */}
       <div className="terminal-header">
-        <div className="terminal-tabs" onClick={e => e.stopPropagation()}>
-          <button
+        <TabList label="Terminal panel" className="terminal-tabs" onClick={e => e.stopPropagation()}>
+          <Tab
+            active={activeTab === 'shell'}
+            panelId="terminal-panel-shell"
             className={clsx('terminal-tab', activeTab === 'shell' && 'active')}
             onClick={() => { setTerminalTab('shell'); if (!terminalOpen) setTerminalOpen(true) }}
           >
@@ -194,25 +197,30 @@ export default function Terminal() {
               <span className="terminal-line-count">{terminalLines.length}</span>
             )}
             {running && <span className="terminal-running-badge">running</span>}
-          </button>
+          </Tab>
           {composeLogContext && (
-            <button
+            <Tab
+              active={activeTab === 'logs'}
+              panelId="terminal-panel-logs"
               className={clsx('terminal-tab', activeTab === 'logs' && 'active')}
               onClick={() => { setTerminalTab('logs'); if (!terminalOpen) setTerminalOpen(true) }}
-              title={`Logs - ${composeLogContext.project.name}`}
+              // The close affordance cannot be a nested button inside a tab, so
+              // the keyboard closes the tab the way every tabbed editor does.
+              onKeyDown={e => { if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); closeComposeLogs() } }}
+              title={`Logs - ${composeLogContext.project.name} (Delete to close)`}
             >
               <ScrollText size={12} />
               <span className="terminal-tab-label">Logs - {composeLogContext.project.name}</span>
               <span
                 className="terminal-tab-close"
                 onClick={e => { e.stopPropagation(); closeComposeLogs() }}
-                title="Close logs"
+                aria-hidden="true"
               >
                 <X size={11} />
               </span>
-            </button>
+            </Tab>
           )}
-        </div>
+        </TabList>
 
         {/* Empty strip - click to expand / collapse the panel */}
         <div className="terminal-header-grip" onClick={toggleTerminal} />
@@ -223,12 +231,13 @@ export default function Terminal() {
               className="terminal-btn terminal-kill-btn"
               onClick={killCommand}
               title="Kill running command (Ctrl+C)"
+              aria-label="Kill running command"
             >
               <Square size={10} />
             </button>
           )}
           {activeTab === 'shell' && terminalLines.length > 0 && (
-            <button className="terminal-btn" onClick={clearTerminal} title="Clear terminal">
+            <button className="terminal-btn" onClick={clearTerminal} title="Clear terminal" aria-label="Clear terminal">
               <Trash2 size={12} />
             </button>
           )}
@@ -236,6 +245,8 @@ export default function Terminal() {
             className="terminal-btn"
             onClick={toggleTerminal}
             title={terminalOpen ? 'Collapse' : 'Expand'}
+            aria-label={terminalOpen ? 'Collapse terminal panel' : 'Expand terminal panel'}
+            aria-expanded={terminalOpen}
           >
             {terminalOpen ? <X size={12} /> : <ChevronDown size={12} className="rotate-180" />}
           </button>
@@ -245,7 +256,13 @@ export default function Terminal() {
       {terminalOpen && (
         <>
           {/* Shell tab - hidden (not unmounted) while the logs tab is active */}
-          <div className="terminal-shell" style={{ display: activeTab === 'shell' ? 'flex' : 'none' }}>
+          <div
+            className="terminal-shell"
+            style={{ display: activeTab === 'shell' ? 'flex' : 'none' }}
+            id="terminal-panel-shell"
+            role="tabpanel"
+            aria-label="Terminal"
+          >
             {/* Output - user-select: text so lines can be selected and copied */}
             <div className="terminal-body" ref={bodyRef} tabIndex={-1}>
               {terminalLines.length === 0
@@ -284,7 +301,13 @@ export default function Terminal() {
           {/* Logs tab - kept mounted while a project's log context exists so the
               streamed buffer survives switching back to the shell tab. */}
           {composeLogContext && (
-            <div className="terminal-logs-host" style={{ display: activeTab === 'logs' ? 'flex' : 'none' }}>
+            <div
+              className="terminal-logs-host"
+              style={{ display: activeTab === 'logs' ? 'flex' : 'none' }}
+              id="terminal-panel-logs"
+              role="tabpanel"
+              aria-label={`Logs - ${composeLogContext.project.name}`}
+            >
               <ComposeLogPanel
                 project={composeLogContext.project}
                 containers={composeLogContext.containers}

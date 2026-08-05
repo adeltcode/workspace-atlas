@@ -175,13 +175,18 @@
   --color-accent-hover:  #3a40a8;
   --color-accent-subtle: rgba(76,83,196,0.10);
 
-  --color-success:        #1f7a3d;
-  --color-success-subtle: rgba(31,122,61,0.10);
+  /* A state colour has to survive its own tint twice: the prune level card takes
+     the subtle ground when selected and the badge inside it takes the same
+     ground again, which is the darkest surface either can land on. Measured
+     there: success 4.67:1, warning 4.91:1, danger 4.56:1. Green and red were
+     4.00:1 before this and are the reason both moved a stop darker. */
+  --color-success:        #1a6d36;
+  --color-success-subtle: rgba(26,109,54,0.10);
   --color-warning:        #7d5307;
   --color-warning-subtle: rgba(125,83,7,0.10);
-  --color-danger:         #c0362e;
+  --color-danger:         #b02f28;
   --color-danger-fill:    #b8362e;
-  --color-danger-subtle:  rgba(192,54,46,0.10);
+  --color-danger-subtle:  rgba(176,47,40,0.10);
   --color-on-fill:        #ffffff;
 
   --color-sidebar-bg:    #f6f7f8;
@@ -3169,10 +3174,19 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .img-row--clickable.img-row--expanded:hover td { background: var(--color-accent-subtle); filter: brightness(1.05); }
 
 /* Volume name cell (chevron + name, no button wrapper) */
+/* A button, because it is the volume row's disclosure and a row cannot take
+   focus. It carries no button chrome: the row is still the visible affordance. */
 .vol-name-cell {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 .vol-name-text {
   font-size: var(--text-sm);
@@ -5244,16 +5258,19 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 /* Lifecycle buttons keep the shared base and only add their consequence tint on
    hover, which lives with the other row actions in THE BUTTON. */
+/* The one accent-on-accent-tint pairing in the app. The resting accent measured
+   4.43:1 on its own 14% ground and 4.16:1 on the 18% hover ground, so this is
+   the brighter accent in both states: 5.78:1 and 5.43:1 dark, 7.1:1 light. */
 .compose-card-btn--detail {
   margin-left: auto;
-  color: var(--color-accent);
+  color: var(--color-accent-hover);
   border-color: var(--color-accent-border);
   background: var(--color-accent-subtle);
 }
 .compose-card-btn--detail:hover:not(:disabled) {
   background: color-mix(in srgb, var(--color-accent) 18%, transparent);
   border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
-  color: var(--color-accent);
+  color: var(--color-accent-hover);
 }
 
 /* ── Empty state ── */

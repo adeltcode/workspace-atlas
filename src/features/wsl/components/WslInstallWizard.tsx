@@ -250,10 +250,20 @@ export default function WslInstallWizard({ distros, onReload }: {
           {installing && (
             <div className="wiz-install">
               <DistroLogo name={pickedDistro.name} label={pickedDistro.friendly_name} size={56} />
-              <p className="wiz-status-title">{PHASE_LABEL[phase]} {pickedDistro.friendly_name}…</p>
+              <p className="wiz-status-title" role="status">{PHASE_LABEL[phase]} {pickedDistro.friendly_name}…</p>
 
               <div className="wiz-progress">
-                <div className="wiz-progress-track">
+                {/* Indeterminate means no `aria-valuenow` at all, which is how a
+                    screen reader is told "running, length unknown". */}
+                <div
+                  className="wiz-progress-track"
+                  role="progressbar"
+                  aria-label={`${PHASE_LABEL[phase]} ${pickedDistro.friendly_name}`}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={indeterminate ? undefined : pct}
+                  aria-valuetext={indeterminate ? `${PHASE_LABEL[phase]}…` : `${pct}%`}
+                >
                   <div
                     className={clsx('wiz-progress-fill', indeterminate && 'wiz-progress-fill--indet', !downloading && 'wiz-progress-fill--pulse')}
                     style={{ width: indeterminate ? undefined : `${pct}%` }}

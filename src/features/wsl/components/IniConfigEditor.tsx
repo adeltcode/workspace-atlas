@@ -9,6 +9,7 @@ import { getIniValue, setIniValue, type WslField, type WslSection } from '../ini
 import { bytesToHuman, formatDate } from '../../../utils/format'
 import type { WslConfigBackup } from '../types'
 import { Modal } from './Dialog'
+import { TabList, Tab } from '../../../components/ui'
 
 export interface IniBackend {
   load: () => Promise<{ path: string; content: string; exists: boolean }>
@@ -76,6 +77,9 @@ export default function IniConfigEditor({
 }) {
   const addActivity     = useAppStore(s => s.addActivity)
   const addTerminalLine = useAppStore(s => s.addTerminalLine)
+  // Two editors (.wslconfig and wsl.conf) can be mounted at once, so the panel
+  // the mode tabs point at needs an id that is unique per instance.
+  const panelId         = useId()
 
   const [path, setPath]         = useState('')
   const [text, setText]         = useState('')   // raw file text - single source of truth
@@ -238,21 +242,21 @@ export default function IniConfigEditor({
       </div>
 
       <div className="wslcfg-toolbar">
-        <div className="wslcfg-modes">
-          <button className={mode === 'form' ? 'active' : ''} onClick={() => setMode('form')}>
+        <TabList label={`${label} editing mode`} className="wslcfg-modes">
+          <Tab active={mode === 'form'} panelId={panelId} className={mode === 'form' ? 'active' : ''} onClick={() => setMode('form')}>
             <ListChecks size={13} /> Form
-          </button>
-          <button className={mode === 'raw' ? 'active' : ''} onClick={() => setMode('raw')}>
+          </Tab>
+          <Tab active={mode === 'raw'} panelId={panelId} className={mode === 'raw' ? 'active' : ''} onClick={() => setMode('raw')}>
             <FileCode2 size={13} /> Raw
-          </button>
-        </div>
+          </Tab>
+        </TabList>
         <button className="btn-secondary" onClick={backup} disabled={backing} title={`Snapshot the current ${label} (saves first)`}>
           <Archive size={13} /> {backing ? 'Backing up…' : 'Backup'}
         </button>
       </div>
 
       {mode === 'form' ? (
-        <div className="wslcfg-form">
+        <div className="wslcfg-form" id={panelId} role="tabpanel" aria-label="Form">
           {commonSplit ? (
             <>
               <div className="wslcfg-form-section">
@@ -283,7 +287,7 @@ export default function IniConfigEditor({
           )}
         </div>
       ) : (
-        <>
+        <div id={panelId} role="tabpanel" aria-label="Raw">
           {!text && template && (
             <button className="btn-secondary wslcfg-template-btn" onClick={() => setText(template)}>
               <FilePlus size={13} /> Insert template
@@ -295,11 +299,19 @@ export default function IniConfigEditor({
             onChange={e => { setText(e.target.value); setStatus(null) }}
             spellCheck={false}
             placeholder={`# ${label} is empty. Switch to Form or type settings here.`}
+            aria-label={`${label} contents`}
           />
-        </>
+        </div>
       )}
 
-      {status && <div className={`settings-status settings-status--${status.type}`}>{status.text}</div>}
+      {status && (
+        <div
+          className={`settings-status settings-status--${status.type}`}
+          role={status.type === 'error' ? 'alert' : 'status'}
+        >
+          {status.text}
+        </div>
+      )}
 
       <div className="wslcfg-actions">
         <button className="btn-filled btn-filled--accent" onClick={save} disabled={!dirty || saving}>

@@ -1502,9 +1502,11 @@ export default function ComposeTab({
                                 <span className="compose-backup-entry-size">{bytesToHuman(entry.size_bytes)}</span>
                                 <span className="compose-backup-entry-file" title={entry.filename}>{entry.filename}</span>
                                 <div className="compose-backup-entry-actions">
-                                  <button className="ctr-action-btn" onClick={() => revealItemInDir(entry.path).catch(() => {})} title="Open file location"><FolderOpen size={12} /></button>
+                                  <button className="ctr-action-btn" onClick={() => revealItemInDir(entry.path).catch(() => {})}
+                                    title="Open file location" aria-label={`Open the folder holding ${entry.filename}`}><FolderOpen size={12} /></button>
                                   <button className="ctr-action-btn ctr-action-remove" onClick={() => handleDeleteBackup(entry)}
-                                    disabled={deletingFile === entry.filename} title="Delete this backup"><Trash2 size={12} /></button>
+                                    disabled={deletingFile === entry.filename} title="Delete this backup"
+                                    aria-label={`Delete backup ${entry.filename}`}><Trash2 size={12} /></button>
                                 </div>
                               </li>
                             ))}

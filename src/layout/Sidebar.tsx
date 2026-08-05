@@ -89,6 +89,7 @@ export default function Sidebar() {
                   className={clsx('rail-kid', dockerTab === id && 'active')}
                   onClick={() => goDockerTab(id)}
                   style={{ width: '100%' }}
+                  aria-current={dockerTab === id ? 'page' : undefined}
                 >
                   <span className="rail-kid-label">{label}</span>
                   {tabCount(id) && <span className="rail-frac">{tabCount(id)}</span>}
@@ -105,6 +106,8 @@ export default function Sidebar() {
                           className={clsx('rail-kid', composeActiveProject === p.name && 'active')}
                           onClick={() => goComposeProject(p.name)}
                           style={{ width: '100%' }}
+                          aria-current={composeActiveProject === p.name ? 'page' : undefined}
+                          aria-label={total > 0 ? `${p.name}, ${running} of ${total} services running` : p.name}
                         >
                           <span className={clsx('rail-dot', dot)} />
                           <span className="rail-kid-label">{p.name}</span>
@@ -137,6 +140,9 @@ export default function Sidebar() {
                 className={clsx('rail-kid', wslView === 'distro' && wslSelectedDistro === d.name && 'active')}
                 onClick={() => goWslDistro(d.name)}
                 style={{ width: '100%' }}
+                aria-current={wslView === 'distro' && wslSelectedDistro === d.name ? 'page' : undefined}
+                // The dot is the only carrier of running state, and colour alone is not a carrier.
+                aria-label={`${d.name}, ${d.running ? 'running' : 'stopped'}${d.is_default ? ', default' : ''}`}
               >
                 <span className={clsx('rail-dot', d.running ? 'running' : 'stopped')} />
                 <span className="rail-kid-label">{d.name}</span>
@@ -147,6 +153,7 @@ export default function Sidebar() {
               className={clsx('rail-kid', wslView === 'install' && 'active')}
               onClick={() => goWslView('install')}
               style={{ width: '100%' }}
+              aria-current={wslView === 'install' ? 'page' : undefined}
             >
               <span className="rail-kid-label">Install distro</span>
             </button>
@@ -154,6 +161,7 @@ export default function Sidebar() {
               className={clsx('rail-kid', wslView === 'wslconfig' && 'active')}
               onClick={() => goWslView('wslconfig')}
               style={{ width: '100%' }}
+              aria-current={wslView === 'wslconfig' ? 'page' : undefined}
             >
               <span className="rail-kid-label">.wslconfig</span>
             </button>

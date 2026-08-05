@@ -99,10 +99,10 @@ function LogViewer({ id, name, onClose }: { id: string; name: string; onClose: (
               </button>
             ))}
           </div>
-          <button className="ctr-action-btn" onClick={() => load()} disabled={loading} title="Refresh logs">
+          <button className="ctr-action-btn" onClick={() => load()} disabled={loading} title="Refresh logs" aria-label="Refresh logs">
             <RefreshCw size={11} className={loading ? 'spin' : ''} />
           </button>
-          <button className="ctr-action-btn" onClick={onClose} title="Close logs">
+          <button className="ctr-action-btn" onClick={onClose} title="Close logs" aria-label="Close logs">
             <X size={11} />
           </button>
         </div>
@@ -390,12 +390,12 @@ export default function ContainersTab({
                     <td className="img-td ctr-td-actions" onClick={e => e.stopPropagation()}>
                       {isRunning ? (
                         <button className="ctr-action-btn ctr-action-stop" onClick={() => doAction(c.id, 'stop')}
-                          disabled={isBusy} title="Stop container">
+                          disabled={isBusy} title={`Stop ${c.name}`} aria-label={`Stop ${c.name}`}>
                           <Square size={12} />
                         </button>
                       ) : (
                         <button className="ctr-action-btn ctr-action-start" onClick={() => doAction(c.id, 'start')}
-                          disabled={isBusy} title="Start container">
+                          disabled={isBusy} title={`Start ${c.name}`} aria-label={`Start ${c.name}`}>
                           <Play size={12} />
                         </button>
                       )}
@@ -403,7 +403,7 @@ export default function ContainersTab({
                         onConfirm={() => doAction(c.id, 'remove')}
                         onArm={() => setActionError(null)}
                         disabled={isBusy || isRunning}
-                        title={isRunning ? 'Stop first to remove' : 'Remove container'}
+                        title={isRunning ? `Stop ${c.name} first to remove it` : `Remove ${c.name}`}
                       />
                     </td>
                   </tr>

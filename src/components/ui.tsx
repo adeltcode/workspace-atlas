@@ -443,3 +443,70 @@ export function SegmentedItem({ active, count, onClick, title, children }: {
     </button>
   )
 }
+
+// ── Tabs ─────────────────────────────────────────────────────────────────────
+// The app had four tab strips built from plain buttons and a CSS `.active`
+// class, so a screen reader announced them as an unlabelled row of buttons with
+// no selected state and no way to arrow between them. These two carry the
+// semantics; each strip keeps its own class, so this changes what the strip
+// says, not how it looks.
+
+/** `role="tablist"` with arrow-key traversal. Selection follows focus, which is
+ *  the WAI-ARIA automatic-activation pattern and is correct here because every
+ *  panel in this app is cheap to switch to. */
+export function TabList({ label, className, onClick, children }: {
+  label: string
+  className?: string
+  /** Escape hatch for a strip that sits inside another click surface. */
+  onClick?: React.MouseEventHandler<HTMLDivElement>
+  children: React.ReactNode
+}) {
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return
+    // Reading the tabs out of the DOM beats threading a ref array through every
+    // call site, and no strip in this app is more than four tabs long.
+    const tabs = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]:not([disabled])'))
+    const i = tabs.indexOf(document.activeElement as HTMLButtonElement)
+    if (i === -1) return
+    e.preventDefault()
+    const next =
+      e.key === 'Home'  ? tabs[0] :
+      e.key === 'End'   ? tabs[tabs.length - 1] :
+      tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]
+    next.focus()
+    next.click()
+  }
+  return (
+    <div className={className} role="tablist" aria-label={label} onKeyDown={onKeyDown} onClick={onClick}>
+      {children}
+    </div>
+  )
+}
+
+/** One tab. `tabIndex` is roving: only the selected tab is in the Tab order, so
+ *  Tab moves past the whole strip and the arrows move within it. */
+export function Tab({ active, panelId, className, onClick, onKeyDown, title, children }: {
+  active: boolean
+  /** `id` of the element carrying `role="tabpanel"`, when there is one. */
+  panelId?: string
+  className?: string
+  onClick: () => void
+  onKeyDown?: React.KeyboardEventHandler<HTMLButtonElement>
+  title?: string
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      role="tab"
+      aria-selected={active}
+      tabIndex={active ? 0 : -1}
+      aria-controls={panelId}
+      className={className}
+      onClick={onClick}
+      onKeyDown={onKeyDown}
+      title={title}
+    >
+      {children}
+    </button>
+  )
+}

@@ -497,7 +497,7 @@ export default function WslHome({ distros, loading, onReload }: {
               <button className="settings-dir-btn" onClick={async () => { const p = await api.pickDirectory(); if (p) setImportDir(p) }}>Browse…</button>
             </div>
           </Field>
-          {importErr && <div className="settings-status settings-status--error">{importErr}</div>}
+          {importErr && <div className="settings-status settings-status--error" role="alert">{importErr}</div>}
           <div className="modal-actions">
             <button className="btn-secondary" onClick={() => setShowImport(false)} disabled={importing}>Cancel</button>
             <button className="btn-filled btn-filled--accent" onClick={runImport} disabled={importing || !importTar || !importName.trim() || !importDir}>

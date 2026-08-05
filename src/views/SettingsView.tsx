@@ -221,7 +221,10 @@ export default function SettingsView() {
 
           {/* Status message */}
           {statusMsg && (
-            <div className={`settings-status settings-status--${statusMsg.type}`}>
+            <div
+              className={`settings-status settings-status--${statusMsg.type}`}
+              role={statusMsg.type === 'error' ? 'alert' : 'status'}
+            >
               {statusMsg.text}
             </div>
           )}

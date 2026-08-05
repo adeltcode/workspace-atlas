@@ -11,6 +11,7 @@ import { bytesToHuman } from '../../../utils/format'
 import { Modal, Field } from './Dialog'
 import { DistroLogo } from '../DistroLogo'
 import { useAsyncAction } from '../../../hooks/useAsyncAction'
+import { TabList, Tab } from '../../../components/ui'
 import WslDashboardTab from './WslDashboardTab'
 import WslStartupTab from './WslStartupTab'
 import WslPerformanceTab from './WslPerformanceTab'
@@ -249,37 +250,44 @@ export default function WslDistroPage({ distros, onReload }: {
         </div>
       </div>
 
+      {/* An operation here can run for minutes with no other visible sign, so the
+          line that reports it is a live region. */}
       {status && (
         <p
           className={status.kind === 'err' ? 'wsl-opt-error' : status.kind === 'progress' ? 'wsl-opt-progress' : 'wsl-opt-result'}
           style={{ margin: '0 0 14px' }}
+          role={status.kind === 'err' ? 'alert' : 'status'}
         >
           {status.text}
         </p>
       )}
 
-      <div className="wsl-page-tabs">
+      <TabList label={`${d.name} sections`} className="wsl-page-tabs">
         {TABS.map(({ id, label, icon: Icon }) => (
-          <button
+          <Tab
             key={id}
+            active={tab === id}
+            panelId="wsl-distro-panel"
             className={clsx('wsl-page-tab', tab === id && 'wsl-page-tab--active')}
             onClick={() => setTab(id)}
           >
             <Icon size={13} /> {label}
-          </button>
+          </Tab>
         ))}
-      </div>
+      </TabList>
 
-      {tab === 'overview'    && <WslDashboardTab distros={distros} onReload={onReload} />}
-      {tab === 'startup'     && <WslStartupTab distros={distros} onReload={onReload} onGoToConf={() => setTab('config')} />}
-      {tab === 'performance' && <WslPerformanceTab distros={distros} onReload={onReload} />}
-      {tab === 'config'      && (
-        <WslConfTab
-          distros={distros}
-          runningNames={distros.filter(x => x.running).map(x => x.name)}
-          onAfterShutdown={onReload}
-        />
-      )}
+      <div id="wsl-distro-panel" role="tabpanel" aria-label={TABS.find(t => t.id === tab)?.label}>
+        {tab === 'overview'    && <WslDashboardTab distros={distros} onReload={onReload} />}
+        {tab === 'startup'     && <WslStartupTab distros={distros} onReload={onReload} onGoToConf={() => setTab('config')} />}
+        {tab === 'performance' && <WslPerformanceTab distros={distros} onReload={onReload} />}
+        {tab === 'config'      && (
+          <WslConfTab
+            distros={distros}
+            runningNames={distros.filter(x => x.running).map(x => x.name)}
+            onAfterShutdown={onReload}
+          />
+        )}
+      </div>
 
       {/* ── Management dialogs ───────────────────────────────────────── */}
       {confirmOpt && (
@@ -316,7 +324,7 @@ export default function WslDistroPage({ distros, onReload }: {
               <button className="settings-dir-btn" onClick={async () => { const p = await api.pickDirectory(); if (p) setCloneDir(p) }}>Browse…</button>
             </div>
           </Field>
-          {cloneErr && <div className="settings-status settings-status--error">{cloneErr}</div>}
+          {cloneErr && <div className="settings-status settings-status--error" role="alert">{cloneErr}</div>}
           <div className="modal-actions">
             <button className="btn-secondary" onClick={() => setShowClone(false)} disabled={busyOp === 'clone'}>Cancel</button>
             <button className="btn-filled btn-filled--accent" onClick={runClone} disabled={busyOp === 'clone' || !cloneName.trim() || !cloneDir}>
@@ -339,7 +347,7 @@ export default function WslDistroPage({ distros, onReload }: {
               <button className="settings-dir-btn" onClick={async () => { const p = await api.pickDirectory(); if (p) setMigrateDir(p) }}>Browse…</button>
             </div>
           </Field>
-          {migrateErr && <div className="settings-status settings-status--error">{migrateErr}</div>}
+          {migrateErr && <div className="settings-status settings-status--error" role="alert">{migrateErr}</div>}
           <div className="modal-actions">
             <button className="btn-secondary" onClick={() => setShowMigrate(false)} disabled={busyOp === 'migrate'}>Cancel</button>
             <button className="btn-filled btn-filled--accent" onClick={runMigrate} disabled={busyOp === 'migrate' || !migrateDir}>
@@ -388,7 +396,7 @@ export default function WslDistroPage({ distros, onReload }: {
             onChange={e => setDeleteText(e.target.value)}
             disabled={busyOp === 'delete'}
           />
-          {deleteErr && <div className="settings-status settings-status--error">{deleteErr}</div>}
+          {deleteErr && <div className="settings-status settings-status--error" role="alert">{deleteErr}</div>}
           <div className="modal-actions">
             <button className="btn-secondary" onClick={() => { setShowDelete(false); setDeleteText('') }} disabled={busyOp === 'delete'}>Cancel</button>
             <button className="btn-filled btn-filled--danger" onClick={runDelete} disabled={!deleteArmed || busyOp === 'delete'}>
