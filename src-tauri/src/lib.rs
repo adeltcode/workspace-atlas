@@ -79,6 +79,7 @@ pub fn run() {
             wsl::wsl_restart_distro,
             wsl::wsl_start_distro,
             wsl::wsl_clone_distro,
+            wsl::wsl_plan_migration,
             wsl::wsl_migrate_distro,
             wsl::wsl_unregister_distro,
             wsl::wsl_list_services,

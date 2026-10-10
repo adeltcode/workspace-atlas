@@ -53,11 +53,13 @@ pub struct AtlasError {
     /// The original text from Windows, Docker or WSL, when it adds anything the
     /// message does not already say.
     pub detail: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recovery_path: Option<String>,
 }
 
 impl AtlasError {
     pub fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
-        Self { kind, message: message.into(), hint: None, detail: None }
+        Self { kind, message: message.into(), hint: None, detail: None, recovery_path: None }
     }
 
     pub fn hint(mut self, hint: impl Into<String>) -> Self {

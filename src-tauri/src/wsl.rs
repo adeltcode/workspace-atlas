@@ -1510,6 +1510,34 @@ pub async fn wsl_clone_distro(
 }
 
 #[tauri::command]
+pub async fn wsl_plan_migration(
+    state: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    distro: String,
+    new_dir: String,
+) -> Result<crate::wsl_migration::MigrationPlan, AtlasError> {
+    let gate = state.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = gate.try_write().map_err(|_| AtlasError::new(ErrorKind::Busy, "Finish the active Atlas operation first.")
+            .hint("Close terminal commands or Compose log streams, then check again."))?;
+        check_migration_support()?;
+        let distros = read_distros()?;
+        let source = crate::wsl_migration::source_distro(&distro, &distros)?;
+        crate::wsl_migration::plan(std::path::Path::new(new_dir.trim()), source, &distros)
+    }).await.map_err(|e| e.to_string())?
+}
+
+fn check_migration_support() -> Result<(), AtlasError> {
+    crate::wsl_migration::require_docker_stopped()?;
+    let help = Command::new("wsl").env("WSL_UTF8", "1").arg("--help").output()?;
+    let help_text = String::from_utf8_lossy(&help.stdout);
+    if !help.status.success() || !help_text.contains("--move") || !help_text.contains("--format") {
+        return Err(AtlasError::invalid("Update WSL to move this distribution.")
+            .hint("Install the latest WSL version, then check again."));
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn wsl_migrate_distro(
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::wsl_migration::MigrationState>,
@@ -1518,25 +1546,19 @@ pub async fn wsl_migrate_distro(
 ) -> Result<crate::wsl_migration::MigrateResult, AtlasError> {
     let gate = state.0.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let _guard = gate.try_write().map_err(|_| AtlasError::new(ErrorKind::Busy, "Another Docker, WSL, or terminal operation is active.")
-            .hint("Finish the operation or close the Compose log stream, then retry migration."))?;
-        crate::wsl_migration::require_docker_stopped()?;
-        let help = Command::new("wsl").env("WSL_UTF8", "1").arg("--help").output()?;
-        let help_text = String::from_utf8_lossy(&help.stdout);
-        if !help_text.contains("--move") || !help_text.contains("--format") {
-            return Err(AtlasError::invalid("This WSL version does not support direct migration with VHD export.")
-                .hint("Update WSL, then retry. No disk was moved."));
-        }
+        let _guard = gate.try_write().map_err(|_| AtlasError::new(ErrorKind::Busy, "Finish the active Atlas operation first.")
+            .hint("Close terminal commands or Compose log streams, then check again."))?;
+        check_migration_support()?;
         let distros = read_distros()?;
         let source = crate::wsl_migration::source_distro(&distro, &distros)?;
-        let dest = crate::wsl_migration::destination(std::path::Path::new(&new_dir), &distros)?;
-        let size = std::fs::metadata(&source.vhd_path)?.len();
-        crate::wsl_migration::ensure_space(&dest, size, 2)?;
-        if let Some(parent) = dest.parent() {
-            crate::wsl_migration::ensure_space(parent, size, 1)?;
-        }
+        let dest = crate::wsl_migration::confirmed_destination(std::path::Path::new(new_dir.trim()), &distros)?;
+        crate::wsl_migration::plan(&dest, source, &distros)?;
+        let _directory_guards = crate::wsl_migration::create_destination(&dest, &distros)?;
         crate::wsl_migration::migrate(source, &dest, run_wsl, read_distros,
-            |line| emit_line(&app, line, false))
+            |line| emit_line(&app, line, false),
+            |phase| { app.emit("wsl-migration-progress", crate::wsl_migration::MigrationProgress {
+                distro: distro.clone(), phase: phase.to_string(),
+            }).ok(); })
     })
     .await
     .map_err(|e| e.to_string())?

@@ -11,12 +11,12 @@ import { bytesToHuman } from '../../../utils/format'
 import { Modal, Field } from './Dialog'
 import { DistroLogo } from '../DistroLogo'
 import { useAsyncAction } from '../../../hooks/useAsyncAction'
-import { TabList, Tab, ErrorBanner } from '../../../components/ui'
-import { toAppError, type AppError } from '../../../utils/errors'
+import { TabList, Tab } from '../../../components/ui'
 import WslDashboardTab from './WslDashboardTab'
 import WslStartupTab from './WslStartupTab'
 import WslPerformanceTab from './WslPerformanceTab'
 import WslConfTab from './WslConfTab'
+import WslMigrationDialog from './WslMigrationDialog'
 
 const TABS: { id: WslDistroTab; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'overview',    label: 'Overview',    icon: LayoutDashboard },
@@ -45,7 +45,7 @@ export default function WslDistroPage({ distros, onReload }: {
 
   // ── Management state (export / optimize / clone / migrate / delete) ───────
   const [extras, setExtras]   = useState<DistroExtras | null>(null)
-  const [busyOp, setBusyOp]   = useState<'export' | 'optimize' | 'clone' | 'migrate' | 'delete' | null>(null)
+  const [busyOp, setBusyOp]   = useState<'export' | 'optimize' | 'clone' | 'delete' | null>(null)
   const [status, setStatus]   = useState<PageStatus>(null)
   const [confirmOpt, setConfirmOpt] = useState(false)
   const [showClone, setShowClone]   = useState(false)
@@ -53,8 +53,6 @@ export default function WslDistroPage({ distros, onReload }: {
   const [cloneDir, setCloneDir]     = useState('')
   const [cloneErr, setCloneErr]     = useState<string | null>(null)
   const [showMigrate, setShowMigrate] = useState(false)
-  const [migrateDir, setMigrateDir]   = useState('')
-  const [migrateErr, setMigrateErr]   = useState<AppError | null>(null)
   const [showDelete, setShowDelete]     = useState(false)
   const [deleteText, setDeleteText]     = useState('')
   const [deleteErr, setDeleteErr]       = useState<string | null>(null)
@@ -151,22 +149,6 @@ export default function WslDistroPage({ distros, onReload }: {
     } finally { setBusyOp(null); setBusyDistro(null) }
   })
 
-  const runMigrate = () => op.run(async () => {
-    if (!migrateDir || useAppStore.getState().wslBusyDistro) return
-    setBusyOp('migrate'); setBusyDistro(d.name); setMigrateErr(null)
-    setStatus({ kind: 'progress', text: 'Backing up, validating, and moving the distribution. Follow progress in the terminal.' })
-    try {
-      const r = await api.wslMigrateDistro(d.name, migrateDir)
-      setShowMigrate(false); setMigrateDir('')
-      setStatus({ kind: 'ok', text: `Migration verified. Backup: ${r.backup_path}. Recovery guide: ${r.recovery_path}` })
-      addActivity({ module: 'wsl', action: `Migrated ${d.name}`, outcome: 'success', detail: `${migrateDir}\nBackup: ${r.backup_path}\nRecovery: ${r.recovery_path}` })
-    } catch (e) {
-      const error = toAppError(e)
-      setMigrateErr(error); setStatus({ kind: 'err', text: error.message })
-      addActivity({ module: 'wsl', action: `Migrated ${d.name}`, outcome: 'failure', detail: `${error.message}\n${error.hint ?? ''}\n${error.detail ?? ''}` })
-    } finally { setBusyOp(null); setBusyDistro(null); onReload() }
-  })
-
   // The typed name must match exactly (trailing whitespace from a paste aside).
   // The backend re-checks it, so this only decides when the button lights up.
   const deleteArmed = deleteText.trim() === d.name
@@ -230,8 +212,8 @@ export default function WslDistroPage({ distros, onReload }: {
                 <button className="wsl-menu-item" role="menuitem" onClick={() => { setManageOpen(false); setCloneErr(null); setCloneName(`${d.name}-clone`); setCloneDir(''); setShowClone(true) }}>
                   <Copy size={14} /> Clone…
                 </button>
-                <button className="wsl-menu-item" role="menuitem" onClick={() => { setManageOpen(false); setMigrateErr(null); setMigrateDir(''); setShowMigrate(true) }}>
-                  <ArrowRightLeft size={14} /> Migrate to another drive…
+                <button className="wsl-menu-item" role="menuitem" disabled={d.version !== 2 || d.name.toLowerCase().startsWith('docker-desktop')} onClick={() => { setManageOpen(false); setShowMigrate(true) }}>
+                  <ArrowRightLeft size={14} /> Move to another drive…
                 </button>
                 {d.version === 2 && d.vhd_path && (
                   <button className="wsl-menu-item" role="menuitem" onClick={() => { setManageOpen(false); setConfirmOpt(true) }}>
@@ -340,29 +322,9 @@ export default function WslDistroPage({ distros, onReload }: {
       )}
 
       {showMigrate && (
-        <Modal icon={<ArrowRightLeft size={16} />} iconWarning title={`Migrate ${d.name}`} onClose={() => setShowMigrate(false)} blocking={busyOp === 'migrate'} returnFocusRef={manageButtonRef}>
-          <p className="modal-body">
-            Move <strong>{d.name}</strong> to an empty folder using WSL's move command.
-            A VHD backup is exported and checked byte for byte first. The moved distribution is checked for boot and writable files.
-            The <strong>backup and recovery guide are kept beside the destination folder</strong>.
-          </p>
-          <p className="modal-body">Save your work and close terminals and tools that use this distribution. Migration stops its processes. Keep this app open until it finishes.</p>
-          <p className="wsl-estimate-note">Allow space for the backup, a copy of the virtual disk, and 1 GiB of working space. WSL 2 and a WSL version with the move command are required.</p>
-          <p className="wsl-estimate-note">Quit Docker Desktop and finish terminal commands or Compose log streams first. Close external tools that could restart this distribution. Docker data and Windows-mounted files need separate backups.</p>
-          <Field label="Destination folder">
-            <div className="wsl-import-row">
-              <input className="settings-dir-input" aria-label="Destination folder" value={migrateDir} readOnly placeholder="Choose a folder on the target drive…" />
-              <button className="settings-dir-btn" disabled={busyOp === 'migrate'} onClick={async () => { const p = await api.pickDirectory(); if (p) setMigrateDir(p) }}>Browse…</button>
-            </div>
-          </Field>
-          {migrateErr && <ErrorBanner title="Migration did not finish" error={migrateErr} />}
-          <div className="modal-actions">
-            <button className="btn-secondary" onClick={() => setShowMigrate(false)} disabled={busyOp === 'migrate'}>Cancel</button>
-            <button className="btn-filled btn-filled--accent" onClick={runMigrate} disabled={busyOp === 'migrate' || !migrateDir}>
-              <ArrowRightLeft size={13} /> {busyOp === 'migrate' ? 'Migrating…' : 'Migrate'}
-            </button>
-          </div>
-        </Modal>
+        <WslMigrationDialog distro={d} onClose={() => setShowMigrate(false)} onReload={onReload}
+          onComplete={result => setStatus({ kind: 'ok', text: `Moved ${d.name} to ${result.destination}. Backup kept.` })}
+          returnFocusRef={manageButtonRef} />
       )}
 
       {/* Delete is the one action with no rollback artifact: no backup .tar, no

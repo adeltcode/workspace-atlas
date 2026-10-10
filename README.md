@@ -27,8 +27,11 @@ Built with Tauri v2 (Rust) + React 19 + TypeScript + Vite + Tailwind v4.
 - **Install distro**: catalog browse and download
 - **`.wslconfig` / `wsl.conf`**: editors with backup and restore
 
-WSL migration requires WSL 2 and `wsl --manage --move`. Choose an empty folder on
-a local drive and save any work in the distribution first. Atlas checks free
+WSL migration requires WSL 2 and `wsl --manage --move`. Choose a folder on
+a local drive, or select a drive root to get a suggested `WSL\<distro>` folder.
+Atlas checks the destination and free space before showing a review. New folders
+are created only when you confirm. Save work in all distributions first.
+Atlas shuts down all WSL sessions to release the disk, checks free
 space, exports and byte-verifies a VHD backup, moves the registered disk, and verifies
 that it boots with a writable root filesystem and default-user home directory.
 Backup and destination permissions are restricted to your Windows account,
@@ -39,9 +42,8 @@ and byte verification finish. Keep those files until you have checked your
 files and applications. On failure or interruption, follow the recovery guide
 before retrying; it restores a separate distribution without deleting the
 existing one. Docker Desktop distributions must be moved through Docker Desktop.
-If WSL retains a disk lock after stopping the distribution, save work in all
-distributions, quit Docker Desktop, and run `wsl --shutdown` before retrying.
-Atlas does not force a locked disk to move or automatically stop other workloads.
+If another tool retains a disk lock after shutdown, close WSL terminals and
+editors before retrying. Atlas never forces a locked disk to move.
 Quit Docker Desktop before starting migration, and finish active Atlas operations,
 including terminal commands and Compose log streams. Atlas rejects conflicting
 operations until migration finishes. Close external terminals, editors, and tools

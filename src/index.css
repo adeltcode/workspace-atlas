@@ -7174,6 +7174,31 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 .wsl-import-row .settings-dir-input { flex: 1; }
 
+.wsl-migration { display: flex; flex-direction: column; gap: var(--space-4); }
+.wsl-migration .modal-body, .wsl-migration .wsl-import-field, .wsl-migration .modal-actions { margin: 0; }
+.wsl-migration-location { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg-primary); }
+.wsl-migration-location > span { font-size: var(--text-xs); color: var(--color-text-secondary); }
+.wsl-migration-location code, .wsl-migration-details code { display: block; font-size: var(--text-xs); overflow-wrap: anywhere; user-select: text; }
+.wsl-migration-location small, .wsl-migration-note { font-size: var(--text-xs); color: var(--color-text-secondary); line-height: 1.5; }
+.wsl-migration-space { display: flex; gap: var(--space-2); align-items: flex-start; font-size: var(--text-xs); color: var(--color-success); }
+.wsl-migration-space svg, .wsl-migration-notice > svg { flex-shrink: 0; margin-top: 2px; }
+.wsl-migration-notice { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3); border: 1px solid color-mix(in srgb, var(--color-warning) 30%, transparent); border-radius: var(--radius-md); background: var(--color-warning-subtle); font-size: var(--text-xs); }
+.wsl-migration-notice > svg { color: var(--color-warning); }
+.wsl-migration-notice p { margin-top: var(--space-2); line-height: 1.5; color: var(--color-text-secondary); }
+.wsl-migration-running { overflow-wrap: anywhere; }
+.wsl-migration-details { font-size: var(--text-xs); color: var(--color-text-secondary); line-height: 1.5; }
+.wsl-migration-details summary { width: fit-content; cursor: pointer; }
+.wsl-migration-details > p, .wsl-migration-details > code, .wsl-migration-details > button { margin-top: var(--space-3); }
+.wsl-migration-progress { list-style: none; display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-4); }
+.wsl-migration-progress li { display: flex; align-items: center; gap: var(--space-3); color: var(--color-text-tertiary); font-size: var(--text-sm); }
+.wsl-migration-progress .is-current { color: var(--color-text-primary); font-weight: 600; }
+.wsl-migration-progress .is-complete { color: var(--color-success); }
+.wsl-migration-step { width: 15px; text-align: center; font-size: var(--text-xs); }
+.wsl-migration-spinner { animation: wsl-migration-spin 1s linear infinite; }
+@keyframes wsl-migration-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .wsl-migration-spinner { animation: none; } }
+.wsl-menu-item:disabled { opacity: 0.5; cursor: not-allowed; }
+
 
 /* ── Distro brand badge (official logo, or lettered avatar fallback) ───────── */
 .distro-logo {

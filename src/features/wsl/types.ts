@@ -114,8 +114,22 @@ export interface DistroExtras {
 }
 
 export interface MigrateResult {
+  destination: string
   backup_path: string
   recovery_path: string
+}
+
+export interface MigrationPlan {
+  destination: string
+  create_directory: boolean
+  running_distros: string[]
+  required_bytes: number
+  available_bytes: number
+}
+
+export interface MigrationProgress {
+  distro: string
+  phase: 'stopping' | 'backing-up' | 'verifying-backup' | 'moving' | 'checking'
 }
 
 export interface ServiceInit {

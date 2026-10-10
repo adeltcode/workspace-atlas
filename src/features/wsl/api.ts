@@ -1,5 +1,5 @@
 import { invoke } from '../../utils/errors'
-import type { WslStatus, WslDistro, WslConfig, OptimizeResult, ExportResult, WslConfigBackup, DistroMetrics, DistroStats, DistroExtras, MigrateResult, ServiceList, ServiceDetail, BenchmarkResult, ShellProfile, CatalogDistro } from './types'
+import type { WslStatus, WslDistro, WslConfig, OptimizeResult, ExportResult, WslConfigBackup, DistroMetrics, DistroStats, DistroExtras, MigrateResult, MigrationPlan, ServiceList, ServiceDetail, BenchmarkResult, ShellProfile, CatalogDistro } from './types'
 
 export const wslCheck       = () => invoke<WslStatus>('wsl_check')
 /** Pass `silent` for background polling so the list command stays out of the terminal panel. */
@@ -26,6 +26,8 @@ export const wslCloneDistro = (source: string, newName: string, installDir: stri
   invoke<void>('wsl_clone_distro', { source, newName, installDir, version })
 export const wslMigrateDistro = (distro: string, newDir: string) =>
   invoke<MigrateResult>('wsl_migrate_distro', { distro, newDir })
+export const wslPlanMigration = (distro: string, newDir: string) =>
+  invoke<MigrationPlan>('wsl_plan_migration', { distro, newDir })
 /** Permanently delete a distro (`wsl --unregister`). `confirm` is the name the
  *  user typed; the backend rejects the call unless it matches. No undo. */
 export const wslUnregisterDistro = (distro: string, confirm: string) =>

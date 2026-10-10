@@ -33,16 +33,34 @@ pub fn require_docker_stopped() -> Result<(), AtlasError> {
         name.eq_ignore_ascii_case("Docker Desktop.exe")
             || name.eq_ignore_ascii_case("com.docker.backend.exe")
     }) {
-        return Err(AtlasError::new(ErrorKind::Busy, "Docker Desktop must be fully quit before migrating a WSL distribution.")
-            .hint("Save container work and quit Docker Desktop from its tray menu. Stopping containers alone does not stop WSL integration."));
+        return Err(
+            AtlasError::new(ErrorKind::Busy, "Quit Docker Desktop to continue.")
+                .hint("Save container work, then choose Quit from Docker's tray menu."),
+        );
     }
     Ok(())
 }
 
 #[derive(serde::Serialize)]
 pub struct MigrateResult {
+    pub destination: String,
     pub backup_path: String,
     pub recovery_path: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct MigrationPlan {
+    pub destination: String,
+    pub create_directory: bool,
+    pub running_distros: Vec<String>,
+    pub required_bytes: u64,
+    pub available_bytes: u64,
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct MigrationProgress {
+    pub distro: String,
+    pub phase: String,
 }
 
 const SPACE_RESERVE: u64 = 1024 * 1024 * 1024;
@@ -118,7 +136,7 @@ pub fn source_distro<'a>(
 fn require_empty(path: &Path) -> Result<(), AtlasError> {
     if !path.is_dir() || fs::read_dir(path)?.next().transpose()?.is_some() {
         return Err(AtlasError::invalid(
-            "Choose an empty destination folder. Existing files will not be overwritten.",
+            "That folder contains files. Choose an empty or new folder.",
         ));
     }
     Ok(())
@@ -136,7 +154,28 @@ pub fn destination(input: &Path, distros: &[WslDistro]) -> Result<PathBuf, Atlas
             "Choose a folder on a local drive, rather than a network share.",
         ));
     }
-    let path = input.canonicalize()?;
+    if input
+        .components()
+        .any(|part| matches!(part, std::path::Component::ParentDir))
+    {
+        return Err(AtlasError::invalid(
+            "Choose a folder without '..' in its path.",
+        ));
+    }
+    #[cfg(windows)]
+    for part in input.components() {
+        if let std::path::Component::Normal(name) = part {
+            if !valid_folder_name(&name.to_string_lossy()) {
+                return Err(AtlasError::invalid(
+                    "Use a folder name without reserved names or characters.",
+                ));
+            }
+        }
+    }
+    let ancestor = existing_ancestor(input)?;
+    let path = ancestor
+        .canonicalize()?
+        .join(input.strip_prefix(ancestor).map_err(|e| e.to_string())?);
     #[cfg(windows)]
     if !is_local_path(&path) {
         return Err(AtlasError::invalid(
@@ -163,8 +202,127 @@ pub fn destination(input: &Path, distros: &[WslDistro]) -> Result<PathBuf, Atlas
             return Err(AtlasError::invalid("Choose a folder outside all registered distributions. The backup must also remain outside them."));
         }
     }
-    require_empty(&path)?;
+    if path.try_exists()? {
+        require_empty(&path)?;
+    }
     Ok(path)
+}
+
+fn existing_ancestor(mut path: &Path) -> Result<&Path, AtlasError> {
+    while !path.try_exists()? {
+        path = path
+            .parent()
+            .ok_or_else(|| AtlasError::invalid("Choose a folder on an available local drive."))?;
+    }
+    if !path.is_dir() {
+        return Err(AtlasError::invalid(
+            "The destination path contains a file. Choose another folder.",
+        ));
+    }
+    Ok(path)
+}
+
+fn valid_folder_name(name: &str) -> bool {
+    let stem = name
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_uppercase();
+    let reserved = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || ["COM", "LPT"].iter().any(|prefix| {
+            stem.strip_prefix(prefix).is_some_and(|n| {
+                matches!(
+                    n,
+                    "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+                )
+            })
+        });
+    !name.is_empty()
+        && !reserved
+        && !name.ends_with(['.', ' '])
+        && !name
+            .chars()
+            .any(|c| c.is_control() || "<>:\"/\\|?*".contains(c))
+}
+
+pub fn suggested_destination(input: &Path, name: &str) -> PathBuf {
+    if input.parent().is_some() {
+        return input.to_path_buf();
+    }
+    let mut folder: String = name
+        .chars()
+        .map(|c| {
+            if c.is_control() || "<>:\"/\\|?*".contains(c) {
+                '-'
+            } else {
+                c
+            }
+        })
+        .collect();
+    folder = folder.trim_matches(['.', ' ']).to_string();
+    if !valid_folder_name(&folder) {
+        folder = format!("distro-{}", folder);
+    }
+    input.join("WSL").join(folder)
+}
+
+pub fn plan(
+    input: &Path,
+    source: &WslDistro,
+    distros: &[WslDistro],
+) -> Result<MigrationPlan, AtlasError> {
+    let dest = destination(&suggested_destination(input, &source.name), distros)?;
+    let ancestor = existing_ancestor(&dest)?;
+    #[cfg(windows)]
+    crate::wsl_migration_acl::validate_destination(ancestor, ancestor == dest)?;
+    let required = required_space(fs::metadata(&source.vhd_path)?.len(), 2)?;
+    let available = available_space(ancestor)?;
+    check_space(available, required)?;
+    Ok(MigrationPlan {
+        destination: path_text(&dest),
+        create_directory: !dest.try_exists()?,
+        running_distros: distros
+            .iter()
+            .filter(|d| d.running)
+            .map(|d| d.name.clone())
+            .collect(),
+        required_bytes: required,
+        available_bytes: available,
+    })
+}
+
+pub fn confirmed_destination(input: &Path, distros: &[WslDistro]) -> Result<PathBuf, AtlasError> {
+    let checked = destination(input, distros)?;
+    if path_key(&checked) != path_key(input) {
+        return Err(AtlasError::invalid(
+            "The destination changed. Review the move again.",
+        ));
+    }
+    Ok(checked)
+}
+
+pub fn create_destination(dest: &Path, distros: &[WslDistro]) -> Result<Vec<fs::File>, AtlasError> {
+    confirmed_destination(dest, distros)?;
+    let ancestor = existing_ancestor(dest)?;
+    let mut current = ancestor.to_path_buf();
+    let mut guards = Vec::new();
+    for part in dest
+        .strip_prefix(ancestor)
+        .map_err(|e| e.to_string())?
+        .components()
+    {
+        current.push(part);
+        #[cfg(windows)]
+        guards.push(crate::wsl_migration_acl::create_private_directory(
+            &current,
+        )?);
+        #[cfg(not(windows))]
+        {
+            fs::create_dir(&current)?;
+            guards.push(fs::File::open(&current)?);
+        }
+    }
+    Ok(guards)
 }
 
 #[cfg(windows)]
@@ -274,20 +432,26 @@ fn recovery_guide(source: &WslDistro, dest: &Path, backup_dir: &Path, backup: &P
         quote(&recovered), quote(&restored), quote(&archive), quote(&recovered))
 }
 
-fn recovery_error(error: AtlasError, message: &str, guide: &Path) -> AtlasError {
+fn recovery_error(mut error: AtlasError, guide: &Path) -> AtlasError {
     let next_step = error.hint.unwrap_or_default();
-    let detail = match error.detail {
-        Some(detail) => format!("{}\n{}", error.message, detail),
-        None => error.message,
-    };
-    AtlasError::new(error.kind, message)
-        .hint(format!("{} Keep all migration files. Recovery instructions: {}. Refresh the distribution list before retrying.", next_step, path_text(guide)).trim().to_string())
-        .detail(detail)
+    error.hint = Some(
+        format!(
+            "{} Keep the migration files and check the recovery guide before retrying.",
+            next_step
+        )
+        .trim()
+        .to_string(),
+    );
+    error.recovery_path = Some(path_text(guide));
+    error
 }
 
 fn at_step(error: AtlasError, step: &str) -> AtlasError {
-    let mut result = AtlasError::new(error.kind, format!("{}: {}", step, error.message))
-        .detail(error.detail.unwrap_or_default());
+    let mut result = AtlasError::new(error.kind, step).detail(format!(
+        "{}\n{}",
+        error.message,
+        error.detail.unwrap_or_default()
+    ));
     result.hint = error.hint;
     result
 }
@@ -316,8 +480,11 @@ fn wait_for_disk_release(path: &Path, timeout: Duration) -> Result<fs::File, Atl
             return Err(error.into());
         }
         if started.elapsed() >= timeout {
-            return Err(AtlasError::new(ErrorKind::Busy, "The virtual disk is still open in another process. It was not moved.")
-                .hint("Save work in all WSL distributions, quit Docker Desktop, and run wsl --shutdown before retrying."));
+            return Err(AtlasError::new(
+                ErrorKind::Busy,
+                "Another app is keeping the disk open. It was not moved.",
+            )
+            .hint("Close WSL terminals, editors, and Docker Desktop."));
         }
         std::thread::sleep(Duration::from_millis(100));
     }
@@ -329,6 +496,7 @@ pub fn migrate(
     mut run: impl FnMut(&[&str]) -> Result<(), AtlasError>,
     mut inspect: impl FnMut() -> Result<Vec<WslDistro>, AtlasError>,
     mut log: impl FnMut(String),
+    mut progress: impl FnMut(&str),
 ) -> Result<MigrateResult, AtlasError> {
     #[cfg(windows)]
     let _destination_guard = crate::wsl_migration_acl::secure_destination(dest)?;
@@ -352,15 +520,18 @@ pub fn migrate(
     let backup = backup_dir.join(format!("backup.{}", extension));
     save_new(&guide, &recovery_guide(source, dest, &backup_dir, &backup))?;
     log(format!("# Recovery instructions: {}", path_text(&guide)));
-    let result = migrate_with_backup(source, dest, &backup, &mut run, &mut inspect, &mut log);
-    result.map_err(|error| {
-        recovery_error(
-            error,
-            "Migration did not finish. Check the recovery guide before continuing.",
-            &guide,
-        )
-    })?;
+    let result = migrate_with_backup(
+        source,
+        dest,
+        &backup,
+        &mut run,
+        &mut inspect,
+        &mut log,
+        &mut progress,
+    );
+    result.map_err(|error| recovery_error(error, &guide))?;
     Ok(MigrateResult {
+        destination: path_text(dest),
         backup_path: path_text(&backup),
         recovery_path: path_text(&guide),
     })
@@ -407,20 +578,19 @@ fn migrate_with_backup(
     run: &mut impl FnMut(&[&str]) -> Result<(), AtlasError>,
     inspect: &mut impl FnMut() -> Result<Vec<WslDistro>, AtlasError>,
     log: &mut impl FnMut(String),
+    progress: &mut impl FnMut(&str),
 ) -> Result<(), AtlasError> {
     let backup_text = path_text(backup);
     let dest_text = path_text(dest);
-    log(format!("$ wsl --terminate {}", quote(&source.name)));
-    run(&["--terminate", &source.name]).map_err(|e| {
-        at_step(
-            e,
-            "Stopping the distribution failed; the disk was not moved",
-        )
-    })?;
+    progress("stopping");
+    log("$ wsl --shutdown".to_string());
+    run(&["--shutdown"])
+        .map_err(|e| at_step(e, "WSL could not shut down. The disk was not moved"))?;
     let source_guard = wait_for_disk_release(Path::new(&source.vhd_path), Duration::from_secs(5))?;
     #[cfg(windows)]
     crate::wsl_migration_acl::secure_disk_handle(&source_guard)?;
     drop(source_guard);
+    progress("backing-up");
     log(format!(
         "$ wsl --export {} {} --format vhd",
         quote(&source.name),
@@ -433,8 +603,19 @@ fn migrate_with_backup(
             "WSL did not produce a nonempty backup. The disk was not moved.",
         ));
     }
+    log("$ wsl --shutdown".to_string());
+    run(&["--shutdown"]).map_err(|e| {
+        at_step(
+            e,
+            "WSL could not shut down after backup. The disk was not moved",
+        )
+    })?;
+    let verification_guard =
+        wait_for_disk_release(Path::new(&source.vhd_path), Duration::from_secs(5))?;
+    progress("verifying-backup");
     log("# Verifying the VHD backup byte for byte".to_string());
     verify_copy(Path::new(&source.vhd_path), backup)?;
+    drop(verification_guard);
     save_new(
         &backup.with_file_name("BACKUP-COMPLETE.txt"),
         "WSL VHD export and byte verification completed.\n",
@@ -461,19 +642,13 @@ fn migrate_with_backup(
         ));
     }
     ensure_space(dest, fs::metadata(&current.vhd_path)?.len(), 1)?;
-    log(format!("$ wsl --terminate {}", quote(&source.name)));
-    run(&["--terminate", &source.name]).map_err(|e| {
-        at_step(
-            e,
-            "Stopping the distribution after export failed; the disk was not moved",
-        )
-    })?;
     log("# Waiting for WSL to release the virtual disk".to_string());
     let movement_guard =
         wait_for_disk_release(Path::new(&current.vhd_path), Duration::from_secs(5))?;
     #[cfg(windows)]
     crate::wsl_migration_acl::secure_disk_handle(&movement_guard)?;
     drop(movement_guard);
+    progress("moving");
     log(format!(
         "$ wsl --manage {} --move {}",
         quote(&source.name),
@@ -506,6 +681,7 @@ fn migrate_with_backup(
             "WSL reported a move, but the registered location or settings could not be verified.",
         ));
     }
+    progress("checking");
     log(format!(
         "# Checking boot, writable root filesystem, and the default user's home for {}",
         quote(&source.name)
@@ -637,6 +813,7 @@ mod tests {
                     Ok(vec![current])
                 },
                 |_| {},
+                |_| {},
             );
             (result, commands.into_inner())
         }
@@ -766,6 +943,7 @@ mod tests {
                 Ok(vec![fixture.source.clone()])
             },
             |_| {},
+            |_| {},
         );
         assert!(result.is_err());
         assert_private_permissions(&fixture.dest.join("custom.vhdx"));
@@ -814,7 +992,9 @@ mod tests {
         let (result, commands) = fixture.run(None, false);
         let result = result.unwrap();
         assert_eq!(commands.len(), 6);
+        assert_eq!(commands[0], "wsl --shutdown");
         assert!(commands[1].ends_with("--format vhd"));
+        assert_eq!(commands[2], "wsl --shutdown");
         assert!(commands[3].contains("--move"));
         assert!(commands[4].contains("--exec sh -c"));
         assert!(commands[5].starts_with("wsl --terminate"));
@@ -841,11 +1021,11 @@ mod tests {
             let error = result.err().unwrap();
             assert_eq!(commands.len(), step);
             assert_eq!(error.kind, ErrorKind::Permission);
-            assert!(error.hint.unwrap().contains("RECOVERY.txt"));
+            assert!(error.recovery_path.unwrap().ends_with("RECOVERY.txt"));
             assert!(error.detail.unwrap().contains("injected failure"));
             let backup = fixture.backups().pop().unwrap();
             assert!(backup.join("RECOVERY.txt").is_file());
-            assert_eq!(backup.join("BACKUP-COMPLETE.txt").exists(), step >= 3);
+            assert_eq!(backup.join("BACKUP-COMPLETE.txt").exists(), step >= 4);
             assert_eq!(Path::new(&fixture.source.vhd_path).exists(), step <= 4);
             assert_eq!(fixture.dest.join("custom.vhdx").exists(), step >= 5);
         }
@@ -862,12 +1042,12 @@ mod tests {
     }
 
     #[test]
-    fn occupied_relative_missing_and_overlapping_destinations_are_rejected() {
+    fn occupied_relative_and_overlapping_destinations_are_rejected() {
         let fixture = Fixture::new();
         let distros = vec![fixture.source.clone()];
         assert!(destination(&fixture.dest, &distros).is_ok());
         assert!(destination(Path::new("relative"), &distros).is_err());
-        assert!(destination(&fixture.root.join("missing"), &distros).is_err());
+        assert!(destination(&fixture.root.join("missing"), &distros).is_ok());
         assert!(destination(&fixture.root, &distros).is_err());
         assert!(destination(Path::new(&fixture.source.base_path), &distros).is_err());
         let nested = Path::new(&fixture.source.base_path).join("empty");
@@ -907,6 +1087,117 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    fn drive_roots_suggest_safe_dedicated_folders() {
+        for root in [r"F:\", "F:/"] {
+            assert_eq!(
+                suggested_destination(Path::new(root), "Ubuntu-24.04"),
+                PathBuf::from(r"F:\WSL\Ubuntu-24.04")
+            );
+        }
+        for name in ["..", "CON", "com1.txt", "a/b:c", "Ω test "] {
+            let suggested = suggested_destination(Path::new(r"F:\"), name);
+            assert_eq!(suggested.parent().unwrap(), Path::new(r"F:\WSL"));
+            assert!(valid_folder_name(
+                &suggested.file_name().unwrap().to_string_lossy()
+            ));
+        }
+        assert_eq!(
+            suggested_destination(Path::new(r"F:\my-folder"), "Ubuntu"),
+            PathBuf::from(r"F:\my-folder")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn planning_checks_space_without_creating_folders_or_changing_permissions() {
+        let mut fixture = Fixture::new();
+        fixture.source.running = true;
+        let before = read_permissions(&fixture.root);
+        let target = fixture.root.join("WSL").join("Ubuntu");
+        let plan = plan(&target, &fixture.source, &[fixture.source.clone()]).unwrap();
+        assert_eq!(plan.destination, path_text(&target));
+        assert!(plan.create_directory);
+        assert_eq!(plan.running_distros, vec!["test-distro"]);
+        assert_eq!(plan.required_bytes, SPACE_RESERVE + 26);
+        assert!(plan.available_bytes >= plan.required_bytes);
+        assert!(!target.parent().unwrap().exists());
+        assert_eq!(read_permissions(&fixture.root), before);
+        assert!(fixture.backups().is_empty());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn confirmed_nested_destination_is_created_privately_without_overwriting() {
+        let fixture = Fixture::new();
+        let distros = [fixture.source.clone()];
+        let target = destination(&fixture.root.join("WSL").join("Ubuntu"), &distros).unwrap();
+        let guards = create_destination(&target, &distros).unwrap();
+        assert_eq!(guards.len(), 2);
+        assert_private_permissions(target.parent().unwrap());
+        assert_private_permissions(&target);
+        drop(guards);
+        let sentinel = target.join("keep.txt");
+        fs::write(&sentinel, "keep").unwrap();
+        assert!(create_destination(&target, &distros).is_err());
+        assert_eq!(fs::read_to_string(sentinel).unwrap(), "keep");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn missing_paths_cannot_escape_into_registered_disks_or_invalid_names() {
+        let fixture = Fixture::new();
+        let distros = [fixture.source.clone()];
+        let inside = Path::new(&fixture.source.base_path)
+            .join("missing")
+            .join("destination");
+        assert!(destination(&inside, &distros).is_err());
+        for name in [
+            "..\\outside",
+            "CON",
+            "COM1.txt",
+            "trailing.",
+            "trailing ",
+            "file:stream",
+        ] {
+            let raw_path = PathBuf::from(path_text(&fixture.root)).join(name);
+            assert!(destination(&raw_path, &distros).is_err(), "{name}");
+        }
+        let file = fixture.root.join("file");
+        fs::write(&file, "keep").unwrap();
+        assert!(destination(&file.join("destination"), &distros).is_err());
+    }
+
+    #[test]
+    fn progress_tracks_only_completed_prior_stages() {
+        let fixture = Fixture::new();
+        let phases = RefCell::new(Vec::new());
+        let result = migrate(
+            &fixture.source,
+            &fixture.dest,
+            |args| {
+                if args[0] == "--export" {
+                    fs::copy(&fixture.source.vhd_path, args[2])?;
+                }
+                if args[0] == "--manage" {
+                    return Err(AtlasError::invalid("injected move failure"));
+                }
+                Ok(())
+            },
+            || Ok(vec![fixture.source.clone()]),
+            |_| {},
+            |phase| phases.borrow_mut().push(phase.to_string()),
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            *phases.borrow(),
+            vec!["stopping", "backing-up", "verifying-backup", "moving"]
+        );
+        assert!(Path::new(&fixture.source.vhd_path).is_file());
+        assert!(fixture.backups()[0].join("BACKUP-COMPLETE.txt").is_file());
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn reads_available_space_for_the_destination_directory() {
         let fixture = Fixture::new();
         assert!(available_space(&fixture.dest).unwrap() > 0);
@@ -927,6 +1218,26 @@ mod tests {
         assert!(status.success());
         assert!(destination(&link, &[fixture.source.clone()]).is_err());
         assert!(target.is_dir());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn confirmation_rejects_a_parent_replaced_by_a_junction() {
+        let fixture = Fixture::new();
+        let target = fixture.root.join("elsewhere");
+        fs::create_dir(&target).unwrap();
+        let link = fixture.root.join("changed-parent");
+        let approved = link.join("Ubuntu");
+        let status = std::process::Command::new("powershell")
+            .env("ATLAS_TEST_LINK", &link).env("ATLAS_TEST_TARGET", &target)
+            .args(["-NoProfile", "-NonInteractive", "-Command", "$ErrorActionPreference='Stop'; New-Item -ItemType Junction -Path $env:ATLAS_TEST_LINK -Target $env:ATLAS_TEST_TARGET | Out-Null"])
+            .status().unwrap();
+        assert!(status.success());
+        let distros = [fixture.source.clone()];
+        assert!(confirmed_destination(&approved, &distros).is_err());
+        assert!(create_destination(&approved, &distros).is_err());
+        assert!(!target.join("Ubuntu").exists());
+        assert!(Path::new(&fixture.source.vhd_path).is_file());
     }
 
     #[test]
@@ -962,9 +1273,13 @@ mod tests {
             },
             || Ok(vec![fixture.source.clone()]),
             |_| {},
+            |_| {},
         );
         assert!(result.is_err());
-        assert_eq!(*calls.borrow(), vec!["--terminate", "--export"]);
+        assert_eq!(
+            *calls.borrow(),
+            vec!["--shutdown", "--export", "--shutdown"]
+        );
         assert!(Path::new(&fixture.source.vhd_path).is_file());
         assert_eq!(
             fs::read_to_string(fixture.dest.join("keep.txt")).unwrap(),
@@ -996,6 +1311,7 @@ mod tests {
                     }
                     Ok(vec![changed])
                 },
+                |_| {},
                 |_| {},
             );
             assert!(result.is_err());
@@ -1035,7 +1351,7 @@ mod tests {
         let error =
             wait_for_disk_release(Path::new(&fixture.source.vhd_path), Duration::ZERO).unwrap_err();
         assert_eq!(error.kind, ErrorKind::Busy);
-        assert!(error.hint.unwrap().contains("wsl --shutdown"));
+        assert!(error.hint.unwrap().contains("Close WSL terminals"));
         drop(held);
         assert!(wait_for_disk_release(Path::new(&fixture.source.vhd_path), Duration::ZERO).is_ok());
     }
@@ -1097,6 +1413,11 @@ mod tests {
     #[ignore = "Requires ATLAS_MIGRATION_ROOTFS; moves and restores a disposable WSL distribution"]
     fn live_migration_and_backup_restore() {
         use std::process::Command;
+        assert_eq!(
+            std::env::var("ATLAS_MIGRATION_ALLOW_SHUTDOWN").as_deref(),
+            Ok("1"),
+            "Live migration shuts down all WSL workloads; explicit opt-in is required"
+        );
 
         fn run(args: &[&str]) -> Result<(), AtlasError> {
             let mut command = Command::new("wsl");
@@ -1176,9 +1497,14 @@ mod tests {
         assert_eq!(source.default_uid, Some(1000));
         let dest = destination(&fixture.dest, &distros).unwrap();
         ensure_space(&dest, source.vhd_size_bytes, 2).unwrap();
-        let result = migrate(source, &dest, run, crate::wsl::read_distros, |line| {
-            println!("{}", line)
-        })
+        let result = migrate(
+            source,
+            &dest,
+            run,
+            crate::wsl::read_distros,
+            |line| println!("{}", line),
+            |_| {},
+        )
         .unwrap();
         let moved = crate::wsl::read_distros()
             .unwrap()

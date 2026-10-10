@@ -223,6 +223,15 @@ fn apply_private_permissions(file: &File, user: &str) -> Result<(), AtlasError> 
     Ok(())
 }
 
+pub fn validate_destination(path: &Path, existing_destination: bool) -> Result<(), AtlasError> {
+    let file = open_path(path, true, existing_destination)?;
+    require_supported_storage(&file)?;
+    if existing_destination {
+        require_trusted_owner(&file, &current_user_sid()?)?;
+    }
+    Ok(())
+}
+
 pub fn secure_destination(path: &Path) -> Result<File, AtlasError> {
     let file = open_path(path, true, true)?;
     require_supported_storage(&file)?;

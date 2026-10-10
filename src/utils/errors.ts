@@ -24,20 +24,22 @@ export class AppError extends Error {
   readonly hint?: string
   /** The original text from Windows, Docker or WSL. Never shown by default. */
   readonly detail?: string
+  readonly recoveryPath?: string
 
-  constructor(kind: ErrorKind, message: string, hint?: string, detail?: string) {
+  constructor(kind: ErrorKind, message: string, hint?: string, detail?: string, recoveryPath?: string) {
     super(message)
     this.name = 'AppError'
     this.kind = kind
     this.hint = hint
     this.detail = detail
+    this.recoveryPath = recoveryPath
   }
 
   /** The sentence alone, so `String(e)` and `${e}` stay useful. */
   override toString() { return this.message }
 }
 
-function isPayload(v: unknown): v is { kind: ErrorKind; message: string; hint?: string; detail?: string } {
+function isPayload(v: unknown): v is { kind: ErrorKind; message: string; hint?: string; detail?: string; recovery_path?: string } {
   return typeof v === 'object' && v !== null
     && typeof (v as { message?: unknown }).message === 'string'
     && typeof (v as { kind?: unknown }).kind === 'string'
@@ -52,7 +54,7 @@ function isPayload(v: unknown): v is { kind: ErrorKind; message: string; hint?: 
  */
 export function toAppError(e: unknown): AppError {
   if (e instanceof AppError) return e
-  if (isPayload(e)) return new AppError(e.kind, e.message, e.hint, e.detail)
+  if (isPayload(e)) return new AppError(e.kind, e.message, e.hint, e.detail, e.recovery_path)
   if (e instanceof Error) return new AppError('unknown', e.message)
   const text = typeof e === 'string' ? e : JSON.stringify(e)
   return new AppError('unknown', text || 'The operation failed without reporting a reason.')
