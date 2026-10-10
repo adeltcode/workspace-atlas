@@ -24,8 +24,8 @@ export const wslRestartDistro   = (distro: string) => invoke<void>('wsl_restart_
 export const wslStartDistro     = (distro: string) => invoke<void>('wsl_start_distro', { distro })
 export const wslCloneDistro = (source: string, newName: string, installDir: string, version: number) =>
   invoke<void>('wsl_clone_distro', { source, newName, installDir, version })
-export const wslMigrateDistro = (distro: string, newDir: string, wasDefault: boolean, currentBase: string, version: number) =>
-  invoke<MigrateResult>('wsl_migrate_distro', { distro, newDir, wasDefault, currentBase, version })
+export const wslMigrateDistro = (distro: string, newDir: string) =>
+  invoke<MigrateResult>('wsl_migrate_distro', { distro, newDir })
 /** Permanently delete a distro (`wsl --unregister`). `confirm` is the name the
  *  user typed; the backend rejects the call unless it matches. No undo. */
 export const wslUnregisterDistro = (distro: string, confirm: string) =>

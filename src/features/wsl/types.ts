@@ -114,7 +114,8 @@ export interface DistroExtras {
 }
 
 export interface MigrateResult {
-  backup_tar: string
+  backup_path: string
+  recovery_path: string
 }
 
 export interface ServiceInit {

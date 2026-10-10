@@ -150,7 +150,7 @@ export default function WslHome({ distros, loading, onReload }: {
     }
   }, [driveLetters])
 
-  const busy = busyAction !== null
+  const busy = busyAction !== null || busyDistro !== null
   // Shared re-entry guard for the lifecycle/import ops (blocks a same-frame
   // double-click before the disabled state has rendered).
   const op = useAsyncAction()
@@ -180,6 +180,7 @@ export default function WslHome({ distros, loading, onReload }: {
   })
 
   const runLifecycle = (l: Lifecycle) => op.run(async () => {
+    if (useAppStore.getState().wslBusyDistro) return
     const { d, action } = l
     setLifecycle(null); setBusyAction(d.name); setBusyDistro(d.name)
     try {
@@ -598,7 +599,7 @@ function DistroCard({
             <Play size={12} /> {busyAction === d.name ? 'Starting…' : 'Start'}
           </button>
         )}
-        <button className="btn-secondary btn-sm wsl-bcard-primary" onClick={() => term.run(onTerminal)} disabled={term.pending} title="Open a terminal in this distro">
+        <button className="btn-secondary btn-sm wsl-bcard-primary" onClick={() => term.run(onTerminal)} disabled={term.pending || busy} title="Open a terminal in this distro">
           <Terminal size={12} /> Terminal
         </button>
       </div>

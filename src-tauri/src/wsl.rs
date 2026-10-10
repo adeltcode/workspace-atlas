@@ -45,6 +45,10 @@ pub struct WslStatus {
 #[derive(serde::Serialize, Clone)]
 pub struct WslDistro {
     pub name: String,
+    #[serde(skip)]
+    pub registration_id: String,
+    #[serde(skip)]
+    pub default_uid: Option<u32>,
     /// WSL version: 1 (folder-based) or 2 (ext4.vhdx). 0 = unknown.
     pub version: u32,
     pub running: bool,
@@ -1104,7 +1108,8 @@ fn parse_distro_stats(out: &str) -> DistroStats {
 /// Lightweight live CPU/memory snapshot for one distro (the home dashboard
 /// polls this for every running distro). Read-only, no terminal emission.
 #[tauri::command]
-pub async fn wsl_distro_stats(distro: String) -> Result<DistroStats, AtlasError> {
+pub async fn wsl_distro_stats(state: tauri::State<'_, crate::wsl_migration::MigrationState>, distro: String) -> Result<DistroStats, AtlasError> {
+    state.ensure_idle()?;
     tauri::async_runtime::spawn_blocking(move || -> Result<DistroStats, AtlasError> {
         let out = run_in_distro(&distro, STATS_SCRIPT)?;
         Ok(parse_distro_stats(&out))
@@ -1118,7 +1123,8 @@ pub async fn wsl_distro_stats(distro: String) -> Result<DistroStats, AtlasError>
 /// terminal lines - mirroring the silent `get_system_metrics` host poll. Selecting
 /// a stopped distro boots it.
 #[tauri::command]
-pub async fn wsl_distro_metrics(distro: String) -> Result<DistroMetrics, AtlasError> {
+pub async fn wsl_distro_metrics(state: tauri::State<'_, crate::wsl_migration::MigrationState>, distro: String) -> Result<DistroMetrics, AtlasError> {
+    state.ensure_idle()?;
     tauri::async_runtime::spawn_blocking(move || -> Result<DistroMetrics, AtlasError> {
         let out = run_in_distro(&distro, METRICS_SCRIPT)?;
         Ok(parse_distro_metrics(&out))
@@ -1324,7 +1330,8 @@ pub async fn wsl_open_distro_folder(app: tauri::AppHandle, distro: String) -> Re
 /// distro, so the caller should only invoke this for running distros (otherwise
 /// it boots the distro). Read-only - no terminal emission.
 #[tauri::command]
-pub async fn wsl_distro_extras(distro: String) -> Result<DistroExtras, AtlasError> {
+pub async fn wsl_distro_extras(state: tauri::State<'_, crate::wsl_migration::MigrationState>, distro: String) -> Result<DistroExtras, AtlasError> {
+    state.ensure_idle()?;
     tauri::async_runtime::spawn_blocking(move || -> Result<DistroExtras, AtlasError> {
         let out = run_in_distro(&distro, EXTRAS_SCRIPT)?;
         Ok(parse_distro_extras(&out))
@@ -1438,107 +1445,32 @@ pub async fn wsl_clone_distro(
     .map_err(|e| e.to_string())?
 }
 
-#[derive(serde::Serialize, Clone)]
-pub struct MigrateResult {
-    /// Path to the retained `.tar` backup (the rollback artifact).
-    pub backup_tar: String,
-}
-
-/// Move a distro to another directory/drive with a verified, recoverable flow:
-/// export to a `.tar` in the destination → import to a temp name there → verify it
-/// boots → only then unregister the original → re-import the original name at the
-/// new location → drop the temp. The `.tar` is kept as a rollback artifact; the
-/// original is never unregistered until the new copy is confirmed bootable.
 #[tauri::command]
 pub async fn wsl_migrate_distro(
     app: tauri::AppHandle,
+    state: tauri::State<'_, crate::wsl_migration::MigrationState>,
     distro: String,
     new_dir: String,
-    was_default: bool,
-    current_base: String,
-    version: u32,
-) -> Result<MigrateResult, AtlasError> {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    tauri::async_runtime::spawn_blocking(move || -> Result<MigrateResult, AtlasError> {
-        // Refuse to migrate into the distro's current install folder (or a subfolder
-        // of it): `wsl --unregister` deletes that tree, which would take the backup
-        // .tar with it and leave no way to recover. Compare case-insensitively with
-        // normalized separators (Windows paths).
-        let norm = |p: &str| p.replace('\\', "/").trim_end_matches('/').to_lowercase();
-        let dest_n = norm(&new_dir);
-        let base_n = norm(&current_base);
-        if !base_n.is_empty() && (dest_n == base_n || dest_n.starts_with(&format!("{}/", base_n))) {
-            return Err("Choose a destination outside the distro's current install folder - migrating into it would delete the backup.".to_string().into());
+) -> Result<crate::wsl_migration::MigrateResult, AtlasError> {
+    let gate = state.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = gate.try_lock().map_err(|_| AtlasError::new(ErrorKind::Busy, "A WSL migration is already running."))?;
+        let help = Command::new("wsl").env("WSL_UTF8", "1").arg("--help").output()?;
+        let help_text = String::from_utf8_lossy(&help.stdout);
+        if !help_text.contains("--move") || !help_text.contains("--format") {
+            return Err(AtlasError::invalid("This WSL version does not support direct migration with VHD export.")
+                .hint("Update WSL, then retry. No disk was moved."));
         }
-
-        std::fs::create_dir_all(&new_dir)
-            .map_err(|e| format!("Cannot create destination directory: {}", e))?;
-
-        // Capture the default user before terminating, to restore it after re-import.
-        let default_user = distro_default_user(&distro);
-
-        let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
-        let backup = format!("{}/{}_migrate_{}.tar", new_dir.replace('\\', "/"), safe_name(&distro), ts);
-        let temp_name = format!("{}_atlas_migrate", distro);
-        let temp_dir = format!("{}/__atlas_migrate_verify", new_dir.replace('\\', "/"));
-
-        emit_line(&app, format!("# Migrating {} to {} - exporting a backup first", distro, new_dir), false);
-        emit_line(&app, format!("$ wsl --terminate {}", distro), false);
-        run_wsl(&["--terminate", &distro]).ok();
-
-        emit_line(&app, format!("$ wsl --export {} \"{}\"", distro, backup), false);
-        run_wsl(&["--export", &distro, &backup]).map_err(|e| {
-            emit_line(&app, format!("  ✗ {}", e), true);
-            e
-        })?;
-
-        // Import + boot-verify a temp copy at the destination before touching the original.
-        emit_line(&app, format!("$ wsl --import {} \"{}\" \"{}\"{}", temp_name, temp_dir, backup, version_flag(version)), false);
-        if let Err(e) = import_distro(&temp_name, &temp_dir, &backup, version) {
-            emit_line(&app, format!("  ✗ {} (original intact, backup kept at {})", e, backup), true);
-            std::fs::remove_dir_all(&temp_dir).ok();
-            return Err(e);
+        let distros = read_distros()?;
+        let source = crate::wsl_migration::source_distro(&distro, &distros)?;
+        let dest = crate::wsl_migration::destination(std::path::Path::new(&new_dir), &distros)?;
+        let size = std::fs::metadata(&source.vhd_path)?.len();
+        crate::wsl_migration::ensure_space(&dest, size, 2)?;
+        if let Some(parent) = dest.parent() {
+            crate::wsl_migration::ensure_space(parent, size, 1)?;
         }
-
-        emit_line(&app, format!("$ wsl -d {} -u root true   # verify boot", temp_name), false);
-        if let Err(e) = run_wsl(&["-d", &temp_name, "-u", "root", "true"]) {
-            emit_line(&app, format!("  ✗ migrated copy failed to boot: {} - keeping original, backup at {}", e, backup), true);
-            run_wsl(&["--unregister", &temp_name]).ok();
-            std::fs::remove_dir_all(&temp_dir).ok();
-            return Err(format!("Migrated copy failed to boot; original left untouched. Backup: {}", backup).into());
-        }
-
-        // Verified bootable - now replace the original at the new location.
-        emit_line(&app, format!("$ wsl --unregister {}", distro), false);
-        if let Err(e) = run_wsl(&["--unregister", &distro]) {
-            emit_line(&app, format!("  ✗ {} - original intact, backup at {}", e, backup), true);
-            run_wsl(&["--unregister", &temp_name]).ok();
-            std::fs::remove_dir_all(&temp_dir).ok();
-            return Err(e);
-        }
-
-        emit_line(&app, format!("$ wsl --import {} \"{}\" \"{}\"{}", distro, new_dir, backup, version_flag(version)), false);
-        if let Err(e) = import_distro(&distro, &new_dir, &backup, version) {
-            emit_line(&app, format!("  ✗ re-import failed: {} - recover with: wsl --import {} \"{}\" \"{}\"", e, distro, new_dir, backup), true);
-            return Err(AtlasError::new(ErrorKind::Unknown, format!("The migrated copy could not be re-imported: {}", e))
-                .hint(format!("Your data is intact. Restore it with: wsl --import {} <destination> \"{}\"", distro, backup))
-                .detail(backup.clone()));
-        }
-
-        // Clean up the temp verification copy.
-        emit_line(&app, format!("$ wsl --unregister {}", temp_name), false);
-        run_wsl(&["--unregister", &temp_name]).ok();
-        std::fs::remove_dir_all(&temp_dir).ok();
-
-        restore_default_user(&app, &distro, &default_user);
-
-        if was_default {
-            emit_line(&app, format!("$ wsl --set-default {}", distro), false);
-            run_wsl(&["--set-default", &distro]).ok();
-        }
-
-        emit_line(&app, format!("  ✓ migrated {} to {} (backup kept: {})", distro, new_dir, backup), false);
-        Ok(MigrateResult { backup_tar: backup })
+        crate::wsl_migration::migrate(source, &dest, run_wsl, read_distros,
+            |line| emit_line(&app, line, false))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -2022,26 +1954,43 @@ pub async fn wsl_list_distros(app: tauri::AppHandle, silent: bool) -> Result<Vec
             emit_line(&app, "$ Get-ChildItem 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Lxss'", false);
             emit_line(&app, "$ wsl -l --running", false);
         }
-        // WSL_UTF8=1 makes `wsl.exe` emit UTF-8 instead of UTF-16, so the
-        // running-distro list reads cleanly.
-        let script = r#"
-$ErrorActionPreference='SilentlyContinue'
+        let distros = read_distros()?;
+        if !silent { emit_line(&app, format!("  ✓ {} distro(s)", distros.len()), false); }
+        Ok(distros)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+pub(crate) fn read_distros() -> Result<Vec<WslDistro>, AtlasError> {
+    // WSL_UTF8=1 makes `wsl.exe` emit UTF-8 instead of UTF-16, so the
+    // running-distro list reads cleanly.
+    let script = r#"
+$ErrorActionPreference='Stop'
+[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
 $env:WSL_UTF8=1
 $lxss='HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss'
+if(-not (Test-Path -LiteralPath $lxss)){'[]';exit 0}
+$keys=@(Get-ChildItem -LiteralPath $lxss)
+if($keys.Count -eq 0){'[]';exit 0}
 $default=(Get-ItemProperty -LiteralPath $lxss).DefaultDistribution
 $running=@(wsl.exe -l --running -q | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+if($LASTEXITCODE -ne 0){throw 'WSL could not report the running distribution list.'}
 $list=@()
-foreach($k in Get-ChildItem -LiteralPath $lxss){
+foreach($k in $keys){
   $p=Get-ItemProperty -LiteralPath $k.PSPath
   if(-not $p.DistributionName){continue}
   $base=[string]$p.BasePath
   if($base.StartsWith('\\?\')){$base=$base.Substring(4)}
-  $vhd=Join-Path $base 'ext4.vhdx'
+  $diskName=if($p.VhdFileName){[string]$p.VhdFileName}else{'ext4.vhdx'}
+  $vhd=Join-Path $base $diskName
   $size=0
   $vhdOut=''
   if(Test-Path -LiteralPath $vhd){$size=(Get-Item -LiteralPath $vhd).Length; $vhdOut=$vhd}
   $list+=[pscustomobject]@{
     name=$p.DistributionName
+    registrationId=$k.PSChildName
+    defaultUid=$p.DefaultUid
     version=[int]$p.Version
     isDefault=($k.PSChildName -eq $default)
     running=($running -contains $p.DistributionName)
@@ -2053,51 +2002,47 @@ foreach($k in Get-ChildItem -LiteralPath $lxss){
 $list | ConvertTo-Json -Compress -Depth 3
 "#;
 
-        let out = Command::new("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-Command", script])
-            .output()
-            .map_err(|e| format!("powershell: {}", e))?;
+    let out = Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .output()
+        .map_err(|e| format!("powershell: {}", e))?;
 
-        if !out.status.success() {
-            return Err(String::from_utf8_lossy(&out.stderr).trim().to_string().into());
-        }
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string().into());
+    }
 
-        let text = String::from_utf8_lossy(&out.stdout);
-        let trimmed = text.trim();
-        if trimmed.is_empty() || trimmed == "null" {
-            return Ok(Vec::new());
-        }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let trimmed = text.trim();
+    if trimmed.is_empty() || trimmed == "null" {
+        return Ok(Vec::new());
+    }
 
-        let val: serde_json::Value = serde_json::from_str(trimmed)
-            .map_err(|e| format!("Failed to parse distro list: {}", e))?;
+    let val: serde_json::Value = serde_json::from_str(trimmed)
+        .map_err(|e| format!("Failed to parse distro list: {}", e))?;
 
-        // ConvertTo-Json yields a bare object for a single distro, an array for many.
-        let items = match val {
-            serde_json::Value::Array(a) => a,
-            other => vec![other],
-        };
+    // ConvertTo-Json yields a bare object for a single distro, an array for many.
+    let items = match val {
+        serde_json::Value::Array(a) => a,
+        other => vec![other],
+    };
 
-        let distros = items
-            .iter()
-            .map(|v| WslDistro {
-                name: v["name"].as_str().unwrap_or("").to_string(),
-                version: v["version"].as_u64().unwrap_or(0) as u32,
-                running: v["running"].as_bool().unwrap_or(false),
-                is_default: v["isDefault"].as_bool().unwrap_or(false),
-                base_path: v["basePath"].as_str().unwrap_or("").to_string(),
-                vhd_path: v["vhdPath"].as_str().unwrap_or("").to_string(),
-                vhd_size_bytes: v["vhdSize"].as_u64().unwrap_or(0),
-            })
-            .filter(|d| !d.name.is_empty())
-            .collect::<Vec<WslDistro>>();
+    let distros = items
+        .iter()
+        .map(|v| WslDistro {
+            name: v["name"].as_str().unwrap_or("").to_string(),
+            registration_id: v["registrationId"].as_str().unwrap_or("").to_string(),
+            default_uid: v["defaultUid"].as_u64().map(|uid| uid as u32),
+            version: v["version"].as_u64().unwrap_or(0) as u32,
+            running: v["running"].as_bool().unwrap_or(false),
+            is_default: v["isDefault"].as_bool().unwrap_or(false),
+            base_path: v["basePath"].as_str().unwrap_or("").to_string(),
+            vhd_path: v["vhdPath"].as_str().unwrap_or("").to_string(),
+            vhd_size_bytes: v["vhdSize"].as_u64().unwrap_or(0),
+        })
+        .filter(|d| !d.name.is_empty())
+        .collect::<Vec<WslDistro>>();
 
-        if !silent {
-            emit_line(&app, format!("  ✓ {} distro(s)", distros.len()), false);
-        }
-        Ok(distros)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    Ok(distros)
 }
 
 #[cfg(test)]

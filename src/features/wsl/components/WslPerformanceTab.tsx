@@ -25,6 +25,7 @@ export default function WslPerformanceTab({ distros, onReload }: {
   const benchmarks       = useAppStore(s => s.wslBenchmarks)
   const addWslBenchmark  = useAppStore(s => s.addWslBenchmark)
   const setBusyDistro    = useAppStore(s => s.setWslBusyDistro)
+  const busyDistro       = useAppStore(s => s.wslBusyDistro)
 
   const [confirmBench, setConfirmBench] = useState(false)
   const [benching, setBenching] = useState(false)
@@ -44,6 +45,7 @@ export default function WslPerformanceTab({ distros, onReload }: {
   // terminates it), so they mark it busy to keep other views' probes off it during
   // the run, then refresh the shared list so every view reflects the new state.
   const runBenchmark = async () => {
+    if (useAppStore.getState().wslBusyDistro) return
     setConfirmBench(false)
     setBenching(true)
     setBenchErr(null)
@@ -63,6 +65,7 @@ export default function WslPerformanceTab({ distros, onReload }: {
   }
 
   const runProfile = async () => {
+    if (useAppStore.getState().wslBusyDistro) return
     setProfiling(true)
     setProfileErr(null)
     setBusyDistro(selected)
@@ -94,7 +97,7 @@ export default function WslPerformanceTab({ distros, onReload }: {
             <Timer size={14} className="wsl-perf-head-icon" />
             <span className="panel-title">Cold-boot benchmark</span>
             <div className="panel-actions">
-              <Button size="sm" onClick={() => setConfirmBench(true)} disabled={benching}>
+              <Button size="sm" onClick={() => setConfirmBench(true)} disabled={benching || busyDistro !== null}>
                 <Play size={12} /> {benching ? 'Booting…' : 'Run'}
               </Button>
             </div>
@@ -133,7 +136,7 @@ export default function WslPerformanceTab({ distros, onReload }: {
             <Gauge size={14} className="wsl-perf-head-icon" />
             <span className="panel-title">Shell startup profiler</span>
             <div className="panel-actions">
-              <Button size="sm" onClick={runProfile} disabled={profiling}>
+              <Button size="sm" onClick={runProfile} disabled={profiling || busyDistro !== null}>
                 <Play size={12} /> {profiling ? 'Profiling…' : 'Profile'}
               </Button>
             </div>

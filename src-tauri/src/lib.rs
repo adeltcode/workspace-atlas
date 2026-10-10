@@ -5,6 +5,7 @@ mod packages;
 mod shell;
 mod system;
 mod wsl;
+mod wsl_migration;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -13,6 +14,7 @@ pub fn run() {
         .manage(shell::ShellState(std::sync::Arc::new(std::sync::Mutex::new(None))))
         .manage(docker::ComposeLogState(std::sync::Arc::new(std::sync::Mutex::new(None))))
         .manage(system::SysState(std::sync::Mutex::new(sysinfo::System::new())))
+        .manage(wsl_migration::MigrationState::default())
         .invoke_handler(tauri::generate_handler![
             docker::docker_check,
             docker::launch_docker_desktop,
