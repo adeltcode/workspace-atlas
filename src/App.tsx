@@ -12,6 +12,7 @@ const SIDEBAR_MIN  = 160
 const SIDEBAR_MAX  = 360
 const TERMINAL_MIN = 100
 const TERMINAL_MAX = 600
+const MAIN_PANEL_MIN = 240
 
 export default function App() {
   const theme          = useAppStore(s => s.theme)
@@ -71,15 +72,16 @@ export default function App() {
   const onTerminalResize = (e: React.MouseEvent) => {
     e.preventDefault()
     const startY  = e.clientY
-    const startH  = useAppStore.getState().terminalHeight
     const content = e.currentTarget.parentElement as HTMLElement   // .app-content
+    const startH  = content.querySelector<HTMLElement>('.terminal-panel')?.offsetHeight ?? TERMINAL_MIN
     let current   = startH
 
     content.classList.add('resizing-terminal')                     // disable height transition
 
     const onMove = (mv: MouseEvent) => {
-      current = Math.max(TERMINAL_MIN, Math.min(TERMINAL_MAX, startH + startY - mv.clientY))
-      content.style.setProperty('--terminal-height', `${current}px`)
+      const maxHeight = Math.max(TERMINAL_MIN, Math.min(TERMINAL_MAX, content.clientHeight - MAIN_PANEL_MIN))
+      current = Math.max(TERMINAL_MIN, Math.min(maxHeight, startH + startY - mv.clientY))
+      content.style.setProperty('--terminal-preferred-height', `${current}px`)
     }
     const onUp = () => {
       useAppStore.getState().setTerminalHeight(current)            // persist on release
@@ -106,7 +108,7 @@ export default function App() {
             column, so a page's last row is never buried under the panel. */}
         <div
           className={clsx('app-content', terminalOpen && 'app-content--terminal-open')}
-          style={{ '--terminal-height': `${terminalHeight}px` } as React.CSSProperties}
+          style={{ '--terminal-preferred-height': `${terminalHeight}px`, '--main-panel-min-height': `${MAIN_PANEL_MIN}px` } as React.CSSProperties}
         >
           <MainPanel />
           {terminalOpen && (
