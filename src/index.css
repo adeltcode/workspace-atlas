@@ -7163,6 +7163,11 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   font-weight: 600;
   color: var(--color-text-secondary);
 }
+.wsl-import-field .settings-dir-input:focus-visible,
+.wiz-location .settings-dir-input:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
 .wsl-import-row {
   display: flex;
   gap: 8px;

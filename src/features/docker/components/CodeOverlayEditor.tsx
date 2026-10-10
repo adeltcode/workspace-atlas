@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef } from 'react'
 
 interface Props {
+  label:            string
   value:            string
   onChange:         (v: string) => void
   renderLine:       (line: string, index: number) => React.ReactNode
@@ -9,7 +10,7 @@ interface Props {
 }
 
 export default function CodeOverlayEditor({
-  value, onChange, renderLine, initialScrollTop = 0, onScrollTop,
+  label, value, onChange, renderLine, initialScrollTop = 0, onScrollTop,
 }: Props) {
   const taRef   = useRef<HTMLTextAreaElement>(null)
   const preRef  = useRef<HTMLDivElement>(null)
@@ -52,6 +53,7 @@ export default function CodeOverlayEditor({
         <textarea
           ref={taRef}
           className="compose-overlay-textarea"
+          aria-label={label}
           value={value}
           onChange={e => onChange(e.target.value)}
           onScroll={syncScroll}

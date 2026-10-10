@@ -285,6 +285,7 @@ function YamlEditor({ value, onChange, initialScrollTop, onScrollTop }: {
 }) {
   return (
     <CodeOverlayEditor
+      label="Compose file contents"
       value={value}
       onChange={onChange}
       renderLine={(line, i) => <YamlLine key={i} line={line} />}
@@ -1320,7 +1321,7 @@ export default function ComposeTab({
                   fileContents[activeFile] === undefined
                     ? <div className="compose-viewer-state">Loading…</div>
                     : editMode
-                      ? <CodeOverlayEditor key={activeFile} value={editDraft} onChange={setEditDraft}
+                      ? <CodeOverlayEditor key={activeFile} label="Dockerfile contents" value={editDraft} onChange={setEditDraft}
                           renderLine={(l, i) => <DockerfileLine key={i} line={l} />}
                           initialScrollTop={scrollByFile.current[activeFile] ?? 0} onScrollTop={rememberScroll} />
                       : <ComposeDockerfileViewer key={activeFile} content={fileContents[activeFile]}
