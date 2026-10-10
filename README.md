@@ -49,6 +49,14 @@ including terminal commands and Compose log streams. Atlas rejects conflicting
 operations until migration finishes. Close external terminals, editors, and tools
 that could restart the distribution during the move.
 
+The review shows detected blockers together, with actions to update WSL, quit
+Docker Desktop, choose another destination, or inspect an active terminal task.
+Updates and workload shutdowns require confirmation and then recheck the requirements.
+The move remains a separate confirmation. Expand **Commands and Windows responses**
+to inspect the commands, exit codes, and both output streams. WSL compatibility
+is checked from its advertised commands, because `wsl --help` can return a
+nonzero exit code even when the required commands are available.
+
 Linux packages and paths inside the disk stay in place. Windows-mounted files,
 Docker Desktop's separate disk, and global WSL swap storage are not moved or
 backed up by this operation. A recovered backup uses a new distro name: enable

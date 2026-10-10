@@ -127,9 +127,18 @@ export interface MigrationPlan {
   available_bytes: number
 }
 
+export interface MigrationPreflight {
+  plan: MigrationPlan | null
+  blockers: import('../../utils/errors').AppError[]
+  command_output: string
+}
+
+export interface MigrationOutput { distro: string; text: string }
+export type MigrationRepair = 'update-wsl' | 'update-wsl-web' | 'stop-docker' | 'stop-wsl'
+
 export interface MigrationProgress {
   distro: string
-  phase: 'stopping' | 'backing-up' | 'verifying-backup' | 'moving' | 'checking'
+  phase: 'preparing' | 'stopping' | 'backing-up' | 'verifying-backup' | 'moving' | 'checking'
 }
 
 export interface ServiceInit {

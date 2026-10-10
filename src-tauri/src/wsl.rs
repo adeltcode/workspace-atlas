@@ -4,7 +4,7 @@ use tauri::Emitter;
 
 use crate::docker::bytes_to_human;
 use crate::shell::ShellOut;
-use crate::error::{AtlasError, ErrorKind};
+use crate::error::{AtlasError, ErrorKind, RecoveryAction};
 
 fn emit_line(app: &tauri::AppHandle, text: impl Into<String>, stderr: bool) {
     app.emit("shell-out", ShellOut { text: text.into(), stderr }).ok();
@@ -1518,31 +1518,198 @@ pub async fn wsl_clone_distro(
 }
 
 #[tauri::command]
-pub async fn wsl_plan_migration(
-    state: tauri::State<'_, crate::wsl_migration::MigrationState>,
-    distro: String,
-    new_dir: String,
-) -> Result<crate::wsl_migration::MigrationPlan, AtlasError> {
+pub fn wsl_suggest_migration_dir(distro: String, new_dir: String) -> Result<String, AtlasError> {
+    crate::wsl_migration::suggest_folder(std::path::Path::new(new_dir.trim()), &distro).map_err(|mut error| {
+        error.action = Some(RecoveryAction::ChooseFolder);
+        if matches!(error.kind, ErrorKind::Permission | ErrorKind::Elevation) {
+            error.hint = Some("Choose a local folder you own. No folder has been created.".to_string());
+        }
+        error
+    })
+}
+
+fn decode_wsl_output(bytes: &[u8]) -> String {
+    if bytes.starts_with(&[0xff, 0xfe]) || bytes.iter().take(200).filter(|&&b| b == 0).count() > 20 {
+        let units: Vec<u16> = bytes.chunks_exact(2).map(|b| u16::from_le_bytes([b[0], b[1]])).collect();
+        return String::from_utf16_lossy(&units).trim_start_matches('\u{feff}').to_string();
+    }
+    String::from_utf8_lossy(bytes).trim_start_matches('\u{feff}').to_string()
+}
+
+fn migration_command_report(command: &str, output: &std::process::Output) -> String {
+    format!("{}\nExit code: {}\nstdout:\n{}\nstderr:\n{}\n", command,
+        output.status.code().map(|code| code.to_string()).unwrap_or_else(|| "unavailable".to_string()),
+        if output.stdout.is_empty() { "(no output)".to_string() } else { decode_wsl_output(&output.stdout) },
+        if output.stderr.is_empty() { "(no output)".to_string() } else { decode_wsl_output(&output.stderr) })
+}
+
+fn emit_migration_output(app: &tauri::AppHandle, distro: &str, text: String) {
+    app.emit("wsl-migration-output", crate::wsl_migration::MigrationOutput { distro: distro.to_string(), text }).ok();
+}
+
+fn capture_migration_command(app: &tauri::AppHandle, distro: &str, program: &str, args: &[&str]) -> Result<std::process::Output, AtlasError> {
+    let display = format!("$ {} {}", program, args.iter().map(|arg| crate::wsl_migration::quote(arg)).collect::<Vec<_>>().join(" "));
+    emit_line(app, &display, false);
+    emit_migration_output(app, distro, format!("{}\n", display));
+    let mut command = Command::new(program);
+    command.env("WSL_UTF8", "1").args(args);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+    let output = command.output().map_err(|error| {
+        let detail = format!("{}\nWindows could not start the command: {}", display, error);
+        AtlasError::from(error).detail(detail)
+    })?;
+    for line in decode_wsl_output(&output.stdout).lines() { emit_line(app, line, false); }
+    for line in decode_wsl_output(&output.stderr).lines() { emit_line(app, line, true); }
+    emit_line(app, format!("  exited {}", output.status.code().unwrap_or(-1)), !output.status.success());
+    let report = migration_command_report(&display, &output);
+    emit_migration_output(app, distro, report.strip_prefix(&format!("{}\n", display)).unwrap_or(&report).to_string());
+    Ok(output)
+}
+
+fn migration_capabilities(output: &std::process::Output) -> Result<(), AtlasError> {
+    let help = format!("{}\n{}", decode_wsl_output(&output.stdout), decode_wsl_output(&output.stderr));
+    if !help.contains("--export") && !help.contains("--install") && !help.contains("--manage") {
+        return Err(AtlasError::new(ErrorKind::WslDown, "WSL could not report its supported commands.")
+            .hint("Check the Windows response below before repairing WSL.")
+            .action(RecoveryAction::WslHelp));
+    }
+    let export = help.split("--export").nth(1).unwrap_or_default().split("--import").next().unwrap_or_default();
+    let mut missing = Vec::new();
+    if !help.contains("--manage") || !help.contains("--move") { missing.push("direct disk moves (--manage --move)"); }
+    if !export.contains("--vhd") && !(export.contains("--format") && export.contains("vhd")) { missing.push("virtual disk backups (--export with VHD output)"); }
+    if !missing.is_empty() {
+        return Err(AtlasError::invalid("Update WSL to enable the required migration commands.")
+            .hint(format!("This installation does not list {}. Atlas needs these to keep a verified backup and move the disk without removing the distribution.", missing.join(" and ")))
+            .action(RecoveryAction::UpdateWsl));
+    }
+    Ok(())
+}
+
+fn check_migration_support(app: &tauri::AppHandle, distro: &str) -> Result<String, AtlasError> {
+    let version = capture_migration_command(app, distro, "wsl", &["--version"])?;
+    let help = capture_migration_command(app, distro, "wsl", &["--help"])?;
+    let mut report = format!("{}\n{}", migration_command_report("$ wsl --version", &version), migration_command_report("$ wsl --help", &help));
+    migration_capabilities(&help)
+        .map_err(|error| error.detail(&report))?;
+    report.push_str("\nCapability check: direct moves and VHD backups are available.\nWSL help can exit with a nonzero code while listing supported commands. The listed commands determine compatibility.\n");
+    Ok(report)
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum MigrationRepair { UpdateWsl, UpdateWslWeb, StopDocker, StopWsl }
+
+fn repair_command(action: &MigrationRepair) -> (&'static str, &'static [&'static str]) {
+    match action {
+        MigrationRepair::UpdateWsl => ("wsl", &["--update"]),
+        MigrationRepair::UpdateWslWeb => ("wsl", &["--update", "--web-download"]),
+        MigrationRepair::StopDocker => ("docker", &["desktop", "stop", "--timeout", "60"]),
+        MigrationRepair::StopWsl => ("wsl", &["--shutdown"]),
+    }
+}
+
+fn migration_repair_error(action: &MigrationRepair, output: &std::process::Output) -> AtlasError {
+    let (program, args) = repair_command(action);
+    let report = migration_command_report(&format!("$ {} {}", program, args.join(" ")), output);
+    let raw = format!("{}\n{}", decode_wsl_output(&output.stdout), decode_wsl_output(&output.stderr));
+    let error = AtlasError::from(raw.trim());
+    let (message, hint, recovery) = match action {
+        MigrationRepair::StopDocker => ("Docker Desktop could not quit automatically.", "Open Docker Desktop and choose Quit from its tray menu, then check again.", RecoveryAction::OpenDocker),
+        MigrationRepair::StopWsl => ("WSL could not shut down.", "Close WSL terminals and editors, then retry. The Windows response is below.", RecoveryAction::StopWsl),
+        _ if matches!(error.kind, ErrorKind::Permission | ErrorKind::Elevation | ErrorKind::Cancelled) => ("Windows did not approve the WSL update.", "Approve the Windows prompt when retrying, or use the administrator instructions in the update guide.", RecoveryAction::WslHelp),
+        MigrationRepair::UpdateWslWeb => ("The direct WSL download did not finish.", "Check the Windows response and the troubleshooting guide for network or installation issues.", RecoveryAction::WslHelp),
+        _ => ("The WSL update did not finish.", "Check the Windows response. If Microsoft Store access failed, try the web download.", RecoveryAction::UpdateWslWeb),
+    };
+    AtlasError::new(error.kind, message).hint(hint).action(recovery).detail(report)
+}
+
+fn acquire_migration_lock(gate: &std::sync::RwLock<()>) -> Result<std::sync::RwLockWriteGuard<'_, ()>, AtlasError> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    loop {
+        match gate.try_write() {
+            Ok(guard) => return Ok(guard),
+            Err(std::sync::TryLockError::WouldBlock) if std::time::Instant::now() < deadline => std::thread::sleep(std::time::Duration::from_millis(100)),
+            Err(_) => return Err(AtlasError::new(ErrorKind::Busy, "Finish the active Atlas operation first.")
+                .hint("Open the terminal to finish a command or close its Compose log stream.")
+                .detail("An Atlas operation still holds the disk safety lock. No WSL shutdown or migration command has started.")
+                .action(RecoveryAction::ShowTerminal)),
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn wsl_repair_migration(app: tauri::AppHandle, state: tauri::State<'_, crate::wsl_migration::MigrationState>, distro: String, action: MigrationRepair) -> Result<String, AtlasError> {
     let gate = state.0.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let _guard = gate.try_write().map_err(|_| AtlasError::new(ErrorKind::Busy, "Finish the active Atlas operation first.")
-            .hint("Close terminal commands or Compose log streams, then check again."))?;
-        check_migration_support()?;
-        let distros = read_distros()?;
-        let source = crate::wsl_migration::source_distro(&distro, &distros)?;
-        crate::wsl_migration::plan(std::path::Path::new(new_dir.trim()), source, &distros)
+        let _guard = acquire_migration_lock(&gate)?;
+        let (program, args) = repair_command(&action);
+        let output = capture_migration_command(&app, &distro, program, args).map_err(|error| {
+            if matches!(action, MigrationRepair::StopDocker) {
+                return AtlasError::new(error.kind, "Docker's quit command is unavailable.")
+                    .hint("Open Docker Desktop and choose Quit from its tray menu.")
+                    .action(RecoveryAction::OpenDocker).detail(error.detail.unwrap_or(error.message));
+            }
+            error.action(RecoveryAction::WslHelp)
+        })?;
+        let report = migration_command_report(&format!("$ {} {}", program, args.join(" ")), &output);
+        if !output.status.success() {
+            return Err(migration_repair_error(&action, &output));
+        }
+        if matches!(action, MigrationRepair::StopDocker) { crate::wsl_migration::require_docker_stopped().map_err(|error| error.action(RecoveryAction::OpenDocker).detail(&report))?; }
+        Ok(report)
     }).await.map_err(|e| e.to_string())?
 }
 
-fn check_migration_support() -> Result<(), AtlasError> {
-    crate::wsl_migration::require_docker_stopped()?;
-    let help = Command::new("wsl").env("WSL_UTF8", "1").arg("--help").output()?;
-    let help_text = String::from_utf8_lossy(&help.stdout);
-    if !help.status.success() || !help_text.contains("--move") || !help_text.contains("--format") {
-        return Err(AtlasError::invalid("Update WSL to move this distribution.")
-            .hint("Install the latest WSL version, then check again."));
-    }
-    Ok(())
+#[tauri::command]
+pub async fn wsl_plan_migration(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    shell: tauri::State<'_, crate::shell::ShellState>,
+    compose: tauri::State<'_, crate::docker::ComposeLogState>,
+    distro: String,
+    new_dir: String,
+) -> Result<crate::wsl_migration::MigrationPreflight, AtlasError> {
+    let gate = state.0.clone();
+    let shell = shell.0.clone();
+    let compose = compose.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = gate.try_read().map_err(|_| AtlasError::new(ErrorKind::Busy, "Wait for the current WSL disk operation to finish.")
+            .hint("Another disk operation is already running in Atlas.").action(RecoveryAction::ShowTerminal))?;
+        let mut result = crate::wsl_migration::MigrationPreflight { plan: None, blockers: Vec::new(), command_output: String::new() };
+        if shell.lock().map_err(|e| e.to_string())?.is_some() || compose.lock().map_err(|e| e.to_string())?.is_some() {
+            result.blockers.push(AtlasError::new(ErrorKind::Busy, "Finish the active terminal task before moving.")
+                .hint("A terminal command or Compose log stream can keep Docker or WSL in use.").action(RecoveryAction::ShowTerminal));
+        }
+        match check_migration_support(&app, &distro) {
+            Ok(report) => result.command_output = report,
+            Err(mut error) => { result.command_output = error.detail.take().unwrap_or_default(); result.blockers.push(error); }
+        }
+        let distros = match read_distros() {
+            Ok(distros) => distros,
+            Err(error) => { result.blockers.push(AtlasError::new(error.kind, "Windows could not read the distribution list.")
+                .hint("Refresh the list after checking the Windows response.").action(RecoveryAction::RefreshDistros)
+                .detail(format!("Read WSL registrations and running distributions:\n{}\n{}", error.message, error.detail.unwrap_or_default()))); return Ok(result); }
+        };
+        let source = match crate::wsl_migration::source_distro(&distro, &distros) {
+            Ok(source) => source,
+            Err(mut error) => { if error.action.is_none() { error.action = Some(RecoveryAction::WslHelp); } result.blockers.clear(); result.blockers.push(error); return Ok(result); }
+        };
+        if let Err(error) = crate::wsl_migration::require_docker_stopped() { result.blockers.push(error); }
+        match crate::wsl_migration::plan(std::path::Path::new(new_dir.trim()), source, &distros) {
+            Ok(plan) => result.plan = Some(plan),
+            Err(mut error) => {
+                if matches!(error.kind, ErrorKind::Permission | ErrorKind::Elevation) {
+                    error.hint = Some("Choose a folder you own. Atlas does not change ownership of another account's files.".to_string());
+                }
+                result.blockers.push(error.action(RecoveryAction::ChooseFolder));
+            }
+        }
+        Ok(result)
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -1554,16 +1721,21 @@ pub async fn wsl_migrate_distro(
 ) -> Result<crate::wsl_migration::MigrateResult, AtlasError> {
     let gate = state.0.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let _guard = gate.try_write().map_err(|_| AtlasError::new(ErrorKind::Busy, "Finish the active Atlas operation first.")
-            .hint("Close terminal commands or Compose log streams, then check again."))?;
-        check_migration_support()?;
+        let _guard = acquire_migration_lock(&gate)?;
+        check_migration_support(&app, &distro)?;
+        crate::wsl_migration::require_docker_stopped()?;
         let distros = read_distros()?;
         let source = crate::wsl_migration::source_distro(&distro, &distros)?;
         let dest = crate::wsl_migration::confirmed_destination(std::path::Path::new(new_dir.trim()), &distros)?;
-        crate::wsl_migration::plan(&dest, source, &distros)?;
+        crate::wsl_migration::plan(&dest, source, &distros).map_err(|error| error.action(RecoveryAction::ChooseFolder))?;
         let _directory_guards = crate::wsl_migration::create_destination(&dest, &distros)?;
-        crate::wsl_migration::migrate(source, &dest, run_wsl, read_distros,
-            |line| emit_line(&app, line, false),
+        crate::wsl_migration::migrate(source, &dest, |args| {
+            let output = capture_migration_command(&app, &distro, "wsl", args)?;
+            if output.status.success() { return Ok(()); }
+            let raw = format!("{}\n{}", decode_wsl_output(&output.stdout), decode_wsl_output(&output.stderr));
+            Err(AtlasError::from(raw.trim()).action(RecoveryAction::WslHelp).detail(migration_command_report(&format!("$ wsl {}", args.iter().map(|arg| crate::wsl_migration::quote(arg)).collect::<Vec<_>>().join(" ")), &output)))
+        }, read_distros,
+            |line| { if !line.starts_with("$ ") { emit_line(&app, &line, false); emit_migration_output(&app, &distro, format!("{}\n", line)); } },
             |phase| { app.emit("wsl-migration-progress", crate::wsl_migration::MigrationProgress {
                 distro: distro.clone(), phase: phase.to_string(),
             }).ok(); })
@@ -2178,6 +2350,106 @@ $list | ConvertTo-Json -Compress -Depth 3
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    fn migration_output(stdout: &str, stderr: &str, exit_code: u32) -> std::process::Output {
+        use std::os::windows::process::ExitStatusExt;
+        std::process::Output { status: std::process::ExitStatus::from_raw(exit_code), stdout: stdout.as_bytes().to_vec(), stderr: stderr.as_bytes().to_vec() }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn migration_accepts_nonzero_help_exit_when_required_commands_are_advertised() {
+        for export in ["--export <Distro> <File> --format <Format> tar, vhd", "--export <Distro> <File> --vhd"] {
+            let help = migration_output(&format!("--manage <Distro> --move <Location>\n{}\n--import", export), "", u32::MAX);
+            assert!(!help.status.success());
+            assert!(migration_capabilities(&help).is_ok());
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn migration_update_blocker_explains_the_missing_feature() {
+        let output = migration_output("--install\n--export <Distro> <File> --vhd\n--import", "", u32::MAX);
+        let error = migration_capabilities(&output).unwrap_err();
+        assert!(matches!(error.action, Some(RecoveryAction::UpdateWsl)));
+        let hint = error.hint.unwrap();
+        assert!(hint.contains("--manage --move"));
+        assert!(hint.contains("without removing the distribution"));
+        let broken = migration_capabilities(&migration_output("", "Access is denied.", 5)).unwrap_err();
+        assert!(matches!(broken.action, Some(RecoveryAction::WslHelp)));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn migration_reports_both_windows_streams_and_the_exit_code() {
+        let output = migration_output("Windows reported a failure on stdout.", "Additional stderr detail.", 5);
+        let report = migration_command_report("$ wsl --update", &output);
+        assert!(report.contains("$ wsl --update\nExit code: 5"));
+        assert!(report.contains("Windows reported a failure on stdout."));
+        assert!(report.contains("Additional stderr detail."));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn migration_failed_repairs_have_specific_safe_fallback_actions() {
+        let store = migration_repair_error(&MigrationRepair::UpdateWsl, &migration_output("Microsoft Store is unavailable.", "", 1));
+        assert!(matches!(store.action, Some(RecoveryAction::UpdateWslWeb)));
+        assert!(store.detail.unwrap().contains("Microsoft Store is unavailable."));
+        let direct = migration_repair_error(&MigrationRepair::UpdateWslWeb, &migration_output("Download failed.", "", 1));
+        assert!(matches!(direct.action, Some(RecoveryAction::WslHelp)));
+        let denied = migration_repair_error(&MigrationRepair::UpdateWsl, &migration_output("", "Access is denied.", 5));
+        assert!(matches!(denied.action, Some(RecoveryAction::WslHelp)));
+        let docker = migration_repair_error(&MigrationRepair::StopDocker, &migration_output("", "Unknown desktop command", 1));
+        assert!(matches!(docker.action, Some(RecoveryAction::OpenDocker)));
+        let shutdown = migration_repair_error(&MigrationRepair::StopWsl, &migration_output("Shutdown failed.", "", 1));
+        assert!(matches!(shutdown.action, Some(RecoveryAction::StopWsl)));
+    }
+
+    #[test]
+    fn migration_decodes_legacy_utf16_responses() {
+        let text = "Windows response Ω\r\n--manage --move";
+        let mut bytes = vec![0xff, 0xfe];
+        for unit in text.encode_utf16() { bytes.extend(unit.to_le_bytes()); }
+        assert_eq!(decode_wsl_output(&bytes), text);
+        assert_eq!(decode_wsl_output(text.as_bytes()), text);
+    }
+
+    #[test]
+    fn migration_repairs_reject_arbitrary_commands_and_never_force_shutdown() {
+        assert!(serde_json::from_str::<MigrationRepair>("\"powershell\"").is_err());
+        assert_eq!(repair_command(&MigrationRepair::UpdateWsl), ("wsl", &["--update"][..]));
+        assert_eq!(repair_command(&MigrationRepair::UpdateWslWeb), ("wsl", &["--update", "--web-download"][..]));
+        assert_eq!(repair_command(&MigrationRepair::StopDocker), ("docker", &["desktop", "stop", "--timeout", "60"][..]));
+        assert_eq!(repair_command(&MigrationRepair::StopWsl), ("wsl", &["--shutdown"][..]));
+    }
+
+    #[test]
+    fn migration_lock_waits_for_a_short_background_probe() {
+        let gate = std::sync::Arc::new(std::sync::RwLock::new(()));
+        let reader_gate = gate.clone();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let _probe = reader_gate.read().unwrap();
+            started_tx.send(()).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        });
+        started_rx.recv_timeout(std::time::Duration::from_secs(2)).unwrap();
+        let guard = acquire_migration_lock(&gate).unwrap();
+        worker.join().unwrap();
+        drop(guard);
+        assert!(gate.try_write().is_ok());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn migration_installed_help_accepts_advertised_features_without_starting_wsl() {
+        let Ok(output) = Command::new("wsl").env("WSL_UTF8", "1").arg("--help").output() else { return; };
+        let help = decode_wsl_output(&output.stdout);
+        if help.contains("--manage") && help.contains("--move") && help.contains("--format") && help.contains("vhd") {
+            assert!(migration_capabilities(&output).is_ok());
+        }
+    }
 
     #[test]
     fn optimize_result_preserves_windows_details_and_rejects_missing_success() {

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use crate::error::{AtlasError, ErrorKind};
+use crate::error::{AtlasError, ErrorKind, RecoveryAction};
 use crate::wsl::WslDistro;
 
 #[derive(Clone, Default)]
@@ -38,7 +38,8 @@ pub fn require_docker_stopped() -> Result<(), AtlasError> {
     }) {
         return Err(
             AtlasError::new(ErrorKind::Busy, "Quit Docker Desktop to continue.")
-                .hint("Save container work, then choose Quit from Docker's tray menu."),
+                .hint("Docker can restart WSL and keep its disk open. Save container work before quitting.")
+                .action(RecoveryAction::StopDocker),
         );
     }
     Ok(())
@@ -60,10 +61,23 @@ pub struct MigrationPlan {
     pub available_bytes: u64,
 }
 
+#[derive(serde::Serialize)]
+pub struct MigrationPreflight {
+    pub plan: Option<MigrationPlan>,
+    pub blockers: Vec<AtlasError>,
+    pub command_output: String,
+}
+
 #[derive(serde::Serialize, Clone)]
 pub struct MigrationProgress {
     pub distro: String,
     pub phase: String,
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct MigrationOutput {
+    pub distro: String,
+    pub text: String,
 }
 
 const SPACE_RESERVE: u64 = 1024 * 1024 * 1024;
@@ -113,34 +127,70 @@ pub fn source_distro<'a>(
         return Err(AtlasError::invalid("Choose a registered distribution."));
     }
     let distro = distros.iter().find(|d| d.name == name).ok_or_else(|| {
-        AtlasError::invalid("The distribution is no longer registered. Refresh and try again.")
+        AtlasError::invalid("The distribution is no longer registered.")
+            .hint("Refresh the list to load its current location.")
+            .action(RecoveryAction::RefreshDistros)
     })?;
     if name.to_lowercase().starts_with("docker-desktop") {
-        return Err(AtlasError::invalid(
-            "Move Docker's disk through Docker Desktop's settings.",
-        ));
+        return Err(
+            AtlasError::invalid("Move Docker's disk through Docker Desktop's settings.")
+                .action(RecoveryAction::OpenDocker),
+        );
+    }
+    if distro.version == 1 {
+        return Err(AtlasError::invalid("Convert this distribution to WSL 2 first.")
+            .hint("WSL 1 does not have a virtual disk to move. Back up your files before converting.")
+            .action(RecoveryAction::ConversionGuide));
     }
     if distro.version != 2 {
         return Err(AtlasError::invalid(
-            "This migration requires a WSL 2 distribution.",
-        ));
+            "Windows could not determine this distribution's WSL version.",
+        )
+        .hint("Refresh the distribution list before checking the move again.")
+        .action(RecoveryAction::RefreshDistros));
     }
-    if distro.vhd_path.is_empty()
-        || !Path::new(&distro.vhd_path).is_file()
-        || fs::metadata(&distro.vhd_path)?.len() == 0
-    {
+    if distro.vhd_path.is_empty() {
         return Err(AtlasError::invalid(
             "The distribution's virtual disk is missing. Repair it before migrating.",
-        ));
+        )
+        .hint("Refresh to check its current location. Keep any existing disk files.")
+        .action(RecoveryAction::RefreshDistros));
+    }
+    let metadata = fs::metadata(&distro.vhd_path).map_err(|error| {
+        let detail = format!(
+            "Source disk: {}\nWindows reported: {}",
+            distro.vhd_path, error
+        );
+        AtlasError::new(
+            AtlasError::from(error).kind,
+            "Windows could not read the source disk.",
+        )
+        .hint("Check its location and permissions before moving. Keep the existing disk files.")
+        .detail(detail)
+        .action(RecoveryAction::WslHelp)
+    })?;
+    if !metadata.is_file() || metadata.len() == 0 {
+        return Err(
+            AtlasError::invalid("The source disk is empty or is not a file.")
+                .hint(
+                    "Refresh the distribution list and check the existing disk before continuing.",
+                )
+                .detail(format!(
+                    "Source disk: {}\nReported size: {} bytes",
+                    distro.vhd_path,
+                    metadata.len()
+                ))
+                .action(RecoveryAction::RefreshDistros),
+        );
     }
     Ok(distro)
 }
 
 fn require_empty(path: &Path) -> Result<(), AtlasError> {
     if !path.is_dir() || fs::read_dir(path)?.next().transpose()?.is_some() {
-        return Err(AtlasError::invalid(
-            "That folder contains files. Choose an empty or new folder.",
-        ));
+        return Err(AtlasError::invalid("This folder already contains files.")
+            .hint("Choose another folder to avoid overwriting existing data.")
+            .action(RecoveryAction::ChooseFolder));
     }
     Ok(())
 }
@@ -202,7 +252,13 @@ pub fn destination(input: &Path, distros: &[WslDistro]) -> Result<PathBuf, Atlas
             || parent_key.starts_with(&base_key)
             || base_key.starts_with(&key)
         {
-            return Err(AtlasError::invalid("Choose a folder outside all registered distributions. The backup must also remain outside them."));
+            return Err(
+                AtlasError::invalid("Choose a folder outside existing distributions.")
+                    .hint(
+                        "The disk and its backup must stay separate from registered distributions.",
+                    )
+                    .action(RecoveryAction::ChooseFolder),
+            );
         }
     }
     if path.try_exists()? {
@@ -267,6 +323,41 @@ pub fn suggested_destination(input: &Path, name: &str) -> PathBuf {
         folder = format!("distro-{}", folder);
     }
     input.join("WSL").join(folder)
+}
+
+pub fn suggest_folder(input: &Path, name: &str) -> Result<String, AtlasError> {
+    if !input.is_absolute() {
+        return Err(AtlasError::invalid("Choose a folder on a local drive.")
+            .action(RecoveryAction::ChooseFolder));
+    }
+    #[cfg(windows)]
+    if !is_local_path(input) {
+        return Err(
+            AtlasError::invalid("Choose a local drive instead of a network share.")
+                .action(RecoveryAction::ChooseFolder),
+        );
+    }
+    let suggested = suggested_destination(input, name);
+    if suggested == input {
+        return Ok(path_text(input));
+    }
+    for number in 1..=100 {
+        let candidate = if number == 1 {
+            suggested.clone()
+        } else {
+            suggested.with_file_name(format!(
+                "{}-{}",
+                suggested.file_name().unwrap().to_string_lossy(),
+                number
+            ))
+        };
+        if !candidate.try_exists()?
+            || (candidate.is_dir() && fs::read_dir(&candidate)?.next().is_none())
+        {
+            return Ok(path_text(&candidate));
+        }
+    }
+    Err(AtlasError::invalid("Choose another folder or drive.").action(RecoveryAction::ChooseFolder))
 }
 
 pub fn plan(
@@ -456,6 +547,7 @@ fn at_step(error: AtlasError, step: &str) -> AtlasError {
         error.detail.unwrap_or_default()
     ));
     result.hint = error.hint;
+    result.action = error.action;
     result
 }
 
@@ -487,7 +579,8 @@ fn wait_for_disk_release(path: &Path, timeout: Duration) -> Result<fs::File, Atl
                 ErrorKind::Busy,
                 "Another app is keeping the disk open. It was not moved.",
             )
-            .hint("Close WSL terminals, editors, and Docker Desktop."));
+            .hint("Close terminals and editors that use WSL, then stop WSL to release the disk.")
+            .action(RecoveryAction::StopWsl));
         }
         std::thread::sleep(Duration::from_millis(100));
     }
@@ -595,11 +688,11 @@ fn migrate_with_backup(
     drop(source_guard);
     progress("backing-up");
     log(format!(
-        "$ wsl --export {} {} --format vhd",
+        "$ wsl --export {} {} --vhd",
         quote(&source.name),
         quote(&backup_text)
     ));
-    run(&["--export", &source.name, &backup_text, "--format", "vhd"])
+    run(&["--export", &source.name, &backup_text, "--vhd"])
         .map_err(|e| at_step(e, "Backup export failed; the disk was not moved"))?;
     if !backup.is_file() || fs::metadata(backup)?.len() == 0 {
         return Err(AtlasError::invalid(
@@ -996,7 +1089,7 @@ mod tests {
         let result = result.unwrap();
         assert_eq!(commands.len(), 6);
         assert_eq!(commands[0], "wsl --shutdown");
-        assert!(commands[1].ends_with("--format vhd"));
+        assert!(commands[1].ends_with("--vhd"));
         assert_eq!(commands[2], "wsl --shutdown");
         assert!(commands[3].contains("--move"));
         assert!(commands[4].contains("--exec sh -c"));
@@ -1074,7 +1167,21 @@ mod tests {
         assert!(source_distro(&distro.name, &[distro.clone()]).is_err());
         distro.name = "test-distro".into();
         distro.version = 1;
-        assert!(source_distro(&distro.name, &[distro.clone()]).is_err());
+        assert!(matches!(
+            source_distro(&distro.name, &[distro.clone()])
+                .err()
+                .unwrap()
+                .action,
+            Some(RecoveryAction::ConversionGuide)
+        ));
+        distro.version = 0;
+        assert!(matches!(
+            source_distro(&distro.name, &[distro.clone()])
+                .err()
+                .unwrap()
+                .action,
+            Some(RecoveryAction::RefreshDistros)
+        ));
         distro.version = 2;
         distro.vhd_path.clear();
         assert!(source_distro(&distro.name, &[distro.clone()]).is_err());
@@ -1108,6 +1215,22 @@ mod tests {
             suggested_destination(Path::new(r"F:\my-folder"), "Ubuntu"),
             PathBuf::from(r"F:\my-folder")
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn root_recommendation_does_not_depend_on_wsl_or_create_a_directory() {
+        let name = format!(
+            "atlas-recommendation-test-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let suggested = suggest_folder(Path::new(r"F:\"), &name).unwrap();
+        assert_eq!(suggested, format!("F:\\WSL\\{}", name));
+        assert!(!Path::new(&suggested).exists());
+        assert!(suggest_folder(Path::new(r"\\server\share"), &name).is_err());
     }
 
     #[cfg(windows)]
@@ -1354,7 +1477,8 @@ mod tests {
         let error =
             wait_for_disk_release(Path::new(&fixture.source.vhd_path), Duration::ZERO).unwrap_err();
         assert_eq!(error.kind, ErrorKind::Busy);
-        assert!(error.hint.unwrap().contains("Close WSL terminals"));
+        assert!(matches!(error.action, Some(RecoveryAction::StopWsl)));
+        assert!(error.hint.unwrap().contains("stop WSL"));
         drop(held);
         assert!(wait_for_disk_release(Path::new(&fixture.source.vhd_path), Duration::ZERO).is_ok());
     }

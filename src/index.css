@@ -7186,6 +7186,8 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wsl-migration-notice > svg { color: var(--color-warning); }
 .wsl-migration-notice p { margin-top: var(--space-2); line-height: 1.5; color: var(--color-text-secondary); }
 .wsl-migration-running { overflow-wrap: anywhere; }
+.wsl-migration-command { display: block; margin-top: var(--space-3); overflow-wrap: anywhere; user-select: text; }
+.wsl-migration-notice .modal-actions { margin-top: var(--space-3); }
 .wsl-migration-details { font-size: var(--text-xs); color: var(--color-text-secondary); line-height: 1.5; }
 .wsl-migration-details summary { width: fit-content; cursor: pointer; }
 .wsl-migration-details > p, .wsl-migration-details > code, .wsl-migration-details > button { margin-top: var(--space-3); }

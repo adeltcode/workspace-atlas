@@ -43,6 +43,21 @@ pub enum ErrorKind {
     Unknown,
 }
 
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RecoveryAction {
+    UpdateWsl,
+    UpdateWslWeb,
+    StopDocker,
+    OpenDocker,
+    StopWsl,
+    ChooseFolder,
+    ShowTerminal,
+    RefreshDistros,
+    WslHelp,
+    ConversionGuide,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct AtlasError {
     pub kind: ErrorKind,
@@ -55,11 +70,13 @@ pub struct AtlasError {
     pub detail: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recovery_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<RecoveryAction>,
 }
 
 impl AtlasError {
     pub fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
-        Self { kind, message: message.into(), hint: None, detail: None, recovery_path: None }
+        Self { kind, message: message.into(), hint: None, detail: None, recovery_path: None, action: None }
     }
 
     pub fn hint(mut self, hint: impl Into<String>) -> Self {
@@ -73,6 +90,11 @@ impl AtlasError {
         if !d.is_empty() {
             self.detail = Some(d.to_string());
         }
+        self
+    }
+
+    pub fn action(mut self, action: RecoveryAction) -> Self {
+        self.action = Some(action);
         self
     }
 

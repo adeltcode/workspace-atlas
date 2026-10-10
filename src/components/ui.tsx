@@ -300,7 +300,7 @@ export function Panel({ title, meta, actions, onOpen, children, className }: {
 // text behind a disclosure - hidden by default because it is evidence, not the
 // message, but present because this app does not hide what actually happened.
 
-export function ErrorBanner({ title, error, action, className, children }: {
+export function ErrorBanner({ title, error, action, className, detailLabel = 'What Windows reported', children }: {
   /** Names the operation that failed: "Could not remove the volume". */
   title?: string
   /** The caught value. Supplies the sentence, the hint and the raw detail. */
@@ -309,6 +309,7 @@ export function ErrorBanner({ title, error, action, className, children }: {
   action?: React.ReactNode
   /** `error-banner--flush` where the surrounding layout owns the spacing. */
   className?: string
+  detailLabel?: string
   /** Legacy plain-text body, used when there is no `error` to unpack. */
   children?: React.ReactNode
 }) {
@@ -330,7 +331,7 @@ export function ErrorBanner({ title, error, action, className, children }: {
         {e?.hint && <p className="error-hint">{e.hint}</p>}
         {e?.detail && (
           <details className="error-detail">
-            <summary className="error-detail-summary">What Windows reported</summary>
+            <summary className="error-detail-summary">{detailLabel}</summary>
             <pre className="error-detail-text">{e.detail}</pre>
           </details>
         )}

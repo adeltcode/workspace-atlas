@@ -80,6 +80,8 @@ pub fn run() {
             wsl::wsl_start_distro,
             wsl::wsl_clone_distro,
             wsl::wsl_plan_migration,
+            wsl::wsl_suggest_migration_dir,
+            wsl::wsl_repair_migration,
             wsl::wsl_migrate_distro,
             wsl::wsl_unregister_distro,
             wsl::wsl_list_services,

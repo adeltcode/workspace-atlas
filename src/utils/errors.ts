@@ -18,6 +18,9 @@ export type ErrorKind =
   | 'docker-down' | 'wsl-down' | 'network' | 'timeout' | 'cancelled'
   | 'invalid' | 'unknown'
 
+export type RecoveryAction = 'update-wsl' | 'update-wsl-web' | 'stop-docker' | 'open-docker'
+  | 'stop-wsl' | 'choose-folder' | 'show-terminal' | 'refresh-distros' | 'wsl-help' | 'conversion-guide'
+
 export class AppError extends Error {
   readonly kind: ErrorKind
   /** What to do next. Absent when the kind implies no single next step. */
@@ -25,21 +28,23 @@ export class AppError extends Error {
   /** The original text from Windows, Docker or WSL. Never shown by default. */
   readonly detail?: string
   readonly recoveryPath?: string
+  readonly action?: RecoveryAction
 
-  constructor(kind: ErrorKind, message: string, hint?: string, detail?: string, recoveryPath?: string) {
+  constructor(kind: ErrorKind, message: string, hint?: string, detail?: string, recoveryPath?: string, action?: RecoveryAction) {
     super(message)
     this.name = 'AppError'
     this.kind = kind
     this.hint = hint
     this.detail = detail
     this.recoveryPath = recoveryPath
+    this.action = action
   }
 
   /** The sentence alone, so `String(e)` and `${e}` stay useful. */
   override toString() { return this.message }
 }
 
-function isPayload(v: unknown): v is { kind: ErrorKind; message: string; hint?: string; detail?: string; recovery_path?: string } {
+function isPayload(v: unknown): v is { kind: ErrorKind; message: string; hint?: string; detail?: string; recovery_path?: string; action?: RecoveryAction } {
   return typeof v === 'object' && v !== null
     && typeof (v as { message?: unknown }).message === 'string'
     && typeof (v as { kind?: unknown }).kind === 'string'
@@ -54,7 +59,7 @@ function isPayload(v: unknown): v is { kind: ErrorKind; message: string; hint?: 
  */
 export function toAppError(e: unknown): AppError {
   if (e instanceof AppError) return e
-  if (isPayload(e)) return new AppError(e.kind, e.message, e.hint, e.detail, e.recovery_path)
+  if (isPayload(e)) return new AppError(e.kind, e.message, e.hint, e.detail, e.recovery_path, e.action)
   if (e instanceof Error) return new AppError('unknown', e.message)
   const text = typeof e === 'string' ? e : JSON.stringify(e)
   return new AppError('unknown', text || 'The operation failed without reporting a reason.')

@@ -217,7 +217,7 @@ export default function WslDistroPage({ distros, onReload }: {
                 <button className="wsl-menu-item" role="menuitem" onClick={() => { setManageOpen(false); setCloneErr(null); setCloneName(`${d.name}-clone`); setCloneDir(''); setShowClone(true) }}>
                   <Copy size={14} /> Clone…
                 </button>
-                <button className="wsl-menu-item" role="menuitem" disabled={d.version !== 2 || d.name.toLowerCase().startsWith('docker-desktop')} onClick={() => { setManageOpen(false); setShowMigrate(true) }}>
+                <button className="wsl-menu-item" role="menuitem" onClick={() => { setManageOpen(false); setShowMigrate(true) }}>
                   <ArrowRightLeft size={14} /> Move to another drive…
                 </button>
                 {d.version === 2 && d.vhd_path && (
