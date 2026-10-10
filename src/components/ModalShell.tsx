@@ -41,7 +41,7 @@ export default function ModalShell({ className, label, onClose, closeOnBackdrop 
       aria-label={label}
       // Escape fires `cancel`. Prevent the browser's own close so React state
       // stays the single source of truth for whether the dialog is mounted.
-      onCancel={e => { e.preventDefault(); onClose?.() }}
+      onCancel={e => { e.preventDefault(); e.stopPropagation(); onClose?.() }}
       onClick={e => {
         if (closeOnBackdrop && e.target === e.currentTarget) onClose?.()
       }}

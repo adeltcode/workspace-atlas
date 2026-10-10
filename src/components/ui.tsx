@@ -7,6 +7,7 @@
  * here, not in that module. */
 import { Search, X, ChevronRight, AlertTriangle } from 'lucide-react'
 import clsx from 'clsx'
+import CommandOutput from './CommandOutput'
 import { toAppError } from '../utils/errors'
 import ModalShell from './ModalShell'
 
@@ -332,7 +333,7 @@ export function ErrorBanner({ title, error, action, className, detailLabel = 'Wh
         {e?.detail && (
           <details className="error-detail">
             <summary className="error-detail-summary">{detailLabel}</summary>
-            <pre className="error-detail-text">{e.detail}</pre>
+            <CommandOutput text={e.detail} title={detailLabel} />
           </details>
         )}
         {action && <div className="error-actions">{action}</div>}

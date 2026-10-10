@@ -10,6 +10,7 @@ import { useAsyncAction } from '../../../hooks/useAsyncAction'
 import { bytesToHuman } from '../../../utils/format'
 import { toAppError, AppError, type RecoveryAction } from '../../../utils/errors'
 import { ErrorBanner } from '../../../components/ui'
+import CommandOutput from '../../../components/CommandOutput'
 import { Modal, Field } from './Dialog'
 
 const PHASES: { id: MigrationProgress['phase']; label: string }[] = [
@@ -276,7 +277,7 @@ export default function WslMigrationDialog({ distro, onClose, onReload, onComple
         {error && !error.recoveryPath && !repairConfirmation && !result && !move.pending && <ErrorBanner error={error} className="error-banner--flush" detailLabel="Command and Windows response" action={recoveryButton(error)} />}
         {commandOutput && !error?.detail && <details className="wsl-migration-details">
           <summary>Commands and Windows responses</summary>
-          <pre className="error-detail-text">{commandOutput}</pre>
+          <CommandOutput text={commandOutput} title="Commands and Windows responses" />
         </details>}
         <div className="modal-actions">
           {plan && !result && !move.pending && !repairConfirmation && <button className="btn-secondary modal-actions-escape" onClick={() => { setPlan(null); setError(null); setBlockers([]) }}>Back</button>}

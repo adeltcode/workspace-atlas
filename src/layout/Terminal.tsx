@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '../utils/errors'
-import { TerminalSquare, X, Trash2, ChevronDown, Square, ScrollText } from 'lucide-react'
+import { TerminalSquare, X, Trash2, ChevronDown, Square, ScrollText, Maximize2 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../store/appStore'
 import ComposeLogPanel from '../features/docker/components/ComposeLogPanel'
 import { TabList, Tab } from '../components/ui'
+import { OutputDialog, OutputText } from '../components/CommandOutput'
 
 type ShellOut  = { text: string; stderr: boolean }
 type ShellDone = { exit_code: number }
@@ -31,6 +32,7 @@ export default function Terminal() {
 
   const [input,   setInput]   = useState('')
   const [history, setHistory] = useState<string[]>([])
+  const [outputExpanded, setOutputExpanded] = useState(false)
 
   // Use refs for values that must be read live inside async callbacks or
   // event handlers - avoids stale-closure double-submit and history bugs.
@@ -237,6 +239,11 @@ export default function Terminal() {
             </button>
           )}
           {activeTab === 'shell' && terminalLines.length > 0 && (
+            <button className="terminal-btn" onClick={() => setOutputExpanded(true)} title="Expand terminal output" aria-label="Expand terminal output">
+              <Maximize2 size={12} />
+            </button>
+          )}
+          {activeTab === 'shell' && terminalLines.length > 0 && (
             <button className="terminal-btn" onClick={clearTerminal} title="Clear terminal" aria-label="Clear terminal">
               <Trash2 size={12} />
             </button>
@@ -264,7 +271,7 @@ export default function Terminal() {
             aria-label="Terminal"
           >
             {/* Output - user-select: text so lines can be selected and copied */}
-            <div className="terminal-body" ref={bodyRef} tabIndex={-1}>
+            <div className="terminal-body" ref={bodyRef} tabIndex={0} aria-label="Terminal output">
               {terminalLines.length === 0
                 ? (
                   <span className="terminal-empty">
@@ -273,7 +280,7 @@ export default function Terminal() {
                 )
                 : terminalLines.map(line => (
                   <div key={line.id} className={clsx('terminal-line', `tl-${line.type}`)}>
-                    <span className="tl-text">{line.text}</span>
+                    <span className="tl-text"><OutputText text={line.text} /></span>
                   </div>
                 ))
               }
@@ -319,6 +326,11 @@ export default function Terminal() {
           )}
         </>
       )}
+      {outputExpanded && <OutputDialog title="Terminal output" onClose={() => setOutputExpanded(false)}>
+        {terminalLines.map(line => <span key={line.id} className={`tl-${line.type}`}>
+          <span className="tl-text"><OutputText text={line.text} /></span>{'\n'}
+        </span>)}
+      </OutputDialog>}
     </div>
   )
 }

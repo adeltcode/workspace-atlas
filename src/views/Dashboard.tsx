@@ -7,11 +7,12 @@
 import { useEffect, useState } from 'react'
 import { Box, HardDrive, Package, Layers, Database, ChevronRight, RefreshCw } from 'lucide-react'
 import clsx from 'clsx'
-import { useAppStore, type ActivityModule, type DockerTab } from '../store/appStore'
+import { useAppStore, type ActivityEntry, type ActivityModule, type DockerTab } from '../store/appStore'
 import { useVisiblePoll } from '../hooks/useVisiblePoll'
 import { getSystemMetrics, type SystemMetrics } from '../features/system/api'
 import { bytesToHuman, timeAgo } from '../utils/format'
 import { SheetHead, SectionHead, EmptyState, Button, StatCard, StatRow } from '../components/ui'
+import { OutputDialog, OutputText } from '../components/CommandOutput'
 
 const MODULE_ICON: Record<ActivityModule, typeof Box> = { docker: Box, wsl: HardDrive, packages: Package }
 
@@ -29,6 +30,7 @@ export default function Dashboard() {
   const dockerCache   = useAppStore(s => s.dockerCache)
   const distros       = useAppStore(s => s.wslDistrosNav)
   const [metrics, setMetrics] = useState<SystemMetrics | null>(null)
+  const [activityDetail, setActivityDetail] = useState<ActivityEntry | null>(null)
 
   const poll = () => { getSystemMetrics().then(setMetrics).catch(() => {}) }
   useEffect(poll, [])
@@ -160,8 +162,10 @@ export default function Dashboard() {
                 <li key={a.id} className="act-row">
                   <span className={clsx('act-dot', `act-dot--${a.outcome}`)} />
                   <Icon size={12} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }} />
-                  <span className="act-title">{a.action}</span>
-                  {a.detail && <span className="act-detail">{a.detail}</span>}
+                  <div className="act-main">
+                    <span className="act-title" title={a.action}>{a.action}</span>
+                    {a.detail && <button className="act-detail" onClick={() => setActivityDetail(a)} aria-label={`View details: ${a.action}`}>{a.detail}</button>}
+                  </div>
                   <span className="act-time">{timeAgo(a.ts)}</span>
                 </li>
               )
@@ -169,6 +173,9 @@ export default function Dashboard() {
           </ul>
         )}
       </div>
+      {activityDetail && <OutputDialog title={activityDetail.action} onClose={() => setActivityDetail(null)}>
+        <OutputText text={activityDetail.detail ?? ''} />
+      </OutputDialog>}
     </div>
   )
 }

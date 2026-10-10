@@ -4,7 +4,7 @@ import {
   Star, Terminal, ChevronRight, HardDrive,
   RotateCw, Square, Play, Upload, Settings2, History, Activity,
 } from 'lucide-react'
-import { useAppStore } from '../../../store/appStore'
+import { useAppStore, type ActivityEntry } from '../../../store/appStore'
 import * as api from '../api'
 import { readWslConfig } from '../api'
 import { getDiskStats } from '../../docker/api'
@@ -18,6 +18,7 @@ import { DistroLogo } from '../DistroLogo'
 import { useAsyncAction } from '../../../hooks/useAsyncAction'
 import { useVisiblePoll } from '../../../hooks/useVisiblePoll'
 import LiveMetricsCharts, { getChartColors } from '../../../components/LiveMetricsCharts'
+import { OutputDialog, OutputText } from '../../../components/CommandOutput'
 
 type StateFilter = 'all' | 'running' | 'stopped'
 type Lifecycle = { d: WslDistro; action: 'stop' | 'restart' }
@@ -36,6 +37,7 @@ export default function WslHome({ distros, loading, onReload }: {
 
   const [query, setQuery]   = useState('')
   const [filter, setFilter] = useState<StateFilter>('all')
+  const [activityDetail, setActivityDetail] = useState<ActivityEntry | null>(null)
 
   // .wslconfig caps for the limits panel (machine-wide).
   const [limits, setLimits] = useState<{ memory?: string; processors?: string; swap?: string }>({})
@@ -437,13 +439,18 @@ export default function WslHome({ distros, loading, onReload }: {
               {wslActivity.map(a => (
                 <li key={a.id} className="activity-row">
                   <span className={clsx('activity-dot', `activity-dot--${a.outcome}`)} />
-                  <span className="activity-action">{a.action}</span>
-                  {a.detail && <span className="activity-detail">{a.detail}</span>}
+                  <div className="activity-main">
+                    <span className="activity-action" title={a.action}>{a.action}</span>
+                    {a.detail && <button className="activity-detail" onClick={() => setActivityDetail(a)} aria-label={`View details: ${a.action}`}>{a.detail}</button>}
+                  </div>
                   <span className="activity-time">{timeAgo(a.ts)}</span>
                 </li>
               ))}
             </ul>
           )}
+          {activityDetail && <OutputDialog title={activityDetail.action} onClose={() => setActivityDetail(null)}>
+            <OutputText text={activityDetail.detail ?? ''} />
+          </OutputDialog>}
         </div>
 
         <div className="wsl-bpanel">
