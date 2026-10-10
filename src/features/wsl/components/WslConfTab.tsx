@@ -53,6 +53,7 @@ export default function WslConfTab({ distros, runningNames, onAfterShutdown }: {
       </p>
       {distro && (
         <IniConfigEditor
+          key={distro}
           label={`wsl.conf · ${distro}`}
           sections={WSLCONF_SECTIONS}
           template={TEMPLATE}

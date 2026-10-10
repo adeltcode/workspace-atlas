@@ -82,8 +82,12 @@ export default function IniConfigEditor({
   const panelId         = useId()
 
   const [path, setPath]         = useState('')
-  const [text, setText]         = useState('')   // raw file text - single source of truth
   const [original, setOriginal] = useState('')
+  const draft = useAppStore(s => s.editorDrafts[path])
+  const text = draft ?? original
+  const setDraft = useAppStore(s => s.setEditorDraft)
+  const clearDraft = useAppStore(s => s.clearEditorDraft)
+  const setText = (content: string) => setDraft(path, content)
   const [exists, setExists]     = useState(true)
   const [loading, setLoading]   = useState(true)
   const [saving, setSaving]     = useState(false)
@@ -99,20 +103,25 @@ export default function IniConfigEditor({
 
   const dirty = text !== original
 
-  const load = useCallback(async () => {
+  useEffect(() => {
+    let active = true
     setLoading(true)
     setStatus(null)
-    try {
-      const cfg = await backend.load()
-      setPath(cfg.path)
-      setText(cfg.content)
-      setOriginal(cfg.content)
-      setExists(cfg.exists)
-    } catch (e) {
-      setStatus({ type: 'error', text: String(e) })
-    } finally {
-      setLoading(false)
+    const load = async () => {
+      try {
+        const cfg = await backend.load()
+        if (!active) return
+        setPath(cfg.path)
+        setOriginal(cfg.content)
+        setExists(cfg.exists)
+      } catch (e) {
+        if (active) setStatus({ type: 'error', text: String(e) })
+      } finally {
+        if (active) setLoading(false)
+      }
     }
+    load()
+    return () => { active = false }
   }, [backend])
 
   const loadBackups = useCallback(async () => {
@@ -120,10 +129,10 @@ export default function IniConfigEditor({
   }, [backend])
 
   // Reload whenever the backend changes (e.g. a different distro is selected).
-  useEffect(() => { load(); loadBackups() }, [load, loadBackups])
+  useEffect(() => { loadBackups() }, [loadBackups])
 
   const setField = (field: WslField, section: string, val: string) => {
-    setText(t => setIniValue(t, section, field.key, val))
+    setText(setIniValue(text, section, field.key, val))
     setStatus(null)
   }
 
@@ -146,6 +155,7 @@ export default function IniConfigEditor({
     try {
       await backend.save(text)
       setOriginal(text)
+      clearDraft(path, text)
       setExists(true)
       // The backend emits the command + result to the terminal (no black box).
       addActivity({ module: 'wsl', action: `Edited ${label}`, outcome: 'success' })
@@ -164,7 +174,7 @@ export default function IniConfigEditor({
     setBacking(true)
     setStatus(null)
     try {
-      if (dirty) { await backend.save(text); setOriginal(text); setExists(true) }
+      if (dirty) { await backend.save(text); setOriginal(text); clearDraft(path, text); setExists(true) }
       const entry = await backend.createBackup()
       addActivity({ module: 'wsl', action: `Backed up ${label}`, outcome: 'success' })
       setStatus({ type: 'success', text: `Backed up as ${entry.filename}` })
@@ -182,8 +192,8 @@ export default function IniConfigEditor({
     setStatus(null)
     try {
       const content = await backend.restoreBackup(entry.path)
-      setText(content)
       setOriginal(content)
+      clearDraft(path, text)
       setExists(true)
       addActivity({ module: 'wsl', action: `Restored ${label}`, outcome: 'success' })
       setStatus({ type: 'success', text: 'Restored. Restart WSL to apply changes.' })
@@ -239,6 +249,7 @@ export default function IniConfigEditor({
           <span className="wsl-distro-path-text">{path}</span>
         </button>
         {!exists && <span className="wslcfg-missing">File does not exist yet</span>}
+        {dirty && <span className="wslcfg-missing">Unsaved changes</span>}
       </div>
 
       <div className="wslcfg-toolbar">
@@ -317,7 +328,7 @@ export default function IniConfigEditor({
         <button className="btn-filled btn-filled--accent" onClick={save} disabled={!dirty || saving}>
           <Save size={13} /> {saving ? 'Saving…' : 'Save'}
         </button>
-        <button className="btn-ghost" onClick={() => setText(original)} disabled={!dirty || saving}>
+        <button className="btn-ghost" onClick={() => clearDraft(path)} disabled={!dirty || saving}>
           <RotateCcw size={12} /> Reset
         </button>
         <button className="btn-secondary wslcfg-restart-btn" onClick={() => setConfirmRestart(true)} disabled={restarting}>

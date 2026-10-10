@@ -495,8 +495,8 @@ export default function ComposeTab({
   const [cardLifecycle, setCardLifecycle] = useState<{ project: string; action: string } | null>(null)
 
   // ── Inline editor ─────────────────────────────────────────────────────────
-  const [editMode, setEditMode]     = useState(false)
-  const [editDraft, setEditDraft]   = useState('')
+  const [editing, setEditMode]     = useState(false)
+  const storedDraft = useAppStore(s => s.editorDrafts[activeFile])
   const [editSaving, setEditSaving] = useState(false)
   // Last scroll position per file, so toggling read-only ⇄ edit (and switching
   // between files) keeps the user at the same place in the document.
@@ -904,14 +904,17 @@ export default function ComposeTab({
   // Drop the file's trailing newline for editing so the editor shows the same
   // line count as the read-only viewer (which also hides it). Re-added on save.
   const editBaseline = editableContent.replace(/\n$/, '')
+  const editMode = editing || storedDraft !== undefined
+  const editDraft = storedDraft ?? editBaseline
+  const setEditDraft = (content: string) => useAppStore.getState().setEditorDraft(activeFile, content)
   const isModified = editMode && editDraft !== editBaseline
 
   const enterEditMode = () => {
-    setEditDraft(editBaseline)
     setEditMode(true)
   }
 
   const cancelEdit = () => {
+    useAppStore.getState().clearEditorDraft(activeFile)
     setEditMode(false)
   }
 
@@ -923,6 +926,8 @@ export default function ComposeTab({
       // had one, so saving doesn't strip the file's final newline.
       const toWrite = editableContent.endsWith('\n') ? editDraft + '\n' : editDraft
       await api.writeFileContent(activeFile, toWrite)
+      useAppStore.getState().clearEditorDraft(activeFile, editDraft)
+      if (useAppStore.getState().composeActiveFilePath !== activeFile) return
       if (fileType === 'compose') {
         setFileContent(toWrite)
         if (selected) ensureProjectFiles(selected, true) // build refs may have changed
@@ -1307,7 +1312,7 @@ export default function ComposeTab({
                 )}
                 {fileType === 'env' && activeFile && (
                   fileContents[activeFile] !== undefined
-                    ? <ComposeEnvTab filePath={activeFile} content={fileContents[activeFile]} yamlContent={fileContent ?? ''}
+                    ? <ComposeEnvTab key={activeFile} filePath={activeFile} content={fileContents[activeFile]} yamlContent={fileContent ?? ''}
                         onSaved={newContent => setFileContents(prev => ({ ...prev, [activeFile]: newContent }))} />
                     : <div className="compose-viewer-state">Loading…</div>
                 )}

@@ -6,7 +6,8 @@ import ts from 'typescript'
 
 globalThis.window = { matchMedia: () => ({ matches: false }) }
 globalThis.document = { documentElement: { setAttribute() {} } }
-globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} }
+let persisted = ''
+globalThis.localStorage = { getItem: () => null, setItem(_key, value) { persisted = value }, removeItem() {} }
 globalThis.window.localStorage = globalThis.localStorage
 
 const sourceUrl = new URL('../src/store/appStore.ts', import.meta.url)
@@ -39,4 +40,34 @@ test('active WSL work keeps its page and distribution selected', () => {
   assert.equal(store.getState().activeView, 'docker')
   assert.equal(store.getState().wslView, 'install')
   assert.equal(store.getState().wslSelectedDistro, 'other-distro')
+})
+
+test('editor drafts survive navigation and stay isolated by file', () => {
+  const s = store.getState()
+  s.setEditorDraft('distro-a/wsl.conf', '[boot]\nsystemd=false')
+  s.setEditorDraft('distro-b/wsl.conf', '')
+  s.setActiveView('docker')
+  s.setDockerTab('compose')
+  s.setWslSelectedDistro('distro-b')
+  assert.equal(store.getState().editorDrafts['distro-a/wsl.conf'], '[boot]\nsystemd=false')
+  assert.equal(store.getState().editorDrafts['distro-b/wsl.conf'], '')
+  s.clearEditorDraft('distro-a/wsl.conf')
+  assert.equal(store.getState().editorDrafts['distro-a/wsl.conf'], undefined)
+  assert.equal(store.getState().editorDrafts['distro-b/wsl.conf'], '')
+})
+
+test('finishing a save preserves newer edits and clears the saved draft', () => {
+  const s = store.getState()
+  s.setEditorDraft('compose.yml', 'newer edits')
+  s.clearEditorDraft('compose.yml', 'submitted edits')
+  assert.equal(store.getState().editorDrafts['compose.yml'], 'newer edits')
+  s.clearEditorDraft('compose.yml', 'newer edits')
+  assert.equal(store.getState().editorDrafts['compose.yml'], undefined)
+})
+
+test('environment drafts never enter persisted settings', () => {
+  store.getState().setEditorDraft('.env', 'TOKEN=example-secret')
+  const state = JSON.parse(persisted).state
+  assert.equal(state.editorDrafts, undefined)
+  assert.equal(persisted.includes('example-secret'), false)
 })

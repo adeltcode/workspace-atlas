@@ -188,6 +188,11 @@ interface AppState {
   setIndexOpen: (open: boolean) => void
   shortcutsOpen: boolean
   setShortcutsOpen: (open: boolean) => void
+
+  // Unsaved editor content stays in memory, including .env secrets.
+  editorDrafts: Record<string, string>
+  setEditorDraft: (path: string, content: string) => void
+  clearEditorDraft: (path: string, savedContent?: string) => void
 }
 
 function getSystemTheme(): Theme {
@@ -369,6 +374,15 @@ export const useAppStore = create<AppState>()(
       setIndexOpen: (indexOpen) => set({ indexOpen }),
       shortcutsOpen: false,
       setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
+
+      editorDrafts: {},
+      setEditorDraft: (path, content) => set(s => ({ editorDrafts: { ...s.editorDrafts, [path]: content } })),
+      clearEditorDraft: (path, savedContent) => set(s => {
+        if (savedContent !== undefined && s.editorDrafts[path] !== savedContent) return s
+        const editorDrafts = { ...s.editorDrafts }
+        delete editorDrafts[path]
+        return { editorDrafts }
+      }),
     }),
     {
       name: 'workspace-atlas-v1',

@@ -42,8 +42,11 @@ interface Props {
 export default function ComposeEnvTab({ filePath, content, yamlContent, onSaved }: Props) {
   const [masked,   setMasked]   = useState(true)
   const [revealed, setRevealed] = useState<Set<string>>(new Set()) // per-row overrides
-  const [editMode, setEditMode] = useState(false)
-  const [draft,    setDraft]    = useState('')
+  const [editing, setEditMode] = useState(false)
+  const storedDraft = useAppStore(s => s.editorDrafts[filePath])
+  const draft = storedDraft ?? content
+  const editMode = editing || storedDraft !== undefined
+  const setDraft = (value: string) => useAppStore.getState().setEditorDraft(filePath, value)
   const [saving,   setSaving]   = useState(false)
 
   // Toggling "Hide all" also clears any individually-revealed rows.
@@ -59,14 +62,15 @@ export default function ComposeEnvTab({ filePath, content, yamlContent, onSaved 
 
   const isModified = editMode && draft !== content
 
-  const enterEdit = () => { setDraft(content); setEditMode(true) }
-  const cancelEdit = () => setEditMode(false)
+  const enterEdit = () => setEditMode(true)
+  const cancelEdit = () => { useAppStore.getState().clearEditorDraft(filePath); setEditMode(false) }
 
   const handleSave = async () => {
     if (!filePath || saving) return
     setSaving(true)
     try {
       await api.writeFileContent(filePath, draft)
+      useAppStore.getState().clearEditorDraft(filePath, draft)
       onSaved(draft)
       setEditMode(false)
       useAppStore.getState().addTerminalLine(`  ✓ Saved ${filePath}`, 'success')
@@ -186,6 +190,8 @@ export default function ComposeEnvTab({ filePath, content, yamlContent, onSaved 
           </div>
           <textarea
             className="compose-editor-textarea"
+            aria-label="Environment file contents"
+            disabled={saving}
             value={draft}
             onChange={e => setDraft(e.target.value)}
             spellCheck={false}
