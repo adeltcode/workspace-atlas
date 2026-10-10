@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import clsx from 'clsx'
 import { ChevronDown, ChevronRight, Play, RefreshCw, Search, ShieldAlert, Settings2 } from 'lucide-react'
 import { useAppStore } from '../../../store/appStore'
@@ -46,6 +46,7 @@ function ServiceRow({ distro, svc, onToggle }: {
   const [open, setOpen] = useState(false)
   const [detail, setDetail] = useState<ServiceDetail | null>(null)
   const [detailErr, setDetailErr] = useState<string | null>(null)
+  const detailId = useId()
 
   const expand = async () => {
     const next = !open
@@ -67,7 +68,14 @@ function ServiceRow({ distro, svc, onToggle }: {
     <>
       <tr className="wsl-svc-row" onClick={expand}>
         <td className="wsl-svc-expand">
-          {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          <button
+            onClick={e => { e.stopPropagation(); expand() }}
+            aria-label={`Details for ${svc.name}`}
+            aria-expanded={open}
+            aria-controls={detailId}
+          >
+            {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          </button>
         </td>
         <td>
           <span className="wsl-svc-name">{svc.name.replace(/\.service$/, '')}</span>
@@ -84,6 +92,7 @@ function ServiceRow({ distro, svc, onToggle }: {
               className={clsx('wsl-toggle', enabled && 'wsl-toggle--on')}
               role="switch"
               aria-checked={enabled}
+              aria-label={`${enabled ? 'Disable' : 'Enable'} ${svc.name} at boot`}
               onClick={() => onToggle(svc, !enabled)}
               title={enabled ? 'Disable at boot' : 'Enable at boot'}
             >
@@ -95,7 +104,7 @@ function ServiceRow({ distro, svc, onToggle }: {
         </td>
       </tr>
       {open && (
-        <tr className="wsl-svc-detail-row">
+        <tr className="wsl-svc-detail-row" id={detailId}>
           <td colSpan={4}>
             {detailErr ? (
               <p className="wsl-opt-error" style={{ margin: 0 }}>{detailErr}</p>

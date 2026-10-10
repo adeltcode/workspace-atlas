@@ -338,13 +338,13 @@ function InspectDrawer({ container, onClose }: { container: DockerContainer; onC
   const ports = hostPorts(container.ports)
 
   return (
-    <ModalShell className="compose-inspect-overlay" onClose={onClose}>
+    <ModalShell className="compose-inspect-overlay" label={`Inspect ${container.compose_service ?? container.name}`} onClose={onClose}>
       <div className="compose-inspect-drawer">
         <div className="compose-inspect-header">
           <span className="compose-inspect-title">
             {container.compose_service ?? container.name}
           </span>
-          <button className="compose-inspect-close" onClick={onClose}><X size={13} /></button>
+          <button className="compose-inspect-close" onClick={onClose} aria-label="Close inspection"><X size={13} /></button>
         </div>
         <dl className="compose-inspect-dl">
           <dt>Image</dt>
@@ -381,6 +381,7 @@ function WipeConfirmModal({ projectName, onConfirm, onCancel, running }: {
     // destructive operation the user can no longer follow.
     <ModalShell
       className="compose-modal-backdrop"
+      label={`Wipe volumes for "${projectName}"?`}
       onClose={running ? undefined : onCancel}
       closeOnBackdrop={!running}
     >
@@ -1540,7 +1541,7 @@ export default function ComposeTab({
 
       {/* ── IDE picker modal ─────────────────────────────────────────────────── */}
       {idePickerOpen && (
-        <ModalShell className="compose-modal-backdrop" onClose={() => setIdePickerOpen(false)}>
+        <ModalShell className="compose-modal-backdrop" label="Open in Editor" onClose={() => setIdePickerOpen(false)}>
           <div className="compose-modal-box" style={{ maxWidth: 340 }}>
             <h3 className="compose-modal-title">Open in Editor</h3>
             <p className="compose-modal-body" style={{ marginBottom: 12 }}>

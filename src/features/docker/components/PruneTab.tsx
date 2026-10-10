@@ -242,7 +242,7 @@ export default function PruneTab({ onDone }: { onDone: () => void }) {
       )}
 
       {pruneState === 'confirming' && (
-        <ModalShell className="modal-overlay" onClose={() => { setPruneState('idle'); setConfirmText('') }}>
+        <ModalShell className="modal-overlay" label="Nuclear Prune - Confirm" onClose={() => { setPruneState('idle'); setConfirmText('') }}>
           <div className="modal">
             <div className="modal-header">
               <div className="modal-icon-wrap danger"><Zap size={16} /></div>

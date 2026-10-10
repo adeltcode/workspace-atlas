@@ -66,6 +66,7 @@ export default function WslDistroPage({ distros, onReload }: {
   // "Manage" dropdown holding the heavier image ops (export/clone/migrate/optimize).
   const [manageOpen, setManageOpen] = useState(false)
   const manageRef = useRef<HTMLDivElement>(null)
+  const manageButtonRef = useRef<HTMLButtonElement>(null)
 
   // Reset management state when switching distros.
   useEffect(() => {
@@ -136,8 +137,8 @@ export default function WslDistroPage({ distros, onReload }: {
 
   const runClone = () => op.run(async () => {
     const name = cloneName.trim()
-    if (!name || !cloneDir) return
-    setBusyOp('clone'); setCloneErr(null)
+    if (!name || !cloneDir || useAppStore.getState().wslBusyDistro) return
+    setBusyOp('clone'); setBusyDistro(d.name); setCloneErr(null)
     try {
       await api.wslCloneDistro(d.name, name, cloneDir, d.version)
       addActivity({ module: 'wsl', action: `Cloned ${d.name} → ${name}`, outcome: 'success' })
@@ -147,7 +148,7 @@ export default function WslDistroPage({ distros, onReload }: {
     } catch (e) {
       setCloneErr(String(e))
       addActivity({ module: 'wsl', action: `Cloned ${d.name}`, outcome: 'failure', detail: String(e) })
-    } finally { setBusyOp(null) }
+    } finally { setBusyOp(null); setBusyDistro(null) }
   })
 
   const runMigrate = () => op.run(async () => {
@@ -210,6 +211,7 @@ export default function WslDistroPage({ distros, onReload }: {
               strip uncluttered and the actions logically organized. */}
           <div className="wsl-menu" ref={manageRef}>
             <button
+              ref={manageButtonRef}
               className="btn-secondary"
               onClick={() => setManageOpen(o => !o)}
               disabled={busy}
@@ -294,7 +296,7 @@ export default function WslDistroPage({ distros, onReload }: {
 
       {/* ── Management dialogs ───────────────────────────────────────── */}
       {confirmOpt && (
-        <Modal icon={<ShieldAlert size={16} />} iconWarning title={`Optimize ${d.name}?`} onClose={() => setConfirmOpt(false)}>
+        <Modal icon={<ShieldAlert size={16} />} iconWarning title={`Optimize ${d.name}?`} onClose={() => setConfirmOpt(false)} returnFocusRef={manageButtonRef}>
           <p className="modal-body">
             This compacts <code>ext4.vhdx</code> to reclaim unused space. It shuts down
             <strong> all WSL distributions</strong> and requires <strong>administrator approval</strong>.
@@ -316,15 +318,15 @@ export default function WslDistroPage({ distros, onReload }: {
       )}
 
       {showClone && (
-        <Modal icon={<Copy size={16} />} title={`Clone ${d.name}`} onClose={() => setShowClone(false)}>
+        <Modal icon={<Copy size={16} />} title={`Clone ${d.name}`} onClose={() => setShowClone(false)} blocking={busyOp === 'clone'} returnFocusRef={manageButtonRef}>
           <p className="modal-body">Export <strong>{d.name}</strong> and re-import it as an independent copy. The source distro is left unchanged.</p>
           <Field label="New distro name">
-            <input className="settings-dir-input" aria-label="New distro name" value={cloneName} onChange={e => setCloneName(e.target.value)} placeholder={`e.g. ${d.name}-clone`} spellCheck={false} />
+            <input className="settings-dir-input" aria-label="New distro name" value={cloneName} onChange={e => setCloneName(e.target.value)} placeholder={`e.g. ${d.name}-clone`} spellCheck={false} disabled={busyOp === 'clone'} />
           </Field>
           <Field label="Install location">
             <div className="wsl-import-row">
               <input className="settings-dir-input" aria-label="Install location" value={cloneDir} readOnly placeholder="Choose a folder…" />
-              <button className="settings-dir-btn" onClick={async () => { const p = await api.pickDirectory(); if (p) setCloneDir(p) }}>Browse…</button>
+              <button className="settings-dir-btn" disabled={busyOp === 'clone'} onClick={async () => { const p = await api.pickDirectory(); if (p) setCloneDir(p) }}>Browse…</button>
             </div>
           </Field>
           {cloneErr && <div className="settings-status settings-status--error" role="alert">{cloneErr}</div>}
@@ -338,7 +340,7 @@ export default function WslDistroPage({ distros, onReload }: {
       )}
 
       {showMigrate && (
-        <Modal icon={<ArrowRightLeft size={16} />} iconWarning title={`Migrate ${d.name}`} onClose={() => setShowMigrate(false)} blocking={busyOp === 'migrate'}>
+        <Modal icon={<ArrowRightLeft size={16} />} iconWarning title={`Migrate ${d.name}`} onClose={() => setShowMigrate(false)} blocking={busyOp === 'migrate'} returnFocusRef={manageButtonRef}>
           <p className="modal-body">
             Move <strong>{d.name}</strong> to an empty folder using WSL's move command.
             A VHD backup is exported and checked byte for byte first. The moved distribution is checked for boot and writable files.
@@ -374,6 +376,7 @@ export default function WslDistroPage({ distros, onReload }: {
           title={`Delete ${d.name}?`}
           onClose={() => { setShowDelete(false); setDeleteText('') }}
           blocking={busyOp === 'delete'}
+          returnFocusRef={manageButtonRef}
         >
           <p className="modal-body">
             This runs <code>wsl --unregister {d.name}</code>, which permanently destroys the

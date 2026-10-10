@@ -152,7 +152,7 @@ export default function CommandIndex() {
   return (
     // ModalShell is a native <dialog>, so focus moves in, stays trapped, returns
     // to the trigger on close, and Escape works without hand-rolling any of it.
-    <ModalShell className="index-scrim" onClose={() => setOpen(false)}>
+    <ModalShell className="index-scrim" label="Search everything" onClose={() => setOpen(false)}>
       <div className="index-panel" onKeyDown={onKeyDown} onClick={e => e.stopPropagation()}>
         <div className="index-search">
           <input

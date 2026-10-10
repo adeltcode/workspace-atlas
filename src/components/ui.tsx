@@ -373,7 +373,7 @@ export function ConfirmDestructive({
   escape?: React.ReactNode
 }) {
   return (
-    <ModalShell className="modal-overlay" onClose={busy ? undefined : onCancel} closeOnBackdrop={!busy}>
+    <ModalShell className="modal-overlay" label={title} onClose={busy ? undefined : onCancel} closeOnBackdrop={!busy}>
       <div className="modal modal--wide">
         <div className="modal-header">
           <div className="modal-icon-wrap danger"><AlertTriangle size={16} /></div>

@@ -1480,6 +1480,9 @@ dialog::backdrop { background: transparent; }
   padding: 28px;
   width: 440px;
   max-width: calc(100vw - 48px);
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   box-shadow: 0 20px 60px color-mix(in srgb, var(--shadow-ink) 50%, transparent);
 }
 .modal-header {
@@ -1514,7 +1517,10 @@ dialog::backdrop { background: transparent; }
   user-select: text;
 }
 .modal-input:focus { border-color: var(--color-accent); }
-.modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.modal-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: var(--space-4); }
+.modal-body + .modal-actions,
+.modal-input + .modal-actions,
+.confirm-list + .modal-actions { margin-top: 0; }
 
 /* The confirm dialog runs wider than a plain message box because it has to list
    objects by name. Naming them is the point: "7 volumes" is a number, and
@@ -2549,52 +2555,6 @@ select:focus-visible,
 }
 
 /* =============================================================
-   Overview - Quick Actions Bar
-   ============================================================= */
-
-.quick-actions-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 10px 14px;
-}
-
-.quick-action-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  font-size: var(--text-sm);
-  font-weight: 500;
-  color: var(--color-text-secondary);
-  background: var(--color-bg-tertiary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  font-family: inherit;
-  cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
-}
-.quick-action-btn:hover {
-  background: var(--color-bg-hover);
-  color: var(--color-text-primary);
-  border-color: var(--color-border-strong);
-}
-.quick-action-btn--prune {
-  color: var(--color-danger);
-  border-color: var(--color-danger-border);
-  background: var(--color-danger-subtle);
-}
-.quick-action-btn--prune:hover {
-  background: color-mix(in srgb, var(--color-danger) 15%, transparent);
-  color: var(--color-danger);
-  border-color: var(--color-danger-border);
-}
-
-/* =============================================================
    Overview - Active Projects (rich compose stack cards)
    ============================================================= */
 
@@ -3360,6 +3320,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  text-align: left;
 }
 .ctr-logs-chevron {
   color: var(--color-text-tertiary);
@@ -5700,6 +5661,8 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   padding: 24px;
   max-width: 400px;
   width: 90%;
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
   box-shadow: 0 20px 60px color-mix(in srgb, var(--shadow-ink) 50%, transparent);
 }
 .compose-modal-title {
@@ -6217,6 +6180,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wsl-svc-row { cursor: pointer; }
 .wsl-svc-row:hover td { background: var(--color-bg-hover); }
 .wsl-svc-expand { color: var(--color-text-tertiary); width: 28px; text-align: center; vertical-align: middle; }
+.wsl-svc-expand button { display: grid; place-items: center; width: 24px; height: 24px; border-radius: var(--radius-sm); }
 .wsl-svc-name { color: var(--color-text-primary); font-weight: 600; }
 .wsl-svc-desc { display: block; font-size: var(--text-xs); color: var(--color-text-tertiary); margin-top: 2px; }
 .wsl-svc-badge {
@@ -7180,6 +7144,15 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .modal-close:hover { background: var(--color-bg-hover); color: var(--color-text-primary); }
 
 .wsl-import-field { margin-top: 14px; }
+.wsl-import-field .settings-dir-input,
+.wiz-location .settings-dir-input {
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 8px;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
 .wsl-import-label {
   display: block;
   margin-bottom: 6px;

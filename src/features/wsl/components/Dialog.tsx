@@ -16,7 +16,7 @@ import ModalShell from '../../../components/ModalShell'
  * already running behind this dialog and closing it would strand the run. Every
  * pre-flight confirmation is dismissible, because nothing has happened yet.
  */
-export function Modal({ icon, iconWarning, iconDanger, title, onClose, blocking, children }: {
+export function Modal({ icon, iconWarning, iconDanger, title, onClose, blocking, returnFocusRef, children }: {
   icon: React.ReactNode
   iconWarning?: boolean
   iconDanger?: boolean
@@ -24,11 +24,14 @@ export function Modal({ icon, iconWarning, iconDanger, title, onClose, blocking,
   onClose: () => void
   /** Set only while the dialog's own operation is in flight. */
   blocking?: boolean
+  returnFocusRef?: React.RefObject<HTMLElement | null>
   children: React.ReactNode
 }) {
   return (
     <ModalShell
       className="modal-overlay"
+      label={title}
+      returnFocusRef={returnFocusRef}
       onClose={blocking ? undefined : onClose}
       closeOnBackdrop={!blocking}
     >

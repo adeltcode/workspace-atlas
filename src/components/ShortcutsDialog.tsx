@@ -22,7 +22,7 @@ export default function ShortcutsDialog() {
   if (!open) return null
 
   return (
-    <ModalShell className="modal-overlay" onClose={() => setOpen(false)}>
+    <ModalShell className="modal-overlay" label="Keyboard shortcuts" onClose={() => setOpen(false)}>
       <div className="modal" style={{ maxWidth: 460 }} onClick={e => e.stopPropagation()}>
         <h2 className="prereq-title">Keyboard</h2>
         <p className="prereq-desc">Everything here works from anywhere in the app.</p>

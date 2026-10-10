@@ -166,8 +166,8 @@ export default function WslHome({ distros, loading, onReload }: {
 
   const runImport = () => op.run(async () => {
     const name = importName.trim()
-    if (!importTar || !name || !importDir) return
-    setImporting(true); setImportErr(null)
+    if (!importTar || !name || !importDir || useAppStore.getState().wslBusyDistro) return
+    setImporting(true); setBusyDistro(name); setImportErr(null)
     try {
       await api.wslImportDistro(name, importDir, importTar)
       addActivity({ module: 'wsl', action: `Imported ${name}`, outcome: 'success' })
@@ -176,7 +176,7 @@ export default function WslHome({ distros, loading, onReload }: {
     } catch (e) {
       setImportErr(String(e))
       addActivity({ module: 'wsl', action: `Imported ${name}`, outcome: 'failure', detail: String(e) })
-    } finally { setImporting(false) }
+    } finally { setImporting(false); setBusyDistro(null) }
   })
 
   const runLifecycle = (l: Lifecycle) => op.run(async () => {
@@ -481,21 +481,21 @@ export default function WslHome({ distros, loading, onReload }: {
       )}
 
       {showImport && (
-        <Modal icon={<Upload size={16} />} title="Import distribution" onClose={() => setShowImport(false)}>
+        <Modal icon={<Upload size={16} />} title="Import distribution" onClose={() => setShowImport(false)} blocking={importing}>
           <p className="modal-body">Create a new distro from a <code>.tar</code> archive. Use a new name to clone, or a new location to relocate.</p>
           <Field label="Source archive">
             <div className="wsl-import-row">
               <input className="settings-dir-input" aria-label="Source archive" value={importTar} readOnly placeholder="Choose a .tar file…" />
-              <button className="settings-dir-btn" onClick={async () => { const p = await api.pickTarFile(); if (p) setImportTar(p) }}>Browse…</button>
+              <button className="settings-dir-btn" disabled={importing} onClick={async () => { const p = await api.pickTarFile(); if (p) setImportTar(p) }}>Browse…</button>
             </div>
           </Field>
           <Field label="New distro name">
-            <input className="settings-dir-input" aria-label="New distro name" value={importName} onChange={e => setImportName(e.target.value)} placeholder="e.g. Ubuntu-Dev" spellCheck={false} />
+            <input className="settings-dir-input" aria-label="New distro name" value={importName} onChange={e => setImportName(e.target.value)} placeholder="e.g. Ubuntu-Dev" spellCheck={false} disabled={importing} />
           </Field>
           <Field label="Install location">
             <div className="wsl-import-row">
               <input className="settings-dir-input" aria-label="Install location" value={importDir} readOnly placeholder="Choose a folder…" />
-              <button className="settings-dir-btn" onClick={async () => { const p = await api.pickDirectory(); if (p) setImportDir(p) }}>Browse…</button>
+              <button className="settings-dir-btn" disabled={importing} onClick={async () => { const p = await api.pickDirectory(); if (p) setImportDir(p) }}>Browse…</button>
             </div>
           </Field>
           {importErr && <div className="settings-status settings-status--error" role="alert">{importErr}</div>}

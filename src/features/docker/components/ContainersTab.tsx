@@ -378,10 +378,16 @@ export default function ContainersTab({
                       />
                     </td>
                     <td className="img-td">
-                      <div className="ctr-name-cell">
+                      <button
+                        className="ctr-name-cell"
+                        onClick={e => { e.stopPropagation(); setLogsId(showLogs ? null : c.id) }}
+                        aria-label={`Logs for ${c.name}`}
+                        aria-expanded={showLogs}
+                        aria-controls={`container-logs-${c.id}`}
+                      >
                         <ChevronDown size={11} className={clsx('ctr-logs-chevron', showLogs && 'open')} />
                         <span className="img-repo">{c.name || <em className="img-colon">unnamed</em>}</span>
-                      </div>
+                      </button>
                     </td>
                     <td className="img-td img-age">{c.image}</td>
                     <td className="img-td"><StateBadge state={c.state} sub={c.status} /></td>
@@ -410,7 +416,7 @@ export default function ContainersTab({
 
                   {/* ── Inline log viewer ─────────────────────────── */}
                   {showLogs && (
-                    <tr className="log-viewer-row">
+                    <tr className="log-viewer-row" id={`container-logs-${c.id}`}>
                       <td colSpan={7} className="log-viewer-cell">
                         <LogViewer id={c.id} name={c.name || c.id.slice(0, 12)} onClose={() => setLogsId(null)} />
                       </td>
