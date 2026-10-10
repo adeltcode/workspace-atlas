@@ -37,13 +37,13 @@ struct ShellDone {
 /// and the process has exited. Returns the exit code.
 #[tauri::command]
 pub async fn shell_run(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
     app: tauri::AppHandle,
     state: tauri::State<'_, ShellState>,
     cmd: String,
 ) -> Result<i32, AtlasError> {
     let child_arc = state.0.clone();
-
-    tauri::async_runtime::spawn_blocking(move || -> Result<i32, AtlasError> {
+    migration.inner().clone().run_operation(move || {
         let mut child = Command::new("powershell")
             .args(["-NoProfile", "-NonInteractive", "-Command", &cmd])
             .stdout(Stdio::piped())
@@ -115,9 +115,7 @@ pub async fn shell_run(
         app.emit("shell-done", ShellDone { exit_code }).ok();
 
         Ok(exit_code)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 /// Interrupt the currently running shell command.

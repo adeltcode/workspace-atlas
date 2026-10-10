@@ -1,22 +1,42 @@
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::error::{AtlasError, ErrorKind};
 use crate::wsl::WslDistro;
 
-#[derive(Default)]
-pub struct MigrationState(pub Arc<Mutex<()>>);
+#[derive(Clone, Default)]
+pub struct MigrationState(pub Arc<RwLock<()>>);
 
 impl MigrationState {
-    pub fn ensure_idle(&self) -> Result<(), AtlasError> {
-        self.0
-            .try_lock()
-            .map(|_| ())
-            .map_err(|_| AtlasError::new(ErrorKind::Busy, "Wait for the WSL migration to finish."))
+    pub async fn run_operation<T: Send + 'static>(
+        self,
+        operation: impl FnOnce() -> Result<T, AtlasError> + Send + 'static,
+    ) -> Result<T, AtlasError> {
+        tauri::async_runtime::spawn_blocking(move || {
+            let _guard = self.0.try_read().map_err(|_| {
+                AtlasError::new(ErrorKind::Busy, "Wait for the WSL migration to finish.")
+            })?;
+            operation()
+        })
+        .await
+        .map_err(|e| e.to_string())?
     }
+}
+
+pub fn require_docker_stopped() -> Result<(), AtlasError> {
+    let system = sysinfo::System::new_all();
+    if system.processes().values().any(|process| {
+        let name = process.name().to_string_lossy();
+        name.eq_ignore_ascii_case("Docker Desktop.exe")
+            || name.eq_ignore_ascii_case("com.docker.backend.exe")
+    }) {
+        return Err(AtlasError::new(ErrorKind::Busy, "Docker Desktop must be fully quit before migrating a WSL distribution.")
+            .hint("Save container work and quit Docker Desktop from its tray menu. Stopping containers alone does not stop WSL integration."));
+    }
+    Ok(())
 }
 
 #[derive(serde::Serialize)]
@@ -26,6 +46,27 @@ pub struct MigrateResult {
 }
 
 const SPACE_RESERVE: u64 = 1024 * 1024 * 1024;
+const HEALTH_CHECK: &str = r#"set -eu
+root_writable=false
+while read -r device mount filesystem options rest; do
+    if [ "$mount" = / ]; then
+        case ",$options," in *,rw,*) root_writable=true ;; esac
+        break
+    fi
+done < /proc/mounts
+if [ "$root_writable" != true ]; then
+    printf '%s\n' 'The Linux root filesystem is not writable.' >&2
+    exit 1
+fi
+umask 077
+probe=$(mktemp "$HOME/.atlas-migration-check.XXXXXX")
+trap 'rm -f "$probe"' EXIT HUP INT TERM
+printf '%s\n' 'atlas-migration-check' > "$probe"
+read -r contents < "$probe"
+test "$contents" = 'atlas-migration-check'
+rm -f "$probe"
+trap - EXIT HUP INT TERM
+"#;
 #[cfg(windows)]
 const FILE_SHARE_READ_DELETE: u32 = 1 | 4;
 
@@ -214,18 +255,22 @@ fn recovery_guide(source: &WslDistro, dest: &Path, backup_dir: &Path, backup: &P
         wsl --list --verbose\n\
         Get-ChildItem 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Lxss' | ForEach-Object {{ Get-ItemProperty -LiteralPath $_.PSPath }} | Select-Object DistributionName, BasePath, VhdFileName\n\n\
         If the disk moved but boot failed, preserve both folders and inspect the reported WSL error.\n\
-        If moving back is appropriate, the original folder must be empty and no workload may be running:\n\
-        wsl --terminate {}\n\
-        wsl --manage {} --move {}\n\n\
+        If moving back is appropriate, use Atlas migration again and select the original empty folder.\n\
+        Atlas must establish private destination permissions before moving the disk back. A raw cross-drive move can inherit broad permissions.\n\n\
         Restore a completed backup as a separate distribution, without deleting the current one:\n\
         wsl --import {} {} {} --vhd --version 2\n\
         wsl -d {} -u root --cd / -- true\n\n\
         If that recovery name or folder already exists, choose a new name and empty folder. Never unregister an existing distribution to make room.\n\
         An imported backup may log in as root. Set its default user after confirming the correct Linux username.\n\
         If this was your default distribution, make the recovered copy default only after verifying your files.\n\
+        The recovered copy has a new distribution name. Enable Docker Desktop WSL integration for that name after recovery.\n\
+        Update Windows Terminal profiles, editor connections, and any \\\\wsl.localhost paths that should use the recovered copy.\n\
+        Docker Desktop images, containers, and named volumes are stored separately and are not included in this backup.\n\
+        Windows files mounted under /mnt are also outside this backup. Keep their own backups and mount configuration.\n\
+        Avoid running services in the original and recovered copies together until you have checked ports and shared external data.\n\
+        Verify that the Linux filesystem and your home directory are writable, then restart your applications and check Docker and project mounts.\n\
         Keep the backup until you have checked your files and applications. Do not delete recovery files on a failed run.\n",
         source.name, source.base_path, path_text(dest), archive,
-        quote(&source.name), quote(&source.name), quote(&source.base_path),
         quote(&recovered), quote(&restored), quote(&archive), quote(&recovered))
 }
 
@@ -247,7 +292,7 @@ fn at_step(error: AtlasError, step: &str) -> AtlasError {
     result
 }
 
-fn wait_for_disk_release(path: &Path, timeout: Duration) -> Result<(), AtlasError> {
+fn wait_for_disk_release(path: &Path, timeout: Duration) -> Result<fs::File, AtlasError> {
     let started = Instant::now();
     loop {
         let mut options = OpenOptions::new();
@@ -257,12 +302,14 @@ fn wait_for_disk_release(path: &Path, timeout: Duration) -> Result<(), AtlasErro
             use std::os::windows::fs::OpenOptionsExt;
             const GENERIC_READ: u32 = 0x80000000;
             const DELETE: u32 = 0x00010000;
+            const READ_CONTROL: u32 = 0x00020000;
+            const WRITE_DAC: u32 = 0x00040000;
             options
-                .access_mode(GENERIC_READ | DELETE)
+                .access_mode(GENERIC_READ | DELETE | READ_CONTROL | WRITE_DAC)
                 .share_mode(FILE_SHARE_READ_DELETE);
         }
         let error = match options.open(path) {
-            Ok(_) => return Ok(()),
+            Ok(file) => return Ok(file),
             Err(error) => error,
         };
         if !matches!(error.raw_os_error(), Some(32 | 33)) {
@@ -283,6 +330,8 @@ pub fn migrate(
     mut inspect: impl FnMut() -> Result<Vec<WslDistro>, AtlasError>,
     mut log: impl FnMut(String),
 ) -> Result<MigrateResult, AtlasError> {
+    #[cfg(windows)]
+    let _destination_guard = crate::wsl_migration_acl::secure_destination(dest)?;
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| e.to_string())?
@@ -291,6 +340,9 @@ pub fn migrate(
         .parent()
         .ok_or_else(|| AtlasError::invalid("Choose a dedicated destination folder."))?
         .join(format!("atlas-migration-backup-{}", nonce));
+    #[cfg(windows)]
+    let _backup_guard = crate::wsl_migration_acl::create_private_directory(&backup_dir)?;
+    #[cfg(not(windows))]
     fs::create_dir(&backup_dir)?;
     let guide = backup_dir.join("RECOVERY.txt");
     let extension = Path::new(&source.vhd_path)
@@ -365,7 +417,10 @@ fn migrate_with_backup(
             "Stopping the distribution failed; the disk was not moved",
         )
     })?;
-    wait_for_disk_release(Path::new(&source.vhd_path), Duration::from_secs(5))?;
+    let source_guard = wait_for_disk_release(Path::new(&source.vhd_path), Duration::from_secs(5))?;
+    #[cfg(windows)]
+    crate::wsl_migration_acl::secure_disk_handle(&source_guard)?;
+    drop(source_guard);
     log(format!(
         "$ wsl --export {} {} --format vhd",
         quote(&source.name),
@@ -400,7 +455,11 @@ fn migrate_with_backup(
             "The registered distribution changed during backup. The disk was not moved.",
         ));
     }
-    destination(dest, &distros)?;
+    if path_key(&destination(dest, &distros)?) != path_key(dest) {
+        return Err(AtlasError::invalid(
+            "The destination location changed during backup. The disk was not moved.",
+        ));
+    }
     ensure_space(dest, fs::metadata(&current.vhd_path)?.len(), 1)?;
     log(format!("$ wsl --terminate {}", quote(&source.name)));
     run(&["--terminate", &source.name]).map_err(|e| {
@@ -410,7 +469,11 @@ fn migrate_with_backup(
         )
     })?;
     log("# Waiting for WSL to release the virtual disk".to_string());
-    wait_for_disk_release(Path::new(&current.vhd_path), Duration::from_secs(5))?;
+    let movement_guard =
+        wait_for_disk_release(Path::new(&current.vhd_path), Duration::from_secs(5))?;
+    #[cfg(windows)]
+    crate::wsl_migration_acl::secure_disk_handle(&movement_guard)?;
+    drop(movement_guard);
     log(format!(
         "$ wsl --manage {} --move {}",
         quote(&source.name),
@@ -422,6 +485,14 @@ fn migrate_with_backup(
             "WSL's move command failed; the registered location may have changed",
         )
     })?;
+
+    let moved_disk = dest.join(
+        Path::new(&source.vhd_path)
+            .file_name()
+            .ok_or_else(|| AtlasError::invalid("The virtual disk filename is missing."))?,
+    );
+    #[cfg(windows)]
+    crate::wsl_migration_acl::secure_disk(&moved_disk)?;
 
     let moved_distros = inspect()?;
     let moved = source_distro(&source.name, &moved_distros)?;
@@ -435,9 +506,26 @@ fn migrate_with_backup(
             "WSL reported a move, but the registered location or settings could not be verified.",
         ));
     }
-    log(format!("$ wsl -d {} --cd / -- true", quote(&source.name)));
-    run(&["-d", &source.name, "--cd", "/", "--", "true"])
-        .map_err(|e| at_step(e, "The disk moved, but boot verification failed"))?;
+    log(format!(
+        "# Checking boot, writable root filesystem, and the default user's home for {}",
+        quote(&source.name)
+    ));
+    run(&[
+        "-d",
+        &source.name,
+        "--cd",
+        "/",
+        "--exec",
+        "sh",
+        "-c",
+        HEALTH_CHECK,
+    ])
+    .map_err(|e| {
+        at_step(
+            e,
+            "The disk moved, but the filesystem or user write check failed",
+        )
+    })?;
     if !source.running {
         log(format!("$ wsl --terminate {}", quote(&source.name)));
         run(&["--terminate", &source.name]).map_err(|e| {
@@ -568,6 +656,158 @@ mod tests {
         }
     }
 
+    #[cfg(windows)]
+    fn read_permissions(path: &Path) -> serde_json::Value {
+        let output = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", r#"
+                $ErrorActionPreference = 'Stop'
+                $acl = Get-Acl -LiteralPath $env:ATLAS_PERMISSION_TEST_PATH
+                [pscustomobject]@{
+                    CurrentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+                    Protected = $acl.AreAccessRulesProtected
+                    Entries = @($acl.Access | ForEach-Object {
+                        [pscustomobject]@{
+                            Sid = $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
+                            Rights = $_.FileSystemRights.ToString()
+                            Type = $_.AccessControlType.ToString()
+                        }
+                    })
+                } | ConvertTo-Json -Depth 4 -Compress
+            "#])
+            .env("ATLAS_PERMISSION_TEST_PATH", path)
+            .env_remove("PSModulePath")
+            .output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice(&output.stdout).unwrap()
+    }
+
+    #[cfg(windows)]
+    fn assert_private_permissions(path: &Path) {
+        let permissions = read_permissions(path);
+        let mut allowed: Vec<_> = permissions["Entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| {
+                assert_eq!(entry["Type"], "Allow");
+                assert_eq!(entry["Rights"], "FullControl");
+                entry["Sid"].as_str().unwrap().to_string()
+            })
+            .collect();
+        let mut expected = vec![
+            permissions["CurrentUser"].as_str().unwrap().to_string(),
+            "S-1-5-18".into(),
+            "S-1-5-32-544".into(),
+        ];
+        allowed.sort();
+        expected.sort();
+        assert_eq!(allowed, expected);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn backup_and_same_volume_moved_disk_have_private_permissions() {
+        let fixture = Fixture::new();
+        let parent_before = read_permissions(&fixture.root);
+        let source_directory_before = read_permissions(Path::new(&fixture.source.base_path));
+        let (result, _) = fixture.run(None, false);
+        let result = result.unwrap();
+        let backup = Path::new(&result.backup_path);
+        assert_private_permissions(backup.parent().unwrap());
+        assert_private_permissions(backup);
+        assert_private_permissions(&fixture.dest);
+        assert_private_permissions(&fixture.dest.join("custom.vhdx"));
+        assert_eq!(read_permissions(&fixture.root), parent_before);
+        assert_eq!(
+            read_permissions(Path::new(&fixture.source.base_path)),
+            source_directory_before
+        );
+        assert_eq!(read_permissions(&fixture.dest)["Protected"], true);
+        assert_eq!(
+            read_permissions(&fixture.dest.join("custom.vhdx"))["Protected"],
+            true
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn replaced_source_is_private_even_when_post_move_inspection_fails() {
+        let fixture = Fixture::new();
+        let inspections = Cell::new(0);
+        let result = migrate(
+            &fixture.source,
+            &fixture.dest,
+            |args| {
+                match args[0] {
+                    "--export" => {
+                        fs::copy(&fixture.source.vhd_path, args[2])?;
+                    }
+                    "--manage" => {
+                        fs::rename(&fixture.source.vhd_path, fixture.dest.join("custom.vhdx"))?;
+                    }
+                    _ => {}
+                }
+                Ok(())
+            },
+            || {
+                inspections.set(inspections.get() + 1);
+                if inspections.get() == 2 {
+                    return Err(AtlasError::invalid("injected inspection failure"));
+                }
+                fs::rename(
+                    &fixture.source.vhd_path,
+                    fixture.root.join("original-private.vhdx"),
+                )?;
+                fs::write(&fixture.source.vhd_path, b"disk contents")?;
+                Ok(vec![fixture.source.clone()])
+            },
+            |_| {},
+        );
+        assert!(result.is_err());
+        assert_private_permissions(&fixture.dest.join("custom.vhdx"));
+        let backup = fixture.backups().pop().unwrap();
+        assert_private_permissions(&backup.join("backup.vhdx"));
+        assert!(backup.join("BACKUP-COMPLETE.txt").is_file());
+        let guide = fs::read_to_string(backup.join("RECOVERY.txt")).unwrap();
+        assert!(guide.contains("use Atlas migration again"));
+        assert!(!guide.contains("wsl --manage"));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn private_directory_creation_preserves_existing_files_and_handles_unicode() {
+        let fixture = Fixture::new();
+        let directory = fixture.root.join("backup ' $folder Ω");
+        let guard = crate::wsl_migration_acl::create_private_directory(&directory).unwrap();
+        let sentinel = directory.join("sentinel");
+        fs::write(&sentinel, b"keep").unwrap();
+        assert_private_permissions(&directory);
+        assert_private_permissions(&sentinel);
+        assert!(crate::wsl_migration_acl::create_private_directory(&directory).is_err());
+        assert_eq!(fs::read(&sentinel).unwrap(), b"keep");
+        assert!(fs::rename(&directory, fixture.root.join("replaced")).is_err());
+        drop(guard);
+        fs::rename(&directory, fixture.root.join("replaced")).unwrap();
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn destination_permission_setup_rejects_occupied_folders_before_commands() {
+        let fixture = Fixture::new();
+        let sentinel = fixture.dest.join("sentinel");
+        fs::write(&sentinel, b"keep").unwrap();
+        let (result, commands) = fixture.run(None, false);
+        assert!(result.is_err());
+        assert!(commands.is_empty());
+        assert!(fixture.backups().is_empty());
+        assert_eq!(fs::read(&sentinel).unwrap(), b"keep");
+        assert!(Path::new(&fixture.source.vhd_path).exists());
+    }
+
     #[test]
     fn migration_verifies_backup_location_and_boot_without_unregistering() {
         let fixture = Fixture::new();
@@ -576,7 +816,7 @@ mod tests {
         assert_eq!(commands.len(), 6);
         assert!(commands[1].ends_with("--format vhd"));
         assert!(commands[3].contains("--move"));
-        assert!(commands[4].ends_with("--cd / -- true"));
+        assert!(commands[4].contains("--exec sh -c"));
         assert!(commands[5].starts_with("wsl --terminate"));
         assert!(!commands
             .iter()
@@ -770,7 +1010,7 @@ mod tests {
         let (result, commands) = fixture.run(None, false);
         assert!(result.is_ok());
         assert_eq!(commands.len(), 5);
-        assert!(commands.last().unwrap().ends_with("-- true"));
+        assert!(commands.last().unwrap().contains("--exec sh -c"));
     }
 
     #[cfg(windows)]
@@ -820,12 +1060,37 @@ mod tests {
     #[test]
     fn migration_gate_rejects_reentry_and_releases_on_return() {
         let gate = MigrationState::default();
-        let guard = gate.0.try_lock().unwrap();
-        assert!(gate.0.try_lock().is_err());
-        assert!(gate.ensure_idle().is_err());
+        let guard = gate.0.try_write().unwrap();
+        assert!(gate.0.try_write().is_err());
+        let result: Result<(), AtlasError> = tauri::async_runtime::block_on(
+            gate.clone()
+                .run_operation(|| panic!("A blocked operation must not run.")),
+        );
+        assert_eq!(result.unwrap_err().kind, ErrorKind::Busy);
         drop(guard);
-        assert!(gate.0.try_lock().is_ok());
-        assert!(gate.ensure_idle().is_ok());
+        assert!(gate.0.try_write().is_ok());
+        assert_eq!(
+            tauri::async_runtime::block_on(gate.run_operation(|| Ok(7))).unwrap(),
+            7
+        );
+    }
+
+    #[test]
+    fn active_operations_block_migration_until_their_worker_finishes() {
+        let gate = MigrationState::default();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (finish_tx, finish_rx) = std::sync::mpsc::channel();
+        let operation = tauri::async_runtime::spawn(gate.clone().run_operation(move || {
+            started_tx.send(()).unwrap();
+            finish_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            Err::<(), _>(AtlasError::invalid("test failure"))
+        }));
+        started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(gate.0.try_write().is_err());
+        assert!(gate.0.try_read().is_ok());
+        finish_tx.send(()).unwrap();
+        assert!(tauri::async_runtime::block_on(operation).unwrap().is_err());
+        assert!(gate.0.try_write().is_ok());
     }
 
     #[test]
@@ -924,6 +1189,24 @@ mod tests {
         assert_eq!(moved.default_uid, Some(1000));
         assert!(!moved.running);
         assert_eq!(path_key(Path::new(&moved.base_path)), path_key(&dest));
+        assert_private_permissions(Path::new(&result.backup_path));
+        assert_private_permissions(&dest);
+        let read_only_check = format!(
+            "printf '%s\\n' 'disk / ext4 ro 0 0' > /home/testuser/atlas-test-mounts\n{}",
+            HEALTH_CHECK.replace("/proc/mounts", "/home/testuser/atlas-test-mounts")
+        );
+        assert!(run(&["-d", &name, "--exec", "sh", "-c", &read_only_check]).is_err());
+        let bad_home_check = format!("HOME=/atlas-missing-home\n{}", HEALTH_CHECK);
+        assert!(run(&["-d", &name, "--exec", "sh", "-c", &bad_home_check]).is_err());
+        run(&["-d", &name, "--exec", "sh", "-c", HEALTH_CHECK]).unwrap();
+        run(&[
+            "-d",
+            &name,
+            "--exec",
+            "rm",
+            "/home/testuser/atlas-test-mounts",
+        ])
+        .unwrap();
         run(&[
             "-d",
             &name,
@@ -971,6 +1254,9 @@ mod tests {
             "/migration-marker",
         ])
         .unwrap();
+        assert_private_permissions(&restored_dir);
+        run(&["--manage", &restored_name, "--set-default-user", "testuser"]).unwrap();
+        run(&["-d", &restored_name, "--exec", "sh", "-c", HEALTH_CHECK]).unwrap();
         drop(restored_owned);
         drop(owned);
         if original.exists() {

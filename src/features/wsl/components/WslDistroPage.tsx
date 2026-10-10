@@ -341,11 +341,12 @@ export default function WslDistroPage({ distros, onReload }: {
         <Modal icon={<ArrowRightLeft size={16} />} iconWarning title={`Migrate ${d.name}`} onClose={() => setShowMigrate(false)} blocking={busyOp === 'migrate'}>
           <p className="modal-body">
             Move <strong>{d.name}</strong> to an empty folder using WSL's move command.
-            A VHD backup is exported and checked byte for byte first. The moved distribution is then boot-verified.
+            A VHD backup is exported and checked byte for byte first. The moved distribution is checked for boot and writable files.
             The <strong>backup and recovery guide are kept beside the destination folder</strong>.
           </p>
           <p className="modal-body">Save your work and close terminals and tools that use this distribution. Migration stops its processes. Keep this app open until it finishes.</p>
           <p className="wsl-estimate-note">Allow space for the backup, a copy of the virtual disk, and 1 GiB of working space. WSL 2 and a WSL version with the move command are required.</p>
+          <p className="wsl-estimate-note">Quit Docker Desktop and finish terminal commands or Compose log streams first. Close external tools that could restart this distribution. Docker data and Windows-mounted files need separate backups.</p>
           <Field label="Destination folder">
             <div className="wsl-import-row">
               <input className="settings-dir-input" aria-label="Destination folder" value={migrateDir} readOnly placeholder="Choose a folder on the target drive…" />

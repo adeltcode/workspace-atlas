@@ -6,6 +6,8 @@ mod shell;
 mod system;
 mod wsl;
 mod wsl_migration;
+#[cfg(windows)]
+mod wsl_migration_acl;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

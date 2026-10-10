@@ -711,95 +711,107 @@ fn run_streaming(app: &tauri::AppHandle, mut cmd: Command, tag_stderr: bool) -> 
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn docker_check() -> DockerStatus {
-    let result = Command::new("docker")
-        .args(["version", "--format", "{{.Server.Version}}"])
-        .output();
+pub async fn docker_check(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+) -> Result<DockerStatus, AtlasError> {
+    migration.inner().clone().run_operation(move || {
+        let result = Command::new("docker")
+            .args(["version", "--format", "{{.Server.Version}}"])
+            .output();
 
-    match result {
-        Ok(o) if o.status.success() => {
-            let version = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            DockerStatus {
-                available: true,
-                version: if version.is_empty() { None } else { Some(version) },
-                error: None,
-                state: "running".to_string(),
+        Ok(match result {
+            Ok(o) if o.status.success() => {
+                let version = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                DockerStatus {
+                    available: true,
+                    version: if version.is_empty() { None } else { Some(version) },
+                    error: None,
+                    state: "running".to_string(),
+                }
             }
-        }
-        Ok(o) => {
-            // CLI found but daemon not responding
-            let err = String::from_utf8_lossy(&o.stderr).trim().to_string();
-            DockerStatus {
-                available: false,
-                version: None,
-                error: Some(if err.is_empty() {
-                    "Docker daemon is not running".to_string()
-                } else {
-                    err
-                }),
-                state: "stopped".to_string(),
+            Ok(o) => {
+                // CLI found but daemon not responding
+                let err = String::from_utf8_lossy(&o.stderr).trim().to_string();
+                DockerStatus {
+                    available: false,
+                    version: None,
+                    error: Some(if err.is_empty() {
+                        "Docker daemon is not running".to_string()
+                    } else {
+                        err
+                    }),
+                    state: "stopped".to_string(),
+                }
             }
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            // `docker` binary not in PATH - check common install paths before
-            // declaring it truly absent (Docker Desktop may not update PATH yet)
-            let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
-            let candidates = [
-                r"C:\Program Files\Docker\Docker\resources\bin\docker.exe".to_string(),
-                format!(r"{}\Programs\Docker\Docker\resources\bin\docker.exe", local_app_data),
-            ];
-            let found_elsewhere = candidates.iter().any(|p| std::path::Path::new(p).exists());
-            DockerStatus {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // `docker` binary not in PATH - check common install paths before
+                // declaring it truly absent (Docker Desktop may not update PATH yet)
+                let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
+                let candidates = [
+                    r"C:\Program Files\Docker\Docker\resources\bin\docker.exe".to_string(),
+                    format!(r"{}\Programs\Docker\Docker\resources\bin\docker.exe", local_app_data),
+                ];
+                let found_elsewhere = candidates.iter().any(|p| std::path::Path::new(p).exists());
+                DockerStatus {
+                    available: false,
+                    version: None,
+                    error: Some(format!("docker not found: {}", e)),
+                    state: if found_elsewhere { "stopped" } else { "not_installed" }.to_string(),
+                }
+            }
+            Err(e) => DockerStatus {
                 available: false,
                 version: None,
                 error: Some(format!("docker not found: {}", e)),
-                state: if found_elsewhere { "stopped" } else { "not_installed" }.to_string(),
-            }
-        }
-        Err(e) => DockerStatus {
-            available: false,
-            version: None,
-            error: Some(format!("docker not found: {}", e)),
-            state: "stopped".to_string(),
-        },
-    }
+                state: "stopped".to_string(),
+            },
+        })
+    }).await
 }
 
 /// Try to launch Docker Desktop on Windows. Returns an error string if the
 /// executable cannot be located or spawned.
 #[tauri::command]
-pub async fn launch_docker_desktop() -> Result<(), AtlasError> {
-    let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
-    let candidates = [
-        r"C:\Program Files\Docker\Docker\Docker Desktop.exe".to_string(),
-        format!(r"{}\Programs\Docker\Docker\Docker Desktop.exe", local_app_data),
-    ];
+pub async fn launch_docker_desktop(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+) -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(move || {
+        let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
+        let candidates = [
+            r"C:\Program Files\Docker\Docker\Docker Desktop.exe".to_string(),
+            format!(r"{}\Programs\Docker\Docker\Docker Desktop.exe", local_app_data),
+        ];
 
-    for path in &candidates {
-        if std::path::Path::new(path).exists() {
-            return Ok(std::process::Command::new(path)
-                .spawn()
-                .map(|_| ())
-                .map_err(|e| format!("Failed to start Docker Desktop: {}", e))?);
+        for path in &candidates {
+            if std::path::Path::new(path).exists() {
+                return Ok(std::process::Command::new(path)
+                    .spawn()
+                    .map(|_| ())
+                    .map_err(|e| format!("Failed to start Docker Desktop: {}", e))?);
+            }
         }
-    }
 
-    Err(AtlasError::new(ErrorKind::DockerDown, "Docker Desktop is not installed where this app looks for it.")
-        .hint("Launch it from the Start Menu once. If it is installed elsewhere, starting it by hand is enough - this app only needs the engine running."))
+        Err(AtlasError::new(ErrorKind::DockerDown, "Docker Desktop is not installed where this app looks for it.")
+            .hint("Launch it from the Start Menu once. If it is installed elsewhere, starting it by hand is enough - this app only needs the engine running."))
+    }).await
 }
 
 #[tauri::command]
-pub async fn docker_system_df() -> Result<DockerSystemDf, AtlasError> {
-    let output = Command::new("docker")
-        .args(["system", "df"])
-        .output()
-        .map_err(|e| format!("Failed to run docker: {}", e))?;
+pub async fn docker_system_df(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+) -> Result<DockerSystemDf, AtlasError> {
+    migration.inner().clone().run_operation(move || {
+        let output = Command::new("docker")
+            .args(["system", "df"])
+            .output()
+            .map_err(|e| format!("Failed to run docker: {}", e))?;
 
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string().into());
-    }
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).trim().to_string().into());
+        }
 
-    parse_system_df(&String::from_utf8_lossy(&output.stdout))
+        parse_system_df(&String::from_utf8_lossy(&output.stdout))
+    }).await
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -807,18 +819,19 @@ pub async fn docker_system_df() -> Result<DockerSystemDf, AtlasError> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn docker_images() -> Result<Vec<DockerImage>, AtlasError> {
-    tauri::async_runtime::spawn_blocking(get_all_images_sync)
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn docker_images(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+) -> Result<Vec<DockerImage>, AtlasError> {
+    migration.inner().clone().run_operation(get_all_images_sync).await
 }
 
 #[tauri::command]
 pub async fn docker_prune_preview(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
     level: u8,
     keep_list: Vec<String>,
 ) -> Result<PrunePreview, AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<PrunePreview, AtlasError> {
+    migration.inner().clone().run_operation(move || {
         let images = get_all_images_sync()?;
 
         let unused_not_kept: Vec<&DockerImage> = images
@@ -917,18 +930,17 @@ pub async fn docker_prune_preview(
 
             _ => Err(AtlasError::invalid(format!("Prune level {} does not exist. Levels are 1, 2 and 3.", level))),
         }
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 #[tauri::command]
 pub async fn docker_prune_run(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
     app: tauri::AppHandle,
     level: u8,
     image_ids: Vec<String>,
 ) -> Result<(), AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(move || {
         let emit = |line: &str| {
             app.emit("docker-log", line).ok();
         };
@@ -987,9 +999,7 @@ pub async fn docker_prune_run(
 
         app.emit("docker-done", true).ok();
         Ok(())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1131,27 +1141,31 @@ fn get_volumes_sync() -> Result<Vec<DockerVolume>, AtlasError> {
 }
 
 #[tauri::command]
-pub async fn docker_containers() -> Result<Vec<DockerContainer>, AtlasError> {
-    tauri::async_runtime::spawn_blocking(get_containers_sync)
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn docker_containers(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+) -> Result<Vec<DockerContainer>, AtlasError> {
+    migration.inner().clone().run_operation(get_containers_sync).await
 }
 
 #[tauri::command]
-pub async fn docker_volumes() -> Result<Vec<DockerVolume>, AtlasError> {
-    // Fetch volume list and disk sizes concurrently so the tab stays fast.
-    let vols_task  = tauri::async_runtime::spawn_blocking(get_volumes_sync);
-    let sizes_task = tauri::async_runtime::spawn_blocking(get_volume_sizes_sync);
-
-    let mut volumes = vols_task.await.map_err(|e| e.to_string())??;
-    let sizes       = sizes_task.await.map_err(|e| e.to_string())?;
-
-    for vol in &mut volumes {
-        if let Some(&sz) = sizes.get(&vol.name) {
-            vol.size_bytes = sz;
+pub async fn docker_volumes(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+) -> Result<Vec<DockerVolume>, AtlasError> {
+    migration.inner().clone().run_operation(move || {
+        let (mut volumes, sizes) = std::thread::scope(|scope| {
+            let volumes = scope.spawn(get_volumes_sync);
+            let sizes = scope.spawn(get_volume_sizes_sync);
+            let volumes = volumes.join().map_err(|_| AtlasError::invalid("Volume listing failed."))??;
+            let sizes = sizes.join().map_err(|_| AtlasError::invalid("Volume sizing failed."))?;
+            Ok::<_, AtlasError>((volumes, sizes))
+        })?;
+        for vol in &mut volumes {
+            if let Some(&size) = sizes.get(&vol.name) {
+                vol.size_bytes = size;
+            }
         }
-    }
-    Ok(volumes)
+        Ok(volumes)
+    }).await
 }
 
 /// Run a one-shot `docker <args>` command: Ok on success, trimmed stderr on failure.
@@ -1168,31 +1182,50 @@ fn docker_run_ok(args: &[&str]) -> Result<(), AtlasError> {
 }
 
 #[tauri::command]
-pub async fn docker_container_action(id: String, action: String) -> Result<(), AtlasError> {
-    let sub = match action.as_str() {
-        "start"  => "start",
-        "stop"   => "stop",
-        "remove" => "rm",
-        _ => return Err(AtlasError::invalid(format!("\"{}\" is not a container action this app performs.", action))),
-    };
-    docker_run_ok(&[sub, &id])
+pub async fn docker_container_action(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    id: String,
+    action: String,
+) -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(move || {
+        let sub = match action.as_str() {
+            "start"  => "start",
+            "stop"   => "stop",
+            "remove" => "rm",
+            _ => return Err(AtlasError::invalid(format!("\"{}\" is not a container action this app performs.", action))),
+        };
+        docker_run_ok(&[sub, &id])
+    }).await
 }
 
 #[tauri::command]
-pub async fn docker_volume_remove(name: String) -> Result<(), AtlasError> {
-    docker_run_ok(&["volume", "rm", &name])
+pub async fn docker_volume_remove(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    name: String,
+) -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(move || {
+        docker_run_ok(&["volume", "rm", &name])
+    }).await
 }
 
 #[tauri::command]
-pub async fn docker_volumes_prune() -> Result<(), AtlasError> {
-    docker_run_ok(&["volume", "prune", "-f"])
+pub async fn docker_volumes_prune(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+) -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(move || {
+        docker_run_ok(&["volume", "prune", "-f"])
+    }).await
 }
 
 /// Stream the last `tail` log lines from a container.
 /// `--timestamps` adds RFC3339 prefixes so both stdout+stderr sort correctly.
 #[tauri::command]
-pub async fn docker_container_logs(id: String, tail: u32) -> Result<Vec<String>, AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<String>, AtlasError> {
+pub async fn docker_container_logs(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    id: String,
+    tail: u32,
+) -> Result<Vec<String>, AtlasError> {
+    migration.inner().clone().run_operation(move || {
         let tail_str = tail.to_string();
         let output = Command::new("docker")
             .args(["logs", "--tail", &tail_str, "--timestamps", &id])
@@ -1212,21 +1245,24 @@ pub async fn docker_container_logs(id: String, tail: u32) -> Result<Vec<String>,
         // correctly interleaving container stdout and stderr.
         all.sort_unstable();
         Ok(all)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 #[tauri::command]
-pub async fn docker_networks() -> Result<Vec<DockerNetwork>, AtlasError> {
-    tauri::async_runtime::spawn_blocking(get_networks_sync)
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn docker_networks(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+) -> Result<Vec<DockerNetwork>, AtlasError> {
+    migration.inner().clone().run_operation(get_networks_sync).await
 }
 
 #[tauri::command]
-pub async fn docker_network_remove(id: String) -> Result<(), AtlasError> {
-    docker_run_ok(&["network", "rm", &id])
+pub async fn docker_network_remove(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    id: String,
+) -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(move || {
+        docker_run_ok(&["network", "rm", &id])
+    }).await
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1305,41 +1341,45 @@ fn read_source_as_string(src: &str) -> Result<String, AtlasError> {
 
 /// List Docker Compose projects via `docker compose ls --all --format json`.
 #[tauri::command]
-pub async fn docker_compose_ls() -> Result<Vec<ComposeProject>, AtlasError> {
-    let output = Command::new("docker")
-        .args(["compose", "ls", "--all", "--format", "json"])
-        .output()
-        .map_err(|e| format!("Failed to run docker compose: {}", e))?;
+pub async fn docker_compose_ls(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+) -> Result<Vec<ComposeProject>, AtlasError> {
+    migration.inner().clone().run_operation(move || {
+        let output = Command::new("docker")
+            .args(["compose", "ls", "--all", "--format", "json"])
+            .output()
+            .map_err(|e| format!("Failed to run docker compose: {}", e))?;
 
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string().into());
-    }
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).trim().to_string().into());
+        }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let trimmed = stdout.trim();
-    if trimmed.is_empty() || trimmed == "null" || trimmed == "[]" {
-        return Ok(Vec::new());
-    }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let trimmed = stdout.trim();
+        if trimmed.is_empty() || trimmed == "null" || trimmed == "[]" {
+            return Ok(Vec::new());
+        }
 
-    let raw: Vec<serde_json::Value> = serde_json::from_str(trimmed)
-        .map_err(|e| format!("JSON parse error: {}", e))?;
+        let raw: Vec<serde_json::Value> = serde_json::from_str(trimmed)
+            .map_err(|e| format!("JSON parse error: {}", e))?;
 
-    Ok(raw
-        .iter()
-        .map(|v| {
-            let config_str = v["ConfigFiles"].as_str().unwrap_or("");
-            let config_files: Vec<String> = config_str
-                .split(',')
-                .map(|s| s.trim().trim_end_matches('/').trim_end_matches('\\').to_string())
-                .filter(|s| !s.is_empty())
-                .collect();
-            ComposeProject {
-                name: v["Name"].as_str().unwrap_or("").to_string(),
-                status: v["Status"].as_str().unwrap_or("").to_string(),
-                config_files,
-            }
-        })
-        .collect())
+        Ok(raw
+            .iter()
+            .map(|v| {
+                let config_str = v["ConfigFiles"].as_str().unwrap_or("");
+                let config_files: Vec<String> = config_str
+                    .split(',')
+                    .map(|s| s.trim().trim_end_matches('/').trim_end_matches('\\').to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                ComposeProject {
+                    name: v["Name"].as_str().unwrap_or("").to_string(),
+                    status: v["Status"].as_str().unwrap_or("").to_string(),
+                    config_files,
+                }
+            })
+            .collect())
+    }).await
 }
 
 /// Run a docker compose lifecycle action against a specific config file,
@@ -1351,11 +1391,12 @@ pub async fn docker_compose_ls() -> Result<Vec<ComposeProject>, AtlasError> {
 ///   - Pure WSL (`/home/...` etc.)  → `wsl docker compose -f <path> <action>`
 #[tauri::command]
 pub async fn docker_compose_action(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
     app: tauri::AppHandle,
     config_file: String,
     action: String,
 ) -> Result<(), AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(move || {
         let extra_args: &[&str] = match action.as_str() {
             "up"           => &["up", "-d"],
             "down"         => &["down"],
@@ -1379,21 +1420,20 @@ pub async fn docker_compose_action(
 
         app.emit("docker-done", true).ok();
         Ok(())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 /// Run a docker compose action against a single service, streaming via docker-log.
 /// Actions: "up" (up -d SERVICE), "stop", "restart".
 #[tauri::command]
 pub async fn docker_compose_service_action(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
     app: tauri::AppHandle,
     config_file: String,
     action: String,
     service: String,
 ) -> Result<(), AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(move || {
         let base: &[&str] = match action.as_str() {
             "up"      => &["up", "-d"],
             "stop"    => &["stop"],
@@ -1418,35 +1458,42 @@ pub async fn docker_compose_service_action(
 
         app.emit("docker-done", true).ok();
         Ok(())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 /// Open an interactive shell inside a running container in a new system terminal window.
 /// Tries `sh`; the user can switch shells manually if needed.
 #[tauri::command]
-pub async fn open_container_shell(container_name: String) -> Result<(), AtlasError> {
-    let docker_cmd = format!("docker exec -it {} sh", container_name);
+pub async fn open_container_shell(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    container_name: String,
+) -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(move || {
+        let docker_cmd = format!("docker exec -it {} sh", container_name);
 
-    // Try Windows Terminal first; fall back to a plain PowerShell window.
-    let wt = Command::new("wt")
-        .args(["--", "powershell.exe", "-NoExit", "-Command", &docker_cmd])
-        .spawn();
+        // Try Windows Terminal first; fall back to a plain PowerShell window.
+        let wt = Command::new("wt")
+            .args(["--", "powershell.exe", "-NoExit", "-Command", &docker_cmd])
+            .spawn();
 
-    if wt.is_err() {
-        Command::new("cmd")
-            .args(["/c", "start", "powershell.exe", "-NoExit", "-Command", &docker_cmd])
-            .spawn()
-            .map_err(|e| format!("Failed to open terminal: {}", e))?;
-    }
-    Ok(())
+        if wt.is_err() {
+            Command::new("cmd")
+                .args(["/c", "start", "powershell.exe", "-NoExit", "-Command", &docker_cmd])
+                .spawn()
+                .map_err(|e| format!("Failed to open terminal: {}", e))?;
+        }
+        Ok(())
+    }).await
 }
 
 /// Write text content to a file. Handles Windows, WSL-mount, and pure WSL paths.
 #[tauri::command]
-pub async fn write_file_content(path: String, content: String) -> Result<(), AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
+pub async fn write_file_content(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    path: String,
+    content: String,
+) -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(move || {
         if is_windows_absolute(&path) {
             Ok(std::fs::write(&path, content.as_bytes())
                 .map_err(|e| format!("Write error: {}", e))?)
@@ -1477,9 +1524,7 @@ pub async fn write_file_content(path: String, content: String) -> Result<(), Atl
             }
             Ok(())
         }
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 /// Parse "12.34%" or "--" → f64. Returns 0.0 for dashes / parse failures.
@@ -1551,57 +1596,62 @@ fn get_stats_sync() -> Result<Vec<ContainerStats>, AtlasError> {
 
 /// Run `docker stats --no-stream` and return resource usage for all running containers.
 #[tauri::command]
-pub async fn docker_stats() -> Result<Vec<ContainerStats>, AtlasError> {
-    tauri::async_runtime::spawn_blocking(get_stats_sync)
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn docker_stats(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+) -> Result<Vec<ContainerStats>, AtlasError> {
+    migration.inner().clone().run_operation(get_stats_sync).await
 }
 
 /// Query total and free bytes for the drive that contains `path` (Windows only).
 /// Uses PowerShell's `[System.IO.DriveInfo]` - no extra crates needed.
 #[tauri::command]
-pub async fn get_disk_stats(path: String) -> Result<DiskStats, AtlasError> {
-    // Extract drive letter from a Windows path (e.g. "C:\Users\..." → 'C').
-    // Fall back to %SYSTEMDRIVE% if the path is empty or has no letter.
-    let drive = path
-        .chars()
-        .next()
-        .filter(|c| c.is_ascii_alphabetic())
-        .map(|c| c.to_ascii_uppercase().to_string())
-        .unwrap_or_else(|| {
-            std::env::var("SYSTEMDRIVE")
-                .unwrap_or_else(|_| "C:".to_string())
-                .trim_end_matches(':')
-                .to_uppercase()
-        });
+pub async fn get_disk_stats(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    path: String,
+) -> Result<DiskStats, AtlasError> {
+    migration.inner().clone().run_operation(move || {
+        // Extract drive letter from a Windows path (e.g. "C:\Users\..." → 'C').
+        // Fall back to %SYSTEMDRIVE% if the path is empty or has no letter.
+        let drive = path
+            .chars()
+            .next()
+            .filter(|c| c.is_ascii_alphabetic())
+            .map(|c| c.to_ascii_uppercase().to_string())
+            .unwrap_or_else(|| {
+                std::env::var("SYSTEMDRIVE")
+                    .unwrap_or_else(|_| "C:".to_string())
+                    .trim_end_matches(':')
+                    .to_uppercase()
+            });
 
-    let script = format!(
-        r#"$d=[System.IO.DriveInfo]::new('{}'); "$($d.TotalSize) $($d.AvailableFreeSpace)""#,
-        drive
-    );
+        let script = format!(
+            r#"$d=[System.IO.DriveInfo]::new('{}'); "$($d.TotalSize) $($d.AvailableFreeSpace)""#,
+            drive
+        );
 
-    let output = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
-        .output()
-        .map_err(|e| format!("powershell: {}", e))?;
+        let output = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .output()
+            .map_err(|e| format!("powershell: {}", e))?;
 
-    let out = String::from_utf8_lossy(&output.stdout);
-    let parts: Vec<u64> = out
-        .trim()
-        .trim_matches('"')
-        .split_whitespace()
-        .filter_map(|s| s.parse().ok())
-        .collect();
+        let out = String::from_utf8_lossy(&output.stdout);
+        let parts: Vec<u64> = out
+            .trim()
+            .trim_matches('"')
+            .split_whitespace()
+            .filter_map(|s| s.parse().ok())
+            .collect();
 
-    if parts.len() < 2 {
-        return Err(format!("unexpected powershell output: {:?}", out.trim()).into());
-    }
+        if parts.len() < 2 {
+            return Err(format!("unexpected powershell output: {:?}", out.trim()).into());
+        }
 
-    Ok(DiskStats {
-        total_bytes:  parts[0],
-        free_bytes:   parts[1],
-        drive_label:  format!("{}:", drive),
-    })
+        Ok(DiskStats {
+            total_bytes:  parts[0],
+            free_bytes:   parts[1],
+            drive_label:  format!("{}:", drive),
+        })
+    }).await
 }
 
 /// Recursively sum the sizes of all files under a directory.
@@ -1618,14 +1668,15 @@ fn dir_size_recursive(path: &std::path::Path) -> u64 {
 /// contain unrelated categories (e.g. WSL, other tools) in the future.
 /// Returns 0 if the directory does not exist or is not set.
 #[tauri::command]
-pub async fn get_backup_size(backup_dir: String) -> u64 {
-    if backup_dir.is_empty() { return 0; }
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn get_backup_size(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    backup_dir: String,
+) -> Result<u64, AtlasError> {
+    migration.inner().clone().run_operation(move || {
+        if backup_dir.is_empty() { return Ok(0); }
         let docker_dir = std::path::Path::new(&backup_dir).join("docker");
-        dir_size_recursive(&docker_dir)
-    })
-    .await
-    .unwrap_or(0)
+        Ok(dir_size_recursive(&docker_dir))
+    }).await
 }
 
 /// Read a text file from the filesystem. Handles three path types:
@@ -1634,40 +1685,45 @@ pub async fn get_backup_size(backup_dir: String) -> u64 {
 ///   - Pure WSL (`/home/...` etc.)    → `wsl cat <path>`
 /// All variants are capped at 512 KB.
 #[tauri::command]
-pub async fn read_file_content(path: String) -> Result<String, AtlasError> {
-    const MAX_BYTES: usize = 512_000;
+pub async fn read_file_content(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    path: String,
+) -> Result<String, AtlasError> {
+    migration.inner().clone().run_operation(move || {
+        const MAX_BYTES: usize = 512_000;
 
-    let bytes: Vec<u8> = if is_windows_absolute(&path) {
-        // ── Native Windows path ──────────────────────────────────────────
-        let meta = std::fs::metadata(&path)
-            .map_err(|e| format!("Cannot access '{}': {}", path, e))?;
-        if meta.len() > MAX_BYTES as u64 {
-            return Err(format!(
-                "File too large ({} KB) - only files under 512 KB are shown inline",
-                meta.len() / 1024
-            ).into());
-        }
-        std::fs::read(&path).map_err(|e| format!("Read error: {}", e))?
+        let bytes: Vec<u8> = if is_windows_absolute(&path) {
+            // ── Native Windows path ──────────────────────────────────────────
+            let meta = std::fs::metadata(&path)
+                .map_err(|e| format!("Cannot access '{}': {}", path, e))?;
+            if meta.len() > MAX_BYTES as u64 {
+                return Err(format!(
+                    "File too large ({} KB) - only files under 512 KB are shown inline",
+                    meta.len() / 1024
+                ).into());
+            }
+            std::fs::read(&path).map_err(|e| format!("Read error: {}", e))?
 
-    } else if let Some(win_path) = wsl_mount_to_windows(&path) {
-        // ── /mnt/c/ → C:\ ───────────────────────────────────────────────
-        let meta = std::fs::metadata(&win_path)
-            .map_err(|e| format!("Cannot access '{}': {}", win_path, e))?;
-        if meta.len() > MAX_BYTES as u64 {
-            return Err(format!(
-                "File too large ({} KB) - only files under 512 KB are shown inline",
-                meta.len() / 1024
-            ).into());
-        }
-        std::fs::read(&win_path).map_err(|e| format!("Read error: {}", e))?
+        } else if let Some(win_path) = wsl_mount_to_windows(&path) {
+            // ── /mnt/c/ → C:\ ───────────────────────────────────────────────
+            let meta = std::fs::metadata(&win_path)
+                .map_err(|e| format!("Cannot access '{}': {}", win_path, e))?;
+            if meta.len() > MAX_BYTES as u64 {
+                return Err(format!(
+                    "File too large ({} KB) - only files under 512 KB are shown inline",
+                    meta.len() / 1024
+                ).into());
+            }
+            std::fs::read(&win_path).map_err(|e| format!("Read error: {}", e))?
 
-    } else {
-        // ── Pure WSL path (/home/…, /root/…, etc.) ──────────────────────
-        read_via_wsl(&path, MAX_BYTES)?
-    };
+        } else {
+            // ── Pure WSL path (/home/…, /root/…, etc.) ──────────────────────
+            read_via_wsl(&path, MAX_BYTES)?
+        };
 
-    Ok(String::from_utf8(bytes)
-        .map_err(|_| "File contains non-UTF-8 characters and cannot be displayed".to_string())?)
+        Ok(String::from_utf8(bytes)
+            .map_err(|_| "File contains non-UTF-8 characters and cannot be displayed".to_string())?)
+    }).await
 }
 
 /// Returns the OS-appropriate default backup root directory.
@@ -1683,257 +1739,268 @@ pub async fn get_default_backup_dir() -> String {
 /// List all volume backups tracked in the manifest under `{root}/docker/manifest.json`.
 /// Entries whose archive files no longer exist on disk are silently filtered out.
 #[tauri::command]
-pub async fn docker_list_backups(backup_dir: String) -> Result<Vec<VolumeBackupEntry>, AtlasError> {
-    let manifest = read_manifest(&backup_dir);
-    Ok(manifest
-        .backups
-        .into_iter()
-        .filter(|e| std::path::Path::new(&e.path).exists())
-        .collect())
+pub async fn docker_list_backups(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    backup_dir: String,
+) -> Result<Vec<VolumeBackupEntry>, AtlasError> {
+    migration.inner().clone().run_operation(move || {
+        let manifest = read_manifest(&backup_dir);
+        Ok(manifest
+            .backups
+            .into_iter()
+            .filter(|e| std::path::Path::new(&e.path).exists())
+            .collect())
+    }).await
 }
 
 /// Backup a named volume to `{root}/docker/volumes/{volume}_{ts}.tar.gz`.
 /// Progress is emitted as `backup-progress` Tauri events.
 #[tauri::command]
 pub async fn docker_volume_backup(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
     app: tauri::AppHandle,
     volume_name: String,
     backup_dir: String,
 ) -> Result<String, AtlasError> {
-    use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    migration.inner().clone().run_operation(move || {
+        use std::fs;
+        use std::time::{SystemTime, UNIX_EPOCH};
 
-    let volumes_dir = docker_volumes_dir(&backup_dir);
-    fs::create_dir_all(&volumes_dir)
-        .map_err(|e| format!("Cannot create backup directory: {}", e))?;
+        let volumes_dir = docker_volumes_dir(&backup_dir);
+        fs::create_dir_all(&volumes_dir)
+            .map_err(|e| format!("Cannot create backup directory: {}", e))?;
 
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
 
-    let filename       = format!("{}_{}.tar.gz", volume_name, ts);
-    let backup_path    = format!("{}/{}", volumes_dir, filename);
-    let docker_vol_dir = volumes_dir.replace('\\', "/");
+        let filename       = format!("{}_{}.tar.gz", volume_name, ts);
+        let backup_path    = format!("{}/{}", volumes_dir, filename);
+        let docker_vol_dir = volumes_dir.replace('\\', "/");
 
-    let vol = &volume_name;
+        let vol = &volume_name;
 
-    emit_bp(&app, vol, "Checking alpine image…", 5, false, None, None,
-        Some("docker image inspect alpine --format {{.Id}}".to_string()));
+        emit_bp(&app, vol, "Checking alpine image…", 5, false, None, None,
+            Some("docker image inspect alpine --format {{.Id}}".to_string()));
 
-    let alpine_ok = Command::new("docker")
-        .args(["image", "inspect", "alpine", "--format", "{{.Id}}"])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-
-    if !alpine_ok {
-        emit_bp(&app, vol, "Pulling alpine image (one-time setup)…", 10, false, None, None,
-            Some("docker pull alpine".to_string()));
-        let pull = Command::new("docker")
-            .args(["pull", "alpine"])
+        let alpine_ok = Command::new("docker")
+            .args(["image", "inspect", "alpine", "--format", "{{.Id}}"])
             .output()
-            .map_err(|e| format!("Failed to pull alpine: {}", e))?;
-        if !pull.status.success() {
-            let err = String::from_utf8_lossy(&pull.stderr).trim().to_string();
-            emit_bp(&app, vol, "Failed to pull alpine", 10, true, Some(err.clone()), None, None);
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
+        if !alpine_ok {
+            emit_bp(&app, vol, "Pulling alpine image (one-time setup)…", 10, false, None, None,
+                Some("docker pull alpine".to_string()));
+            let pull = Command::new("docker")
+                .args(["pull", "alpine"])
+                .output()
+                .map_err(|e| format!("Failed to pull alpine: {}", e))?;
+            if !pull.status.success() {
+                let err = String::from_utf8_lossy(&pull.stderr).trim().to_string();
+                emit_bp(&app, vol, "Failed to pull alpine", 10, true, Some(err.clone()), None, None);
+                return Err(err.into());
+            }
+        }
+
+        // ── Pause running containers that use this volume ────────────────────────
+        let running = get_running_containers_for_volume(vol);
+        let mut paused: Vec<String> = Vec::new();
+
+        if !running.is_empty() {
+            let pause_cmd = format!("docker pause {}", running.join(" "));
+            emit_bp(&app, vol,
+                &format!("Pausing {} container(s) for consistent snapshot…", running.len()),
+                30, false, None, None, Some(pause_cmd));
+
+            for id in &running {
+                let ok = Command::new("docker")
+                    .args(["pause", id])
+                    .output()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false);
+                if ok { paused.push(id.clone()); }
+            }
+            let skipped = running.len() - paused.len();
+            if skipped > 0 {
+                emit_bp(&app, vol,
+                    &format!("{} container(s) could not be paused - backup continues", skipped),
+                    35, false, None, None, None);
+            }
+        }
+
+        // ── Run the archive ──────────────────────────────────────────────────────
+        let archive_cmd = format!(
+            "docker run --rm --volume {}:/source:ro --volume {}:/backup alpine tar czf /backup/{} -C /source .",
+            vol, docker_vol_dir, filename
+        );
+        emit_bp(&app, vol, "Creating archive…", 50, false, None, None, Some(archive_cmd));
+
+        let archive_result = Command::new("docker")
+            .args([
+                "run", "--rm",
+                "--volume", &format!("{}:/source:ro", vol),
+                "--volume", &format!("{}:/backup", docker_vol_dir),
+                "alpine",
+                "tar", "czf", &format!("/backup/{}", filename),
+                "-C", "/source", ".",
+            ])
+            .output()
+            .map_err(|e| format!("Failed to run docker: {}", e));
+
+        // ── Always unpause, even on failure ─────────────────────────────────────
+        if !paused.is_empty() {
+            let unpause_cmd = format!("docker unpause {}", paused.join(" "));
+            emit_bp(&app, vol, "Resuming containers…", 88, false, None, None, Some(unpause_cmd));
+            for id in &paused {
+                Command::new("docker").args(["unpause", id]).output().ok();
+            }
+        }
+
+        let output = archive_result?;
+        if !output.status.success() {
+            let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            emit_bp(&app, vol, "Backup failed", 50, true, Some(err.clone()), None, None);
             return Err(err.into());
         }
-    }
 
-    // ── Pause running containers that use this volume ────────────────────────
-    let running = get_running_containers_for_volume(vol);
-    let mut paused: Vec<String> = Vec::new();
+        let size_bytes = fs::metadata(&backup_path).map(|m| m.len()).unwrap_or(0);
 
-    if !running.is_empty() {
-        let pause_cmd = format!("docker pause {}", running.join(" "));
-        emit_bp(&app, vol,
-            &format!("Pausing {} container(s) for consistent snapshot…", running.len()),
-            30, false, None, None, Some(pause_cmd));
+        emit_bp(&app, vol, "Saving backup record…", 95, false, None, None, None);
+        let mut manifest = read_manifest(&backup_dir);
+        manifest.backups.push(VolumeBackupEntry {
+            filename: filename.clone(),
+            volume: volume_name.clone(),
+            path: backup_path,
+            size_bytes,
+            created_at: ts as i64,
+        });
+        write_manifest(&backup_dir, &manifest).ok();
 
-        for id in &running {
-            let ok = Command::new("docker")
-                .args(["pause", id])
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false);
-            if ok { paused.push(id.clone()); }
-        }
-        let skipped = running.len() - paused.len();
-        if skipped > 0 {
-            emit_bp(&app, vol,
-                &format!("{} container(s) could not be paused - backup continues", skipped),
-                35, false, None, None, None);
-        }
-    }
-
-    // ── Run the archive ──────────────────────────────────────────────────────
-    let archive_cmd = format!(
-        "docker run --rm --volume {}:/source:ro --volume {}:/backup alpine tar czf /backup/{} -C /source .",
-        vol, docker_vol_dir, filename
-    );
-    emit_bp(&app, vol, "Creating archive…", 50, false, None, None, Some(archive_cmd));
-
-    let archive_result = Command::new("docker")
-        .args([
-            "run", "--rm",
-            "--volume", &format!("{}:/source:ro", vol),
-            "--volume", &format!("{}:/backup", docker_vol_dir),
-            "alpine",
-            "tar", "czf", &format!("/backup/{}", filename),
-            "-C", "/source", ".",
-        ])
-        .output()
-        .map_err(|e| format!("Failed to run docker: {}", e));
-
-    // ── Always unpause, even on failure ─────────────────────────────────────
-    if !paused.is_empty() {
-        let unpause_cmd = format!("docker unpause {}", paused.join(" "));
-        emit_bp(&app, vol, "Resuming containers…", 88, false, None, None, Some(unpause_cmd));
-        for id in &paused {
-            Command::new("docker").args(["unpause", id]).output().ok();
-        }
-    }
-
-    let output = archive_result?;
-    if !output.status.success() {
-        let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        emit_bp(&app, vol, "Backup failed", 50, true, Some(err.clone()), None, None);
-        return Err(err.into());
-    }
-
-    let size_bytes = fs::metadata(&backup_path).map(|m| m.len()).unwrap_or(0);
-
-    emit_bp(&app, vol, "Saving backup record…", 95, false, None, None, None);
-    let mut manifest = read_manifest(&backup_dir);
-    manifest.backups.push(VolumeBackupEntry {
-        filename: filename.clone(),
-        volume: volume_name.clone(),
-        path: backup_path,
-        size_bytes,
-        created_at: ts as i64,
-    });
-    write_manifest(&backup_dir, &manifest).ok();
-
-    emit_bp(&app, vol, &format!("Done - saved as '{}'", filename), 100, true, None, Some(filename.clone()), None);
-    Ok(filename)
+        emit_bp(&app, vol, &format!("Done - saved as '{}'", filename), 100, true, None, Some(filename.clone()), None);
+        Ok(filename)
+    }).await
 }
 
 /// Restore a volume from a previously created `.tar.gz` archive.
 /// Clears existing volume data before extracting.
 #[tauri::command]
 pub async fn docker_volume_restore(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
     app: tauri::AppHandle,
     volume_name: String,
     backup_file: String,
 ) -> Result<(), AtlasError> {
-    let vol = &volume_name;
+    migration.inner().clone().run_operation(move || {
+        let vol = &volume_name;
 
-    let src_path = std::path::Path::new(&backup_file);
-    if !src_path.exists() {
-        return Err(AtlasError::new(ErrorKind::NotFound, format!("The backup file is gone: {}", backup_file))
-            .hint("Refresh the backup list. The file may have been moved or deleted outside the app."));
-    }
+        let src_path = std::path::Path::new(&backup_file);
+        if !src_path.exists() {
+            return Err(AtlasError::new(ErrorKind::NotFound, format!("The backup file is gone: {}", backup_file))
+                .hint("Refresh the backup list. The file may have been moved or deleted outside the app."));
+        }
 
-    let backup_dir = src_path
-        .parent()
-        .and_then(|p| p.to_str())
-        .unwrap_or(".")
-        .replace('\\', "/");
+        let backup_dir = src_path
+            .parent()
+            .and_then(|p| p.to_str())
+            .unwrap_or(".")
+            .replace('\\', "/");
 
-    let filename = src_path
-        .file_name()
-        .and_then(|f| f.to_str())
-        .unwrap_or("")
-        .to_string();
+        let filename = src_path
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or("")
+            .to_string();
 
-    emit_bp(&app, vol, &format!("Restoring '{}' from '{}'…", vol, filename), 5, false, None, None, None);
+        emit_bp(&app, vol, &format!("Restoring '{}' from '{}'…", vol, filename), 5, false, None, None, None);
 
-    // ── Stop running containers that use the volume ──────────────────────────
-    // Unlike backup (where pause is safe for a consistent snapshot), restore
-    // replaces volume data entirely - containers must be fully stopped first.
-    let running = get_running_containers_for_volume(vol);
-    let mut stopped: Vec<String> = Vec::new();
+        // ── Stop running containers that use the volume ──────────────────────────
+        // Unlike backup (where pause is safe for a consistent snapshot), restore
+        // replaces volume data entirely - containers must be fully stopped first.
+        let running = get_running_containers_for_volume(vol);
+        let mut stopped: Vec<String> = Vec::new();
 
-    if !running.is_empty() {
-        let stop_cmd = format!("docker stop {}", running.join(" "));
-        emit_bp(&app, vol,
-            &format!("Stopping {} container(s) before restore…", running.len()),
-            15, false, None, None, Some(stop_cmd));
+        if !running.is_empty() {
+            let stop_cmd = format!("docker stop {}", running.join(" "));
+            emit_bp(&app, vol,
+                &format!("Stopping {} container(s) before restore…", running.len()),
+                15, false, None, None, Some(stop_cmd));
 
-        for id in &running {
-            let ok = Command::new("docker")
-                .args(["stop", id])
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false);
-            if ok {
-                stopped.push(id.clone());
-            } else {
-                emit_bp(&app, vol,
-                    &format!("Warning: could not stop '{}' - restore continues", id),
-                    18, false, None, None, None);
+            for id in &running {
+                let ok = Command::new("docker")
+                    .args(["stop", id])
+                    .output()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false);
+                if ok {
+                    stopped.push(id.clone());
+                } else {
+                    emit_bp(&app, vol,
+                        &format!("Warning: could not stop '{}' - restore continues", id),
+                        18, false, None, None, None);
+                }
             }
         }
-    }
 
-    // Ensure the target volume exists
-    emit_bp(&app, vol, "Preparing volume…", 25, false, None, None,
-        Some(format!("docker volume create {}", vol)));
-    let create = Command::new("docker")
-        .args(["volume", "create", vol])
-        .output()
-        .map_err(|e| format!("Cannot create volume: {}", e))?;
-    if !create.status.success() {
-        let err = String::from_utf8_lossy(&create.stderr).trim().to_string();
-        // Restart containers even on failure
-        for id in &stopped {
-            Command::new("docker").args(["start", id]).output().ok();
+        // Ensure the target volume exists
+        emit_bp(&app, vol, "Preparing volume…", 25, false, None, None,
+            Some(format!("docker volume create {}", vol)));
+        let create = Command::new("docker")
+            .args(["volume", "create", vol])
+            .output()
+            .map_err(|e| format!("Cannot create volume: {}", e))?;
+        if !create.status.success() {
+            let err = String::from_utf8_lossy(&create.stderr).trim().to_string();
+            // Restart containers even on failure
+            for id in &stopped {
+                Command::new("docker").args(["start", id]).output().ok();
+            }
+            emit_bp(&app, vol, "Failed to prepare volume", 25, true, Some(err.clone()), None, None);
+            return Err(err.into());
         }
-        emit_bp(&app, vol, "Failed to prepare volume", 25, true, Some(err.clone()), None, None);
-        return Err(err.into());
-    }
 
-    // `find -mindepth 1 -delete` removes all content without removing the
-    // directory itself, handling hidden files and nested dirs correctly.
-    let restore_cmd = format!(
-        "find /target -mindepth 1 -delete && tar xzf /backup/{} -C /target",
-        filename
-    );
-    let docker_cmd = format!(
-        "docker run --rm --volume {}:/target --volume {}:/backup:ro alpine sh -c \"{}\"",
-        vol, backup_dir, restore_cmd
-    );
-    emit_bp(&app, vol, "Restoring data…", 45, false, None, None, Some(docker_cmd));
+        // `find -mindepth 1 -delete` removes all content without removing the
+        // directory itself, handling hidden files and nested dirs correctly.
+        let restore_cmd = format!(
+            "find /target -mindepth 1 -delete && tar xzf /backup/{} -C /target",
+            filename
+        );
+        let docker_cmd = format!(
+            "docker run --rm --volume {}:/target --volume {}:/backup:ro alpine sh -c \"{}\"",
+            vol, backup_dir, restore_cmd
+        );
+        emit_bp(&app, vol, "Restoring data…", 45, false, None, None, Some(docker_cmd));
 
-    let output = Command::new("docker")
-        .args([
-            "run", "--rm",
-            "--volume", &format!("{}:/target", vol),
-            "--volume", &format!("{}:/backup:ro", backup_dir),
-            "alpine",
-            "sh", "-c", &restore_cmd,
-        ])
-        .output()
-        .map_err(|e| format!("Failed to run docker: {}", e))?;
+        let output = Command::new("docker")
+            .args([
+                "run", "--rm",
+                "--volume", &format!("{}:/target", vol),
+                "--volume", &format!("{}:/backup:ro", backup_dir),
+                "alpine",
+                "sh", "-c", &restore_cmd,
+            ])
+            .output()
+            .map_err(|e| format!("Failed to run docker: {}", e))?;
 
-    // ── Always restart stopped containers ────────────────────────────────────
-    if !stopped.is_empty() {
-        let start_cmd = format!("docker start {}", stopped.join(" "));
-        emit_bp(&app, vol, "Restarting containers…", 92, false, None, None, Some(start_cmd));
-        for id in &stopped {
-            Command::new("docker").args(["start", id]).output().ok();
+        // ── Always restart stopped containers ────────────────────────────────────
+        if !stopped.is_empty() {
+            let start_cmd = format!("docker start {}", stopped.join(" "));
+            emit_bp(&app, vol, "Restarting containers…", 92, false, None, None, Some(start_cmd));
+            for id in &stopped {
+                Command::new("docker").args(["start", id]).output().ok();
+            }
         }
-    }
 
-    if !output.status.success() {
-        let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        emit_bp(&app, vol, "Restore failed", 45, true, Some(err.clone()), None, None);
-        return Err(err.into());
-    }
+        if !output.status.success() {
+            let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            emit_bp(&app, vol, "Restore failed", 45, true, Some(err.clone()), None, None);
+            return Err(err.into());
+        }
 
-    emit_bp(&app, vol, &format!("Restore complete - '{}' is ready", vol), 100, true, None, None, None);
-    Ok(())
+        emit_bp(&app, vol, &format!("Restore complete - '{}' is ready", vol), 100, true, None, None, None);
+        Ok(())
+    }).await
 }
 
 use crate::shell::ShellOut;
@@ -1945,154 +2012,163 @@ use crate::shell::ShellOut;
 /// Returns only the entries that were actually saved (empty = no changes).
 #[tauri::command]
 pub async fn docker_backup_compose(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
     app: tauri::AppHandle,
     project: String,
     config_files: Vec<String>,
     backup_dir: String,
 ) -> Result<Vec<ComposeBackupEntry>, AtlasError> {
-    use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    migration.inner().clone().run_operation(move || {
+        use std::fs;
+        use std::time::{SystemTime, UNIX_EPOCH};
 
-    let compose_dir = docker_compose_dir(&backup_dir);
-    fs::create_dir_all(&compose_dir)
-        .map_err(|e| format!("Cannot create compose backup dir: {}", e))?;
+        let compose_dir = docker_compose_dir(&backup_dir);
+        fs::create_dir_all(&compose_dir)
+            .map_err(|e| format!("Cannot create compose backup dir: {}", e))?;
 
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
 
-    let mut manifest = read_compose_manifest(&backup_dir);
-    let mut saved: Vec<ComposeBackupEntry> = Vec::new();
+        let mut manifest = read_compose_manifest(&backup_dir);
+        let mut saved: Vec<ComposeBackupEntry> = Vec::new();
 
-    for src_str in &config_files {
-        // Read the current file content
-        let content = match read_source_as_string(src_str) {
-            Ok(c)  => c,
-            Err(e) => { eprintln!("Warning: cannot read '{}': {}", src_str, e); continue; }
-        };
+        for src_str in &config_files {
+            // Read the current file content
+            let content = match read_source_as_string(src_str) {
+                Ok(c)  => c,
+                Err(e) => { eprintln!("Warning: cannot read '{}': {}", src_str, e); continue; }
+            };
 
-        // Deduplication: skip if content is identical to the most recent backup
-        let last = manifest.backups.iter()
-            .filter(|e| e.project == project && e.original_path == *src_str)
-            .max_by_key(|e| e.created_at);
+            // Deduplication: skip if content is identical to the most recent backup
+            let last = manifest.backups.iter()
+                .filter(|e| e.project == project && e.original_path == *src_str)
+                .max_by_key(|e| e.created_at);
 
-        if let Some(prev) = last {
-            if std::path::Path::new(&prev.path).exists() {
-                if fs::read_to_string(&prev.path).ok().as_deref() == Some(&content) {
-                    continue; // unchanged - skip
+            if let Some(prev) = last {
+                if std::path::Path::new(&prev.path).exists() {
+                    if fs::read_to_string(&prev.path).ok().as_deref() == Some(&content) {
+                        continue; // unchanged - skip
+                    }
                 }
+            }
+
+            let src_path = std::path::Path::new(src_str);
+            let stem = src_path.file_stem().and_then(|s| s.to_str()).unwrap_or("compose");
+            let ext  = src_path.extension().and_then(|e| e.to_str()).unwrap_or("yml");
+            // ponytail: raw epoch-seconds filename, matching what volume backups use
+            let filename  = format!("{}_{}__{}.{}", project, stem, ts, ext);
+            let dest_path = format!("{}/{}", compose_dir.replace('\\', "/"), filename);
+
+            // Emit the real PowerShell command the user could run themselves
+            let display_src = if is_windows_absolute(src_str) {
+                src_str.replace('/', "\\")
+            } else {
+                wsl_mount_to_windows(src_str)
+                    .map(|p| p.replace('/', "\\"))
+                    .unwrap_or_else(|| src_str.to_string())
+            };
+            let display_dest = dest_path.replace('/', "\\");
+            app.emit("shell-out", ShellOut {
+                text: format!("Copy-Item -Path \"{}\" -Destination \"{}\"", display_src, display_dest),
+                stderr: false,
+            }).ok();
+
+            fs::write(&dest_path, &content)
+                .map_err(|e| format!("Failed to write '{}': {}", dest_path, e))?;
+
+            app.emit("shell-out", ShellOut {
+                text: format!("  \u{2713} saved {}", filename),
+                stderr: false,
+            }).ok();
+
+            let size_bytes = fs::metadata(&dest_path).map(|m| m.len()).unwrap_or(0);
+
+            let entry = ComposeBackupEntry {
+                filename,
+                project: project.clone(),
+                original_path: src_str.clone(),
+                path: dest_path,
+                size_bytes,
+                created_at: ts as i64,
+            };
+            manifest.backups.push(entry.clone());
+            saved.push(entry);
+
+            // Prune: keep only the 10 most recent backups for this (project, file)
+            let mut for_file: Vec<_> = manifest.backups.iter()
+                .filter(|e| e.project == project && e.original_path == *src_str)
+                .cloned()
+                .collect();
+            for_file.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+
+            if for_file.len() > 10 {
+                let stale_names: std::collections::HashSet<_> = for_file[10..]
+                    .iter().map(|e| e.filename.clone()).collect();
+                for old in &for_file[10..] { fs::remove_file(&old.path).ok(); }
+                manifest.backups.retain(|e| !stale_names.contains(&e.filename));
             }
         }
 
-        let src_path = std::path::Path::new(src_str);
-        let stem = src_path.file_stem().and_then(|s| s.to_str()).unwrap_or("compose");
-        let ext  = src_path.extension().and_then(|e| e.to_str()).unwrap_or("yml");
-        // ponytail: raw epoch-seconds filename, matching what volume backups use
-        let filename  = format!("{}_{}__{}.{}", project, stem, ts, ext);
-        let dest_path = format!("{}/{}", compose_dir.replace('\\', "/"), filename);
-
-        // Emit the real PowerShell command the user could run themselves
-        let display_src = if is_windows_absolute(src_str) {
-            src_str.replace('/', "\\")
-        } else {
-            wsl_mount_to_windows(src_str)
-                .map(|p| p.replace('/', "\\"))
-                .unwrap_or_else(|| src_str.to_string())
-        };
-        let display_dest = dest_path.replace('/', "\\");
-        app.emit("shell-out", ShellOut {
-            text: format!("Copy-Item -Path \"{}\" -Destination \"{}\"", display_src, display_dest),
-            stderr: false,
-        }).ok();
-
-        fs::write(&dest_path, &content)
-            .map_err(|e| format!("Failed to write '{}': {}", dest_path, e))?;
-
-        app.emit("shell-out", ShellOut {
-            text: format!("  \u{2713} saved {}", filename),
-            stderr: false,
-        }).ok();
-
-        let size_bytes = fs::metadata(&dest_path).map(|m| m.len()).unwrap_or(0);
-
-        let entry = ComposeBackupEntry {
-            filename,
-            project: project.clone(),
-            original_path: src_str.clone(),
-            path: dest_path,
-            size_bytes,
-            created_at: ts as i64,
-        };
-        manifest.backups.push(entry.clone());
-        saved.push(entry);
-
-        // Prune: keep only the 10 most recent backups for this (project, file)
-        let mut for_file: Vec<_> = manifest.backups.iter()
-            .filter(|e| e.project == project && e.original_path == *src_str)
-            .cloned()
-            .collect();
-        for_file.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-
-        if for_file.len() > 10 {
-            let stale_names: std::collections::HashSet<_> = for_file[10..]
-                .iter().map(|e| e.filename.clone()).collect();
-            for old in &for_file[10..] { fs::remove_file(&old.path).ok(); }
-            manifest.backups.retain(|e| !stale_names.contains(&e.filename));
-        }
-    }
-
-    write_compose_manifest(&backup_dir, &manifest)?;
-    Ok(saved)
+        write_compose_manifest(&backup_dir, &manifest)?;
+        Ok(saved)
+    }).await
 }
 
 /// List all compose backups for a given project, most-recent first.
 /// Entries whose archive files no longer exist are filtered out.
 #[tauri::command]
 pub async fn docker_list_compose_backups(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
     backup_dir: String,
     project: String,
 ) -> Result<Vec<ComposeBackupEntry>, AtlasError> {
-    let mut entries: Vec<_> = read_compose_manifest(&backup_dir)
-        .backups
-        .into_iter()
-        .filter(|e| e.project == project && std::path::Path::new(&e.path).exists())
-        .collect();
-    entries.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-    Ok(entries)
+    migration.inner().clone().run_operation(move || {
+        let mut entries: Vec<_> = read_compose_manifest(&backup_dir)
+            .backups
+            .into_iter()
+            .filter(|e| e.project == project && std::path::Path::new(&e.path).exists())
+            .collect();
+        entries.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        Ok(entries)
+    }).await
 }
 
 /// Delete a single compose backup archive and remove it from the manifest.
 #[tauri::command]
 pub async fn docker_delete_compose_backup(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
     app: tauri::AppHandle,
     backup_dir: String,
     filename: String,
 ) -> Result<(), AtlasError> {
-    let mut manifest = read_compose_manifest(&backup_dir);
+    migration.inner().clone().run_operation(move || {
+        let mut manifest = read_compose_manifest(&backup_dir);
 
-    let path = manifest.backups.iter()
-        .find(|e| e.filename == filename)
-        .map(|e| e.path.clone())
-        .unwrap_or_else(|| format!("{}/docker/compose/{}", backup_dir, filename));
+        let path = manifest.backups.iter()
+            .find(|e| e.filename == filename)
+            .map(|e| e.path.clone())
+            .unwrap_or_else(|| format!("{}/docker/compose/{}", backup_dir, filename));
 
-    app.emit("shell-out", ShellOut {
-        text:   format!("Remove-Item \"{}\"", path.replace('/', "\\")),
-        stderr: false,
-    }).ok();
+        app.emit("shell-out", ShellOut {
+            text:   format!("Remove-Item \"{}\"", path.replace('/', "\\")),
+            stderr: false,
+        }).ok();
 
-    if std::path::Path::new(&path).exists() {
-        std::fs::remove_file(&path)
-            .map_err(|e| format!("Failed to delete '{}': {}", path, e))?;
-    }
-    manifest.backups.retain(|e| e.filename != filename);
-    write_compose_manifest(&backup_dir, &manifest)?;
+        if std::path::Path::new(&path).exists() {
+            std::fs::remove_file(&path)
+                .map_err(|e| format!("Failed to delete '{}': {}", path, e))?;
+        }
+        manifest.backups.retain(|e| e.filename != filename);
+        write_compose_manifest(&backup_dir, &manifest)?;
 
-    app.emit("shell-out", ShellOut {
-        text:   format!("  \u{2713} deleted {}", filename),
-        stderr: false,
-    }).ok();
-    Ok(())
+        app.emit("shell-out", ShellOut {
+            text:   format!("  \u{2713} deleted {}", filename),
+            stderr: false,
+        }).ok();
+        Ok(())
+    }).await
 }
 
 /// Returns true if `path` contains no files anywhere in its tree.
@@ -2110,115 +2186,124 @@ fn is_effectively_empty(path: &std::path::Path) -> bool {
 /// Tries atomic rename first; falls back to copy+delete for cross-filesystem moves.
 /// After transfer, removes the old directory tree if it is entirely empty.
 #[tauri::command]
-pub async fn transfer_backups(from_dir: String, to_dir: String) -> Result<TransferResult, AtlasError> {
-    use std::fs;
+pub async fn transfer_backups(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    from_dir: String,
+    to_dir: String,
+) -> Result<TransferResult, AtlasError> {
+    migration.inner().clone().run_operation(move || {
+        use std::fs;
 
-    if from_dir == to_dir {
-        return Ok(TransferResult { moved: 0, old_dir_removed: false });
-    }
-
-    let dest_vols = docker_volumes_dir(&to_dir);
-    fs::create_dir_all(&dest_vols)
-        .map_err(|e| format!("Cannot create '{}': {}", dest_vols, e))?;
-
-    let mut manifest = read_manifest(&from_dir);
-    let mut transferred = 0u32;
-
-    for entry in &mut manifest.backups {
-        let src = std::path::Path::new(&entry.path);
-        if !src.exists() {
-            continue;
+        if from_dir == to_dir {
+            return Ok(TransferResult { moved: 0, old_dir_removed: false });
         }
-        let fname = src
-            .file_name()
-            .and_then(|f| f.to_str())
-            .unwrap_or(&entry.filename)
-            .to_string();
-        let dest = format!("{}/{}", dest_vols.replace('\\', "/"), fname);
 
-        let ok = fs::rename(&entry.path, &dest).is_ok()
-            || fs::copy(&entry.path, &dest).map(|_| { fs::remove_file(&entry.path).ok(); }).is_ok();
+        let dest_vols = docker_volumes_dir(&to_dir);
+        fs::create_dir_all(&dest_vols)
+            .map_err(|e| format!("Cannot create '{}': {}", dest_vols, e))?;
 
-        if ok {
-            entry.path = dest;
-            transferred += 1;
+        let mut manifest = read_manifest(&from_dir);
+        let mut transferred = 0u32;
+
+        for entry in &mut manifest.backups {
+            let src = std::path::Path::new(&entry.path);
+            if !src.exists() {
+                continue;
+            }
+            let fname = src
+                .file_name()
+                .and_then(|f| f.to_str())
+                .unwrap_or(&entry.filename)
+                .to_string();
+            let dest = format!("{}/{}", dest_vols.replace('\\', "/"), fname);
+
+            let ok = fs::rename(&entry.path, &dest).is_ok()
+                || fs::copy(&entry.path, &dest).map(|_| { fs::remove_file(&entry.path).ok(); }).is_ok();
+
+            if ok {
+                entry.path = dest;
+                transferred += 1;
+            }
         }
-    }
 
-    // Write updated manifest to new root, remove old manifests
-    write_manifest(&to_dir, &manifest)?;
-    fs::remove_file(format!("{}/backup_manifest.json", from_dir)).ok();
-    fs::remove_file(format!("{}/docker/manifest.json", from_dir)).ok();
+        // Write updated manifest to new root, remove old manifests
+        write_manifest(&to_dir, &manifest)?;
+        fs::remove_file(format!("{}/backup_manifest.json", from_dir)).ok();
+        fs::remove_file(format!("{}/docker/manifest.json", from_dir)).ok();
 
-    // Transfer compose subdirectory (old flat or new docker/compose/)
-    for src_compose in [
-        format!("{}/docker/compose", from_dir.replace('\\', "/")),
-        format!("{}/compose",        from_dir.replace('\\', "/")),
-    ] {
-        if !std::path::Path::new(&src_compose).exists() {
-            continue;
-        }
-        let dst_compose = docker_compose_dir(&to_dir);
-        if fs::create_dir_all(&dst_compose).is_ok() {
-            if let Ok(entries) = fs::read_dir(&src_compose) {
-                for dir_entry in entries.flatten() {
-                    let sf = dir_entry.path();
-                    if let Some(name) = sf.file_name().and_then(|n| n.to_str()) {
-                        let df = format!("{}/{}", dst_compose, name);
-                        if fs::rename(&sf, &df).is_err() {
-                            if fs::copy(&sf, &df).is_ok() {
-                                fs::remove_file(&sf).ok();
+        // Transfer compose subdirectory (old flat or new docker/compose/)
+        for src_compose in [
+            format!("{}/docker/compose", from_dir.replace('\\', "/")),
+            format!("{}/compose",        from_dir.replace('\\', "/")),
+        ] {
+            if !std::path::Path::new(&src_compose).exists() {
+                continue;
+            }
+            let dst_compose = docker_compose_dir(&to_dir);
+            if fs::create_dir_all(&dst_compose).is_ok() {
+                if let Ok(entries) = fs::read_dir(&src_compose) {
+                    for dir_entry in entries.flatten() {
+                        let sf = dir_entry.path();
+                        if let Some(name) = sf.file_name().and_then(|n| n.to_str()) {
+                            let df = format!("{}/{}", dst_compose, name);
+                            if fs::rename(&sf, &df).is_err() {
+                                if fs::copy(&sf, &df).is_ok() {
+                                    fs::remove_file(&sf).ok();
+                                }
                             }
                         }
                     }
                 }
             }
+            break; // only migrate one source compose dir
         }
-        break; // only migrate one source compose dir
-    }
 
-    // Remove the old root if nothing remains in it.
-    let old_dir_removed = is_effectively_empty(std::path::Path::new(&from_dir))
-        && std::fs::remove_dir_all(&from_dir).is_ok();
+        // Remove the old root if nothing remains in it.
+        let old_dir_removed = is_effectively_empty(std::path::Path::new(&from_dir))
+            && std::fs::remove_dir_all(&from_dir).is_ok();
 
-    Ok(TransferResult { moved: transferred, old_dir_removed })
+        Ok(TransferResult { moved: transferred, old_dir_removed })
+    }).await
 }
 
 /// Delete a backup archive and remove its entry from the manifest.
 #[tauri::command]
 pub async fn docker_delete_backup(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
     app: tauri::AppHandle,
     backup_dir: String,
     filename: String,
 ) -> Result<(), AtlasError> {
-    let mut manifest = read_manifest(&backup_dir);
+    migration.inner().clone().run_operation(move || {
+        let mut manifest = read_manifest(&backup_dir);
 
-    // Find the stored path from the manifest so we delete the right file.
-    let path = manifest
-        .backups
-        .iter()
-        .find(|e| e.filename == filename)
-        .map(|e| e.path.clone())
-        .unwrap_or_else(|| format!("{}/docker/volumes/{}", backup_dir, filename));
+        // Find the stored path from the manifest so we delete the right file.
+        let path = manifest
+            .backups
+            .iter()
+            .find(|e| e.filename == filename)
+            .map(|e| e.path.clone())
+            .unwrap_or_else(|| format!("{}/docker/volumes/{}", backup_dir, filename));
 
-    app.emit("shell-out", ShellOut {
-        text:   format!("Remove-Item \"{}\"", path.replace('/', "\\")),
-        stderr: false,
-    }).ok();
+        app.emit("shell-out", ShellOut {
+            text:   format!("Remove-Item \"{}\"", path.replace('/', "\\")),
+            stderr: false,
+        }).ok();
 
-    if std::path::Path::new(&path).exists() {
-        std::fs::remove_file(&path)
-            .map_err(|e| format!("Failed to delete '{}': {}", path, e))?;
-    }
+        if std::path::Path::new(&path).exists() {
+            std::fs::remove_file(&path)
+                .map_err(|e| format!("Failed to delete '{}': {}", path, e))?;
+        }
 
-    manifest.backups.retain(|e| e.filename != filename);
-    write_manifest(&backup_dir, &manifest)?;
+        manifest.backups.retain(|e| e.filename != filename);
+        write_manifest(&backup_dir, &manifest)?;
 
-    app.emit("shell-out", ShellOut {
-        text:   format!("  \u{2713} deleted {}", filename),
-        stderr: false,
-    }).ok();
-    Ok(())
+        app.emit("shell-out", ShellOut {
+            text:   format!("  \u{2713} deleted {}", filename),
+            stderr: false,
+        }).ok();
+        Ok(())
+    }).await
 }
 
 /// Open a native folder-picker dialog and return the selected path.
@@ -2362,8 +2447,11 @@ fn scan_dockerfiles_win(dir: &std::path::Path, depth: usize, max_depth: usize, o
 /// not only ones sitting next to the compose file. .env is matched at the root
 /// only. Handles Windows, WSL-mount, and pure-WSL paths.
 #[tauri::command]
-pub async fn detect_compose_project_files(config_file: String) -> Vec<DetectedFile> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn detect_compose_project_files(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    config_file: String,
+) -> Result<Vec<DetectedFile>, AtlasError> {
+    migration.inner().clone().run_operation(move || {
         const MAX_DEPTH: usize = 3;
 
         // Derive project dir from config_file path
@@ -2436,10 +2524,8 @@ pub async fn detect_compose_project_files(config_file: String) -> Vec<DetectedFi
         results.dedup_by(|a, b| a.path == b.path);
         results.sort_by(|a, b| a.kind.cmp(&b.kind).then_with(|| a.path.cmp(&b.path)));
 
-        results
-    })
-    .await
-    .unwrap_or_default()
+        Ok(results)
+    }).await
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2489,8 +2575,12 @@ pub async fn detect_editors() -> Vec<EditorInfo> {
 ///  2. A pure-WSL path (`/home/…`) means nothing to a Windows editor, so it is
 ///     first converted to its `\\wsl.localhost\…` UNC form.
 #[tauri::command]
-pub async fn open_in_editor(path: String, editor_cmd: String) -> Result<(), AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
+pub async fn open_in_editor(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    path: String,
+    editor_cmd: String,
+) -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(move || {
         let win_path = to_windows_path(&path);
         let mut c = Command::new("cmd");
         c.args(["/C", &editor_cmd, &win_path]);
@@ -2502,16 +2592,17 @@ pub async fn open_in_editor(path: String, editor_cmd: String) -> Result<(), Atla
         Ok(c.spawn()
             .map(|_| ())
             .map_err(|e| format!("Failed to open '{}' with '{}': {}", win_path, editor_cmd, e))?)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 /// Reveal a file in Windows Explorer (selecting it), converting WSL paths to
 /// their UNC form first so `/home/…` files open correctly.
 #[tauri::command]
-pub async fn reveal_path(path: String) -> Result<(), AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
+pub async fn reveal_path(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    path: String,
+) -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(move || {
         let win = to_windows_path(&path);
         let mut c = Command::new("explorer");
         #[cfg(windows)]
@@ -2528,9 +2619,7 @@ pub async fn reveal_path(path: String) -> Result<(), AtlasError> {
         Ok(c.spawn()
             .map(|_| ())
             .map_err(|e| format!("Failed to reveal '{}': {}", win, e))?)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2540,8 +2629,11 @@ pub async fn reveal_path(path: String) -> Result<(), AtlasError> {
 /// Run `docker compose config` and return the resolved YAML string.
 /// On error, returns the stderr as the Err string.
 #[tauri::command]
-pub async fn docker_compose_config(config_file: String) -> Result<String, AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<String, AtlasError> {
+pub async fn docker_compose_config(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    config_file: String,
+) -> Result<String, AtlasError> {
+    migration.inner().clone().run_operation(move || {
         let (mut cmd, _) = compose_base(&config_file);
         let output = cmd.arg("config").output()
             .map_err(|e| format!("Failed to run docker compose config: {}", e))?;
@@ -2552,9 +2644,7 @@ pub async fn docker_compose_config(config_file: String) -> Result<String, AtlasE
         } else {
             Err(String::from_utf8_lossy(&output.stderr).trim().to_string().into())
         }
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2569,6 +2659,7 @@ pub struct ComposeLogState(pub std::sync::Arc<std::sync::Mutex<Option<std::proce
 /// to prevent event channel saturation. Any previous stream is killed first.
 #[tauri::command]
 pub async fn compose_logs_watch(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
     app:         tauri::AppHandle,
     state:       tauri::State<'_, ComposeLogState>,
     config_file: String,
@@ -2582,8 +2673,7 @@ pub async fn compose_logs_watch(
     }
 
     let child_arc = state.0.clone();
-
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(move || {
         let svc_refs: Vec<&str> = services.iter().map(|s| s.as_str()).collect();
 
         let (mut cmd, _) = compose_base(&config_file);
@@ -2648,9 +2738,7 @@ pub async fn compose_logs_watch(
 
         app.emit("compose-log-done", true).ok();
         Ok(())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 /// Stop the currently-running compose log stream.

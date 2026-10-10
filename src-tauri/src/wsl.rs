@@ -101,21 +101,27 @@ pub async fn read_wslconfig(app: tauri::AppHandle) -> Result<WslConfig, AtlasErr
 
 /// Write %USERPROFILE%\.wslconfig. Changes take effect after `wsl --shutdown`.
 #[tauri::command]
-pub async fn write_wslconfig(app: tauri::AppHandle, content: String) -> Result<(), AtlasError> {
-    let path = wslconfig_path()?;
-    let win = path.replace('/', "\\");
-    emit_write_block(&app, format!("Set-Content -Path \"{}\" -Value @'", win), &content, "'@".to_string());
-    match std::fs::write(&path, &content) {
-        Ok(_) => {
-            emit_line(&app, format!("  ✓ saved {}", win), false);
-            Ok(())
+pub async fn write_wslconfig(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    app: tauri::AppHandle,
+    content: String,
+) -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(move || {
+        let path = wslconfig_path()?;
+        let win = path.replace('/', "\\");
+        emit_write_block(&app, format!("Set-Content -Path \"{}\" -Value @'", win), &content, "'@".to_string());
+        match std::fs::write(&path, &content) {
+            Ok(_) => {
+                emit_line(&app, format!("  ✓ saved {}", win), false);
+                Ok(())
+            }
+            Err(e) => {
+                let msg = format!("Cannot write .wslconfig: {}", e);
+                emit_line(&app, format!("  ✗ {}", msg), true);
+                Err(msg.into())
+            }
         }
-        Err(e) => {
-            let msg = format!("Cannot write .wslconfig: {}", e);
-            emit_line(&app, format!("  ✗ {}", msg), true);
-            Err(msg.into())
-        }
-    }
+    }).await
 }
 
 // ── .wslconfig backup / restore ────────────────────────────────────────────────
@@ -166,63 +172,80 @@ fn list_wslconfig_backups_sync(root: &str) -> Vec<WslConfigBackup> {
 /// Skips writing a duplicate if the newest backup is byte-identical. Keeps the 20
 /// most recent. Errors if `.wslconfig` does not exist yet.
 #[tauri::command]
-pub async fn wslconfig_backup(app: tauri::AppHandle, backup_dir: String) -> Result<WslConfigBackup, AtlasError> {
-    use std::time::{SystemTime, UNIX_EPOCH};
+pub async fn wslconfig_backup(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    app: tauri::AppHandle,
+    backup_dir: String,
+) -> Result<WslConfigBackup, AtlasError> {
+    migration.inner().clone().run_operation(move || {
+        use std::time::{SystemTime, UNIX_EPOCH};
 
-    let src = wslconfig_path()?;
-    let content = std::fs::read_to_string(&src)
-        .map_err(|e| format!("Cannot read .wslconfig: {}", e))?;
+        let src = wslconfig_path()?;
+        let content = std::fs::read_to_string(&src)
+            .map_err(|e| format!("Cannot read .wslconfig: {}", e))?;
 
-    // De-dup against the most recent backup.
-    let existing = list_wslconfig_backups_sync(&backup_dir);
-    if let Some(latest) = existing.first() {
-        if std::fs::read_to_string(&latest.path).ok().as_deref() == Some(content.as_str()) {
-            emit_line(&app, format!("# .wslconfig unchanged - keeping {}", latest.filename), false);
-            return Ok(latest.clone());
+        // De-dup against the most recent backup.
+        let existing = list_wslconfig_backups_sync(&backup_dir);
+        if let Some(latest) = existing.first() {
+            if std::fs::read_to_string(&latest.path).ok().as_deref() == Some(content.as_str()) {
+                emit_line(&app, format!("# .wslconfig unchanged - keeping {}", latest.filename), false);
+                return Ok(latest.clone());
+            }
         }
-    }
 
-    let dir = wslconfig_backup_dir(&backup_dir);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("Cannot create backup dir: {}", e))?;
+        let dir = wslconfig_backup_dir(&backup_dir);
+        std::fs::create_dir_all(&dir).map_err(|e| format!("Cannot create backup dir: {}", e))?;
 
-    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
-    let filename = format!("wslconfig_{}.conf", ts);
-    let path = format!("{}/{}", dir, filename);
+        let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+        let filename = format!("wslconfig_{}.conf", ts);
+        let path = format!("{}/{}", dir, filename);
 
-    emit_line(&app, format!("$ Copy-Item -Path \"{}\" -Destination \"{}\"", src.replace('/', "\\"), path.replace('/', "\\")), false);
-    std::fs::write(&path, &content).map_err(|e| format!("Cannot write backup: {}", e))?;
-    emit_line(&app, format!("  ✓ backed up {}", filename), false);
+        emit_line(&app, format!("$ Copy-Item -Path \"{}\" -Destination \"{}\"", src.replace('/', "\\"), path.replace('/', "\\")), false);
+        std::fs::write(&path, &content).map_err(|e| format!("Cannot write backup: {}", e))?;
+        emit_line(&app, format!("  ✓ backed up {}", filename), false);
 
-    // Prune to the 20 most recent.
-    for stale in list_wslconfig_backups_sync(&backup_dir).into_iter().skip(20) {
-        std::fs::remove_file(&stale.path).ok();
-    }
+        // Prune to the 20 most recent.
+        for stale in list_wslconfig_backups_sync(&backup_dir).into_iter().skip(20) {
+            std::fs::remove_file(&stale.path).ok();
+        }
 
-    Ok(WslConfigBackup {
-        filename,
-        path,
-        size_bytes: content.len() as u64,
-        created_at: ts as i64,
-    })
+        Ok(WslConfigBackup {
+            filename,
+            path,
+            size_bytes: content.len() as u64,
+            created_at: ts as i64,
+        })
+    }).await
 }
 
 /// List all `.wslconfig` backups, most-recent first.
 #[tauri::command]
-pub async fn wslconfig_list_backups(backup_dir: String) -> Result<Vec<WslConfigBackup>, AtlasError> {
-    Ok(list_wslconfig_backups_sync(&backup_dir))
+pub async fn wslconfig_list_backups(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    backup_dir: String,
+) -> Result<Vec<WslConfigBackup>, AtlasError> {
+    migration.inner().clone().run_operation(move || {
+        Ok(list_wslconfig_backups_sync(&backup_dir))
+    }).await
 }
 
 /// Restore a backup over `.wslconfig`, returning the restored content so the UI
 /// can refresh. Changes take effect after `wsl --shutdown`.
 #[tauri::command]
-pub async fn wslconfig_restore(app: tauri::AppHandle, backup_path: String) -> Result<String, AtlasError> {
-    let dest = wslconfig_path()?;
-    let content = std::fs::read_to_string(&backup_path)
-        .map_err(|e| format!("Cannot read backup: {}", e))?;
-    emit_line(&app, format!("$ Copy-Item -Path \"{}\" -Destination \"{}\"", backup_path.replace('/', "\\"), dest.replace('/', "\\")), false);
-    std::fs::write(&dest, &content).map_err(|e| format!("Cannot write .wslconfig: {}", e))?;
-    emit_line(&app, format!("  ✓ restored {}", dest.replace('/', "\\")), false);
-    Ok(content)
+pub async fn wslconfig_restore(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    app: tauri::AppHandle,
+    backup_path: String,
+) -> Result<String, AtlasError> {
+    migration.inner().clone().run_operation(move || {
+        let dest = wslconfig_path()?;
+        let content = std::fs::read_to_string(&backup_path)
+            .map_err(|e| format!("Cannot read backup: {}", e))?;
+        emit_line(&app, format!("$ Copy-Item -Path \"{}\" -Destination \"{}\"", backup_path.replace('/', "\\"), dest.replace('/', "\\")), false);
+        std::fs::write(&dest, &content).map_err(|e| format!("Cannot write .wslconfig: {}", e))?;
+        emit_line(&app, format!("  ✓ restored {}", dest.replace('/', "\\")), false);
+        Ok(content)
+    }).await
 }
 
 // ── /etc/wsl.conf (per-distro) read / write / backup / restore ──────────────────
@@ -267,8 +290,12 @@ fn tee_wsl_conf(distro: &str, content: &str) -> Result<(), AtlasError> {
 
 /// Read `/etc/wsl.conf` from a distro. A missing file is reported, not an error.
 #[tauri::command]
-pub async fn read_wsl_conf(app: tauri::AppHandle, distro: String) -> Result<WslConfig, AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<WslConfig, AtlasError> {
+pub async fn read_wsl_conf(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    app: tauri::AppHandle,
+    distro: String,
+) -> Result<WslConfig, AtlasError> {
+    migration.inner().clone().run_operation(move || {
         let display_path = format!("\\\\wsl.localhost\\{}\\etc\\wsl.conf", distro);
         emit_line(&app, format!("$ wsl -d {} -u root cat /etc/wsl.conf", distro), false);
         let (content, exists) = cat_wsl_conf(&distro);
@@ -278,15 +305,18 @@ pub async fn read_wsl_conf(app: tauri::AppHandle, distro: String) -> Result<WslC
             "  # wsl.conf does not exist yet".to_string()
         }, false);
         Ok(WslConfig { path: display_path, content, exists })
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 /// Write `/etc/wsl.conf` inside a distro as root. Takes effect after `wsl --shutdown`.
 #[tauri::command]
-pub async fn write_wsl_conf(app: tauri::AppHandle, distro: String, content: String) -> Result<(), AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
+pub async fn write_wsl_conf(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    app: tauri::AppHandle,
+    distro: String,
+    content: String,
+) -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(move || {
         emit_write_block(&app, "@'".to_string(), &content, format!("'@ | wsl -d {} -u root tee /etc/wsl.conf", distro));
         match tee_wsl_conf(&distro, &content) {
             Ok(()) => {
@@ -298,9 +328,7 @@ pub async fn write_wsl_conf(app: tauri::AppHandle, distro: String, content: Stri
                 Err(e)
             }
         }
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 /// Filesystem-safe form of a distro name for use in a backup filename.
@@ -321,8 +349,13 @@ fn list_wslconf_backups_sync(root: &str, distro: &str) -> Vec<WslConfigBackup> {
 /// Snapshot a distro's `/etc/wsl.conf` to `{root}/wsl/wslconf/{distro}_{ts}.conf`.
 /// De-dups against the newest backup; keeps the 20 most recent per distro.
 #[tauri::command]
-pub async fn wsl_conf_backup(app: tauri::AppHandle, distro: String, backup_dir: String) -> Result<WslConfigBackup, AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<WslConfigBackup, AtlasError> {
+pub async fn wsl_conf_backup(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    app: tauri::AppHandle,
+    distro: String,
+    backup_dir: String,
+) -> Result<WslConfigBackup, AtlasError> {
+    migration.inner().clone().run_operation(move || {
         use std::time::{SystemTime, UNIX_EPOCH};
 
         let (content, exists) = cat_wsl_conf(&distro);
@@ -353,58 +386,77 @@ pub async fn wsl_conf_backup(app: tauri::AppHandle, distro: String, backup_dir: 
         }
 
         Ok(WslConfigBackup { filename, path, size_bytes: content.len() as u64, created_at: ts as i64 })
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 /// List a distro's wsl.conf backups, most-recent first.
 #[tauri::command]
-pub async fn wsl_conf_list_backups(distro: String, backup_dir: String) -> Result<Vec<WslConfigBackup>, AtlasError> {
-    Ok(list_wslconf_backups_sync(&backup_dir, &distro))
+pub async fn wsl_conf_list_backups(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    distro: String,
+    backup_dir: String,
+) -> Result<Vec<WslConfigBackup>, AtlasError> {
+    migration.inner().clone().run_operation(move || {
+        Ok(list_wslconf_backups_sync(&backup_dir, &distro))
+    }).await
 }
 
 /// Restore a backup into a distro's `/etc/wsl.conf`, returning the restored content.
 #[tauri::command]
-pub async fn wsl_conf_restore(app: tauri::AppHandle, distro: String, backup_path: String) -> Result<String, AtlasError> {
-    let content = std::fs::read_to_string(&backup_path)
-        .map_err(|e| format!("Cannot read backup: {}", e))?;
-    let returned = content.clone();
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
-        emit_line(&app, format!("$ Get-Content \"{}\" | wsl -d {} -u root tee /etc/wsl.conf", backup_path.replace('/', "\\"), distro), false);
-        match tee_wsl_conf(&distro, &content) {
-            Ok(()) => {
-                emit_line(&app, format!("  ✓ restored \\\\wsl.localhost\\{}\\etc\\wsl.conf", distro), false);
-                Ok(())
+pub async fn wsl_conf_restore(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    app: tauri::AppHandle,
+    distro: String,
+    backup_path: String,
+) -> Result<String, AtlasError> {
+    migration.inner().clone().run_operation(move || {
+        let content = std::fs::read_to_string(&backup_path)
+            .map_err(|e| format!("Cannot read backup: {}", e))?;
+        let returned = content.clone();
+        {
+            emit_line(&app, format!("$ Get-Content \"{}\" | wsl -d {} -u root tee /etc/wsl.conf", backup_path.replace('/', "\\"), distro), false);
+            match tee_wsl_conf(&distro, &content) {
+                Ok(()) => {
+                    emit_line(&app, format!("  ✓ restored \\\\wsl.localhost\\{}\\etc\\wsl.conf", distro), false);
+                    Ok(())
+                }
+                Err(e) => {
+                    emit_line(&app, format!("  ✗ {}", e), true);
+                    Err(e)
+                }
             }
-            Err(e) => {
-                emit_line(&app, format!("  ✗ {}", e), true);
-                Err(e)
-            }
-        }
-    })
-    .await
-    .map_err(|e| e.to_string())??;
-    Ok(returned)
+        }?;
+        Ok(returned)
+    }).await
 }
 
 /// Delete a single config backup file (used for both .wslconfig and wsl.conf backups).
 #[tauri::command]
-pub async fn wsl_conf_delete_backup(app: tauri::AppHandle, backup_path: String) -> Result<(), AtlasError> {
-    emit_line(&app, format!("$ Remove-Item \"{}\"", backup_path.replace('/', "\\")), false);
-    if std::path::Path::new(&backup_path).exists() {
-        std::fs::remove_file(&backup_path)
-            .map_err(|e| format!("Cannot delete backup: {}", e))?;
-    }
-    emit_line(&app, format!("  ✓ deleted {}", file_name_of(&backup_path)), false);
-    Ok(())
+pub async fn wsl_conf_delete_backup(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    app: tauri::AppHandle,
+    backup_path: String,
+) -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(move || {
+        emit_line(&app, format!("$ Remove-Item \"{}\"", backup_path.replace('/', "\\")), false);
+        if std::path::Path::new(&backup_path).exists() {
+            std::fs::remove_file(&backup_path)
+                .map_err(|e| format!("Cannot delete backup: {}", e))?;
+        }
+        emit_line(&app, format!("  ✓ deleted {}", file_name_of(&backup_path)), false);
+        Ok(())
+    }).await
 }
 
 /// Shut down all running distros (`wsl --shutdown`) so .wslconfig changes apply.
 /// Not elevated, but stops every running distro - the UI warns first.
 #[tauri::command]
-pub async fn wsl_shutdown() -> Result<(), AtlasError> {
-    run_wsl(&["--shutdown"])
+pub async fn wsl_shutdown(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+) -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(move || {
+        run_wsl(&["--shutdown"])
+    }).await
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -431,10 +483,11 @@ fn ps_single_quote(s: &str) -> String {
 /// via a temp file, since output cannot cross the integrity boundary.
 #[tauri::command]
 pub async fn wsl_optimize_vhd(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
     app: tauri::AppHandle,
     vhd_path: String,
 ) -> Result<OptimizeResult, AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<OptimizeResult, AtlasError> {
+    migration.inner().clone().run_operation(move || {
         let before = std::fs::metadata(&vhd_path)
             .map(|m| m.len())
             .map_err(|e| format!("Cannot read VHD '{}': {}", vhd_path, e))?;
@@ -515,9 +568,7 @@ pub async fn wsl_optimize_vhd(
         );
 
         Ok(OptimizeResult { before_bytes: before, after_bytes: after, reclaimed_bytes: reclaimed, method })
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -557,10 +608,11 @@ pub async fn pick_directory() -> Option<String> {
 /// returns `None` if cancelled. Not elevated. WSL_UTF8 keeps error text readable.
 #[tauri::command]
 pub async fn wsl_export_distro(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
     app: tauri::AppHandle,
     name: String,
 ) -> Result<Option<ExportResult>, AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<Option<ExportResult>, AtlasError> {
+    migration.inner().clone().run_operation(move || {
         let Some(dest) = rfd::FileDialog::new()
             .set_file_name(format!("{}.tar", name))
             .add_filter("TAR archive", &["tar"])
@@ -588,9 +640,7 @@ pub async fn wsl_export_distro(
         let size = std::fs::metadata(&dest).map(|m| m.len()).unwrap_or(0);
         emit_line(&app, format!("  ✓ exported {} ({})", name, bytes_to_human(size)), false);
         Ok(Some(ExportResult { path: dest_str, size_bytes: size }))
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 /// Import a distro from a `.tar` archive (`wsl --import`). Creates the install
@@ -598,12 +648,13 @@ pub async fn wsl_export_distro(
 /// = import into a different directory. Not elevated.
 #[tauri::command]
 pub async fn wsl_import_distro(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
     app: tauri::AppHandle,
     name: String,
     install_dir: String,
     tar_path: String,
 ) -> Result<(), AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(move || {
         std::fs::create_dir_all(&install_dir)
             .map_err(|e| format!("Cannot create install directory: {}", e))?;
 
@@ -624,9 +675,7 @@ pub async fn wsl_import_distro(
 
         emit_line(&app, format!("  ✓ imported {}", name), false);
         Ok(())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -776,6 +825,7 @@ fn sha256_of(path: &str) -> Result<String, AtlasError> {
 /// throughout and terminal lines at each milestone.
 #[tauri::command]
 pub async fn wsl_install_download(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
     app: tauri::AppHandle,
     name: String,
     url: String,
@@ -784,8 +834,7 @@ pub async fn wsl_install_download(
 ) -> Result<(), AtlasError> {
     use std::io::{Read, Write};
     use std::time::{Duration, Instant};
-
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(move || {
         if !url.starts_with("https://") {
             return Err(AtlasError::invalid("That catalog entry points at a plain HTTP address, so the download was refused.")
                 .hint("This is a safety stop, not a network fault. Report the catalog entry rather than retrying."));
@@ -882,9 +931,7 @@ pub async fn wsl_install_download(
         emit_progress(&app, InstallProgress { phase: "done".into(), downloaded, total: downloaded, bytes_per_sec: 0, percent: 100.0 });
         emit_line(&app, format!("  ✓ installed {}", name), false);
         Ok(())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1108,14 +1155,14 @@ fn parse_distro_stats(out: &str) -> DistroStats {
 /// Lightweight live CPU/memory snapshot for one distro (the home dashboard
 /// polls this for every running distro). Read-only, no terminal emission.
 #[tauri::command]
-pub async fn wsl_distro_stats(state: tauri::State<'_, crate::wsl_migration::MigrationState>, distro: String) -> Result<DistroStats, AtlasError> {
-    state.ensure_idle()?;
-    tauri::async_runtime::spawn_blocking(move || -> Result<DistroStats, AtlasError> {
+pub async fn wsl_distro_stats(
+    state: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    distro: String,
+) -> Result<DistroStats, AtlasError> {
+    state.inner().clone().run_operation(move || {
         let out = run_in_distro(&distro, STATS_SCRIPT)?;
         Ok(parse_distro_stats(&out))
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 /// Snapshot a distro's live CPU/memory/swap/disk/network/process/service state.
@@ -1123,14 +1170,14 @@ pub async fn wsl_distro_stats(state: tauri::State<'_, crate::wsl_migration::Migr
 /// terminal lines - mirroring the silent `get_system_metrics` host poll. Selecting
 /// a stopped distro boots it.
 #[tauri::command]
-pub async fn wsl_distro_metrics(state: tauri::State<'_, crate::wsl_migration::MigrationState>, distro: String) -> Result<DistroMetrics, AtlasError> {
-    state.ensure_idle()?;
-    tauri::async_runtime::spawn_blocking(move || -> Result<DistroMetrics, AtlasError> {
+pub async fn wsl_distro_metrics(
+    state: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    distro: String,
+) -> Result<DistroMetrics, AtlasError> {
+    state.inner().clone().run_operation(move || {
         let out = run_in_distro(&distro, METRICS_SCRIPT)?;
         Ok(parse_distro_metrics(&out))
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1297,53 +1344,69 @@ fn parse_distro_extras(out: &str) -> DistroExtras {
 /// the Linux user's home directory rather than the Windows path the app launched
 /// from (which would land the shell on a /mnt/… mount).
 #[tauri::command]
-pub async fn wsl_open_terminal(app: tauri::AppHandle, distro: String) -> Result<(), AtlasError> {
-    emit_line(&app, format!("$ wt wsl -d {} --cd ~", distro), false);
-    if Command::new("wt.exe").args(["wsl.exe", "-d", &distro, "--cd", "~"]).spawn().is_ok() {
-        return Ok(());
-    }
-    // No Windows Terminal - open a classic console window instead.
-    Command::new("cmd")
-        .args(["/c", "start", "", "wsl.exe", "-d", &distro, "--cd", "~"])
-        .spawn()
-        .map_err(|e| {
-            emit_line(&app, format!("  ✗ {}", e), true);
-            format!("Failed to open terminal: {}", e)
-        })?;
-    Ok(())
+pub async fn wsl_open_terminal(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    app: tauri::AppHandle,
+    distro: String,
+) -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(move || {
+        emit_line(&app, format!("$ wt wsl -d {} --cd ~", distro), false);
+        if Command::new("wt.exe").args(["wsl.exe", "-d", &distro, "--cd", "~"]).spawn().is_ok() {
+            return Ok(());
+        }
+        // No Windows Terminal - open a classic console window instead.
+        Command::new("cmd")
+            .args(["/c", "start", "", "wsl.exe", "-d", &distro, "--cd", "~"])
+            .spawn()
+            .map_err(|e| {
+                emit_line(&app, format!("  ✗ {}", e), true);
+                format!("Failed to open terminal: {}", e)
+            })?;
+        Ok(())
+    }).await
 }
 
 /// Open a distro's Linux filesystem in Explorer via the `\\wsl.localhost` share.
 #[tauri::command]
-pub async fn wsl_open_distro_folder(app: tauri::AppHandle, distro: String) -> Result<(), AtlasError> {
-    let path = format!("\\\\wsl.localhost\\{}", distro);
-    emit_line(&app, format!("$ explorer \"{}\"", path), false);
-    // explorer.exe returns a non-zero exit code even on success, so don't check it.
-    Command::new("explorer.exe")
-        .arg(&path)
-        .spawn()
-        .map_err(|e| format!("Failed to open folder: {}", e))?;
-    Ok(())
+pub async fn wsl_open_distro_folder(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    app: tauri::AppHandle,
+    distro: String,
+) -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(move || {
+        let path = format!("\\\\wsl.localhost\\{}", distro);
+        emit_line(&app, format!("$ explorer \"{}\"", path), false);
+        // explorer.exe returns a non-zero exit code even on success, so don't check it.
+        Command::new("explorer.exe")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("Failed to open folder: {}", e))?;
+        Ok(())
+    }).await
 }
 
 /// Package count + manager + uptime for the comparison table. Reads inside the
 /// distro, so the caller should only invoke this for running distros (otherwise
 /// it boots the distro). Read-only - no terminal emission.
 #[tauri::command]
-pub async fn wsl_distro_extras(state: tauri::State<'_, crate::wsl_migration::MigrationState>, distro: String) -> Result<DistroExtras, AtlasError> {
-    state.ensure_idle()?;
-    tauri::async_runtime::spawn_blocking(move || -> Result<DistroExtras, AtlasError> {
+pub async fn wsl_distro_extras(
+    state: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    distro: String,
+) -> Result<DistroExtras, AtlasError> {
+    state.inner().clone().run_operation(move || {
         let out = run_in_distro(&distro, EXTRAS_SCRIPT)?;
         Ok(parse_distro_extras(&out))
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 /// Stop a distro: `wsl --terminate <distro>`. It stays stopped until next access.
 #[tauri::command]
-pub async fn wsl_terminate_distro(app: tauri::AppHandle, distro: String) -> Result<(), AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
+pub async fn wsl_terminate_distro(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    app: tauri::AppHandle,
+    distro: String,
+) -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(move || {
         emit_line(&app, format!("$ wsl --terminate {}", distro), false);
         run_wsl(&["--terminate", &distro]).map_err(|e| {
             emit_line(&app, format!("  ✗ {}", e), true);
@@ -1352,16 +1415,18 @@ pub async fn wsl_terminate_distro(app: tauri::AppHandle, distro: String) -> Resu
         wait_for_running_state(&distro, false);
         emit_line(&app, format!("  ✓ stopped {}", distro), false);
         Ok(())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 /// Restart a distro: terminate it, then boot it straight back up.
 #[tauri::command]
-pub async fn wsl_restart_distro(app: tauri::AppHandle, distro: String) -> Result<(), AtlasError> {
+pub async fn wsl_restart_distro(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    app: tauri::AppHandle,
+    distro: String,
+) -> Result<(), AtlasError> {
     use std::time::Duration;
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(move || {
         emit_line(&app, format!("$ wsl --terminate {}", distro), false);
         run_wsl(&["--terminate", &distro]).map_err(|e| {
             emit_line(&app, format!("  ✗ {}", e), true);
@@ -1376,15 +1441,17 @@ pub async fn wsl_restart_distro(app: tauri::AppHandle, distro: String) -> Result
         wait_for_running_state(&distro, true);
         emit_line(&app, format!("  ✓ restarted {}", distro), false);
         Ok(())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 /// Boot a stopped distro (a no-op command brings the VM up).
 #[tauri::command]
-pub async fn wsl_start_distro(app: tauri::AppHandle, distro: String) -> Result<(), AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
+pub async fn wsl_start_distro(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    app: tauri::AppHandle,
+    distro: String,
+) -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(move || {
         emit_line(&app, format!("$ wsl -d {} -u root true   # start", distro), false);
         run_wsl(&["-d", &distro, "-u", "root", "true"]).map_err(|e| {
             emit_line(&app, format!("  ✗ {}", e), true);
@@ -1393,22 +1460,21 @@ pub async fn wsl_start_distro(app: tauri::AppHandle, distro: String) -> Result<(
         wait_for_running_state(&distro, true);
         emit_line(&app, format!("  ✓ started {}", distro), false);
         Ok(())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 /// Clone a distro: export it to a temp `.tar`, import under a new name/location,
 /// then delete the temp archive. Not elevated.
 #[tauri::command]
 pub async fn wsl_clone_distro(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
     app: tauri::AppHandle,
     source: String,
     new_name: String,
     install_dir: String,
     version: u32,
 ) -> Result<(), AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(move || {
         std::fs::create_dir_all(&install_dir)
             .map_err(|e| format!("Cannot create install directory: {}", e))?;
 
@@ -1440,9 +1506,7 @@ pub async fn wsl_clone_distro(
 
         emit_line(&app, format!("  ✓ cloned {} → {}", source, new_name), false);
         Ok(())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 #[tauri::command]
@@ -1454,7 +1518,9 @@ pub async fn wsl_migrate_distro(
 ) -> Result<crate::wsl_migration::MigrateResult, AtlasError> {
     let gate = state.0.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let _guard = gate.try_lock().map_err(|_| AtlasError::new(ErrorKind::Busy, "A WSL migration is already running."))?;
+        let _guard = gate.try_write().map_err(|_| AtlasError::new(ErrorKind::Busy, "Another Docker, WSL, or terminal operation is active.")
+            .hint("Finish the operation or close the Compose log stream, then retry migration."))?;
+        crate::wsl_migration::require_docker_stopped()?;
         let help = Command::new("wsl").env("WSL_UTF8", "1").arg("--help").output()?;
         let help_text = String::from_utf8_lossy(&help.stdout);
         if !help_text.contains("--move") || !help_text.contains("--format") {
@@ -1517,11 +1583,12 @@ fn check_unregister(distro: &str, confirm: &str, registered: &[String]) -> Resul
 /// distro's disk and every file inside it, and there is no undo.
 #[tauri::command]
 pub async fn wsl_unregister_distro(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
     app: tauri::AppHandle,
     distro: String,
     confirm: String,
 ) -> Result<(), AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(move || {
         check_unregister(&distro, &confirm, &registered_distro_names())?;
 
         emit_line(&app, format!("# Deleting {}: destroys its disk and every file in it, with no undo", distro), false);
@@ -1536,9 +1603,7 @@ pub async fn wsl_unregister_distro(
 
         emit_line(&app, format!("  ✓ deleted {}", distro), false);
         Ok(())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1651,13 +1716,14 @@ fn parse_services(out: &str) -> ServiceList {
 /// List a distro's systemd services (enabled + active state). Reads inside the
 /// distro, so it boots a stopped one - the caller gates on user intent.
 #[tauri::command]
-pub async fn wsl_list_services(distro: String) -> Result<ServiceList, AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<ServiceList, AtlasError> {
+pub async fn wsl_list_services(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    distro: String,
+) -> Result<ServiceList, AtlasError> {
+    migration.inner().clone().run_operation(move || {
         let out = run_in_distro(&distro, SERVICES_SCRIPT)?;
         Ok(parse_services(&out))
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 #[derive(serde::Serialize, Clone, Default)]
@@ -1687,17 +1753,19 @@ fn parse_service_detail(out: &str) -> ServiceDetail {
 
 /// Detailed status for one service (dependencies, path, PID).
 #[tauri::command]
-pub async fn wsl_service_detail(distro: String, service: String) -> Result<ServiceDetail, AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<ServiceDetail, AtlasError> {
+pub async fn wsl_service_detail(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    distro: String,
+    service: String,
+) -> Result<ServiceDetail, AtlasError> {
+    migration.inner().clone().run_operation(move || {
         let script = format!(
             "systemctl show {} -p FragmentPath,MainPID,Requires,After 2>/dev/null",
             shell_quote(&service)
         );
         let out = run_in_distro(&distro, &script)?;
         Ok(parse_service_detail(&out))
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 /// Single-quote a string for safe embedding in a bash command.
@@ -1709,12 +1777,13 @@ fn shell_quote(s: &str) -> String {
 /// the UI confirms first.
 #[tauri::command]
 pub async fn wsl_service_set(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
     app: tauri::AppHandle,
     distro: String,
     service: String,
     enable: bool,
 ) -> Result<(), AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(move || {
         let verb = if enable { "enable" } else { "disable" };
         emit_line(&app, format!("$ wsl -d {} -u root systemctl {} {}", distro, verb, service), false);
         // No `2>&1`: systemctl writes its symlink notice to stderr even on success,
@@ -1730,9 +1799,7 @@ pub async fn wsl_service_set(
                 Err(e)
             }
         }
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1748,9 +1815,13 @@ pub struct BenchmarkResult {
 /// time the first access (`wsl -d <distro> -u root true`) from the host. Mutating
 /// (terminates the distro), so the UI confirms first.
 #[tauri::command]
-pub async fn wsl_benchmark_boot(app: tauri::AppHandle, distro: String) -> Result<BenchmarkResult, AtlasError> {
+pub async fn wsl_benchmark_boot(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    app: tauri::AppHandle,
+    distro: String,
+) -> Result<BenchmarkResult, AtlasError> {
     use std::time::{Duration, Instant};
-    tauri::async_runtime::spawn_blocking(move || -> Result<BenchmarkResult, AtlasError> {
+    migration.inner().clone().run_operation(move || {
         emit_line(&app, format!("# Cold-boot benchmark - terminating {} first", distro), false);
         emit_line(&app, format!("$ wsl --terminate {}", distro), false);
         run_wsl(&["--terminate", &distro]).ok(); // already-stopped is fine
@@ -1767,9 +1838,7 @@ pub async fn wsl_benchmark_boot(app: tauri::AppHandle, distro: String) -> Result
         let boot_ms = start.elapsed().as_millis() as u64;
         emit_line(&app, format!("  ✓ cold boot: {} ms", boot_ms), false);
         Ok(BenchmarkResult { boot_ms })
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 #[derive(serde::Serialize, Clone, Default)]
@@ -1881,13 +1950,14 @@ fn parse_shell_profile(out: &str) -> ShellProfile {
 
 /// Profile the default user's shell startup. Read-only (boots a stopped distro).
 #[tauri::command]
-pub async fn wsl_profile_shell(distro: String) -> Result<ShellProfile, AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<ShellProfile, AtlasError> {
+pub async fn wsl_profile_shell(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    distro: String,
+) -> Result<ShellProfile, AtlasError> {
+    migration.inner().clone().run_operation(move || {
         let out = run_in_distro_as(&distro, None, PROFILE_SCRIPT)?;
         Ok(parse_shell_profile(&out))
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 const INNER_OPTIMIZE_PS: &str = r#"$ErrorActionPreference='Stop'

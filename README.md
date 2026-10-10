@@ -30,7 +30,10 @@ Built with Tauri v2 (Rust) + React 19 + TypeScript + Vite + Tailwind v4.
 WSL migration requires WSL 2 and `wsl --manage --move`. Choose an empty folder on
 a local drive and save any work in the distribution first. Atlas checks free
 space, exports and byte-verifies a VHD backup, moves the registered disk, and verifies
-that it boots. A separate backup folder beside the destination contains
+that it boots with a writable root filesystem and default-user home directory.
+Backup and destination permissions are restricted to your Windows account,
+SYSTEM, and administrators. Choose storage with Windows file permissions and
+without NTFS compression or file encryption. A separate backup folder beside the destination contains
 `backup.vhdx` and `RECOVERY.txt`. `BACKUP-COMPLETE.txt` is created only after export
 and byte verification finish. Keep those files until you have checked your
 files and applications. On failure or interruption, follow the recovery guide
@@ -39,6 +42,15 @@ existing one. Docker Desktop distributions must be moved through Docker Desktop.
 If WSL retains a disk lock after stopping the distribution, save work in all
 distributions, quit Docker Desktop, and run `wsl --shutdown` before retrying.
 Atlas does not force a locked disk to move or automatically stop other workloads.
+Quit Docker Desktop before starting migration, and finish active Atlas operations,
+including terminal commands and Compose log streams. Atlas rejects conflicting
+operations until migration finishes. Close external terminals, editors, and tools
+that could restart the distribution during the move.
+
+Linux packages and paths inside the disk stay in place. Windows-mounted files,
+Docker Desktop's separate disk, and global WSL swap storage are not moved or
+backed up by this operation. A recovered backup uses a new distro name: enable
+Docker WSL integration for it and update terminal/editor connections before use.
 
 ## Ground rules
 

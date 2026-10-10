@@ -31,6 +31,7 @@ export default function App() {
       if (mod && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         const s = useAppStore.getState()
+        if (s.wslBusyDistro) return
         s.setIndexOpen(!s.indexOpen)
       } else if (mod && e.key === '`') {
         e.preventDefault()
