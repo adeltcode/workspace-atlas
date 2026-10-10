@@ -7392,6 +7392,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   border-radius: var(--radius-sm);
 }
 .wiz-fact-icon { color: var(--color-text-tertiary); flex-shrink: 0; margin-top: 1px; }
+.wiz-fact-icon--warning { color: var(--color-warning); }
 
 /* Install location field (review step). */
 .wiz-location { display: flex; flex-direction: column; gap: 6px; }

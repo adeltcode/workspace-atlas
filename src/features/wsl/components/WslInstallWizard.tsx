@@ -221,7 +221,14 @@ export default function WslInstallWizard({ distros, onReload }: {
 
           <ul className="wiz-facts">
             <li><Download size={15} className="wiz-fact-icon" /><span>Downloaded straight from the official image, with live speed and size shown below.</span></li>
-            <li><ShieldCheck size={15} className="wiz-fact-icon" /><span>Verified against the catalog’s SHA-256 checksum before anything is imported.</span></li>
+            <li>
+              {pickedDistro.sha256
+                ? <ShieldCheck size={15} className="wiz-fact-icon" />
+                : <TriangleAlert size={15} className="wiz-fact-icon wiz-fact-icon--warning" />}
+              <span>{pickedDistro.sha256
+                ? 'The download is checked against the catalog’s SHA-256 checksum before import.'
+                : 'The catalog has no checksum for this image. The download will not be verified before import.'}</span>
+            </li>
             <li><Terminal size={15} className="wiz-fact-icon" /><span>Open a terminal afterward to finish first-run setup (create your Linux username and password).</span></li>
           </ul>
 
