@@ -11,7 +11,8 @@ import { bytesToHuman } from '../../../utils/format'
 import { Modal, Field } from './Dialog'
 import { DistroLogo } from '../DistroLogo'
 import { useAsyncAction } from '../../../hooks/useAsyncAction'
-import { TabList, Tab } from '../../../components/ui'
+import { TabList, Tab, ErrorBanner } from '../../../components/ui'
+import { toAppError, type AppError } from '../../../utils/errors'
 import WslDashboardTab from './WslDashboardTab'
 import WslStartupTab from './WslStartupTab'
 import WslPerformanceTab from './WslPerformanceTab'
@@ -25,14 +26,14 @@ const TABS: { id: WslDistroTab; label: string; icon: typeof LayoutDashboard }[] 
   { id: 'config',      label: 'Config',      icon: FileCog },
 ]
 
-type PageStatus = { kind: 'ok' | 'err' | 'progress'; text: string } | null
+type PageStatus = { kind: 'ok' | 'err' | 'progress'; text: string; error?: AppError } | null
 
 /** Per-distribution page: identity strip with the management actions, plus
  *  Overview/Startup/Performance/Config tabs. The distro shown is the global
  *  selection (header dropdown / sidebar). */
 export default function WslDistroPage({ distros, onReload }: {
   distros: WslDistro[]
-  onReload: () => void
+  onReload: () => Promise<void> | void
 }) {
   const selected    = useAppStore(s => s.wslSelectedDistro) ?? ''
   const tab         = useAppStore(s => s.wslDistroTab)
@@ -117,7 +118,8 @@ export default function WslDistroPage({ distros, onReload }: {
   })
 
   const runOptimize = () => op.run(async () => {
-    setConfirmOpt(false); setBusyOp('optimize')
+    if (useAppStore.getState().wslBusyDistro) return
+    setConfirmOpt(false); setBusyOp('optimize'); setBusyDistro(d.name)
     setStatus({ kind: 'progress', text: 'Approve the UAC prompt to compact the disk…' })
     try {
       const r = await api.wslOptimizeVhd(d.vhd_path)
@@ -126,11 +128,14 @@ export default function WslDistroPage({ distros, onReload }: {
         text: `Reclaimed ${bytesToHuman(r.reclaimed_bytes)} (${bytesToHuman(r.before_bytes)} → ${bytesToHuman(r.after_bytes)} · ${r.method})`,
       })
       addActivity({ module: 'wsl', action: `Optimized ${d.name}`, outcome: 'success', detail: `reclaimed ${bytesToHuman(r.reclaimed_bytes)}` })
-      onReload()
     } catch (e) {
-      setStatus({ kind: 'err', text: String(e) })
-      addActivity({ module: 'wsl', action: `Optimized ${d.name}`, outcome: 'failure', detail: String(e) })
-    } finally { setBusyOp(null) }
+      const error = toAppError(e)
+      setStatus({ kind: 'err', text: error.message, error })
+      addActivity({ module: 'wsl', action: `Optimized ${d.name}`, outcome: 'failure', detail: `${error.message}\n${error.hint ?? ''}\n${error.detail ?? ''}` })
+    } finally {
+      try { await onReload() }
+      finally { setBusyOp(null); setBusyDistro(null) }
+    }
   })
 
   const runClone = () => op.run(async () => {
@@ -239,7 +244,7 @@ export default function WslDistroPage({ distros, onReload }: {
 
       {/* An operation here can run for minutes with no other visible sign, so the
           line that reports it is a live region. */}
-      {status && (
+      {status?.error ? <ErrorBanner title="Disk optimization did not finish" error={status.error} /> : status && (
         <p
           className={status.kind === 'err' ? 'wsl-opt-error' : status.kind === 'progress' ? 'wsl-opt-progress' : 'wsl-opt-result'}
           style={{ margin: '0 0 14px' }}

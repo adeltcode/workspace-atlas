@@ -17,7 +17,10 @@ impl MigrationState {
     ) -> Result<T, AtlasError> {
         tauri::async_runtime::spawn_blocking(move || {
             let _guard = self.0.try_read().map_err(|_| {
-                AtlasError::new(ErrorKind::Busy, "Wait for the WSL migration to finish.")
+                AtlasError::new(
+                    ErrorKind::Busy,
+                    "Wait for the WSL disk operation to finish.",
+                )
             })?;
             operation()
         })
