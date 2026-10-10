@@ -8099,6 +8099,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .index-search-input::placeholder { color: var(--color-text-tertiary); }
 .index-results { overflow-y: auto; padding: var(--space-1) 0 var(--space-2); }
 .index-section { padding: var(--space-3) var(--space-4) var(--space-1); font-size: var(--text-2xs); font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--color-text-tertiary); }
+.index-load-status { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-4); font-size: var(--text-xs); color: var(--color-text-secondary); }
 .index-row { display: flex; align-items: center; gap: var(--space-3); width: 100%; padding: var(--space-2) var(--space-4); font-size: var(--text-xs); color: var(--color-text-secondary); text-align: left; }
 .index-row--active { background: var(--color-accent-subtle); color: var(--color-text-primary); }
 .index-row-icon { flex-shrink: 0; color: var(--color-text-tertiary); display: grid; place-items: center; }

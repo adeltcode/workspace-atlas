@@ -7,7 +7,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Box, HardDrive, Package, LayoutDashboard, Settings, Layers, Database, Network, Trash2, ScrollText, CornerDownLeft } from 'lucide-react'
 import clsx from 'clsx'
-import { useAppStore, type View, type DockerTab, type WslView } from '../store/appStore'
+import { useAppStore, type View, type DockerTab, type WslView, type DockerCache, type WslDistroNav } from '../store/appStore'
+import * as dockerApi from '../features/docker/api'
+import { wslListDistros } from '../features/wsl/api'
+import type { ComposeProject } from '../features/docker/types'
 import ModalShell from './ModalShell'
 import { Kbd } from './ui'
 
@@ -19,6 +22,11 @@ interface Item {
   section: string
   icon: React.ElementType
   run: () => void
+}
+
+type SearchData = Pick<DockerCache, 'images' | 'containers' | 'volumes'> & {
+  projects: ComposeProject[]
+  distros: WslDistroNav[]
 }
 
 /* Subsequence match, ranked so that a prefix beats a word start, which beats a
@@ -52,8 +60,40 @@ export default function CommandIndex() {
 
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState(0)
+  const [live, setLive] = useState<SearchData | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState(false)
+  const [loadAttempt, setLoadAttempt] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef  = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    let active = true
+    setLive(null)
+    setLoading(true)
+    setLoadError(false)
+    const load = async () => {
+      const results = await Promise.allSettled([
+        dockerApi.dockerImages(), dockerApi.dockerContainers(), dockerApi.dockerVolumes(),
+        dockerApi.dockerComposeLs(), wslListDistros(true),
+      ])
+      if (!active) return
+      const [images, containers, volumes, projects, distros] = results
+      const cached = useAppStore.getState()
+      setLive({
+        images: images.status === 'fulfilled' ? images.value : cached.dockerCache?.images ?? [],
+        containers: containers.status === 'fulfilled' ? containers.value : cached.dockerCache?.containers ?? [],
+        volumes: volumes.status === 'fulfilled' ? volumes.value : cached.dockerCache?.volumes ?? [],
+        projects: projects.status === 'fulfilled' ? projects.value : [],
+        distros: distros.status === 'fulfilled' ? distros.value : cached.wslDistrosNav,
+      })
+      setLoadError(results.some(r => r.status === 'rejected'))
+      setLoading(false)
+    }
+    load()
+    return () => { active = false }
+  }, [open, loadAttempt])
 
   const items = useMemo<Item[]>(() => {
     const out: Item[] = []
@@ -80,7 +120,7 @@ export default function CommandIndex() {
     )
 
     // Live objects on this machine
-    for (const d of distros) {
+    for (const d of live?.distros ?? distros) {
       out.push({
         id: `distro:${d.name}`, label: d.name,
         where: d.running ? 'WSL · running' : 'WSL · stopped',
@@ -91,7 +131,7 @@ export default function CommandIndex() {
         }),
       })
     }
-    for (const p of projects) {
+    for (const p of live?.projects ?? projects) {
       out.push({
         id: `compose:${p.name}`, label: p.name, where: 'Compose project',
         section: 'Compose', icon: Layers,
@@ -101,18 +141,18 @@ export default function CommandIndex() {
         }),
       })
     }
-    for (const img of cache?.images ?? []) {
+    for (const img of live?.images ?? cache?.images ?? []) {
       const name = img.repository === '<none>' ? img.id.slice(0, 12) : `${img.repository}:${img.tag}`
       out.push({ id: `img:${img.id}`, label: name, where: `Image · ${img.size}`, section: 'Images', icon: Layers, run: goDocker('images') })
     }
-    for (const c of cache?.containers ?? []) {
+    for (const c of live?.containers ?? cache?.containers ?? []) {
       out.push({ id: `ctr:${c.id}`, label: c.name, where: `Container · ${c.state}`, section: 'Containers', icon: Box, run: goDocker('containers') })
     }
-    for (const v of cache?.volumes ?? []) {
+    for (const v of live?.volumes ?? cache?.volumes ?? []) {
       out.push({ id: `vol:${v.name}`, label: v.name, where: 'Volume', section: 'Volumes', icon: Database, run: goDocker('volumes') })
     }
     return out
-  }, [cache, distros, projects])
+  }, [cache, distros, projects, live])
 
   const results = useMemo(() => {
     const scored = items
@@ -122,7 +162,7 @@ export default function CommandIndex() {
     return scored.slice(0, 60).map(r => r.it)
   }, [items, query])
 
-  useEffect(() => { setCursor(0) }, [query])
+  useEffect(() => { setCursor(0) }, [query, results.length])
   useEffect(() => { if (open) { setQuery(''); setCursor(0); inputRef.current?.focus() } }, [open])
 
   // Keep the highlighted row in view while arrowing through a long list.
@@ -136,7 +176,8 @@ export default function CommandIndex() {
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape')      { e.preventDefault(); setOpen(false) }
-    else if (e.key === 'ArrowDown') { e.preventDefault(); setCursor(c => Math.min(c + 1, results.length - 1)) }
+    else if (e.target !== inputRef.current) return
+    else if (e.key === 'ArrowDown') { e.preventDefault(); setCursor(c => Math.min(c + 1, Math.max(0, results.length - 1))) }
     else if (e.key === 'ArrowUp')   { e.preventDefault(); setCursor(c => Math.max(c - 1, 0)) }
     else if (e.key === 'Enter')     { e.preventDefault(); if (results[cursor]) choose(results[cursor]) }
   }
@@ -168,10 +209,17 @@ export default function CommandIndex() {
           <Kbd>Esc</Kbd>
         </div>
 
+        {(loading || loadError) && (
+          <div className="index-load-status" role="status">
+            <span>{loading ? 'Loading images, containers, volumes, projects, and distros…' : 'Some results could not be loaded. Showing available results.'}</span>
+            {!loading && <button className="btn-secondary" onClick={() => setLoadAttempt(n => n + 1)}>Retry</button>}
+          </div>
+        )}
+
         <div className="index-results" ref={listRef}>
           {results.length === 0 ? (
             <p className="index-section" style={{ textTransform: 'none', letterSpacing: 0 }}>
-              Nothing on this machine matches “{query}”.
+              {loading ? 'Searching…' : loadError ? `No available results match “${query}”.` : `Nothing on this machine matches “${query}”.`}
             </p>
           ) : rows.map((r, k) =>
             r.kind === 'head'
