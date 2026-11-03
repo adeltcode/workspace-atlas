@@ -101,6 +101,9 @@ interface AppState {
   terminalHeight: number
   setSidebarWidth: (w: number) => void
   setTerminalHeight: (h: number) => void
+  /** Packages table: column widths in px by column key, and hidden column keys. */
+  pkgColumns: { widths: Record<string, number>; hidden: string[] }
+  setPkgColumns: (c: { widths: Record<string, number>; hidden: string[] }) => void
 
   // ── Backup directory (persisted)
   backupDir: string
@@ -244,6 +247,8 @@ export const useAppStore = create<AppState>()(
       terminalHeight: 180,
       setSidebarWidth:   (sidebarWidth)   => set({ sidebarWidth }),
       setTerminalHeight: (terminalHeight) => set({ terminalHeight }),
+      pkgColumns: { widths: {}, hidden: ['publisher', 'location'] },
+      setPkgColumns: (pkgColumns) => set({ pkgColumns }),
 
       // ── Backup directory
       backupDir: '',
@@ -396,6 +401,7 @@ export const useAppStore = create<AppState>()(
         sidebarWidth:    s.sidebarWidth,
         terminalHeight:  s.terminalHeight,
         terminalOpen:    s.terminalOpen,
+        pkgColumns:      s.pkgColumns,
         backupDir:       s.backupDir,
         dockerKeepList:  s.dockerKeepList,
         dockerLogs:      s.dockerLogs,

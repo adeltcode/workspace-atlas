@@ -7,10 +7,13 @@
 //! package id, and for winget a version, are the only outside strings that
 //! reach a command line, and both are validated first.
 
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
+use std::time::UNIX_EPOCH;
 
 use tauri::Emitter;
 
@@ -58,7 +61,8 @@ const SOURCES: &[SourceSpec] = &[
     SourceSpec {
         id: "npm",
         label: "npm (global)",
-        argv: &["npm", "ls", "-g", "--depth=0", "--json"],
+        // --long adds each package's folder and author.
+        argv: &["npm", "ls", "-g", "--depth=0", "--json", "--long"],
     },
     SourceSpec {
         id: "pnpm",
@@ -68,7 +72,8 @@ const SOURCES: &[SourceSpec] = &[
     SourceSpec {
         id: "pip",
         label: "pip",
-        argv: &["pip", "list", "--format=json"],
+        // -v adds each package's install location.
+        argv: &["pip", "list", "--format=json", "-v"],
     },
     SourceSpec {
         id: "pipx",
@@ -120,7 +125,7 @@ const SOURCES: &[SourceSpec] = &[
         label: "PowerShell",
         argv: &[
             "powershell", "-NoProfile", "-NonInteractive", "-Command",
-            "Get-InstalledModule | Select-Object Name,Version | ConvertTo-Csv -NoTypeInformation",
+            "Get-InstalledModule | Select-Object Name,Version,Author,InstalledLocation | ConvertTo-Csv -NoTypeInformation",
         ],
     },
     SourceSpec {
@@ -154,7 +159,8 @@ const SOURCES: &[SourceSpec] = &[
              HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*, \
              HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* -ErrorAction SilentlyContinue \
              | Where-Object DisplayName | Where-Object SystemComponent -ne 1 \
-             | Select-Object DisplayName,DisplayVersion,PSChildName | ConvertTo-Csv -NoTypeInformation",
+             | Select-Object DisplayName,DisplayVersion,PSChildName,Publisher,InstallLocation,InstallDate \
+             | ConvertTo-Csv -NoTypeInformation",
         ],
     },
     SourceSpec {
@@ -202,6 +208,13 @@ pub struct Package {
     pub upgrade_command: Option<String>,
     /// Whether `pkg_uninstall` accepts this package.
     pub uninstallable: bool,
+    /// When it was installed or last updated, as Unix seconds. None when
+    /// neither the source nor its files on disk say.
+    pub updated: Option<u64>,
+    /// Empty when the source does not name one.
+    pub publisher: String,
+    /// Install folder or file. Empty when unknown.
+    pub location: String,
 }
 
 impl Package {
@@ -214,6 +227,9 @@ impl Package {
             source: source.to_string(),
             upgrade_command: None,
             uninstallable: false,
+            updated: None,
+            publisher: String::new(),
+            location: String::new(),
         }
     }
 }
@@ -289,6 +305,7 @@ fn scan_one(spec: &SourceSpec) -> SourceResult {
                 return result;
             }
             result.packages = parse_packages(spec.id, &stdout);
+            add_file_details(spec.id, &mut result.packages);
             for p in &mut result.packages {
                 p.uninstallable = uninstall_argv(&p.source, &p.id, None).is_some();
             }
@@ -334,7 +351,7 @@ pub async fn pkg_scan(
             emit_line(&app, format!("$ {}", command_line(spec.argv)), false);
         }
 
-        let results: Vec<SourceResult> = thread::scope(|scope| {
+        let mut results: Vec<SourceResult> = thread::scope(|scope| {
             let handles: Vec<_> = specs
                 .iter()
                 .map(|spec| scope.spawn(move || scan_one(spec)))
@@ -354,6 +371,11 @@ pub async fn pkg_scan(
                 })
                 .collect()
         });
+
+        let apps = results.iter().find(|r| r.id == "registry").map(|r| r.packages.clone());
+        if let (Some(apps), Some(winget)) = (apps, results.iter_mut().find(|r| r.id == "winget")) {
+            borrow_from_installed_apps(&mut winget.packages, &apps);
+        }
 
         for r in &results {
             if !r.installed {
@@ -919,7 +941,7 @@ fn parse_packages(source: &str, stdout: &str) -> Vec<Package> {
         "pipx" => parse_pipx(stdout),
         "uv" => parse_uv(stdout),
         "conda" => parse_conda(stdout),
-        "cargo" => parse_cargo(stdout),
+        "cargo" => parse_cargo(stdout, &cargo_bin()),
         "rustup" => parse_rustup(stdout),
         "gem" => parse_gem(stdout),
         "dotnet" => parse_dotnet(stdout),
@@ -1067,16 +1089,24 @@ fn parse_scoop(out: &str) -> Vec<Package> {
 
 /// Parse `cargo install --list`: a `name v1.2.3:` line per crate, or
 /// `name v1.2.3 (source):` for git and path installs, each followed by its
-/// binaries on indented lines.
-fn parse_cargo(out: &str) -> Vec<Package> {
-    out.lines()
-        .filter(|line| !line.starts_with(char::is_whitespace))
-        .filter_map(|line| {
-            let (name, rest) = line.trim_end().strip_suffix(':')?.split_once(' ')?;
-            let version = rest.split(' ').next()?.trim_start_matches('v');
-            Some(Package::new("cargo", name, name, version))
-        })
-        .collect()
+/// binaries on indented lines. A crate's location is its first binary in `bin`.
+fn parse_cargo(out: &str, bin: &Path) -> Vec<Package> {
+    let mut pkgs: Vec<Package> = Vec::new();
+    for line in out.lines() {
+        if line.starts_with(char::is_whitespace) {
+            if let Some(p) = pkgs.last_mut().filter(|p| p.location.is_empty()) {
+                p.location = bin.join(line.trim()).display().to_string();
+            }
+            continue;
+        }
+        let Some((name, rest)) = line.trim_end().strip_suffix(':').and_then(|l| l.split_once(' ')) else {
+            continue;
+        };
+        if let Some(version) = rest.split(' ').next() {
+            pkgs.push(Package::new("cargo", name, name, version.trim_start_matches('v')));
+        }
+    }
+    pkgs
 }
 
 /// Parse `rustup toolchain list`: one toolchain per line, the default one
@@ -1179,22 +1209,32 @@ fn parse_csv(out: &str) -> Vec<Vec<String>> {
         .collect()
 }
 
-/// Parse the Name,Version CSV of `Get-InstalledModule`.
+/// Parse the Name,Version,Author,InstalledLocation CSV of `Get-InstalledModule`.
 fn parse_psmodules(out: &str) -> Vec<Package> {
     parse_csv(out)
         .iter()
         .filter(|cols| !field(cols, 0).is_empty())
-        .map(|cols| Package::new("powershell", &cols[0], &cols[0], field(cols, 1)))
+        .map(|cols| Package {
+            publisher: field(cols, 2).to_string(),
+            location: field(cols, 3).to_string(),
+            ..Package::new("powershell", &cols[0], &cols[0], field(cols, 1))
+        })
         .collect()
 }
 
-/// Parse the DisplayName,DisplayVersion,PSChildName CSV of the uninstall keys.
-/// The key name is the id: a product GUID or a plain name like `7-Zip`.
+/// Parse the DisplayName,DisplayVersion,PSChildName,Publisher,InstallLocation,
+/// InstallDate CSV of the uninstall keys. The key name is the id: a product
+/// GUID or a plain name like `7-Zip`.
 fn parse_registry(out: &str) -> Vec<Package> {
     parse_csv(out)
         .iter()
         .filter(|cols| !field(cols, 0).is_empty())
-        .map(|cols| Package::new("registry", &cols[0], field(cols, 2), field(cols, 1)))
+        .map(|cols| Package {
+            publisher: field(cols, 3).trim().to_string(),
+            location: field(cols, 4).trim().trim_matches('"').to_string(),
+            updated: install_date(field(cols, 5)),
+            ..Package::new("registry", &cols[0], field(cols, 2), field(cols, 1))
+        })
         .collect()
 }
 
@@ -1209,7 +1249,8 @@ fn parse_store(out: &str) -> Vec<Package> {
         .collect()
 }
 
-/// Parse `npm ls -g --depth=0 --json`: `{"dependencies": {name: {version}}}`.
+/// Parse `npm ls -g --depth=0 --json --long`:
+/// `{"dependencies": {name: {version, path, author}}}`.
 fn parse_npm(out: &str) -> Vec<Package> {
     let Ok(root) = serde_json::from_str::<serde_json::Value>(out) else {
         return Vec::new();
@@ -1219,8 +1260,18 @@ fn parse_npm(out: &str) -> Vec<Package> {
     };
     deps.iter()
         .map(|(name, info)| {
-            let version = info.get("version").and_then(|v| v.as_str()).unwrap_or_default();
-            Package::new("npm", name, name, version)
+            let text = |key: &str| info.get(key).and_then(|v| v.as_str()).unwrap_or_default();
+            // `author` is "Name <email> (url)" or {"name": …}; only the name is kept.
+            let author = info
+                .get("author")
+                .and_then(|a| a.as_str().or_else(|| a.get("name")?.as_str()))
+                .and_then(|a| a.split(['<', '(']).next())
+                .unwrap_or_default();
+            Package {
+                publisher: author.trim().to_string(),
+                location: text("path").to_string(),
+                ..Package::new("npm", name, name, text("version"))
+            }
         })
         .collect()
 }
@@ -1280,18 +1331,225 @@ fn parse_conda(out: &str) -> Vec<Package> {
         .collect()
 }
 
-/// Parse `pip list --format=json`: `[{"name": …, "version": …}]`.
+/// Parse `pip list --format=json -v`: `[{"name": …, "version": …, "location": …}]`.
 fn parse_pip(out: &str) -> Vec<Package> {
     let Ok(list) = serde_json::from_str::<Vec<serde_json::Value>>(out) else {
         return Vec::new();
     };
     list.iter()
         .filter_map(|p| {
+            let text = |key: &str| p.get(key).and_then(|v| v.as_str()).unwrap_or_default();
             let name = p.get("name")?.as_str()?;
-            let version = p.get("version").and_then(|v| v.as_str()).unwrap_or_default();
-            Some(Package::new("pip", name, name, version))
+            Some(Package { location: text("location").to_string(), ..Package::new("pip", name, name, text("version")) })
         })
         .collect()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dates, publishers and install folders
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Anything before 2000 is a placeholder, such as the fixed 1985 date npm
+/// writes into package tarballs.
+fn plausible(secs: u64) -> Option<u64> {
+    (secs >= 946_684_800).then_some(secs)
+}
+
+/// Last-modified time as Unix seconds. Reads a link itself rather than its
+/// target, because Scoop re-points its `current` junction on every update.
+fn modified(path: &Path) -> Option<u64> {
+    let time = std::fs::symlink_metadata(path).ok()?.modified().ok()?;
+    plausible(time.duration_since(UNIX_EPOCH).ok()?.as_secs())
+}
+
+/// An uninstall key's `InstallDate` as Unix seconds. Installers write
+/// `YYYYMMDD`, and some write the US `M/D/YYYY`. Noon UTC keeps the calendar
+/// day the same in every time zone.
+fn install_date(s: &str) -> Option<u64> {
+    let s = s.trim();
+    let (y, m, d): (i64, i64, i64) = if s.len() == 8 && s.bytes().all(|b| b.is_ascii_digit()) {
+        (s[..4].parse().ok()?, s[4..6].parse().ok()?, s[6..].parse().ok()?)
+    } else {
+        let mut parts = s.split('/').map(|p| p.parse::<i64>().ok());
+        let (m, d, y) = (parts.next()??, parts.next()??, parts.next()??);
+        if parts.next().is_some() {
+            return None;
+        }
+        (y, m, d)
+    };
+    if !(1..=12).contains(&m) || !(1..=31).contains(&d) {
+        return None;
+    }
+    plausible(u64::try_from(days_from_civil(y, m, d)).ok()? * 86_400 + 43_200)
+}
+
+/// Days since 1970-01-01 for a Gregorian date (Howard Hinnant's algorithm).
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * ((m + 9) % 12) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+fn env_dir(var: &str) -> Option<PathBuf> {
+    std::env::var_os(var).filter(|v| !v.is_empty()).map(PathBuf::from)
+}
+
+fn home() -> Option<PathBuf> {
+    env_dir("USERPROFILE")
+}
+
+fn cargo_bin() -> PathBuf {
+    env_dir("CARGO_HOME")
+        .or_else(|| home().map(|h| h.join(".cargo")))
+        .unwrap_or_default()
+        .join("bin")
+}
+
+fn set_location(p: &mut Package, path: PathBuf) {
+    if path.exists() {
+        p.location = path.display().to_string();
+    }
+}
+
+/// Fill in what a list command does not print, from the folders each manager
+/// leaves on disk. Only file metadata is read, plus VS Code's extensions.json.
+fn add_file_details(source: &str, pkgs: &mut [Package]) {
+    match source {
+        "pip" => return pip_details(pkgs),
+        "vscode" | "code-insiders" | "cursor" | "codium" => vscode_details(source, pkgs),
+        // An environment's id is its folder.
+        "conda" => pkgs.iter_mut().for_each(|p| p.location = p.id.clone()),
+        "choco" => {
+            let lib = env_dir("ChocolateyInstall")
+                .unwrap_or_else(|| PathBuf::from(r"C:\ProgramData\chocolatey"))
+                .join("lib");
+            for p in pkgs.iter_mut() {
+                let dir = lib.join(&p.id);
+                set_location(p, dir);
+            }
+        }
+        "scoop" => {
+            let roots = [
+                env_dir("SCOOP").or_else(|| home().map(|h| h.join("scoop"))),
+                env_dir("SCOOP_GLOBAL").or_else(|| env_dir("ProgramData").map(|d| d.join("scoop"))),
+            ];
+            for p in pkgs.iter_mut() {
+                let current = roots.iter().flatten().map(|r| r.join("apps").join(&p.id).join("current"));
+                if let Some(dir) = current.into_iter().find(|c| c.exists()) {
+                    p.location = dir.display().to_string();
+                }
+            }
+        }
+        "dotnet" => {
+            if let Some(store) = home().map(|h| h.join(".dotnet").join("tools").join(".store")) {
+                for p in pkgs.iter_mut() {
+                    let dir = store.join(p.id.to_lowercase()).join(&p.version);
+                    set_location(p, dir);
+                }
+            }
+        }
+        _ => {}
+    }
+    // Whatever has a folder and no date of its own takes the folder's.
+    for p in pkgs.iter_mut().filter(|p| p.updated.is_none() && !p.location.is_empty()) {
+        p.updated = modified(Path::new(&p.location));
+    }
+}
+
+/// pip's location is the shared site-packages folder, so a package's own date
+/// is its `.dist-info` folder there. An egg install points at the egg itself.
+fn pip_details(pkgs: &mut [Package]) {
+    let mut sites: HashMap<String, HashMap<String, PathBuf>> = HashMap::new();
+    for p in pkgs.iter_mut().filter(|p| !p.location.is_empty()) {
+        if p.location.to_ascii_lowercase().ends_with(".egg") {
+            p.updated = modified(Path::new(&p.location));
+            continue;
+        }
+        let infos = sites.entry(p.location.clone()).or_insert_with(|| dist_infos(Path::new(&p.location)));
+        p.updated = infos.get(&pip_key(&p.name)).and_then(|dir| modified(dir));
+    }
+}
+
+/// pip normalizes `-` and `.` in folder names to `_`, and case varies.
+fn pip_key(name: &str) -> String {
+    name.to_ascii_lowercase().replace(['-', '.'], "_")
+}
+
+/// `name-version.dist-info` (and older `.egg-info`) folders by normalized name.
+fn dist_infos(site: &Path) -> HashMap<String, PathBuf> {
+    std::fs::read_dir(site)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| {
+            let file = e.file_name().into_string().ok()?;
+            let stem = file.strip_suffix(".dist-info").or_else(|| file.strip_suffix(".egg-info"))?;
+            Some((pip_key(stem.split_once('-')?.0), e.path()))
+        })
+        .collect()
+}
+
+/// VS Code and its forks record each extension's install time, publisher name
+/// and folder in extensions.json beside the extension folders.
+fn vscode_details(source: &str, pkgs: &mut [Package]) {
+    let profile = match source {
+        "code-insiders" => ".vscode-insiders",
+        "cursor" => ".cursor",
+        "codium" => ".vscode-oss",
+        _ => ".vscode",
+    };
+    let custom = if source == "vscode" { env_dir("VSCODE_EXTENSIONS") } else { None };
+    let Some(dir) = custom.or_else(|| home().map(|h| h.join(profile).join("extensions"))) else {
+        return;
+    };
+    let entries: Vec<serde_json::Value> = std::fs::read_to_string(dir.join("extensions.json"))
+        .ok()
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .unwrap_or_default();
+    for p in pkgs.iter_mut() {
+        let entry = entries.iter().find(|e| {
+            e.pointer("/identifier/id").and_then(|v| v.as_str()).is_some_and(|id| id.eq_ignore_ascii_case(&p.id))
+                && e.get("version").and_then(|v| v.as_str()) == Some(p.version.as_str())
+        });
+        let meta = |key: &str| entry.and_then(|e| e.get("metadata")?.get(key));
+        p.publisher = meta("publisherDisplayName")
+            .and_then(|v| v.as_str())
+            .or_else(|| p.id.split('.').next())
+            .unwrap_or_default()
+            .to_string();
+        p.updated = meta("installedTimestamp").and_then(|v| v.as_u64()).and_then(|ms| plausible(ms / 1000));
+        let folder = entry
+            .and_then(|e| e.get("relativeLocation")?.as_str())
+            .map_or_else(|| format!("{}-{}", p.id, p.version), str::to_string);
+        set_location(p, dir.join(folder));
+    }
+}
+
+/// winget reads the same uninstall keys as Installed apps but prints no date,
+/// publisher or folder, so a winget row takes them from its matching key: by
+/// key name for `ARP\…` ids, otherwise by name and version.
+fn borrow_from_installed_apps(winget: &mut [Package], apps: &[Package]) {
+    for w in winget.iter_mut() {
+        let key = w.id.strip_prefix("ARP\\").and_then(|rest| rest.rsplit('\\').next());
+        let Some(app) = apps.iter().find(|a| match key {
+            Some(key) => a.id.eq_ignore_ascii_case(key),
+            None => a.name.eq_ignore_ascii_case(&w.name) && a.version == w.version,
+        }) else {
+            continue;
+        };
+        if w.updated.is_none() {
+            w.updated = app.updated;
+        }
+        if w.publisher.is_empty() {
+            w.publisher = app.publisher.clone();
+        }
+        if w.location.is_empty() {
+            w.location = app.location.clone();
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1562,7 +1820,7 @@ dotnet-ef       8.0.0        dotnet-ef
     }
 
     #[test]
-    fn cargo_reads_crate_lines_and_skips_binaries() {
+    fn cargo_reads_crate_lines_and_locates_the_first_binary() {
         let pkgs = parse_cargo("\
 ripgrep v14.1.0:
     rg.exe
@@ -1570,11 +1828,13 @@ tauri-cli v2.11.2:
     cargo-tauri.exe
 mytool v0.1.0 (C:\\src\\my tool):
     mytool.exe
-");
+    mytool-helper.exe
+", Path::new(r"C:\cargo\bin"));
         assert_eq!(pkgs.len(), 3);
-        assert_eq!(pkgs[0], Package::new("cargo", "ripgrep", "ripgrep", "14.1.0"));
+        assert_eq!(pkgs[0], Package { location: r"C:\cargo\bin\rg.exe".into(), ..Package::new("cargo", "ripgrep", "ripgrep", "14.1.0") });
         assert_eq!(pkgs[2].name, "mytool");
         assert_eq!(pkgs[2].version, "0.1.0");
+        assert_eq!(pkgs[2].location, r"C:\cargo\bin\mytool.exe");
     }
 
     #[test]
@@ -1724,5 +1984,92 @@ Microsoft.WindowsDesktop.App 10.0.14 [C:\\Program Files\\dotnet\\shared\\Microso
         assert_eq!(pkgs, vec![Package::new("powershell", "PSReadLine", "PSReadLine", "2.3.6")]);
         // Get-InstalledModule with nothing installed prints nothing at all.
         assert!(parse_psmodules("").is_empty());
+    }
+
+    #[test]
+    fn psmodules_read_author_and_folder() {
+        let pkgs = parse_psmodules("\
+\"Name\",\"Version\",\"Author\",\"InstalledLocation\"
+\"Pester\",\"5.6.1\",\"Pester Team\",\"C:\\Program Files\\WindowsPowerShell\\Modules\\Pester\\5.6.1\"
+");
+        assert_eq!(pkgs[0].publisher, "Pester Team");
+        assert_eq!(pkgs[0].location, r"C:\Program Files\WindowsPowerShell\Modules\Pester\5.6.1");
+    }
+
+    #[test]
+    fn registry_reads_publisher_folder_and_install_date() {
+        let pkgs = parse_registry("\
+\"DisplayName\",\"DisplayVersion\",\"PSChildName\",\"Publisher\",\"InstallLocation\",\"InstallDate\"
+\"ShareX\",\"21.0.0\",\"ShareX_is1\",\"ShareX Team\",\"C:\\Program Files\\ShareX\\\",\"20240105\"
+\"Odd App\",\"1.0\",\"OddApp\",,\"\"\"C:\\Odd App\"\"\",\"Thu Dec 15 22:47:03 2022\"
+");
+        assert_eq!(pkgs[0].publisher, "ShareX Team");
+        assert_eq!(pkgs[0].location, r"C:\Program Files\ShareX\");
+        assert_eq!(pkgs[0].updated, Some(1_704_456_000));
+        // Quoted paths lose their quotes; an unreadable date is no date.
+        assert_eq!(pkgs[1].location, r"C:\Odd App");
+        assert_eq!(pkgs[1].updated, None);
+        assert_eq!(pkgs[1].publisher, "");
+    }
+
+    #[test]
+    fn install_dates_read_both_formats_at_noon_utc() {
+        assert_eq!(install_date("20240105"), Some(1_704_456_000));
+        assert_eq!(install_date("1/14/2023"), Some(1_673_697_600));
+        assert_eq!(days_from_civil(1970, 1, 1), 0);
+        for bad in ["", "2024", "20241301", "14/1/2023", "1/2/3/4", "19850101", "Thu Dec 15 22:47:03 2022"] {
+            assert_eq!(install_date(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn npm_reads_folder_and_author_name_only() {
+        let pkgs = parse_npm(r#"{"dependencies":{
+            "npm":{"version":"11.7.0","path":"C:\\usr\\local\\node_modules\\npm","author":"GitHub Inc."},
+            "np":{"version":"10.0.0","path":"C:\\n\\np","author":"Jane Doe <jane@example.com> (https://example.com)"},
+            "x":{"version":"1.0.0","author":{"name":"Someone","email":"someone@example.com"}}}}"#);
+        let by = |name: &str| pkgs.iter().find(|p| p.name == name).unwrap();
+        assert_eq!(by("npm").location, r"C:\usr\local\node_modules\npm");
+        assert_eq!(by("npm").publisher, "GitHub Inc.");
+        assert_eq!(by("np").publisher, "Jane Doe");
+        assert_eq!(by("x").publisher, "Someone");
+        assert_eq!(by("x").location, "");
+    }
+
+    #[test]
+    fn pip_keys_match_normalized_dist_info_names() {
+        let pkgs = parse_pip(r#"[{"name": "Jinja2", "version": "3.1.6", "location": "C:\\Python311\\Lib\\site-packages"}]"#);
+        assert_eq!(pkgs[0].location, r"C:\Python311\Lib\site-packages");
+        assert_eq!(pip_key("Jinja2"), pip_key("jinja2"));
+        assert_eq!(pip_key("zope.interface"), pip_key("zope_interface"));
+        assert_eq!(pip_key("typing-extensions"), "typing_extensions");
+    }
+
+    #[test]
+    fn winget_rows_borrow_from_their_installed_app() {
+        let mut winget = vec![
+            Package::new("winget", "Adobe Photoshop 2022", r"ARP\Machine\X86\PHSP_23_1_1", "23.1.1.202"),
+            Package::new("winget", "Discord", "Discord.Discord", "1.0.9261"),
+            Package::new("winget", "Git", "Git.Git", "2.47.0"),
+        ];
+        let app = |name: &str, id: &str, version: &str| Package {
+            updated: Some(1_704_456_000),
+            publisher: format!("{name} Inc."),
+            location: format!(r"C:\Apps\{name}"),
+            ..Package::new("registry", name, id, version)
+        };
+        let apps = vec![
+            app("Photoshop", "phsp_23_1_1", "23.1"),
+            app("Discord", "Discord", "1.0.9261"),
+            app("Git", "Git_is1", "2.51.0"),
+        ];
+        borrow_from_installed_apps(&mut winget, &apps);
+        // The ARP key matches regardless of name, case or version.
+        assert_eq!(winget[0].publisher, "Photoshop Inc.");
+        assert_eq!(winget[1].updated, Some(1_704_456_000));
+        assert_eq!(winget[1].location, r"C:\Apps\Discord");
+        // A different version is a different install.
+        assert_eq!(winget[2].updated, None);
+        assert_eq!(winget[2].publisher, "");
     }
 }
