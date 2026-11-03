@@ -9,8 +9,25 @@ mod wsl_migration;
 #[cfg(windows)]
 mod wsl_migration_acl;
 
+/// Drop PowerShell 7's module folders from a PSModulePath. Started from
+/// PowerShell 7, Atlas inherits them first, and every Windows PowerShell 5.1
+/// child then fails to load 7's copy of PowerShellGet.
+fn windows_powershell_module_path(path: &str) -> String {
+    path.split(';')
+        .filter(|dir| {
+            let dir = dir.to_ascii_lowercase();
+            !dir.contains("\\powershell\\") && !dir.contains("\\microsoft.powershell")
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Before any thread starts, so every child process inherits it.
+    if let Ok(path) = std::env::var("PSModulePath") {
+        std::env::set_var("PSModulePath", windows_powershell_module_path(&path));
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(shell::ShellState(std::sync::Arc::new(std::sync::Mutex::new(None))))
@@ -115,4 +132,36 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::windows_powershell_module_path;
+
+    #[test]
+    fn module_path_keeps_windows_powershell_and_drops_powershell_7() {
+        let inherited = [
+            r"C:\Users\me\Documents\PowerShell\Modules",
+            r"C:\Program Files\PowerShell\Modules",
+            r"c:\program files\windowsapps\microsoft.powershell_7.6.9.0_x64__8wekyb3d8bbwe\Modules",
+            r"C:\Program Files\PowerShell\7\Modules",
+            r"C:\Users\me\Documents\WindowsPowerShell\Modules",
+            r"C:\Program Files\WindowsPowerShell\Modules",
+            r"C:\WINDOWS\system32\WindowsPowerShell\v1.0\Modules",
+            r"C:\Program Files\Intel\Wired Networking\",
+        ]
+        .join(";");
+        assert_eq!(
+            windows_powershell_module_path(&inherited),
+            [
+                r"C:\Users\me\Documents\WindowsPowerShell\Modules",
+                r"C:\Program Files\WindowsPowerShell\Modules",
+                r"C:\WINDOWS\system32\WindowsPowerShell\v1.0\Modules",
+                r"C:\Program Files\Intel\Wired Networking\",
+            ]
+            .join(";")
+        );
+        let clean = r"C:\Program Files\WindowsPowerShell\Modules;C:\WINDOWS\system32\WindowsPowerShell\v1.0\Modules";
+        assert_eq!(windows_powershell_module_path(clean), clean);
+    }
 }
