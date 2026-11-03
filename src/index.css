@@ -6490,10 +6490,11 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wsl-identity-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 
 /* "Manage" action dropdown in the identity strip. */
-.wsl-menu { position: relative; display: inline-flex; }
+/* `menu-*` is the module-neutral name for the same dropdown. */
+.wsl-menu, .menu { position: relative; display: inline-flex; }
 .wsl-menu-caret { transition: transform var(--transition-fast); }
 .wsl-menu-caret--open { transform: rotate(180deg); }
-.wsl-menu-panel {
+.wsl-menu-panel, .menu-panel {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
@@ -6506,7 +6507,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   z-index: 60;
   animation: wsl-switcher-in 0.12s ease;
 }
-.wsl-menu-item {
+.wsl-menu-item, .menu-item {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -6523,14 +6524,17 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   cursor: pointer;
   transition: background var(--transition-fast);
 }
-.wsl-menu-item:hover { background: var(--color-bg-hover); }
-.wsl-menu-item > svg:first-child { color: var(--color-text-tertiary); flex-shrink: 0; }
+.wsl-menu-item:hover, .menu-item:hover { background: var(--color-bg-hover); }
+.wsl-menu-item > svg:first-child, .menu-item > svg:first-child { color: var(--color-text-tertiary); flex-shrink: 0; }
+.menu-item[aria-checked="true"] > svg:first-child { color: var(--color-accent); }
+/* Holds the check mark's place when an item is unchecked. */
+.menu-check { width: 14px; flex-shrink: 0; }
 .wsl-menu-badge { margin-left: auto; }
 
 /* Delete is the only entry in the menu with no rollback artifact, so it is
    separated from the reversible operations and reads as danger before it is
    clicked, not only once the dialog is open. */
-.wsl-menu-sep { height: 1px; margin: 5px 4px; background: var(--color-border); }
+.wsl-menu-sep, .menu-sep { height: 1px; margin: 5px 4px; background: var(--color-border); }
 .wsl-menu-item--danger,
 .wsl-menu-item--danger > svg:first-child { color: var(--color-danger); }
 .wsl-menu-item--danger:hover { background: var(--color-danger-subtle); }
@@ -7450,25 +7454,43 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
    equivalent there is defined here.
    ============================================================= */
 
-/* Names and ids run long (winget's ARP\Machine\… entries), so both columns
-   truncate and carry the full value in a title attribute. max-width: 0 lets
-   them shrink instead of pushing the Actions column out of view. */
-.pkg-name, .pkg-id {
-  max-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.pkg-name { width: 34%; }
+/* Columns take the widths the user set, so every cell truncates rather than
+   wraps, and long values carry the full text in a title attribute. */
+.pkg-table { table-layout: fixed; min-width: 100%; }
+.pkg-table .img-th,
+.pkg-table .img-td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pkg-id {
-  width: 26%;
   font-family: "Cascadia Code", "Consolas", monospace;
   font-size: var(--text-xs);
   color: var(--color-text-tertiary);
 }
 
+/* Column resize grip on a header cell's right edge. The header cell is sticky,
+   so it positions the grip. */
+.col-resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.col-resize::after {
+  content: '';
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  right: 0;
+  width: 1px;
+  background: var(--color-border);
+}
+.col-resize:hover::after,
+.col-resize:focus-visible::after { width: 2px; background: var(--color-accent); }
+/* Inset, because the header cell clips anything outside it. */
+.img-th .col-resize:focus-visible { outline-offset: -2px; }
+
 .pkg-dash { color: var(--color-text-tertiary); }
-.pkg-available { white-space: nowrap; }
 .pkg-upgrade { margin-left: var(--space-2); }
 .pkg-check-warn strong { color: var(--color-warning); }
 

@@ -3,9 +3,11 @@ import { ChevronUp, ChevronDown, Trash2 } from 'lucide-react'
 import clsx from 'clsx'
 
 /** Clickable, sort-aware table header cell shared by the list tabs. */
-export function SortHeader<K extends string>({ label, col, sortKey, sortDir, onSort }: {
+export function SortHeader<K extends string>({ label, col, sortKey, sortDir, onSort, children }: {
   label: string; col: K; sortKey: K; sortDir: 'asc' | 'desc'
   onSort: (k: K) => void
+  /** Extra header content, such as a column resize handle. */
+  children?: React.ReactNode
 }) {
   const active = col === sortKey
   return (
@@ -28,6 +30,7 @@ export function SortHeader<K extends string>({ label, col, sortKey, sortDir, onS
           ? sortDir === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />
           : <ChevronDown size={12} className="sort-idle" />}
       </div>
+      {children}
     </th>
   )
 }

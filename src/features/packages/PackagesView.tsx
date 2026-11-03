@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { RefreshCw, Download, CircleArrowUp, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { RefreshCw, Download, CircleArrowUp, Trash2, Columns3, Check, RotateCcw } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../../store/appStore'
 import { SortHeader } from '../docker/components/TableBits'
@@ -11,7 +11,29 @@ import {
 import * as api from './api'
 import type { Package, SourceResult, UninstallCheck } from './types'
 
-type SortKey = 'name' | 'version' | 'source'
+type SortKey = 'name' | 'version' | 'updated' | 'publisher' | 'source'
+
+/** Table columns in display order, with default widths in px. Name and Actions
+ *  cannot be hidden. */
+const COLUMNS: { key: string; label: string; width: number; sort?: SortKey; hideable?: boolean }[] = [
+  { key: 'name',      label: 'Name',      width: 220, sort: 'name' },
+  { key: 'id',        label: 'Id',        width: 170, hideable: true },
+  { key: 'version',   label: 'Version',   width: 110, sort: 'version', hideable: true },
+  { key: 'available', label: 'Available', width: 190, hideable: true },
+  { key: 'updated',   label: 'Updated',   width: 100, sort: 'updated', hideable: true },
+  { key: 'publisher', label: 'Publisher', width: 170, sort: 'publisher', hideable: true },
+  { key: 'location',  label: 'Location',  width: 260, hideable: true },
+  { key: 'source',    label: 'Source',    width: 110, sort: 'source', hideable: true },
+  { key: 'actions',   label: 'Actions',   width: 96 },
+]
+const MIN_WIDTH = 60
+const MAX_WIDTH = 900
+
+/** Local calendar date as YYYY-MM-DD. */
+function formatDate(secs: number): string {
+  const d = new Date(secs * 1000)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 /** Quote a CSV field, and defuse the leading characters a spreadsheet treats as
  *  a formula. Package names are untrusted text once they land in Excel. */
@@ -30,7 +52,8 @@ export default function PackagesView() {
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState<string | null>(null)
   const [query, setQuery]     = useState('')
-  const [source, setSource]   = useState('all')
+  // Picked source ids. Empty means all.
+  const [picked, setPicked]   = useState<string[]>([])
   const [outdatedOnly, setOutdatedOnly] = useState(false)
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
@@ -49,6 +72,40 @@ export default function PackagesView() {
   const [done, setDone]         = useState<string | null>(null)
   const [jobError, setJobError] = useState<{ title: string; error: unknown } | null>(null)
   const [broken, setBroken]     = useState<{ name: string; lines: string[] } | null>(null)
+
+  const pkgColumns    = useAppStore(s => s.pkgColumns)
+  const setPkgColumns = useAppStore(s => s.setPkgColumns)
+  // Widths while a drag is in progress, so the saved settings are written once
+  // when it ends rather than on every pointer move.
+  const [dragWidths, setDragWidths] = useState<Record<string, number> | null>(null)
+  const widths  = dragWidths ?? pkgColumns.widths
+  const visible = COLUMNS.filter(c => !pkgColumns.hidden.includes(c.key))
+  const shows   = (key: string) => visible.some(c => c.key === key)
+  const widthOf = (c: (typeof COLUMNS)[number]) => widths[c.key] ?? c.width
+  // Name fills the spare width until it is resized, then a filler column does.
+  const nameFixed  = widths.name !== undefined
+  const tableWidth = visible.reduce((sum, c) => sum + widthOf(c), 0)
+
+  // Both read the store at call time: two clicks can land before a re-render.
+  const resizeColumn = (key: string, width: number | null, done: boolean) => {
+    const saved = useAppStore.getState().pkgColumns
+    const next = { ...saved.widths }
+    if (width === null) delete next[key]
+    else next[key] = Math.round(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, width)))
+    if (done) {
+      setPkgColumns({ ...saved, widths: next })
+      setDragWidths(null)
+    } else {
+      setDragWidths(next)
+    }
+  }
+  const toggleColumn = (key: string) => {
+    const saved = useAppStore.getState().pkgColumns
+    setPkgColumns({
+      ...saved,
+      hidden: saved.hidden.includes(key) ? saved.hidden.filter(k => k !== key) : [...saved.hidden, key],
+    })
+  }
 
   const scan = useCallback(async () => {
     setLoading(true)
@@ -80,6 +137,15 @@ export default function PackagesView() {
   const failed  = useMemo(() => found.filter(r => r.error), [found])
   const all     = useMemo(() => found.flatMap(r => r.packages), [found])
   const outdatedCount = useMemo(() => all.filter(p => p.available).length, [all])
+  const labels  = useMemo(() => Object.fromEntries(found.map(r => [r.id, r.label])), [found])
+  // Sources with nothing listed stay out of the filter. A failed one already
+  // has its banner, so only the quietly empty ones go in the footer.
+  const listed  = useMemo(() => found.filter(r => r.packages.length > 0), [found])
+  const empty   = found.filter(r => r.packages.length === 0 && !r.error)
+  // A pick whose source has since emptied no longer filters anything.
+  const active  = useMemo(() => picked.filter(id => listed.some(r => r.id === id)), [picked, listed])
+  const togglePick = (id: string) =>
+    setPicked(p => (p.includes(id) ? p.filter(x => x !== id) : [...p, id]))
 
   const handleSort = (key: SortKey) => {
     if (key === sortKey) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
@@ -90,17 +156,24 @@ export default function PackagesView() {
     const q = query.trim().toLowerCase()
     const byName = (a: Package, b: Package) =>
       a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+    const value = (p: Package) =>
+      sortKey === 'updated' ? p.updated : sortKey === 'source' ? labels[p.source] ?? p.source : p[sortKey]
     return all
-      .filter(p => source === 'all' || p.source === source)
+      .filter(p => active.length === 0 || active.includes(p.source))
       .filter(p => !outdatedOnly || p.available)
       .filter(p => !q || p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q))
       .sort((a, b) => {
-        const cmp = a[sortKey].localeCompare(b[sortKey], undefined, { sensitivity: 'base' })
+        const va = value(a), vb = value(b)
+        // Unknown dates and publishers sort last in both directions.
+        if (!va !== !vb) return va ? -1 : 1
+        const cmp = typeof va === 'number' && typeof vb === 'number'
+          ? va - vb
+          : String(va ?? '').localeCompare(String(vb ?? ''), undefined, { sensitivity: 'base' })
         // Ties fall back to name so sorting by source or version groups rows
         // instead of leaving them in scan order.
         return (sortDir === 'asc' ? cmp : -cmp) || byName(a, b)
       })
-  }, [all, query, source, outdatedOnly, sortKey, sortDir])
+  }, [all, labels, query, active, outdatedOnly, sortKey, sortDir])
 
   // Exports exactly what the table currently shows, so a filtered view exports
   // filtered rows rather than silently widening back to everything.
@@ -108,8 +181,10 @@ export default function PackagesView() {
     setExporting(true)
     try {
       const csv = [
-        'name,id,version,available,source',
-        ...rows.map(p => [p.name, p.id, p.version, p.available, p.source].map(csvCell).join(',')),
+        'name,id,version,available,updated,publisher,location,source',
+        ...rows.map(p => [
+          p.name, p.id, p.version, p.available, p.updated ? formatDate(p.updated) : '', p.publisher, p.location, p.source,
+        ].map(csvCell).join(',')),
       ].join('\r\n')
       const path = await api.pkgExportCsv(csv)
       if (path) {
@@ -256,6 +331,13 @@ export default function PackagesView() {
         )}
         actions={
           <>
+            {found.length > 0 && (
+              <ColumnsMenu
+                hidden={pkgColumns.hidden}
+                onToggle={toggleColumn}
+                onReset={() => setPkgColumns(useAppStore.getInitialState().pkgColumns)}
+              />
+            )}
             <Button
               onClick={exportCsv}
               disabled={exporting || loading || rows.length === 0}
@@ -308,17 +390,17 @@ export default function PackagesView() {
               placeholder="Search packages"
             />
 
-            <Segmented label="Filter by source">
-              <SegmentedItem active={source === 'all'} count={all.length} onClick={() => setSource('all')}>
+            <Segmented label="Filter by source. Pick one or more.">
+              <SegmentedItem active={active.length === 0} count={all.length} onClick={() => setPicked([])}>
                 All
               </SegmentedItem>
-              {found.map(r => (
+              {listed.map(r => (
                 <SegmentedItem
                   key={r.id}
-                  active={source === r.id}
+                  active={active.includes(r.id)}
                   count={r.packages.length}
-                  onClick={() => setSource(r.id)}
-                  title={r.command}
+                  onClick={() => togglePick(r.id)}
+                  title={`${r.command}\nClick to add or remove this source.`}
                 >
                   {r.label}
                 </SegmentedItem>
@@ -350,19 +432,38 @@ export default function PackagesView() {
             <EmptyState
               title="No packages match this search"
               description="Try a shorter search, a different source, or clear the Updates filter."
-              actions={<Button onClick={() => { setQuery(''); setSource('all'); setOutdatedOnly(false) }}>Clear filters</Button>}
+              actions={<Button onClick={() => { setQuery(''); setPicked([]); setOutdatedOnly(false) }}>Clear filters</Button>}
             />
           ) : (
             <div className="img-table-wrap">
-              <table className="img-table">
+              <table className="img-table pkg-table" style={{ width: tableWidth }}>
+                <colgroup>
+                  {visible.map(c => (
+                    <col key={c.key} style={c.key === 'name' && !nameFixed ? undefined : { width: widthOf(c) }} />
+                  ))}
+                  {nameFixed && <col />}
+                </colgroup>
                 <thead>
                   <tr>
-                    <SortHeader label="Name"    col="name"    sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
-                    <th className="img-th">Id</th>
-                    <SortHeader label="Version" col="version" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
-                    <th className="img-th">Available</th>
-                    <SortHeader label="Source"  col="source"  sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
-                    <th className="img-th ctr-th-actions">Actions</th>
+                    {visible.map(c => {
+                      const handle = (
+                        <ResizeHandle
+                          label={c.label}
+                          width={widthOf(c)}
+                          onResize={(w, done) => resizeColumn(c.key, w, done)}
+                        />
+                      )
+                      return c.sort ? (
+                        <SortHeader key={c.key} label={c.label} col={c.sort} sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>
+                          {handle}
+                        </SortHeader>
+                      ) : (
+                        <th key={c.key} className={clsx('img-th', c.key === 'actions' && 'ctr-th-actions')}>
+                          {c.label}{handle}
+                        </th>
+                      )
+                    })}
+                    {nameFixed && <th className="img-th" aria-hidden="true" />}
                   </tr>
                 </thead>
                 <tbody>
@@ -370,26 +471,43 @@ export default function PackagesView() {
                     // winget lists the same id more than once (two 7-Zip builds
                     // share 7zip.7zip), so the index keeps keys unique.
                     <tr key={`${p.source}-${p.id}-${p.version}-${i}`} className="img-row">
-                      <td className="img-td img-repo pkg-name" title={p.name}>{p.name}</td>
-                      <td className="img-td pkg-id" title={p.id}>{p.id}</td>
-                      <td className="img-td img-size">{p.version}</td>
-                      <td className="img-td pkg-available">
-                        {p.available
-                          ? <Tag tone="warn" className="num">{p.available}</Tag>
-                          : <span className="pkg-dash">-</span>}
-                        {p.upgrade_command && (
-                          <Button
-                            size="sm"
-                            className="pkg-upgrade"
-                            onClick={() => setConfirm(p)}
-                            disabled={job !== null}
-                            aria-label={`Upgrade ${p.name} to ${p.available}`}
-                          >
-                            {isJob('upgrade', p) ? 'Upgrading…' : 'Upgrade'}
-                          </Button>
-                        )}
-                      </td>
-                      <td className="img-td img-age">{p.source}</td>
+                      <td className="img-td img-repo" title={p.name}>{p.name}</td>
+                      {shows('id') && <td className="img-td pkg-id" title={p.id}>{p.id}</td>}
+                      {shows('version') && <td className="img-td img-size" title={p.version}>{p.version}</td>}
+                      {shows('available') && (
+                        <td className="img-td">
+                          {p.available
+                            ? <Tag tone="warn" className="num">{p.available}</Tag>
+                            : <span className="pkg-dash">-</span>}
+                          {p.upgrade_command && (
+                            <Button
+                              size="sm"
+                              className="pkg-upgrade"
+                              onClick={() => setConfirm(p)}
+                              disabled={job !== null}
+                              aria-label={`Upgrade ${p.name} to ${p.available}`}
+                            >
+                              {isJob('upgrade', p) ? 'Upgrading…' : 'Upgrade'}
+                            </Button>
+                          )}
+                        </td>
+                      )}
+                      {shows('updated') && (
+                        <td className="img-td img-age num">
+                          {p.updated ? formatDate(p.updated) : <span className="pkg-dash">-</span>}
+                        </td>
+                      )}
+                      {shows('publisher') && (
+                        <td className="img-td img-age" title={p.publisher}>
+                          {p.publisher || <span className="pkg-dash">-</span>}
+                        </td>
+                      )}
+                      {shows('location') && (
+                        <td className="img-td pkg-id" title={p.location}>
+                          {p.location || <span className="pkg-dash">-</span>}
+                        </td>
+                      )}
+                      {shows('source') && <td className="img-td img-age">{labels[p.source] ?? p.source}</td>}
                       <td className="img-td ctr-td-actions">
                         {p.uninstallable && (
                           <Button
@@ -403,6 +521,7 @@ export default function PackagesView() {
                           </Button>
                         )}
                       </td>
+                      {nameFixed && <td className="img-td" />}
                     </tr>
                   ))}
                 </tbody>
@@ -412,8 +531,10 @@ export default function PackagesView() {
 
           <p className="pkg-note">
             {missing.length > 0 && <>Not found here: {missing.map(r => r.label).join(', ')}. </>}
+            {empty.length > 0 && <>No packages: {empty.map(r => r.label).join(', ')}. </>}
             Only winget reports available upgrades in a plain list, so the Updates count and the Upgrade button cover winget alone.
-            Uninstall covers winget, pip, npm, and VS Code.
+            Uninstall covers winget, pip, npm, and VS Code. Updated dates come from each tool's own record or the install
+            folder, so treat them as approximate.
           </p>
         </div>
       )}
@@ -469,6 +590,101 @@ export default function PackagesView() {
             )}
           </div>
         </Modal>
+      )}
+    </div>
+  )
+}
+
+/** The right edge of a header cell. Drag it, or focus it and press the arrow
+ *  keys, to resize the column. Double-click restores the default width. */
+function ResizeHandle({ label, width, onResize }: {
+  label: string
+  width: number
+  /** `null` resets to the default. `done` is false while a drag is moving. */
+  onResize: (width: number | null, done: boolean) => void
+}) {
+  const cellWidth = (el: HTMLElement) => el.parentElement?.getBoundingClientRect().width ?? width
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    const el = e.currentTarget
+    const x0 = e.clientX
+    const w0 = cellWidth(el)
+    let last = w0
+    const move = (ev: PointerEvent) => { last = w0 + ev.clientX - x0; onResize(last, false) }
+    const end = () => {
+      el.removeEventListener('pointermove', move)
+      el.removeEventListener('lostpointercapture', end)
+      onResize(last, true)
+    }
+    el.setPointerCapture(e.pointerId)
+    el.addEventListener('pointermove', move)
+    el.addEventListener('lostpointercapture', end)
+  }
+
+  return (
+    <div
+      className="col-resize"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={`Resize ${label} column`}
+      aria-valuenow={Math.round(width)}
+      aria-valuemin={MIN_WIDTH}
+      aria-valuemax={MAX_WIDTH}
+      tabIndex={0}
+      onPointerDown={onPointerDown}
+      // The header cell sorts on click, and a resize is not a sort.
+      onClick={e => e.stopPropagation()}
+      onDoubleClick={e => { e.stopPropagation(); onResize(null, true) }}
+      onKeyDown={e => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+        e.preventDefault()
+        onResize(cellWidth(e.currentTarget) + (e.key === 'ArrowRight' ? 16 : -16), true)
+      }}
+    />
+  )
+}
+
+/** Toggles which optional columns the table shows. */
+function ColumnsMenu({ hidden, onToggle, onReset }: {
+  hidden: string[]
+  onToggle: (key: string) => void
+  onReset: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    const onKey  = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+  }, [open])
+
+  return (
+    <div className="menu" ref={ref}>
+      <Button onClick={() => setOpen(o => !o)} aria-haspopup="menu" aria-expanded={open}>
+        <Columns3 size={13} /> Columns
+      </Button>
+      {open && (
+        <div className="menu-panel" role="menu" aria-label="Columns">
+          {COLUMNS.filter(c => c.hideable).map(c => {
+            const on = !hidden.includes(c.key)
+            return (
+              <button key={c.key} className="menu-item" role="menuitemcheckbox" aria-checked={on} onClick={() => onToggle(c.key)}>
+                {on ? <Check size={14} /> : <span className="menu-check" />}
+                {c.label}
+              </button>
+            )
+          })}
+          <div className="menu-sep" role="separator" />
+          <button className="menu-item" role="menuitem" onClick={() => { onReset(); setOpen(false) }}>
+            <RotateCcw size={14} /> Reset columns
+          </button>
+        </div>
       )}
     </div>
   )

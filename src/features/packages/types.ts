@@ -13,6 +13,12 @@ export interface Package {
   upgrade_command: string | null
   /** Whether Atlas can uninstall this package (winget, pip, npm, VS Code). */
   uninstallable: boolean
+  /** Installed or last updated, as Unix seconds. Null when unknown. */
+  updated: number | null
+  /** Empty when the source does not name one. */
+  publisher: string
+  /** Install folder or file. Empty when unknown. */
+  location: string
 }
 
 /** What removing a package would break, gathered before anything runs. */
