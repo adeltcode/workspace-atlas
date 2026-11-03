@@ -843,11 +843,13 @@ ul, ol { list-style: none; }
 .ctr-action-confirm:hover:not(:disabled) { background: var(--color-danger-subtle); filter: brightness(1.15); }
 
 /* ── Toggle. A button that stays pressed reads as selected, not as hovered. */
-.btn--on, .compose-edit-btn.active {
+.btn--on, .btn--on:hover:not(:disabled), .compose-edit-btn.active {
   background: var(--color-accent-subtle);
   border-color: var(--color-accent-border);
   color: var(--color-accent);
 }
+/* A count inside a pressed toggle stays dim, as it does in a segment. */
+.btn--on .segmented-count { color: inherit; opacity: 0.75; }
 
 /* THE CHIP. Every small inline label takes the Tag's shape; each legacy family
    below keeps only its colours. Must stay above those families so their
@@ -7494,14 +7496,16 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .pkg-upgrade { margin-left: var(--space-2); }
 .pkg-check-warn strong { color: var(--color-warning); }
 
-/* Manager names are lowercase brands (npm, pip), so the shared segmented
-   filter's capitalization is switched off here. */
-.pkg-src-btn { text-transform: none; }
-
-/* Ten sources outgrow a narrow window, so the source filter scrolls rather
-   than pushing the page sideways. */
-.pkg-tab .segmented { flex-shrink: 1; max-width: 100%; overflow-x: auto; scrollbar-width: thin; }
-.pkg-tab .segmented-item { flex-shrink: 0; }
+/* Source filter. Many sources wrap onto another line instead of scrolling. */
+.pkg-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.pkg-source { gap: var(--space-1); }
+.pkg-source:not(.btn--on) { color: var(--color-text-secondary); }
+.pkg-source:not(.btn--on):hover:not(:disabled) { color: var(--color-text-primary); }
 
 /* Standalone toggle. The segmented filter next to it is a one-of-many choice,
    this is an independent on/off, so it reads as its own control - and its

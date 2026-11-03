@@ -5,8 +5,7 @@ import { useAppStore } from '../../store/appStore'
 import { SortHeader } from '../docker/components/TableBits'
 import { Modal } from '../wsl/components/Dialog'
 import {
-  SheetHead, Prerequisite, Button, SearchField, ErrorBanner, Toolbar,
-  Segmented, SegmentedItem, EmptyState, Tag,
+  SheetHead, Prerequisite, Button, SearchField, ErrorBanner, Toolbar, EmptyState, Tag,
 } from '../../components/ui'
 import * as api from './api'
 import type { Package, SourceResult, UninstallCheck } from './types'
@@ -16,14 +15,16 @@ type SortKey = 'name' | 'version' | 'updated' | 'publisher' | 'source'
 /** Table columns in display order, with default widths in px. Name and Actions
  *  cannot be hidden. */
 const COLUMNS: { key: string; label: string; width: number; sort?: SortKey; hideable?: boolean }[] = [
-  { key: 'name',      label: 'Name',      width: 220, sort: 'name' },
-  { key: 'id',        label: 'Id',        width: 170, hideable: true },
-  { key: 'version',   label: 'Version',   width: 110, sort: 'version', hideable: true },
-  { key: 'available', label: 'Available', width: 190, hideable: true },
-  { key: 'updated',   label: 'Updated',   width: 100, sort: 'updated', hideable: true },
+  // The defaults that start visible add up to 930, which fits the table at a
+  // 1280px window. Name takes whatever is left over.
+  { key: 'name',      label: 'Name',      width: 180, sort: 'name' },
+  { key: 'id',        label: 'Id',        width: 150, hideable: true },
+  { key: 'version',   label: 'Version',   width: 100, sort: 'version', hideable: true },
+  { key: 'available', label: 'Available', width: 180, hideable: true },
+  { key: 'updated',   label: 'Updated',   width: 96, sort: 'updated', hideable: true },
   { key: 'publisher', label: 'Publisher', width: 170, sort: 'publisher', hideable: true },
   { key: 'location',  label: 'Location',  width: 260, hideable: true },
-  { key: 'source',    label: 'Source',    width: 110, sort: 'source', hideable: true },
+  { key: 'source',    label: 'Source',    width: 128, sort: 'source', hideable: true },
   { key: 'actions',   label: 'Actions',   width: 96 },
 ]
 const MIN_WIDTH = 60
@@ -390,23 +391,6 @@ export default function PackagesView() {
               placeholder="Search packages"
             />
 
-            <Segmented label="Filter by source. Pick one or more.">
-              <SegmentedItem active={active.length === 0} count={all.length} onClick={() => setPicked([])}>
-                All
-              </SegmentedItem>
-              {listed.map(r => (
-                <SegmentedItem
-                  key={r.id}
-                  active={active.includes(r.id)}
-                  count={r.packages.length}
-                  onClick={() => togglePick(r.id)}
-                  title={`${r.command}\nClick to add or remove this source.`}
-                >
-                  {r.label}
-                </SegmentedItem>
-              ))}
-            </Segmented>
-
             <button
               className={clsx('pkg-toggle', outdatedOnly && 'active')}
               onClick={() => setOutdatedOnly(v => !v)}
@@ -427,6 +411,31 @@ export default function PackagesView() {
 
             <span className="img-count">{rows.length} shown</span>
           </Toolbar>
+
+          {/* Independent toggles rather than a segmented control, because
+              several sources can be picked at once. */}
+          <div className="pkg-sources" role="group" aria-label="Filter by source. Pick one or more.">
+            <Button
+              size="sm"
+              className={clsx('pkg-source', active.length === 0 && 'btn--on')}
+              aria-pressed={active.length === 0}
+              onClick={() => setPicked([])}
+            >
+              All <span className="segmented-count num">{all.length}</span>
+            </Button>
+            {listed.map(r => (
+              <Button
+                key={r.id}
+                size="sm"
+                className={clsx('pkg-source', active.includes(r.id) && 'btn--on')}
+                aria-pressed={active.includes(r.id)}
+                onClick={() => togglePick(r.id)}
+                title={`${r.command}\nClick to add or remove this source.`}
+              >
+                {r.label} <span className="segmented-count num">{r.packages.length}</span>
+              </Button>
+            ))}
+          </div>
 
           {rows.length === 0 ? (
             <EmptyState
