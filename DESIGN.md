@@ -170,7 +170,8 @@ components:
     textColor: "{colors.text-secondary}"
     typography: "{typography.label}"
     rounded: "{rounded.sm}"
-    padding: "1px 8px"
+    padding: "0 8px"
+    height: "20px"
   tag-ok:
     backgroundColor: "{colors.success-subtle}"
     textColor: "{colors.success}"

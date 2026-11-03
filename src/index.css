@@ -687,32 +687,6 @@ ul, ol { list-style: none; }
 }
 
 /* =============================================================
-   Docker - Status indicators & toolbar buttons
-   ============================================================= */
-.status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.status-dot.online  {
-  background: var(--color-success);
-  box-shadow: 0 0 0 2px var(--color-success-subtle);
-  animation: pulse-dot 2.4s ease-in-out infinite;
-}
-.status-dot.offline { background: var(--color-danger); box-shadow: 0 0 0 2px var(--color-danger-subtle); }
-
-@keyframes pulse-dot {
-  0%, 100% { box-shadow: 0 0 0 2px var(--color-success-subtle); }
-  50%       { box-shadow: 0 0 0 5px transparent; }
-}
-
-.status-text {
-  font-size: var(--text-base);
-  color: var(--color-text-secondary);
-}
-
-/* =============================================================
    THE BUTTON
    -------------------------------------------------------------
    There is one button. It has four variants (default, primary, danger, ghost)
@@ -873,6 +847,27 @@ ul, ol { list-style: none; }
   background: var(--color-accent-subtle);
   border-color: var(--color-accent-border);
   color: var(--color-accent);
+}
+
+/* THE CHIP. Every small inline label takes the Tag's shape; each legacy family
+   below keeps only its colours. Must stay above those families so their
+   border-color wins. */
+.tag, .badge, .ctr-port-chip, .compose-tag-chip, .cst-state-badge, .env-ref-chip,
+.wsl-svc-badge, .wiz-card-badge, .prune-extra-badge, .log-level-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 20px;
+  padding: 0 var(--space-2);
+  flex-shrink: 0;
+  border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
 }
 
 @keyframes spin {
@@ -1247,14 +1242,6 @@ ul, ol { list-style: none; }
 .img-age { color: var(--color-text-secondary); white-space: nowrap; }
 .img-td-pin { text-align: center; }
 
-.badge {
-  display: inline-block;
-  font-size: var(--text-2xs);
-  font-weight: 600;
-  padding: 2px 7px;
-  border-radius: var(--radius-full);
-  letter-spacing: 0.03em;
-}
 .badge-active {
   background: var(--color-success-subtle);
   color: var(--color-success);
@@ -1417,13 +1404,8 @@ ul, ol { list-style: none; }
   border-top: 1px solid var(--color-border);
 }
 .prune-extra-badge {
-  font-size: var(--text-xs);
-  padding: 3px 9px;
   background: var(--color-danger-subtle);
   color: var(--color-danger);
-  border: 1px solid color-mix(in srgb, var(--color-danger) 20%, transparent);
-  border-radius: var(--radius-full);
-  font-weight: 500;
 }
 
 /* Live log during prune run */
@@ -1658,15 +1640,6 @@ dialog::backdrop { background: transparent; }
 }
 .log-card-left { display: flex; align-items: center; gap: 10px; }
 
-.log-level-badge {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: var(--text-xs);
-  font-weight: 600;
-  padding: 3px 9px;
-  border-radius: var(--radius-full);
-}
 .log-badge--success { background: var(--color-success-subtle); color: var(--color-success); }
 .log-badge--warning { background: var(--color-warning-subtle); color: var(--color-warning); }
 .log-badge--danger  { background: var(--color-danger-subtle);  color: var(--color-danger);  }
@@ -4259,16 +4232,10 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   align-items: center;
 }
 .ctr-port-chip {
-  display: inline-block;
-  padding: 1px 5px;
-  border-radius: var(--radius-md);
-  font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
   background: var(--color-accent-subtle);
   color: var(--color-accent-hover);
-  border: 1px solid color-mix(in srgb, var(--color-accent) 20%, transparent);
-  white-space: nowrap;
-  line-height: 1.5;
+  border-color: color-mix(in srgb, var(--color-accent) 20%, transparent);
 }
 .ctr-port-chip--udp {
   background: var(--color-warning-subtle);
@@ -4411,11 +4378,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   gap: 6px;
   flex-wrap: wrap;
 }
-.net-inline-flag {
-  font-size: var(--text-2xs);
-  padding: 1px 5px;
-  line-height: 1.4;
-}
 /* kept for any remaining callers; not used in table any more */
 .net-flag-row {
   display: flex;
@@ -4427,6 +4389,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .ctr-status-cell {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 3px;
 }
 .ctr-status-sub {
@@ -4452,15 +4415,15 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .settings-card {
   background: var(--color-bg-secondary);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   overflow: hidden;
 }
 
 .settings-card-header {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  padding: 16px 18px 14px;
+  gap: var(--space-3);
+  padding: var(--space-4);
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -4533,13 +4496,13 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .settings-config-actions {
   display: flex;
   gap: var(--space-2);
-  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
 }
 
 .settings-dir-hint {
   font-size: var(--text-xs);
   color: var(--color-text-tertiary);
-  padding: 0 16px 10px;
+  padding: 0 var(--space-4) var(--space-3);
   margin: 0;
   line-height: 1.5;
 }
@@ -4617,14 +4580,14 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .settings-about-body {
   display: flex;
   flex-direction: column;
-  padding: 4px 0;
+  padding: var(--space-1) 0;
 }
 
 .settings-about-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 9px 18px;
+  padding: var(--space-2) var(--space-4);
   border-bottom: 1px solid var(--color-border-light);
 }
 .settings-about-row:last-child { border-bottom: none; }
@@ -5197,16 +5160,9 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   flex-wrap: wrap;
 }
 .compose-tag-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 1px 6px;
-  border-radius: var(--radius-md);
   background: var(--color-accent-subtle);
   color: var(--color-accent);
-  font-size: var(--text-2xs);
-  font-weight: 500;
-  border: 1px solid var(--color-accent-border);
+  border-color: var(--color-accent-border);
 }
 
 /* ── Port chips ── */
@@ -5219,7 +5175,8 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 7px;
+  height: 24px;
+  padding: 0 var(--space-2);
   background: var(--color-bg-tertiary);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -5562,13 +5519,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   max-width: 120px;
 }
 
-.cst-state-badge {
-  display: inline-block;
-  padding: 1px 6px;
-  border-radius: var(--radius-md);
-  font-size: var(--text-2xs);
-  font-weight: 500;
-}
 .cst-state--running    { background: var(--color-success-subtle); color: var(--color-success); }
 .cst-state--restarting { background: var(--color-warning-subtle); color: var(--color-warning); }
 .cst-state--stopped    { background: var(--color-bg-tertiary);    color: var(--color-text-tertiary); }
@@ -5821,13 +5771,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .env-row--unused:hover { opacity: 1; }
 .env-masked { color: var(--color-text-tertiary); font-family: var(--font-mono); letter-spacing: 2px; }
 .env-td--status { text-align: center; }
-.env-ref-chip {
-  display: inline-block;
-  padding: 1px 6px;
-  border-radius: var(--radius-md);
-  font-size: var(--text-2xs);
-  font-weight: 500;
-}
 .env-ref-chip--used   { background: var(--color-success-subtle); color: var(--color-success); }
 .env-ref-chip--unused { background: var(--color-bg-tertiary); color: var(--color-text-tertiary); }
 .env-missing-warn {
@@ -6165,51 +6108,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 
 /* ── WSL startup manager (services) ─────────────────────────────────────── */
 .wsl-startup { margin-top: 0; }
-.wsl-svc-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 16px;
-  flex-wrap: wrap;
-}
-.wsl-svc-search {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 0 10px;
-  height: 32px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg-secondary);
-  min-width: 220px;
-}
-.wsl-svc-search-icon { color: var(--color-text-tertiary); flex-shrink: 0; }
-.wsl-svc-search-input {
-  border: none;
-  background: transparent;
-  color: var(--color-text-primary);
-  font-size: var(--text-base);
-  font-family: inherit;
-  width: 100%;
-  outline: none;
-}
-.wsl-svc-filters { display: flex; gap: 4px; }
-.wsl-svc-filter {
-  padding: 5px 11px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg-secondary);
-  color: var(--color-text-secondary);
-  font-size: var(--text-sm);
-  cursor: pointer;
-}
-.wsl-svc-filter:hover { border-color: var(--color-accent); }
-.wsl-svc-filter--active {
-  background: var(--color-accent-subtle);
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-}
-.wsl-svc-count { margin: 10px 0 8px; font-size: var(--text-sm); color: var(--color-text-tertiary); }
+.wsl-svc-toolbar { margin-top: var(--space-4); }
 
 .wsl-svc-table { table-layout: auto; }
 .wsl-svc-row { cursor: pointer; }
@@ -6218,14 +6117,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wsl-svc-expand button { display: grid; place-items: center; width: 24px; height: 24px; border-radius: var(--radius-sm); }
 .wsl-svc-name { color: var(--color-text-primary); font-weight: 600; }
 .wsl-svc-desc { display: block; font-size: var(--text-xs); color: var(--color-text-tertiary); margin-top: 2px; }
-.wsl-svc-badge {
-  display: inline-block;
-  padding: 2px 9px;
-  border-radius: var(--radius-full);
-  font-size: var(--text-xs);
-  font-weight: 600;
-}
-.wsl-svc-badge--active   { background: var(--color-success-subtle); color: var(--color-success); }
+.wsl-svc-badge--active  { background: var(--color-success-subtle); color: var(--color-success); }
 .wsl-svc-badge--failed   { background: var(--color-danger-subtle);  color: var(--color-danger); }
 .wsl-svc-badge--pending  { background: var(--color-warning-subtle); color: var(--color-warning); }
 .wsl-svc-badge--inactive { background: var(--color-bg-tertiary);    color: var(--color-text-tertiary); }
@@ -6563,10 +6455,11 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wsl-distro-star { color: var(--color-warning); flex-shrink: 0; }
 
 .wsl-state-pill {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 3px 10px;
-  border-radius: var(--radius-full, var(--radius-full));
-  font-size: var(--text-sm); font-weight: 500;
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  height: 20px; padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--text-2xs); font-weight: 500;
+  white-space: nowrap;
 }
 .wsl-state-pill-dot { width: 6px; height: 6px; border-radius: 50%; }
 .wsl-state-pill--running { background: var(--color-success-subtle); color: var(--color-success); }
@@ -7392,16 +7285,8 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   flex-shrink: 0;
 }
 .wiz-card-badge {
-  font-size: var(--text-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   color: var(--color-success);
   background: var(--color-success-subtle);
-  border: 1px solid var(--color-success);
-  padding: 2px 7px;
-  border-radius: var(--radius-full);
-  flex-shrink: 0;
 }
 
 /* Footer action row shared across steps. */
@@ -7565,19 +7450,25 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
    equivalent there is defined here.
    ============================================================= */
 
-/* Ids run long (winget's ARP\Machine\… entries), so the column truncates and
-   carries the full value in its title attribute. */
-.pkg-id {
-  font-family: "Cascadia Code", "Consolas", monospace;
-  font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
-  max-width: 260px;
+/* Names and ids run long (winget's ARP\Machine\… entries), so both columns
+   truncate and carry the full value in a title attribute. max-width: 0 lets
+   them shrink instead of pushing the Actions column out of view. */
+.pkg-name, .pkg-id {
+  max-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.pkg-name { width: 34%; }
+.pkg-id {
+  width: 26%;
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+}
 
 .pkg-dash { color: var(--color-text-tertiary); }
+.pkg-available { white-space: nowrap; }
 .pkg-upgrade { margin-left: var(--space-2); }
 .pkg-check-warn strong { color: var(--color-warning); }
 
@@ -7590,23 +7481,17 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .pkg-tab .segmented { flex-shrink: 1; max-width: 100%; overflow-x: auto; scrollbar-width: thin; }
 .pkg-tab .segmented-item { flex-shrink: 0; }
 
-/* An available upgrade is an attention state, not a healthy one, so it takes
-   the warning tone rather than the success badge used for "in use". */
-.pkg-avail {
-  display: inline-block;
-  font-size: var(--text-2xs);
-  font-weight: 600;
-  padding: 2px 7px;
-  border-radius: var(--radius-full);
-  letter-spacing: 0.03em;
-  font-variant-numeric: tabular-nums;
-  background: var(--color-warning-subtle);
-  color: var(--color-warning);
-}
-
 /* Standalone toggle. The segmented filter next to it is a one-of-many choice,
    this is an independent on/off, so it reads as its own control - and its
-   pressed state is amber because what it filters to is "needs an update". */
+   pressed state is amber because what it filters to is "needs an update".
+   At rest it matches a segment, count included. */
+.pkg-toggle {
+  gap: var(--space-1);
+  padding: 0 10px;
+  color: var(--color-text-secondary);
+}
+.pkg-toggle:hover:not(:disabled):not(.active) { color: var(--color-text-primary); }
+.pkg-toggle.active .segmented-count { color: inherit; opacity: 0.75; }
 .pkg-toggle.active {
   background: var(--color-warning-subtle);
   color: var(--color-warning);
@@ -7853,9 +7738,12 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 
 .sheet-head { display: flex; align-items: flex-start; gap: var(--space-3); }
 .sheet-head-main { flex: 1; min-width: 0; }
+/* Actions sit on the title's line. The 28px floor matches the button height, so
+   a head without actions is the same height as one with them. */
+.sheet-title-row { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; min-height: 28px; }
 .sheet-title { font-size: var(--text-lg); font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; }
 .sheet-sub { margin-top: 2px; font-size: var(--text-xs); color: var(--color-text-tertiary); }
-.sheet-actions { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; }
+.sheet-actions { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; margin-left: auto; }
 
 /* Status pill: a dot and a fact, nothing more. */
 .pill {
@@ -7915,15 +7803,11 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .field-clear { display: grid; place-items: center; color: var(--color-text-tertiary); border-radius: var(--radius-sm); }
 .field-clear:hover { color: var(--color-text-primary); }
 
+/* Shape lives in THE CHIP, above. */
 .tag {
-  display: inline-flex; align-items: center; gap: var(--space-1);
-  padding: 1px var(--space-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  border-color: var(--color-border);
   background: var(--chrome-surface);
-  font-size: var(--text-2xs); font-weight: 500;
   color: var(--color-text-secondary);
-  white-space: nowrap;
 }
 .tag--ok     { color: var(--color-success); border-color: color-mix(in srgb, var(--color-success) 28%, transparent); background: var(--color-success-subtle); }
 .tag--warn   { color: var(--color-warning); border-color: color-mix(in srgb, var(--color-warning) 28%, transparent); background: var(--color-warning-subtle); }
@@ -7983,7 +7867,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 /* A fixed height so the title sits on the same line whether the head carries a
    button, a segmented control, or nothing at all. */
 .section-head { display: flex; align-items: center; gap: var(--space-3); min-height: 28px; margin-bottom: var(--space-3); }
-.section-title { font-size: var(--text-xs); font-weight: 600; color: var(--color-text-secondary); white-space: nowrap; }
+.section-title { font-size: var(--text-2xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-tertiary); white-space: nowrap; }
 .section-meta { font-size: var(--text-2xs); color: var(--color-text-tertiary); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .section-rule { flex: 1; height: 1px; background: var(--color-border); }
 
@@ -8140,7 +8024,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 /* ── Focus. Visible on everything, because the app commits to WCAG AA and a
    keyboard user has to be able to see where they are. */
 .rail-item:focus-visible, .rail-kid:focus-visible, .crumb:focus-visible,
-.tab:focus-visible, .btn:focus-visible, .rowitem:focus-visible,
+.tab:focus-visible, .btn:focus-visible, .rowitem:focus-visible, .segmented-item:focus-visible,
 .tb-search:focus-visible, .field-clear:focus-visible, .index-row:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: -2px;

@@ -247,8 +247,8 @@ export default function PackagesView() {
         title="Packages"
         subtitle="Everything your package managers have installed on this machine."
         status={results && (
-          <span className="status-text" style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-            <span className={clsx('status-dot', found.length ? 'online' : 'offline')} />
+          <span className="pill">
+            <span className={clsx('rail-dot', found.length ? 'running' : 'stopped')} />
             {found.length
               ? `${all.length} installed across ${found.length} source${found.length !== 1 ? 's' : ''}`
               : 'no package managers found'}
@@ -331,7 +331,7 @@ export default function PackagesView() {
               aria-pressed={outdatedOnly}
               title="Show only packages with a newer version available"
             >
-              Updates <span className="num">{outdatedCount}</span>
+              Updates <span className="segmented-count num">{outdatedCount}</span>
             </button>
 
             <span role="status">
@@ -370,12 +370,12 @@ export default function PackagesView() {
                     // winget lists the same id more than once (two 7-Zip builds
                     // share 7zip.7zip), so the index keeps keys unique.
                     <tr key={`${p.source}-${p.id}-${p.version}-${i}`} className="img-row">
-                      <td className="img-td img-repo">{p.name}</td>
+                      <td className="img-td img-repo pkg-name" title={p.name}>{p.name}</td>
                       <td className="img-td pkg-id" title={p.id}>{p.id}</td>
                       <td className="img-td img-size">{p.version}</td>
-                      <td className="img-td">
+                      <td className="img-td pkg-available">
                         {p.available
-                          ? <span className="pkg-avail">{p.available}</span>
+                          ? <Tag tone="warn" className="num">{p.available}</Tag>
                           : <span className="pkg-dash">-</span>}
                         {p.upgrade_command && (
                           <Button

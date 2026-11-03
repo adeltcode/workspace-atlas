@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import clsx from 'clsx'
-import { ChevronDown, ChevronRight, Play, RefreshCw, Search, ShieldAlert, Settings2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Play, RefreshCw, ShieldAlert, Settings2 } from 'lucide-react'
 import { useAppStore } from '../../../store/appStore'
 import * as api from '../api'
 import type { WslDistro, ServiceList, Service, ServiceDetail } from '../types'
 import { Modal } from './Dialog'
-import { ErrorBanner } from '../../../components/ui'
+import { Button, ErrorBanner, SearchField, Segmented, SegmentedItem, Toolbar } from '../../../components/ui'
 
 type Filter = 'all' | 'enabled' | 'disabled' | 'running' | 'failed'
 
@@ -266,35 +266,20 @@ export default function WslStartupTab({ distros, onReload, onGoToConf }: {
 
       {running && data?.init.is_systemd && (
         <>
-          <div className="wsl-svc-toolbar">
-            <div className="wsl-svc-search">
-              <Search size={13} className="wsl-svc-search-icon" />
-              <input
-                className="wsl-svc-search-input"
-                placeholder="Search services…"
-                aria-label="Search services"
-                value={query}
-                onChange={e => setQuery(e.target.value)}
-                spellCheck={false}
-              />
-            </div>
-            <div className="wsl-svc-filters">
+          <Toolbar className="wsl-svc-toolbar">
+            <SearchField value={query} onChange={setQuery} placeholder="Search services" />
+            <Segmented label="Filter services">
               {FILTERS.map(f => (
-                <button
-                  key={f.key}
-                  className={clsx('wsl-svc-filter', filter === f.key && 'wsl-svc-filter--active')}
-                  onClick={() => setFilter(f.key)}
-                >
+                <SegmentedItem key={f.key} active={filter === f.key} onClick={() => setFilter(f.key)}>
                   {f.label}
-                </button>
+                </SegmentedItem>
               ))}
-            </div>
-            <button className="btn-icon" onClick={load} disabled={loading} title="Refresh" style={{ marginLeft: 'auto' }}>
-              <RefreshCw size={12} className={loading ? 'spin' : ''} />
-            </button>
-          </div>
-
-          <p className="wsl-svc-count">{filtered.length} of {data.services.length} services</p>
+            </Segmented>
+            <span className="img-count">{filtered.length} of {data.services.length} services</span>
+            <Button variant="ghost" icon onClick={load} disabled={loading} title="Refresh" aria-label="Refresh services">
+              <RefreshCw size={13} className={loading ? 'spin' : ''} />
+            </Button>
+          </Toolbar>
 
           <div className="wsl-compare-wrap">
             <table className="wsl-compare wsl-svc-table">

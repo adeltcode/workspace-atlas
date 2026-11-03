@@ -156,13 +156,13 @@ export function SheetHead({ crumbs, title, subtitle, status, actions }: {
             ))}
           </nav>
         )}
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+        <div className="sheet-title-row">
           <h1 className="sheet-title">{title}</h1>
           {status}
+          {actions && <div className="sheet-actions">{actions}</div>}
         </div>
         {subtitle && <p className="sheet-sub">{subtitle}</p>}
       </div>
-      {actions && <div className="sheet-actions">{actions}</div>}
     </header>
   )
 }
@@ -218,7 +218,7 @@ export function StatCard({ label, value, unit, sub, pct, tone, onClick, ariaLabe
   const body = (
     <>
       <span className="stat-label">{label}</span>
-      <span className="stat-value num">
+      <span className="stat-value num" title={value}>
         {value}{unit && <span className="stat-unit">{unit}</span>}
       </span>
       {pct !== undefined && (
