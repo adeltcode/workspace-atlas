@@ -7579,6 +7579,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 
 .pkg-dash { color: var(--color-text-tertiary); }
 .pkg-upgrade { margin-left: var(--space-2); }
+.pkg-check-warn strong { color: var(--color-warning); }
 
 /* Manager names are lowercase brands (npm, pip), so the shared segmented
    filter's capitalization is switched off here. */

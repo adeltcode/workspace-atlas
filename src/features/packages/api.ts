@@ -1,5 +1,5 @@
 import { invoke } from '../../utils/errors'
-import type { SourceResult } from './types'
+import type { SourceResult, UninstallCheck } from './types'
 
 /** Every source the backend knows how to scan. Ids it does not recognise are
  *  dropped there, so this list can never widen what actually runs. */
@@ -17,6 +17,16 @@ export const pkgScan = (sources: string[] = SOURCE_IDS) =>
  *  streams to the terminal meanwhile. */
 export const pkgUpgrade = (id: string) =>
   invoke<void>('pkg_upgrade', { source: 'winget', id })
+
+/** Look before uninstalling. `version` pins winget to one of several installs
+ *  sharing an id; `installed` is only used for the reinstall command. */
+export const pkgUninstallCheck = (source: string, id: string, name: string, installed: string, version: string | null) =>
+  invoke<UninstallCheck>('pkg_uninstall_check', { source, id, name, installed, version })
+
+/** Uninstall one package. Core tools need `confirm` to equal the id. Resolves
+ *  to the `pip check` lines that now name the removed package (pip only). */
+export const pkgUninstall = (source: string, id: string, version: string | null, confirm: string | null) =>
+  invoke<string[]>('pkg_uninstall', { source, id, version, confirm })
 
 /** Save a CSV built by the caller. Returns the chosen path, or null if the save
  *  dialog was cancelled. */

@@ -2,9 +2,10 @@
 //! managers.
 //!
 //! Scanning is read-only: every scan command lists, the frontend selects
-//! sources by id, and the argv for each id is a compile-time constant. The one
-//! write is `pkg_upgrade`, which upgrades a single winget package; its id is the
-//! only outside string that reaches a command line, and it is validated first.
+//! sources by id, and the argv for each id is a compile-time constant. The
+//! writes are `pkg_upgrade` and `pkg_uninstall`, each acting on one package. A
+//! package id, and for winget a version, are the only outside strings that
+//! reach a command line, and both are validated first.
 
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
@@ -132,6 +133,8 @@ pub struct Package {
     /// The exact command `pkg_upgrade` would run, for winget packages with an
     /// upgrade available. None means the package cannot be upgraded here.
     pub upgrade_command: Option<String>,
+    /// Whether `pkg_uninstall` accepts this package.
+    pub uninstallable: bool,
 }
 
 impl Package {
@@ -143,6 +146,7 @@ impl Package {
             available: String::new(),
             source: source.to_string(),
             upgrade_command: None,
+            uninstallable: false,
         }
     }
 }
@@ -211,6 +215,9 @@ fn scan_one(spec: &SourceSpec) -> SourceResult {
                 return result;
             }
             result.packages = parse_packages(spec.id, &stdout);
+            for p in &mut result.packages {
+                p.uninstallable = uninstall_argv(&p.source, &p.id, None).is_some();
+            }
             // Only surface the exit code when it cost us the listing; a warning
             // alongside a full package list is noise.
             if result.packages.is_empty() && !ok {
@@ -346,8 +353,21 @@ fn upgrade_argv(id: &str) -> [&str; 8] {
     ]
 }
 
-/// One upgrade at a time, even if the view is closed and reopened mid-run.
-static UPGRADING: AtomicBool = AtomicBool::new(false);
+/// One package job (upgrade or uninstall) at a time, even if the view is
+/// closed and reopened mid-run.
+static PACKAGE_JOB: AtomicBool = AtomicBool::new(false);
+
+async fn one_job<T: Send + 'static>(
+    migration: &crate::wsl_migration::MigrationState,
+    job: impl FnOnce() -> Result<T, AtlasError> + Send + 'static,
+) -> Result<T, AtlasError> {
+    if PACKAGE_JOB.swap(true, Ordering::SeqCst) {
+        return Err(AtlasError::new(ErrorKind::Busy, "Wait for the current package job to finish."));
+    }
+    let result = migration.clone().run_operation(job).await;
+    PACKAGE_JOB.store(false, Ordering::SeqCst);
+    result
+}
 
 /// Upgrade one winget package, streaming winget's output to the terminal.
 ///
@@ -367,21 +387,17 @@ pub async fn pkg_upgrade(
     if !valid_winget_id(&id) {
         return Err(AtlasError::invalid("This package id cannot be passed to winget safely."));
     }
-    if UPGRADING.swap(true, Ordering::SeqCst) {
-        return Err(AtlasError::new(ErrorKind::Busy, "Wait for the current upgrade to finish."));
-    }
-    let result = migration
-        .inner()
-        .clone()
-        .run_operation(move || run_upgrade(&app, &id))
-        .await;
-    UPGRADING.store(false, Ordering::SeqCst);
-    result
+    one_job(&migration, move || {
+        run_streamed(&app, &upgrade_argv(&id), &format!("winget could not upgrade {}.", id))?;
+        emit_line(&app, format!("  ✓ winget upgraded {}", id), false);
+        Ok(())
+    })
+    .await
 }
 
-fn run_upgrade(app: &tauri::AppHandle, id: &str) -> Result<(), AtlasError> {
-    let argv = upgrade_argv(id);
-    emit_line(app, format!("$ {}", command_line(&argv)), false);
+/// Run argv directly, streaming its output to the terminal as it arrives.
+fn run_streamed(app: &tauri::AppHandle, argv: &[&str], failure: &str) -> Result<(), AtlasError> {
+    emit_line(app, format!("$ {}", command_line(argv)), false);
 
     let mut c = Command::new(argv[0]);
     c.args(&argv[1..]).stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -390,7 +406,7 @@ fn run_upgrade(app: &tauri::AppHandle, id: &str) -> Result<(), AtlasError> {
         use std::os::windows::process::CommandExt;
         c.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
     }
-    let mut child = c.spawn().map_err(|e| format!("Failed to run winget: {}", e))?;
+    let mut child = c.spawn().map_err(|e| format!("Failed to run {}: {}", argv[0], e))?;
 
     let err_app = app.clone();
     let err_thread = child
@@ -406,16 +422,14 @@ fn run_upgrade(app: &tauri::AppHandle, id: &str) -> Result<(), AtlasError> {
         t.join().ok();
     }
     let status = child.wait()?;
-
     if status.success() {
-        emit_line(app, format!("  ✓ winget upgraded {}", id), false);
         return Ok(());
     }
     // winget exits with an HRESULT, which is only recognisable in hex.
     let code = format!("0x{:08X}", status.code().unwrap_or(-1) as u32);
-    emit_line(app, format!("  ✗ winget exited {}", code), true);
-    Err(AtlasError::new(ErrorKind::Unknown, format!("winget could not upgrade {}.", id))
-        .hint("The terminal shows winget's explanation. If the app is open, close it and try again.")
+    emit_line(app, format!("  ✗ {} exited {}", argv[0], code), true);
+    Err(AtlasError::new(ErrorKind::Unknown, failure)
+        .hint("The terminal shows the tool's own explanation. If the app is open, close it and try again.")
         .detail(format!("Exit code {}\n{}", code, tail)))
 }
 
@@ -436,6 +450,384 @@ fn stream_lines(app: &tauri::AppHandle, pipe: impl std::io::Read, stderr: bool) 
         }
     }
     tail.join("\n")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Uninstalling
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Package names in these managers fit in letters, digits and `. _ - +`, and
+/// npm adds one `@scope/` prefix. Like winget ids, they become command-line
+/// arguments, so anything else is refused.
+fn valid_id(source: &str, id: &str) -> bool {
+    let plain = |s: &str| {
+        !s.is_empty()
+            && s.len() <= 214
+            && !s.starts_with(['-', '.'])
+            && s.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '+'))
+    };
+    match source {
+        "winget" => valid_winget_id(id),
+        "pip" => plain(id),
+        "npm" => match id.strip_prefix('@').and_then(|scoped| scoped.split_once('/')) {
+            Some((scope, name)) => plain(scope) && plain(name),
+            None => plain(id),
+        },
+        "vscode" => plain(id) && id.contains('.'),
+        _ => false,
+    }
+}
+
+fn valid_version(v: &str) -> bool {
+    !v.is_empty()
+        && v.len() <= 64
+        && !v.starts_with('-')
+        && v.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '+'))
+}
+
+/// The uninstall command for a package, or None when Atlas cannot remove it.
+/// `version` pins a winget uninstall to one of several installs sharing an id.
+/// npm and VS Code ship as `.cmd` shims, named in full so they run without a
+/// `cmd /C` wrapper.
+fn uninstall_argv<'a>(source: &str, id: &'a str, version: Option<&'a str>) -> Option<Vec<&'a str>> {
+    if !valid_id(source, id) {
+        return None;
+    }
+    let mut argv = match source {
+        "winget" => vec![
+            "winget", "uninstall", "--id", id, "--exact",
+            "--accept-source-agreements", "--disable-interactivity",
+        ],
+        "pip" => vec!["pip", "uninstall", "--yes", id],
+        "npm" => vec!["npm.cmd", "uninstall", "--global", id],
+        "vscode" => vec!["code.cmd", "--uninstall-extension", id],
+        _ => return None,
+    };
+    if source == "winget" {
+        if let Some(v) = version {
+            if !valid_version(v) {
+                return None;
+            }
+            argv.extend(["--version", v]);
+        }
+    }
+    Some(argv)
+}
+
+/// The command that puts a removed package back at the version it had. Only
+/// shown and logged, never run.
+fn reinstall_command(source: &str, id: &str, installed: &str) -> String {
+    let pinned = valid_version(installed);
+    match (source, pinned) {
+        ("winget", true) => format!("winget install --id {id} --exact --version {installed}"),
+        ("winget", false) => format!("winget install --id {id} --exact"),
+        ("pip", true) => format!("pip install {id}=={installed}"),
+        ("npm", true) => format!("npm.cmd install --global {id}@{installed}"),
+        ("vscode", true) => format!("code.cmd --install-extension {id}@{installed}"),
+        ("pip", false) => format!("pip install {id}"),
+        ("npm", false) => format!("npm.cmd install --global {id}"),
+        _ => format!("code.cmd --install-extension {id}"),
+    }
+}
+
+/// Tools that other tools stand on. Removing one needs its id typed out. An
+/// entry also covers ids that continue it after a dot (`Python.Python.3.12`).
+const CORE_TOOLS: &[(&str, &str)] = &[
+    ("winget", "Git.Git"),
+    ("winget", "Python.Python"),
+    ("winget", "OpenJS.NodeJS"),
+    ("winget", "Microsoft.PowerShell"),
+    ("winget", "Microsoft.AppInstaller"),
+    ("winget", "Microsoft.WSL"),
+    ("winget", "Docker.DockerDesktop"),
+    ("winget", "Microsoft.VCRedist"),
+    ("winget", "Microsoft.DotNet"),
+    ("winget", "Rustlang.Rustup"),
+    ("pip", "pip"),
+    ("pip", "setuptools"),
+    ("npm", "npm"),
+    ("npm", "pnpm"),
+    ("npm", "corepack"),
+];
+
+fn is_core(source: &str, id: &str) -> bool {
+    let id = id.to_ascii_lowercase();
+    CORE_TOOLS.iter().any(|(s, core)| {
+        let core = core.to_ascii_lowercase();
+        *s == source && (id == core || id.starts_with(&format!("{core}.")))
+    })
+}
+
+/// What removing a package would break, gathered before anything runs.
+#[derive(serde::Serialize, Default, Debug, PartialEq)]
+pub struct UninstallCheck {
+    pub command: String,
+    pub reinstall_command: String,
+    pub core: bool,
+    /// Installed packages that require this one. None when the manager does
+    /// not record it (winget).
+    pub needed_by: Option<Vec<String>>,
+    /// Commands on PATH that disappear with the package.
+    pub commands: Vec<String>,
+    /// Processes running from the app's install folder. None when that folder
+    /// is unknown or the question does not apply.
+    pub running: Option<Vec<String>>,
+    /// Files pip would delete. None for other managers.
+    pub files: Option<usize>,
+    /// What the check could not see, one sentence each.
+    pub limits: Vec<String>,
+}
+
+/// Look before uninstalling: who depends on the package, which commands go
+/// with it, and whether it is running. Read-only.
+#[tauri::command]
+pub async fn pkg_uninstall_check(
+    app: tauri::AppHandle,
+    source: String,
+    id: String,
+    name: String,
+    installed: String,
+    version: Option<String>,
+) -> Result<UninstallCheck, AtlasError> {
+    let argv = uninstall_argv(&source, &id, version.as_deref())
+        .ok_or_else(|| AtlasError::invalid("This package cannot be uninstalled here."))?;
+    let mut check = UninstallCheck {
+        command: command_line(&argv),
+        reinstall_command: reinstall_command(&source, &id, &installed),
+        core: is_core(&source, &id),
+        ..Default::default()
+    };
+
+    tauri::async_runtime::spawn_blocking(move || -> Result<UninstallCheck, AtlasError> {
+        match source.as_str() {
+            "pip" => {
+                let show = ["pip", "show", "--files", id.as_str()];
+                emit_line(&app, format!("$ {}", command_line(&show)), false);
+                let (stdout, _, _) = run_capture(&show)?;
+                let (needed_by, commands, files) = parse_pip_show(&stdout);
+                check.needed_by = Some(needed_by);
+                check.commands = commands;
+                check.files = Some(files);
+            }
+            "npm" => {
+                // Global npm packages each carry their own dependencies, so
+                // none can need another.
+                check.needed_by = Some(Vec::new());
+                let root = ["npm.cmd", "root", "--global"];
+                emit_line(&app, format!("$ {}", command_line(&root)), false);
+                let (stdout, _, _) = run_capture(&root)?;
+                let manifest = std::path::Path::new(stdout.trim()).join(&id).join("package.json");
+                match std::fs::read_to_string(&manifest) {
+                    Ok(json) => check.commands = npm_bin_commands(&json, &id),
+                    Err(_) => check.limits.push(format!(
+                        "Could not read {}, so the commands it adds are unknown.",
+                        manifest.display()
+                    )),
+                }
+            }
+            "vscode" => {
+                let dir = std::env::var("USERPROFILE")
+                    .map(|home| std::path::Path::new(&home).join(".vscode").join("extensions"))
+                    .ok()
+                    .and_then(|dir| std::fs::read_dir(dir).ok());
+                match dir {
+                    Some(entries) => {
+                        let manifests = entries
+                            .flatten()
+                            .filter_map(|e| std::fs::read_to_string(e.path().join("package.json")).ok());
+                        check.needed_by = Some(vscode_dependents(manifests, &id));
+                    }
+                    None => check.limits.push(
+                        "Could not read VS Code's extensions folder, so dependent extensions are unknown."
+                            .to_string(),
+                    ),
+                }
+            }
+            "winget" => {
+                check.limits.push("winget does not record which programs depend on this one.".to_string());
+                emit_line(&app, format!("$ {}", command_line(INSTALL_LOCATIONS_ARGV)), false);
+                let (stdout, _, _) = run_capture(INSTALL_LOCATIONS_ARGV)?;
+                let locations: Vec<String> = parse_csv(&stdout)
+                    .into_iter()
+                    .filter(|cols| field(cols, 0).eq_ignore_ascii_case(name.trim()))
+                    .map(|cols| field(&cols, 1).to_string())
+                    .collect();
+                if locations.is_empty() {
+                    check.limits.push(
+                        "Could not find where this app is installed, so Atlas cannot tell whether it is running."
+                            .to_string(),
+                    );
+                } else {
+                    check.running = Some(processes_under(&running_executables(), &locations));
+                }
+            }
+            _ => {}
+        }
+        Ok(check)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Uninstall one package, streaming the manager's output to the terminal.
+/// A core tool needs its id typed as `confirm`. After a pip uninstall,
+/// returns the `pip check` lines that now name the removed package.
+#[tauri::command]
+pub async fn pkg_uninstall(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    app: tauri::AppHandle,
+    source: String,
+    id: String,
+    version: Option<String>,
+    confirm: Option<String>,
+) -> Result<Vec<String>, AtlasError> {
+    if uninstall_argv(&source, &id, version.as_deref()).is_none() {
+        return Err(AtlasError::invalid("This package cannot be uninstalled here."));
+    }
+    if is_core(&source, &id) && confirm.as_deref().map(str::trim) != Some(id.as_str()) {
+        return Err(AtlasError::invalid(format!("Type {} to confirm removing a core tool.", id)));
+    }
+    one_job(&migration, move || {
+        let Some(argv) = uninstall_argv(&source, &id, version.as_deref()) else {
+            return Err(AtlasError::invalid("This package cannot be uninstalled here."));
+        };
+        let tool = argv[0].trim_end_matches(".cmd");
+        run_streamed(&app, &argv, &format!("{} could not uninstall {}.", tool, id))?;
+        emit_line(&app, format!("  ✓ {} uninstalled {}", tool, id), false);
+        if source != "pip" {
+            return Ok(Vec::new());
+        }
+        let check = ["pip", "check"];
+        emit_line(&app, format!("$ {}", command_line(&check)), false);
+        let (stdout, _, _) = run_capture(&check)?;
+        let broken = broken_requirements(&stdout, &id);
+        for line in &broken {
+            emit_line(&app, format!("  ✗ {}", line), true);
+        }
+        if broken.is_empty() {
+            emit_line(&app, format!("  ✓ nothing installed needs {}", id), false);
+        }
+        Ok(broken)
+    })
+    .await
+}
+
+/// DisplayName and InstallLocation of every uninstall key that has one. A
+/// fixed command, so no package name ever reaches PowerShell.
+const INSTALL_LOCATIONS_ARGV: &[&str] = &[
+    "powershell", "-NoProfile", "-NonInteractive", "-Command",
+    "Get-ItemProperty HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*, \
+     HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*, \
+     HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* -ErrorAction SilentlyContinue \
+     | Where-Object InstallLocation | Select-Object DisplayName,InstallLocation | ConvertTo-Csv -NoTypeInformation",
+];
+
+/// `(process name, executable path)` for every running process Windows lets
+/// an unprivileged app read the path of.
+fn running_executables() -> Vec<(String, String)> {
+    use sysinfo::{ProcessRefreshKind, RefreshKind, System, UpdateKind};
+    let system = System::new_with_specifics(
+        RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing().with_exe(UpdateKind::OnlyIfNotSet)),
+    );
+    system
+        .processes()
+        .values()
+        .filter_map(|p| Some((p.name().to_string_lossy().into_owned(), p.exe()?.to_string_lossy().into_owned())))
+        .collect()
+}
+
+/// Names of processes whose executable sits inside one of the folders.
+fn processes_under(processes: &[(String, String)], folders: &[String]) -> Vec<String> {
+    let folders: Vec<String> = folders
+        .iter()
+        .map(|f| f.trim().trim_matches('"').trim_end_matches('\\').to_ascii_lowercase())
+        .filter(|f| f.len() > 3) // never a bare drive root like `c:`
+        .map(|f| f + "\\")
+        .collect();
+    let mut names: Vec<String> = processes
+        .iter()
+        .filter(|(_, exe)| folders.iter().any(|f| exe.to_ascii_lowercase().starts_with(f)))
+        .map(|(name, _)| name.clone())
+        .collect();
+    names.sort();
+    names.dedup();
+    names
+}
+
+/// From `pip show --files`: who requires the package, the commands it puts in
+/// `Scripts`, and how many files it owns.
+fn parse_pip_show(out: &str) -> (Vec<String>, Vec<String>, usize) {
+    let mut needed_by = Vec::new();
+    let mut commands = Vec::new();
+    let mut files = 0;
+    let mut in_files = false;
+    for line in out.lines() {
+        if let Some(list) = line.strip_prefix("Required-by:") {
+            needed_by = list.split(',').map(str::trim).filter(|s| !s.is_empty()).map(String::from).collect();
+        } else if line.starts_with("Files:") {
+            in_files = true;
+        } else if in_files && line.starts_with(char::is_whitespace) {
+            files += 1;
+            let path = line.trim().replace('\\', "/");
+            if let Some(exe) = path.split_once("Scripts/").map(|(_, f)| f).and_then(|f| f.strip_suffix(".exe")) {
+                commands.push(exe.to_string());
+            }
+        } else {
+            in_files = false;
+        }
+    }
+    (needed_by, commands, files)
+}
+
+/// The commands an npm package's `bin` field adds: one named after the
+/// package when `bin` is a string, one per key when it is a map.
+fn npm_bin_commands(manifest: &str, id: &str) -> Vec<String> {
+    let Ok(root) = serde_json::from_str::<serde_json::Value>(manifest) else {
+        return Vec::new();
+    };
+    match root.get("bin") {
+        Some(serde_json::Value::String(_)) => vec![id.rsplit('/').next().unwrap_or(id).to_string()],
+        Some(serde_json::Value::Object(map)) => map.keys().cloned().collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Installed extensions that list `id` in `extensionDependencies` or
+/// `extensionPack`. VS Code keeps old versions beside new ones until it
+/// cleans up, so the same dependent can appear twice and is deduplicated.
+fn vscode_dependents(manifests: impl Iterator<Item = String>, id: &str) -> Vec<String> {
+    let mut dependents: Vec<String> = manifests
+        .filter_map(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
+        .filter(|m| {
+            ["extensionDependencies", "extensionPack"].iter().any(|key| {
+                m.get(key)
+                    .and_then(|v| v.as_array())
+                    .is_some_and(|deps| deps.iter().any(|d| d.as_str().is_some_and(|d| d.eq_ignore_ascii_case(id))))
+            })
+        })
+        .filter_map(|m| Some(format!("{}.{}", m.get("publisher")?.as_str()?, m.get("name")?.as_str()?)))
+        .filter(|dependent| !dependent.eq_ignore_ascii_case(id))
+        .collect();
+    dependents.sort_by_key(|d| d.to_ascii_lowercase());
+    dependents.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+    dependents
+}
+
+/// The lines of `pip check` that name `id` as a missing or wrong requirement.
+/// pip treats `-`, `_` and `.` in names as the same, and `requests` must not
+/// match `requests-oauthlib`.
+fn broken_requirements(out: &str, id: &str) -> Vec<String> {
+    let norm = |s: &str| s.to_ascii_lowercase().replace(['_', '.'], "-");
+    let needle = format!("requires {}", norm(id));
+    out.lines()
+        .filter(|line| {
+            let line = norm(line);
+            line.match_indices(&needle).any(|(i, _)| {
+                !line[i + needle.len()..].starts_with(|c: char| c.is_ascii_alphanumeric() || c == '-')
+            })
+        })
+        .map(|line| line.trim().to_string())
+        .collect()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -809,6 +1201,128 @@ Odd         ARP\\Machine\\X64\\Odd    1.0      2.0        winget
             command_line(&["powershell", "-Command", "Get-InstalledModule | ConvertTo-Csv"]),
             r#"powershell -Command "Get-InstalledModule | ConvertTo-Csv""#
         );
+    }
+
+    #[test]
+    fn uninstall_ids_are_checked_per_manager() {
+        for (source, ok) in [
+            ("pip", "charset-normalizer"), ("pip", "zope.interface"), ("npm", "pnpm"),
+            ("npm", "@anthropic-ai/claude-code"), ("vscode", "ms-python.python"), ("winget", "Ditto.Ditto"),
+        ] {
+            assert!(valid_id(source, ok), "{source} {ok}");
+        }
+        for (source, bad) in [
+            ("pip", "requests & calc"), ("pip", "-r"), ("pip", "x;y"), ("npm", "@scope"), ("npm", "@/x"),
+            ("npm", "@a/b/c"), ("npm", "%PATH%"), ("vscode", "nodot"), ("vscode", "a.b c"),
+            ("cargo", "ripgrep"), ("registry", "7-Zip"), ("winget", "ARP\\Machine\\X64\\Foo"),
+        ] {
+            assert!(!valid_id(source, bad), "{source} {bad}");
+        }
+    }
+
+    #[test]
+    fn uninstall_commands_are_fixed_and_pin_a_version_only_for_winget() {
+        assert_eq!(
+            uninstall_argv("winget", "Ditto.Ditto", Some("3.24.238.0")).map(|a| command_line(&a)).as_deref(),
+            Some("winget uninstall --id Ditto.Ditto --exact --accept-source-agreements --disable-interactivity --version 3.24.238.0")
+        );
+        assert_eq!(uninstall_argv("pip", "certifi", Some("1.0")), Some(vec!["pip", "uninstall", "--yes", "certifi"]));
+        assert_eq!(uninstall_argv("npm", "pnpm", None), Some(vec!["npm.cmd", "uninstall", "--global", "pnpm"]));
+        assert_eq!(uninstall_argv("vscode", "a.b", None), Some(vec!["code.cmd", "--uninstall-extension", "a.b"]));
+        // A truncated or odd winget version is refused rather than passed on.
+        assert_eq!(uninstall_argv("winget", "Ditto.Ditto", Some("3.24…")), None);
+        assert_eq!(uninstall_argv("winget", "Ditto.Ditto", Some("< 1.0")), None);
+        assert_eq!(uninstall_argv("cargo", "ripgrep", None), None);
+        for argv in [
+            uninstall_argv("winget", "Git.Git", Some("2.51.0")),
+            uninstall_argv("npm", "@scope/name", None),
+        ] {
+            assert!(argv.unwrap().iter().all(|a| !a.contains(['$', '`', '%', '"', ' ', '&', '|'])));
+        }
+    }
+
+    #[test]
+    fn reinstall_commands_restore_the_removed_version() {
+        assert_eq!(reinstall_command("pip", "certifi", "2024.8.30"), "pip install certifi==2024.8.30");
+        assert_eq!(reinstall_command("npm", "@a/b", "1.2.3"), "npm.cmd install --global @a/b@1.2.3");
+        assert_eq!(reinstall_command("vscode", "a.b", "0.4.5"), "code.cmd --install-extension a.b@0.4.5");
+        assert_eq!(reinstall_command("winget", "Ditto.Ditto", "3.24.238.0"), "winget install --id Ditto.Ditto --exact --version 3.24.238.0");
+        assert_eq!(reinstall_command("winget", "X.Y", "< 1.0"), "winget install --id X.Y --exact");
+    }
+
+    #[test]
+    fn core_tools_match_whole_id_segments() {
+        assert!(is_core("winget", "Python.Python.3.12"));
+        assert!(is_core("winget", "git.git"));
+        assert!(is_core("npm", "pnpm"));
+        assert!(!is_core("winget", "Git.GitLFS"));
+        assert!(!is_core("pip", "pipx"));
+        assert!(!is_core("npm", "pip"));
+    }
+
+    #[test]
+    fn running_processes_are_matched_by_install_folder() {
+        let procs = vec![
+            ("Ditto.exe".to_string(), r"C:\Program Files\Ditto\Ditto.exe".to_string()),
+            ("Ditto.exe".to_string(), r"c:\program files\ditto\Ditto.exe".to_string()),
+            ("DittoX.exe".to_string(), r"C:\Program Files\DittoX\DittoX.exe".to_string()),
+            ("explorer.exe".to_string(), r"C:\Windows\explorer.exe".to_string()),
+        ];
+        assert_eq!(processes_under(&procs, &[r#""C:\Program Files\Ditto\""#.to_string()]), vec!["Ditto.exe"]);
+        // A drive root as InstallLocation would match everything, so it is ignored.
+        assert!(processes_under(&procs, &["C:\\".to_string()]).is_empty());
+    }
+
+    #[test]
+    fn pip_show_yields_dependents_commands_and_file_count() {
+        let (needed_by, commands, files) = parse_pip_show("\
+Name: charset-normalizer
+Version: 3.4.1
+Location: C:\\Python311\\Lib\\site-packages
+Requires:
+Required-by: reportlab, requests
+Files:
+  ..\\..\\Scripts\\normalizer.exe
+  charset_normalizer-3.4.1.dist-info\\INSTALLER
+  charset_normalizer\\__init__.py
+");
+        assert_eq!(needed_by, vec!["reportlab", "requests"]);
+        assert_eq!(commands, vec!["normalizer"]);
+        assert_eq!(files, 3);
+        let (needed_by, _, _) = parse_pip_show("Name: pip\nRequired-by: \nFiles:\n  pip\\__init__.py\n");
+        assert!(needed_by.is_empty());
+    }
+
+    #[test]
+    fn npm_bin_names_the_commands_a_package_adds() {
+        assert_eq!(npm_bin_commands(r#"{"bin":{"pnpm":"bin/pnpm.cjs","pnpx":"bin/pnpx.cjs"}}"#, "pnpm"), vec!["pnpm", "pnpx"]);
+        assert_eq!(npm_bin_commands(r#"{"bin":"cli.js"}"#, "@anthropic-ai/claude-code"), vec!["claude-code"]);
+        assert!(npm_bin_commands(r#"{"name":"lib-only"}"#, "lib-only").is_empty());
+    }
+
+    #[test]
+    fn vscode_dependents_come_from_dependencies_and_packs() {
+        let manifests = [
+            r#"{"publisher":"ms-python","name":"debugpy","extensionDependencies":["ms-python.python"]}"#,
+            r#"{"publisher":"ms-python","name":"debugpy","extensionDependencies":["MS-Python.Python"]}"#,
+            r#"{"publisher":"x","name":"pack","extensionPack":["ms-python.python","y.z"]}"#,
+            r#"{"publisher":"ms-python","name":"python","extensionPack":["ms-python.python"]}"#,
+            r#"{"publisher":"a","name":"unrelated"}"#,
+        ];
+        let deps = vscode_dependents(manifests.iter().map(|m| m.to_string()), "ms-python.python");
+        assert_eq!(deps, vec!["ms-python.debugpy", "x.pack"]);
+    }
+
+    #[test]
+    fn pip_check_lines_are_matched_on_the_whole_name() {
+        let out = "\
+requests 2.32.3 requires charset_normalizer, which is not installed.
+requests-toolbelt 1.0.0 requires requests, which is not installed.
+oauth 1.0 requires requests-oauthlib, which is not installed.
+";
+        assert_eq!(broken_requirements(out, "charset-normalizer"), vec!["requests 2.32.3 requires charset_normalizer, which is not installed."]);
+        assert_eq!(broken_requirements(out, "requests").len(), 1);
+        assert!(broken_requirements("No broken requirements found.", "requests").is_empty());
     }
 
     #[test]

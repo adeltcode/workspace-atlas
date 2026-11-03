@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { RefreshCw, Download, CircleArrowUp } from 'lucide-react'
+import { RefreshCw, Download, CircleArrowUp, Trash2 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../../store/appStore'
 import { SortHeader } from '../docker/components/TableBits'
@@ -9,7 +9,7 @@ import {
   Segmented, SegmentedItem, EmptyState, Tag,
 } from '../../components/ui'
 import * as api from './api'
-import type { Package, SourceResult } from './types'
+import type { Package, SourceResult, UninstallCheck } from './types'
 
 type SortKey = 'name' | 'version' | 'source'
 
@@ -19,6 +19,9 @@ function csvCell(value: string): string {
   const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value
   return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe
 }
+
+/** Name and version, without repeating a version winget already put in the name. */
+const nameWithVersion = (p: Package) => (p.name.includes(p.version) ? p.name : `${p.name} ${p.version}`)
 
 export default function PackagesView() {
   const addActivity = useAppStore(s => s.addActivity)
@@ -33,9 +36,19 @@ export default function PackagesView() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [exporting, setExporting] = useState(false)
   const [confirm, setConfirm]     = useState<Package | null>(null)
-  const [upgrading, setUpgrading] = useState<Package | null>(null)
-  const [upgraded, setUpgraded]   = useState<{ name: string; from: string; to: string } | null>(null)
-  const [upgradeError, setUpgradeError] = useState<{ name: string; error: unknown } | null>(null)
+  const [removing, setRemoving]   = useState<{
+    pkg: Package
+    /** Set when several installs share the id, so winget removes this one. */
+    pinned: string | null
+    check: UninstallCheck | null
+    checkError: unknown
+  } | null>(null)
+  const [confirmText, setConfirmText] = useState('')
+  // One upgrade or uninstall at a time; the backend enforces the same.
+  const [job, setJob]           = useState<{ kind: 'upgrade' | 'uninstall'; pkg: Package } | null>(null)
+  const [done, setDone]         = useState<string | null>(null)
+  const [jobError, setJobError] = useState<{ title: string; error: unknown } | null>(null)
+  const [broken, setBroken]     = useState<{ name: string; lines: string[] } | null>(null)
 
   const scan = useCallback(async () => {
     setLoading(true)
@@ -115,49 +128,111 @@ export default function PackagesView() {
     }
   }
 
+  const startJob = (kind: 'upgrade' | 'uninstall', pkg: Package) => {
+    setJob({ kind, pkg })
+    setDone(null)
+    setJobError(null)
+    setBroken(null)
+  }
+
+  // Rescan one source so its rows show what is installed now, not what the
+  // tool claimed it did. Null when the rescan itself failed.
+  const rescanSource = async (id: string): Promise<Package[] | null> => {
+    try {
+      const [fresh] = await api.pkgScan([id])
+      setResults(rs => rs && rs.map(r => (r.id === id ? fresh : r)))
+      return fresh.packages
+    } catch (e) {
+      setError(String(e))
+      return null
+    }
+  }
+
   const runUpgrade = async (p: Package) => {
     setConfirm(null)
-    setUpgrading(p)
-    setUpgraded(null)
-    setUpgradeError(null)
+    startJob('upgrade', p)
     try {
       await api.pkgUpgrade(p.id)
     } catch (e) {
-      setUpgradeError({ name: p.name, error: e })
+      setJobError({ title: `Could not upgrade ${p.name}`, error: e })
       addActivity({ module: 'packages', action: 'Upgrade package', outcome: 'failure', detail: `${p.name}: ${String(e)}` })
-      setUpgrading(null)
+      setJob(null)
       return
     }
-    // Rescan winget alone so the row shows what is installed now, not what
-    // winget claimed it would install. One id can have several installs (an
-    // old x86 copy beside the x64 one), so the new version is the one that was
-    // not there before.
+    // One id can have several installs (an old x86 copy beside the x64 one),
+    // so the new version is the one that was not there before.
     const before = all.filter(x => x.source === 'winget' && x.id === p.id).map(x => x.version)
-    let after: string[] = []
-    let rescanned = false
-    try {
-      const [winget] = await api.pkgScan(['winget'])
-      setResults(rs => rs && rs.map(r => (r.id === 'winget' ? winget : r)))
-      after = winget.packages.filter(x => x.id === p.id).map(x => x.version)
-      rescanned = true
-    } catch (e) {
-      setError(String(e))
-    }
+    const fresh = await rescanSource('winget')
+    const after = (fresh ?? []).filter(x => x.id === p.id).map(x => x.version)
     const now = after.find(v => !before.includes(v))
     if (now) {
-      setUpgraded({ name: p.name, from: p.version, to: now })
+      setDone(`${p.name} ${p.version} → ${now}`)
       addActivity({ module: 'packages', action: 'Upgraded package', outcome: 'success', detail: `${p.name} ${p.version} → ${now}` })
     } else {
       addActivity({
         module: 'packages',
         action: 'Upgraded package',
         outcome: 'info',
-        detail: !rescanned ? `winget finished upgrading ${p.name}. Rescan to see the installed version.`
+        detail: fresh === null ? `winget finished upgrading ${p.name}. Rescan to see the installed version.`
           : after.length === 0 ? `winget finished, but ${p.name} no longer appears in winget list.`
           : `winget finished, but ${p.name} still reports ${p.version}. Some installers finish after a restart.`,
       })
     }
-    setUpgrading(null)
+    setJob(null)
+  }
+
+  const sameId = (p: Package) => all.filter(x => x.source === p.source && x.id === p.id).length
+  const isJob = (kind: 'upgrade' | 'uninstall', p: Package) =>
+    job?.kind === kind && job.pkg.source === p.source && job.pkg.id === p.id && job.pkg.version === p.version
+
+  const openUninstall = async (p: Package) => {
+    const pinned = p.source === 'winget' && sameId(p) > 1 ? p.version : null
+    setConfirmText('')
+    setRemoving({ pkg: p, pinned, check: null, checkError: null })
+    try {
+      const check = await api.pkgUninstallCheck(p.source, p.id, p.name, p.version, pinned)
+      setRemoving(r => (r?.pkg === p ? { ...r, check } : r))
+    } catch (e) {
+      setRemoving(r => (r?.pkg === p ? { ...r, checkError: e } : r))
+    }
+  }
+
+  const closeUninstall = () => {
+    setRemoving(null)
+    setConfirmText('')
+  }
+
+  const runUninstall = async () => {
+    if (!removing?.check) return
+    const { pkg: p, pinned, check } = removing
+    closeUninstall()
+    startJob('uninstall', p)
+    let missingReqs: string[]
+    try {
+      missingReqs = await api.pkgUninstall(p.source, p.id, pinned, check.core ? confirmText : null)
+    } catch (e) {
+      setJobError({ title: `Could not uninstall ${p.name}`, error: e })
+      addActivity({ module: 'packages', action: 'Uninstall package', outcome: 'failure', detail: `${p.name}: ${String(e)}` })
+      setJob(null)
+      return
+    }
+    const fresh = await rescanSource(p.source)
+    const gone = fresh !== null && !fresh.some(x => x.id === p.id && x.version === p.version)
+    if (gone) setDone(`Removed ${nameWithVersion(p)}`)
+    if (missingReqs.length) setBroken({ name: p.name, lines: missingReqs })
+    addActivity({
+      module: 'packages',
+      action: 'Uninstalled package',
+      outcome: gone && !missingReqs.length ? 'success' : 'info',
+      detail: [
+        fresh === null ? `${p.source} finished removing ${p.name}. Rescan to confirm it is gone`
+          : gone ? `${nameWithVersion(p)} (${p.source})`
+          : `${p.source} finished, but ${nameWithVersion(p)} still appears. The uninstaller may need a restart or more steps`,
+        missingReqs.length ? `Now missing a requirement: ${missingReqs.join('; ')}` : '',
+        `Reinstall: ${check.reinstall_command}`,
+      ].filter(Boolean).join('. '),
+    })
+    setJob(null)
   }
 
   return (
@@ -202,8 +277,14 @@ export default function PackagesView() {
         <ErrorBanner key={r.id} title={r.label}>{r.error}</ErrorBanner>
       ))}
 
-      {upgradeError && (
-        <ErrorBanner title={`Could not upgrade ${upgradeError.name}`} error={upgradeError.error} detailLabel="What winget reported" />
+      {jobError && (
+        <ErrorBanner title={jobError.title} error={jobError.error} detailLabel="What the tool reported" />
+      )}
+
+      {broken && (
+        <ErrorBanner title={`Removing ${broken.name} left packages missing a requirement`}>
+          {broken.lines.join(' ')}
+        </ErrorBanner>
       )}
 
       {loading && !results && <div className="img-loading">Scanning package managers…</div>}
@@ -253,8 +334,12 @@ export default function PackagesView() {
             </button>
 
             <span role="status">
-              {upgrading && <Tag tone="accent">Upgrading {upgrading.name}, output in the terminal</Tag>}
-              {upgraded && <Tag tone="ok">{upgraded.name} {upgraded.from} → {upgraded.to}</Tag>}
+              {job && (
+                <Tag tone="accent">
+                  {job.kind === 'upgrade' ? 'Upgrading' : 'Uninstalling'} {job.pkg.name}, output in the terminal
+                </Tag>
+              )}
+              {done && <Tag tone="ok">{done}</Tag>}
             </span>
 
             <span className="img-count">{rows.length} shown</span>
@@ -276,6 +361,7 @@ export default function PackagesView() {
                     <SortHeader label="Version" col="version" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                     <th className="img-th">Available</th>
                     <SortHeader label="Source"  col="source"  sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                    <th className="img-th ctr-th-actions">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -295,14 +381,27 @@ export default function PackagesView() {
                             size="sm"
                             className="pkg-upgrade"
                             onClick={() => setConfirm(p)}
-                            disabled={upgrading !== null}
+                            disabled={job !== null}
                             aria-label={`Upgrade ${p.name} to ${p.available}`}
                           >
-                            {upgrading?.id === p.id ? 'Upgrading…' : 'Upgrade'}
+                            {isJob('upgrade', p) ? 'Upgrading…' : 'Upgrade'}
                           </Button>
                         )}
                       </td>
                       <td className="img-td img-age">{p.source}</td>
+                      <td className="img-td ctr-td-actions">
+                        {p.uninstallable && (
+                          <Button
+                            size="sm"
+                            variant="danger-outline"
+                            onClick={() => openUninstall(p)}
+                            disabled={job !== null}
+                            aria-label={`Uninstall ${nameWithVersion(p)}`}
+                          >
+                            {isJob('uninstall', p) ? 'Removing…' : 'Uninstall'}
+                          </Button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -313,6 +412,7 @@ export default function PackagesView() {
           <p className="pkg-note">
             {missing.length > 0 && <>Not found here: {missing.map(r => r.label).join(', ')}. </>}
             Only winget reports available upgrades in a plain list, so the Updates count and the Upgrade button cover winget alone.
+            Uninstall covers winget, pip, npm, and VS Code.
           </p>
         </div>
       )}
@@ -337,6 +437,113 @@ export default function PackagesView() {
           </div>
         </Modal>
       )}
+
+      {removing && (
+        <Modal icon={<Trash2 size={16} />} iconDanger title={`Uninstall ${removing.pkg.name}?`} onClose={closeUninstall}>
+          {removing.checkError ? (
+            <ErrorBanner title="Could not check this package" error={removing.checkError} />
+          ) : !removing.check ? (
+            <p className="modal-body" role="status">Checking what depends on {removing.pkg.name}…</p>
+          ) : (
+            <UninstallReview
+              pkg={removing.pkg}
+              sourceLabel={found.find(r => r.id === removing.pkg.source)?.label ?? removing.pkg.source}
+              check={removing.check}
+              pinned={removing.pinned}
+              installs={sameId(removing.pkg)}
+              confirmText={confirmText}
+              onConfirmText={setConfirmText}
+            />
+          )}
+          <div className="modal-actions">
+            <Button onClick={closeUninstall}>Cancel</Button>
+            {removing.check && (
+              <Button
+                variant="danger"
+                onClick={runUninstall}
+                disabled={removing.check.core && confirmText.trim() !== removing.pkg.id}
+              >
+                <Trash2 size={13} /> Uninstall
+              </Button>
+            )}
+          </div>
+        </Modal>
+      )}
     </div>
+  )
+}
+
+/** The pre-check findings, the exact command, and for core tools the typed
+ *  confirmation. Warnings take the warning tone; facts stay neutral. */
+function UninstallReview({ pkg, sourceLabel, check, pinned, installs, confirmText, onConfirmText }: {
+  pkg: Package
+  sourceLabel: string
+  check: UninstallCheck
+  pinned: string | null
+  installs: number
+  confirmText: string
+  onConfirmText: (value: string) => void
+}) {
+  return (
+    <>
+      <p className="modal-body">
+        This removes <strong>{nameWithVersion(pkg)}</strong> using {sourceLabel}.
+        {check.core && <> It is a <strong>core tool</strong> that other tools rely on.</>}
+      </p>
+      <div className="wsl-estimate">
+        {check.needed_by && (
+          <div className={clsx('wsl-estimate-row', check.needed_by.length > 0 && 'pkg-check-warn')}>
+            <span>Needed by</span>
+            <strong>{check.needed_by.length ? check.needed_by.join(', ') : 'nothing installed'}</strong>
+          </div>
+        )}
+        {check.commands.length > 0 && (
+          <div className="wsl-estimate-row pkg-check-warn">
+            <span>Commands removed</span><strong>{check.commands.join(', ')}</strong>
+          </div>
+        )}
+        {check.running && (
+          <div className={clsx('wsl-estimate-row', check.running.length > 0 && 'pkg-check-warn')}>
+            <span>Running now</span>
+            <strong>{check.running.length ? check.running.join(', ') : 'no'}</strong>
+          </div>
+        )}
+        {check.files !== null && (
+          <div className="wsl-estimate-row"><span>Files deleted</span><strong>{check.files}</strong></div>
+        )}
+        {pinned && (
+          <div className="wsl-estimate-row">
+            <span>Installs with this ID</span><strong>{installs}, removes {pinned} only</strong>
+          </div>
+        )}
+      </div>
+      {check.running && check.running.length > 0 && (
+        <p className="wsl-estimate-note">Close it before uninstalling, or the uninstaller may fail or ask to restart.</p>
+      )}
+      {check.limits.map(limit => <p key={limit} className="wsl-estimate-note">{limit}</p>)}
+      <div className="cmd-block">
+        <span className="cmd-block-label">Exact command</span>
+        <code className="cmd-block-code">{check.command}</code>
+      </div>
+      <p className="wsl-estimate-note">To put it back later: <code>{check.reinstall_command}</code></p>
+      {check.core && (
+        <>
+          <label className="wsl-import-label" htmlFor="pkg-uninstall-confirm" style={{ marginTop: 12 }}>
+            Type <strong>{pkg.id}</strong> to confirm
+          </label>
+          <input
+            id="pkg-uninstall-confirm"
+            className="modal-input"
+            type="text"
+            autoFocus
+            spellCheck={false}
+            autoComplete="off"
+            placeholder={pkg.id}
+            value={confirmText}
+            onChange={e => onConfirmText(e.target.value)}
+          />
+        </>
+      )}
+    </>
   )
 }

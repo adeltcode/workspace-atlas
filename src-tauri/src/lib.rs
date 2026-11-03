@@ -68,6 +68,8 @@ pub fn run() {
             packages::pkg_scan,
             packages::pkg_export_csv,
             packages::pkg_upgrade,
+            packages::pkg_uninstall_check,
+            packages::pkg_uninstall,
             wsl::wsl_check,
             wsl::wsl_list_distros,
             wsl::wsl_running_names,
