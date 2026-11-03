@@ -3,7 +3,9 @@ import type { SourceResult } from './types'
 
 /** Every source the backend knows how to scan. Ids it does not recognise are
  *  dropped there, so this list can never widen what actually runs. */
-export const SOURCE_IDS = ['winget', 'npm', 'pip']
+export const SOURCE_IDS = [
+  'winget', 'choco', 'scoop', 'npm', 'pip', 'cargo', 'dotnet', 'powershell', 'vscode', 'registry',
+]
 
 /** Scan the given package managers concurrently. One result per source, in the
  *  order requested; a manager that is not installed comes back `installed: false`

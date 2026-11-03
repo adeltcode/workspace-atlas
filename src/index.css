@@ -7583,6 +7583,11 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
    filter's capitalization is switched off here. */
 .pkg-src-btn { text-transform: none; }
 
+/* Ten sources outgrow a narrow window, so the source filter scrolls rather
+   than pushing the page sideways. */
+.pkg-tab .segmented { flex-shrink: 1; max-width: 100%; overflow-x: auto; scrollbar-width: thin; }
+.pkg-tab .segmented-item { flex-shrink: 0; }
+
 /* An available upgrade is an attention state, not a healthy one, so it takes
    the warning tone rather than the success badge used for "in use". */
 .pkg-avail {

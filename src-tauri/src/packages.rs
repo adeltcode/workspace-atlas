@@ -41,6 +41,18 @@ const SOURCES: &[SourceSpec] = &[
         argv: &["winget", "list", "--disable-interactivity"],
     },
     SourceSpec {
+        id: "choco",
+        label: "Chocolatey",
+        // --local-only is a no-op on Chocolatey 2 but keeps 1.x from searching
+        // the online repository instead.
+        argv: &["choco", "list", "--local-only", "--limit-output"],
+    },
+    SourceSpec {
+        id: "scoop",
+        label: "Scoop",
+        argv: &["scoop", "export"],
+    },
+    SourceSpec {
         id: "npm",
         label: "npm (global)",
         argv: &["npm", "ls", "-g", "--depth=0", "--json"],
@@ -50,7 +62,53 @@ const SOURCES: &[SourceSpec] = &[
         label: "pip",
         argv: &["pip", "list", "--format=json"],
     },
+    SourceSpec {
+        id: "cargo",
+        label: "Cargo",
+        argv: &["cargo", "install", "--list"],
+    },
+    SourceSpec {
+        id: "dotnet",
+        label: ".NET tools",
+        argv: &["dotnet", "tool", "list", "-g"],
+    },
+    SourceSpec {
+        id: "powershell",
+        label: "PowerShell",
+        argv: &[
+            "powershell", "-NoProfile", "-NonInteractive", "-Command",
+            "Get-InstalledModule | Select-Object Name,Version | ConvertTo-Csv -NoTypeInformation",
+        ],
+    },
+    SourceSpec {
+        id: "vscode",
+        label: "VS Code",
+        argv: &["code", "--list-extensions", "--show-versions"],
+    },
+    SourceSpec {
+        id: "registry",
+        label: "Installed apps",
+        // The uninstall keys behind Settings > Installed apps, minus the entries
+        // Windows itself hides (SystemComponent = 1).
+        argv: &[
+            "powershell", "-NoProfile", "-NonInteractive", "-Command",
+            "Get-ItemProperty HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*, \
+             HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*, \
+             HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* -ErrorAction SilentlyContinue \
+             | Where-Object DisplayName | Where-Object SystemComponent -ne 1 \
+             | Select-Object DisplayName,DisplayVersion,PSChildName | ConvertTo-Csv -NoTypeInformation",
+        ],
+    },
 ];
+
+/// The argv as one line that pastes into PowerShell or cmd. Arguments with
+/// spaces are double-quoted, which is also how Rust hands them to `cmd /C`.
+fn command_line(argv: &[&str]) -> String {
+    argv.iter()
+        .map(|a| if a.contains(' ') { format!("\"{a}\"") } else { a.to_string() })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -59,15 +117,28 @@ const SOURCES: &[SourceSpec] = &[
 #[derive(serde::Serialize, Clone, Debug, PartialEq)]
 pub struct Package {
     pub name: String,
-    /// Package id where the manager has one distinct from the name (winget).
-    /// Equal to `name` for npm and pip.
+    /// Package id where the manager has one distinct from the name (winget,
+    /// the registry key for installed apps). Equal to `name` elsewhere.
     pub id: String,
     pub version: String,
     /// Newer version the manager reports as installable. Empty when the source
-    /// does not report it in a plain list (npm, pip) or nothing is available.
+    /// does not report it in a plain list (everything but winget) or nothing is
+    /// available.
     pub available: String,
-    /// Scanner source id: "winget", "npm", "pip".
+    /// Scanner source id, one of the `SOURCES` ids.
     pub source: String,
+}
+
+impl Package {
+    fn new(source: &str, name: &str, id: &str, version: &str) -> Self {
+        Package {
+            name: name.to_string(),
+            id: id.to_string(),
+            version: version.to_string(),
+            available: String::new(),
+            source: source.to_string(),
+        }
+    }
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -115,7 +186,7 @@ fn scan_one(spec: &SourceSpec) -> SourceResult {
     let mut result = SourceResult {
         id: spec.id.to_string(),
         label: spec.label.to_string(),
-        command: spec.argv.join(" "),
+        command: command_line(spec.argv),
         installed: is_in_path(spec.argv[0]),
         packages: Vec::new(),
         error: None,
@@ -128,6 +199,11 @@ fn scan_one(spec: &SourceSpec) -> SourceResult {
     // exits. Add a watchdog if a source turns out to hang in practice.
     match run_capture(spec.argv) {
         Ok((stdout, stderr, ok)) => {
+            // dotnet is on PATH with only a runtime, but global tools need an SDK.
+            if spec.id == "dotnet" && stderr.contains("No .NET SDKs were found") {
+                result.installed = false;
+                return result;
+            }
             result.packages = parse_packages(spec.id, &stdout);
             // Only surface the exit code when it cost us the listing; a warning
             // alongside a full package list is noise.
@@ -168,7 +244,7 @@ pub async fn pkg_scan(
 
     tauri::async_runtime::spawn_blocking(move || -> Result<Vec<SourceResult>, AtlasError> {
         for spec in &specs {
-            emit_line(&app, format!("$ {}", spec.argv.join(" ")), false);
+            emit_line(&app, format!("$ {}", command_line(spec.argv)), false);
         }
 
         let results: Vec<SourceResult> = thread::scope(|scope| {
@@ -183,7 +259,7 @@ pub async fn pkg_scan(
                     handle.join().unwrap_or_else(|_| SourceResult {
                         id: spec.id.to_string(),
                         label: spec.label.to_string(),
-                        command: spec.argv.join(" "),
+                        command: command_line(spec.argv),
                         installed: true,
                         packages: Vec::new(),
                         error: Some("scan thread panicked".to_string()),
@@ -194,7 +270,7 @@ pub async fn pkg_scan(
 
         for r in &results {
             if !r.installed {
-                emit_line(&app, format!("  # {} is not installed, skipped", r.id), false);
+                emit_line(&app, format!("  # {} not found, skipped", r.label), false);
             } else if let Some(err) = &r.error {
                 emit_line(&app, format!("  ✗ {}: {}", r.id, err), true);
             } else {
@@ -248,10 +324,21 @@ pub async fn pkg_export_csv(
 fn parse_packages(source: &str, stdout: &str) -> Vec<Package> {
     match source {
         "winget" => parse_winget(stdout),
+        "choco" => parse_choco(stdout),
+        "scoop" => parse_scoop(stdout),
         "npm" => parse_npm(stdout),
         "pip" => parse_pip(stdout),
+        "cargo" => parse_cargo(stdout),
+        "dotnet" => parse_dotnet(stdout),
+        "powershell" => parse_psmodules(stdout),
+        "vscode" => parse_vscode(stdout),
+        "registry" => parse_registry(stdout),
         _ => Vec::new(),
     }
+}
+
+fn field(cols: &[String], i: usize) -> &str {
+    cols.get(i).map_or("", String::as_str)
 }
 
 /// Start offset of each column in a fixed-width header line: a column begins at
@@ -289,7 +376,32 @@ fn slice_columns(line: &[char], starts: &[usize]) -> Vec<String> {
         .collect()
 }
 
-/// Parse `winget list`: a fixed-width table under a solid rule of dashes.
+/// Read a fixed-width table under a solid rule of dashes, as printed by
+/// `winget list` and `dotnet tool list`. Returns the header's column count and
+/// every row with a non-empty first column.
+fn parse_table(out: &str) -> (usize, Vec<Vec<String>>) {
+    let lines: Vec<&str> = out.lines().collect();
+    let Some(rule) = lines
+        .iter()
+        .position(|l| l.len() >= 10 && l.chars().all(|c| c == '-'))
+    else {
+        return (0, Vec::new());
+    };
+    if rule == 0 {
+        return (0, Vec::new());
+    }
+
+    let header: Vec<char> = lines[rule - 1].chars().collect();
+    let starts = column_starts(&header);
+    let rows = lines[rule + 1..]
+        .iter()
+        .map(|line| slice_columns(&line.chars().collect::<Vec<char>>(), &starts))
+        .filter(|cols| cols.first().is_some_and(|name| !name.is_empty()))
+        .collect();
+    (starts.len(), rows)
+}
+
+/// Parse `winget list`.
 ///
 /// The Available column only exists when at least one package has an upgrade,
 /// so the layout is decided by how many columns the header actually has.
@@ -298,46 +410,130 @@ fn slice_columns(line: &[char], starts: &[usize]) -> Vec<String> {
 /// A name containing double-width CJK glyphs will drift its row's later columns;
 /// switch to a display-width measure if that shows up.
 fn parse_winget(out: &str) -> Vec<Package> {
-    let lines: Vec<&str> = out.lines().collect();
-    let Some(rule) = lines
-        .iter()
-        .position(|l| l.len() >= 10 && l.chars().all(|c| c == '-'))
-    else {
-        return Vec::new();
-    };
-    if rule == 0 {
-        return Vec::new();
-    }
-
-    let header: Vec<char> = lines[rule - 1].chars().collect();
-    let starts = column_starts(&header);
-    if starts.len() < 3 {
+    let (columns, rows) = parse_table(out);
+    if columns < 3 {
         return Vec::new();
     }
     // 5 columns: Name, Id, Version, Available, Source.
     // 4 columns: Name, Id, Version, Source. Nothing is upgradable.
-    let has_available = starts.len() >= 5;
+    let has_available = columns >= 5;
 
-    lines[rule + 1..]
-        .iter()
-        .filter_map(|line| {
-            let cols = slice_columns(&line.chars().collect::<Vec<char>>(), &starts);
-            let name = cols.first()?.clone();
-            if name.is_empty() {
-                return None;
-            }
-            Some(Package {
-                id: cols.get(1).cloned().unwrap_or_default(),
-                version: cols.get(2).cloned().unwrap_or_default(),
-                available: if has_available {
-                    cols.get(3).cloned().unwrap_or_default()
-                } else {
-                    String::new()
-                },
-                source: "winget".to_string(),
-                name,
-            })
+    rows.iter()
+        .map(|cols| Package {
+            available: if has_available { field(cols, 3).to_string() } else { String::new() },
+            ..Package::new("winget", &cols[0], field(cols, 1), field(cols, 2))
         })
+        .collect()
+}
+
+/// Parse `dotnet tool list -g`: a Package Id, Version, Commands table.
+fn parse_dotnet(out: &str) -> Vec<Package> {
+    parse_table(out)
+        .1
+        .iter()
+        .map(|cols| Package::new("dotnet", &cols[0], &cols[0], field(cols, 1)))
+        .collect()
+}
+
+/// Parse `choco list --limit-output`: one `name|version` per line.
+fn parse_choco(out: &str) -> Vec<Package> {
+    out.lines()
+        .filter_map(|line| {
+            let (name, version) = line.trim().split_once('|')?;
+            (!name.is_empty()).then(|| Package::new("choco", name, name, version))
+        })
+        .collect()
+}
+
+/// Parse `scoop export`: `{"apps": [{"Name": …, "Version": …}], …}`.
+fn parse_scoop(out: &str) -> Vec<Package> {
+    // Scoop prints warnings such as "Scoop is out of date" ahead of the JSON.
+    let json = out.find('{').map_or("", |start| &out[start..]);
+    let Ok(root) = serde_json::from_str::<serde_json::Value>(json) else {
+        return Vec::new();
+    };
+    let Some(apps) = root.get("apps").and_then(|a| a.as_array()) else {
+        return Vec::new();
+    };
+    apps.iter()
+        .filter_map(|app| {
+            let name = app.get("Name")?.as_str()?;
+            let version = app.get("Version").and_then(|v| v.as_str()).unwrap_or_default();
+            Some(Package::new("scoop", name, name, version))
+        })
+        .collect()
+}
+
+/// Parse `cargo install --list`: a `name v1.2.3:` line per crate, or
+/// `name v1.2.3 (source):` for git and path installs, each followed by its
+/// binaries on indented lines.
+fn parse_cargo(out: &str) -> Vec<Package> {
+    out.lines()
+        .filter(|line| !line.starts_with(char::is_whitespace))
+        .filter_map(|line| {
+            let (name, rest) = line.trim_end().strip_suffix(':')?.split_once(' ')?;
+            let version = rest.split(' ').next()?.trim_start_matches('v');
+            Some(Package::new("cargo", name, name, version))
+        })
+        .collect()
+}
+
+/// Parse `code --list-extensions --show-versions`: one `publisher.name@1.2.3`
+/// per line.
+fn parse_vscode(out: &str) -> Vec<Package> {
+    out.lines()
+        .filter_map(|line| {
+            let (id, version) = line.trim().rsplit_once('@')?;
+            id.contains('.').then(|| Package::new("vscode", id, id, version))
+        })
+        .collect()
+}
+
+/// Rows of PowerShell 5.1's `ConvertTo-Csv -NoTypeInformation`, header
+/// dropped. Every field is double-quoted with inner quotes doubled.
+fn parse_csv(out: &str) -> Vec<Vec<String>> {
+    out.lines()
+        .skip_while(|line| !line.starts_with('"'))
+        .skip(1)
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            let mut fields = Vec::new();
+            let mut field = String::new();
+            let mut quoted = false;
+            let mut chars = line.chars().peekable();
+            while let Some(c) = chars.next() {
+                match c {
+                    '"' if quoted && chars.peek() == Some(&'"') => {
+                        field.push('"');
+                        chars.next();
+                    }
+                    '"' => quoted = !quoted,
+                    ',' if !quoted => fields.push(std::mem::take(&mut field)),
+                    _ => field.push(c),
+                }
+            }
+            fields.push(field);
+            fields
+        })
+        .collect()
+}
+
+/// Parse the Name,Version CSV of `Get-InstalledModule`.
+fn parse_psmodules(out: &str) -> Vec<Package> {
+    parse_csv(out)
+        .iter()
+        .filter(|cols| !field(cols, 0).is_empty())
+        .map(|cols| Package::new("powershell", &cols[0], &cols[0], field(cols, 1)))
+        .collect()
+}
+
+/// Parse the DisplayName,DisplayVersion,PSChildName CSV of the uninstall keys.
+/// The key name is the id: a product GUID or a plain name like `7-Zip`.
+fn parse_registry(out: &str) -> Vec<Package> {
+    parse_csv(out)
+        .iter()
+        .filter(|cols| !field(cols, 0).is_empty())
+        .map(|cols| Package::new("registry", &cols[0], field(cols, 2), field(cols, 1)))
         .collect()
 }
 
@@ -458,5 +654,97 @@ Name                           Id                        Version       Source
         assert_eq!(pkgs[1].name, "pip");
         assert_eq!(pkgs[1].version, "26.1.1");
         assert!(parse_pip("WARNING: pip is being invoked by an old script wrapper").is_empty());
+    }
+
+    #[test]
+    fn every_command_pastes_into_powershell_and_cmd_unchanged() {
+        // `$` and backtick expand inside PowerShell's double quotes, `%` expands
+        // under cmd, and a `"` would break the quoting command_line adds.
+        for spec in SOURCES {
+            for arg in spec.argv {
+                assert!(!arg.contains(['$', '`', '%', '"']), "{}: {arg}", spec.id);
+            }
+        }
+        assert_eq!(
+            command_line(&["powershell", "-Command", "Get-InstalledModule | ConvertTo-Csv"]),
+            r#"powershell -Command "Get-InstalledModule | ConvertTo-Csv""#
+        );
+    }
+
+    #[test]
+    fn dotnet_reads_the_same_table_shape_as_winget() {
+        let pkgs = parse_dotnet("\
+Package Id      Version      Commands
+-------------------------------------
+dotnet-ef       8.0.0        dotnet-ef
+");
+        assert_eq!(pkgs, vec![Package::new("dotnet", "dotnet-ef", "dotnet-ef", "8.0.0")]);
+        // No tools installed: header and rule only.
+        assert!(parse_dotnet("Package Id      Version      Commands\n-------------------------------------\n").is_empty());
+    }
+
+    #[test]
+    fn choco_reads_limit_output_lines() {
+        let pkgs = parse_choco("chocolatey|2.7.5\r\nchocolatey-core.extension|1.4.0\r\n");
+        assert_eq!(pkgs.len(), 2);
+        assert_eq!(pkgs[0], Package::new("choco", "chocolatey", "chocolatey", "2.7.5"));
+        assert!(parse_choco("Chocolatey v2.7.5\n0 packages installed.").is_empty());
+    }
+
+    #[test]
+    fn scoop_reads_the_export_json_after_any_warning() {
+        let pkgs = parse_scoop(r#"WARN  Scoop is out of date. Run 'scoop update' to get the latest changes.
+{"buckets":[{"Name":"main"}],"apps":[{"Info":"","Source":"main","Name":"7zip","Version":"26.00","Updated":"2026-01-01"}]}"#);
+        assert_eq!(pkgs, vec![Package::new("scoop", "7zip", "7zip", "26.00")]);
+        assert!(parse_scoop("7zip 19.00 [main]").is_empty());
+    }
+
+    #[test]
+    fn cargo_reads_crate_lines_and_skips_binaries() {
+        let pkgs = parse_cargo("\
+ripgrep v14.1.0:
+    rg.exe
+tauri-cli v2.11.2:
+    cargo-tauri.exe
+mytool v0.1.0 (C:\\src\\my tool):
+    mytool.exe
+");
+        assert_eq!(pkgs.len(), 3);
+        assert_eq!(pkgs[0], Package::new("cargo", "ripgrep", "ripgrep", "14.1.0"));
+        assert_eq!(pkgs[2].name, "mytool");
+        assert_eq!(pkgs[2].version, "0.1.0");
+    }
+
+    #[test]
+    fn vscode_splits_on_the_last_at_sign() {
+        let pkgs = parse_vscode("anthropic.claude-code@2.1.314\r\nms-python.python@2026.1.0\r\n");
+        assert_eq!(pkgs.len(), 2);
+        assert_eq!(pkgs[0], Package::new("vscode", "anthropic.claude-code", "anthropic.claude-code", "2.1.314"));
+        assert!(parse_vscode("Warning: 'list-extensions' is not in the list of known options").is_empty());
+    }
+
+    #[test]
+    fn csv_handles_quotes_commas_and_empty_fields() {
+        let rows = parse_csv("\
+\"DisplayName\",\"DisplayVersion\",\"PSChildName\"
+\"7-Zip 26.05 (x64)\",\"26.05\",\"7-Zip\"
+\"Example, Inc. \"\"Pro\"\" Tools\",\"\",\"{00000000-0000-0000-0000-000000000000}\"
+");
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[1], vec!["Example, Inc. \"Pro\" Tools", "", "{00000000-0000-0000-0000-000000000000}"]);
+    }
+
+    #[test]
+    fn registry_uses_the_key_name_as_the_id() {
+        let pkgs = parse_registry("\"DisplayName\",\"DisplayVersion\",\"PSChildName\"\r\n\"7-Zip 26.05 (x64)\",\"26.05\",\"7-Zip\"\r\n");
+        assert_eq!(pkgs, vec![Package::new("registry", "7-Zip 26.05 (x64)", "7-Zip", "26.05")]);
+    }
+
+    #[test]
+    fn psmodules_read_name_and_version_and_nothing_from_an_empty_list() {
+        let pkgs = parse_psmodules("\"Name\",\"Version\"\r\n\"PSReadLine\",\"2.3.6\"\r\n");
+        assert_eq!(pkgs, vec![Package::new("powershell", "PSReadLine", "PSReadLine", "2.3.6")]);
+        // Get-InstalledModule with nothing installed prints nothing at all.
+        assert!(parse_psmodules("").is_empty());
     }
 }

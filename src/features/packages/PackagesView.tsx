@@ -119,7 +119,7 @@ export default function PackagesView() {
           { label: 'Packages' },
         ]}
         title="Packages"
-        subtitle="Everything winget, npm, and pip have installed on this machine."
+        subtitle="Everything your package managers have installed on this machine."
         status={results && (
           <span className="status-text" style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)' }}>
             <span className={clsx('status-dot', found.length ? 'online' : 'offline')} />
@@ -157,7 +157,7 @@ export default function PackagesView() {
       {results && found.length === 0 && !loading && (
         <Prerequisite
           title="No package managers found"
-          description="None of winget, npm, or pip are on PATH. winget ships with Windows 11; if it is missing, install App Installer from the Microsoft Store. Verify with the command below, then rescan."
+          description="None of the supported package managers are on PATH. winget ships with Windows 11; if it is missing, install App Installer from the Microsoft Store. Verify with the command below, then rescan."
           command="winget list"
           actions={<Button onClick={scan} disabled={loading}><RefreshCw size={13} /> Rescan</Button>}
         />
@@ -241,7 +241,7 @@ export default function PackagesView() {
           )}
 
           <p className="pkg-note">
-            {missing.length > 0 && <>Not installed here: {missing.map(r => r.id).join(', ')}. </>}
+            {missing.length > 0 && <>Not found here: {missing.map(r => r.label).join(', ')}. </>}
             Only winget reports available upgrades in a plain list, so the Updates count covers winget alone.
           </p>
         </div>
