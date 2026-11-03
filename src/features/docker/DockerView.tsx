@@ -156,10 +156,10 @@ export default function DockerView() {
         subtitle={subtitle}
         status={
           loading && !status
-            ? <span className="status-text">Connecting…</span>
+            ? <span className="pill">Connecting…</span>
             : status && (
-              <span className="status-text" style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                <span className={clsx('status-dot', online ? 'online' : 'offline')} />
+              <span className="pill">
+                <span className={clsx('rail-dot', online ? 'running' : 'stopped')} />
                 {online ? `v${status.version ?? 'unknown'}` : 'not running'}
               </span>
             )
