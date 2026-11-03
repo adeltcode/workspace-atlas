@@ -65,10 +65,30 @@ const SOURCES: &[SourceSpec] = &[
         argv: &["npm", "ls", "-g", "--depth=0", "--json", "--long"],
     },
     SourceSpec {
+        id: "pnpm",
+        label: "pnpm (global)",
+        argv: &["pnpm", "ls", "-g", "--depth=0", "--json"],
+    },
+    SourceSpec {
         id: "pip",
         label: "pip",
         // -v adds each package's install location.
         argv: &["pip", "list", "--format=json", "-v"],
+    },
+    SourceSpec {
+        id: "pipx",
+        label: "pipx",
+        argv: &["pipx", "list", "--json"],
+    },
+    SourceSpec {
+        id: "uv",
+        label: "uv tools",
+        argv: &["uv", "tool", "list"],
+    },
+    SourceSpec {
+        id: "conda",
+        label: "conda envs",
+        argv: &["conda", "env", "list", "--json"],
     },
     SourceSpec {
         id: "cargo",
@@ -76,9 +96,29 @@ const SOURCES: &[SourceSpec] = &[
         argv: &["cargo", "install", "--list"],
     },
     SourceSpec {
+        id: "rustup",
+        label: "Rust toolchains",
+        argv: &["rustup", "toolchain", "list"],
+    },
+    SourceSpec {
+        id: "gem",
+        label: "Ruby gems",
+        argv: &["gem", "list"],
+    },
+    SourceSpec {
         id: "dotnet",
         label: ".NET tools",
         argv: &["dotnet", "tool", "list", "-g"],
+    },
+    SourceSpec {
+        id: "dotnet-sdk",
+        label: ".NET SDKs",
+        argv: &["dotnet", "--list-sdks"],
+    },
+    SourceSpec {
+        id: "dotnet-runtime",
+        label: ".NET runtimes",
+        argv: &["dotnet", "--list-runtimes"],
     },
     SourceSpec {
         id: "powershell",
@@ -94,6 +134,21 @@ const SOURCES: &[SourceSpec] = &[
         argv: &["code", "--list-extensions", "--show-versions"],
     },
     SourceSpec {
+        id: "code-insiders",
+        label: "VS Code Insiders",
+        argv: &["code-insiders", "--list-extensions", "--show-versions"],
+    },
+    SourceSpec {
+        id: "cursor",
+        label: "Cursor",
+        argv: &["cursor", "--list-extensions", "--show-versions"],
+    },
+    SourceSpec {
+        id: "codium",
+        label: "VSCodium",
+        argv: &["codium", "--list-extensions", "--show-versions"],
+    },
+    SourceSpec {
         id: "registry",
         label: "Installed apps",
         // The uninstall keys behind Settings > Installed apps, minus the entries
@@ -106,6 +161,17 @@ const SOURCES: &[SourceSpec] = &[
              | Where-Object DisplayName | Where-Object SystemComponent -ne 1 \
              | Select-Object DisplayName,DisplayVersion,PSChildName,Publisher,InstallLocation,InstallDate \
              | ConvertTo-Csv -NoTypeInformation",
+        ],
+    },
+    SourceSpec {
+        id: "store",
+        label: "Microsoft Store",
+        // Store-signed apps only, leaving out inbox system apps, frameworks
+        // and sideloaded developer builds.
+        argv: &[
+            "powershell", "-NoProfile", "-NonInteractive", "-Command",
+            "Get-AppxPackage -PackageTypeFilter Main | Where-Object SignatureKind -eq Store \
+             | Select-Object Name,Version,PackageFamilyName | ConvertTo-Csv -NoTypeInformation",
         ],
     },
 ];
@@ -127,7 +193,8 @@ fn command_line(argv: &[&str]) -> String {
 pub struct Package {
     pub name: String,
     /// Package id where the manager has one distinct from the name (winget,
-    /// the registry key for installed apps). Equal to `name` elsewhere.
+    /// the registry key for installed apps, the Store package family, the
+    /// conda environment path). Equal to `name` elsewhere.
     pub id: String,
     pub version: String,
     /// Newer version the manager reports as installable. Empty when the source
@@ -225,8 +292,15 @@ fn scan_one(spec: &SourceSpec) -> SourceResult {
     // exits. Add a watchdog if a source turns out to hang in practice.
     match run_capture(spec.argv) {
         Ok((stdout, stderr, ok)) => {
-            // dotnet is on PATH with only a runtime, but global tools need an SDK.
-            if spec.id == "dotnet" && stderr.contains("No .NET SDKs were found") {
+            // The tool is on PATH but what this source lists is not set up:
+            // global tools need a .NET SDK, and pnpm refuses to list globals
+            // until `pnpm setup` puts its global bin directory on PATH.
+            let unset = match spec.id {
+                "dotnet" => stderr.contains("No .NET SDKs were found"),
+                "pnpm" => stderr.contains("global bin directory"),
+                _ => false,
+            };
+            if unset {
                 result.installed = false;
                 return result;
             }
@@ -862,12 +936,20 @@ fn parse_packages(source: &str, stdout: &str) -> Vec<Package> {
         "choco" => parse_choco(stdout),
         "scoop" => parse_scoop(stdout),
         "npm" => parse_npm(stdout),
+        "pnpm" => parse_pnpm(stdout),
         "pip" => parse_pip(stdout),
+        "pipx" => parse_pipx(stdout),
+        "uv" => parse_uv(stdout),
+        "conda" => parse_conda(stdout),
         "cargo" => parse_cargo(stdout, &cargo_bin()),
+        "rustup" => parse_rustup(stdout),
+        "gem" => parse_gem(stdout),
         "dotnet" => parse_dotnet(stdout),
+        "dotnet-sdk" | "dotnet-runtime" => parse_dotnet_list(source, stdout),
         "powershell" => parse_psmodules(stdout),
-        "vscode" => parse_vscode(stdout),
+        "vscode" | "code-insiders" | "cursor" | "codium" => parse_vscode(source, stdout),
         "registry" => parse_registry(stdout),
+        "store" => parse_store(stdout),
         _ => Vec::new(),
     }
 }
@@ -1027,13 +1109,73 @@ fn parse_cargo(out: &str, bin: &Path) -> Vec<Package> {
     pkgs
 }
 
-/// Parse `code --list-extensions --show-versions`: one `publisher.name@1.2.3`
-/// per line.
-fn parse_vscode(out: &str) -> Vec<Package> {
+/// Parse `rustup toolchain list`: one toolchain per line, the default one
+/// marked `(active, default)`. The version is the channel ahead of the
+/// four-part host triple: `stable`, `1.98.0` or `nightly-2026-01-01`.
+fn parse_rustup(out: &str) -> Vec<Package> {
+    out.lines()
+        .filter_map(|line| {
+            let name = line.split(" (").next()?.trim();
+            // Also drops the "no installed toolchains" message.
+            if name.is_empty() || name.contains(' ') {
+                return None;
+            }
+            let channel = name.rsplitn(5, '-').nth(4).unwrap_or_default();
+            Some(Package::new("rustup", name, name, channel))
+        })
+        .collect()
+}
+
+/// Parse `gem list`: `name (1.2.3, 1.1.0)` per gem, newest version first.
+/// Gems bundled with Ruby read `(default: 1.2.3)` and native ones add a
+/// platform, as in `(1.15.4 x64-mingw-ucrt)`.
+fn parse_gem(out: &str) -> Vec<Package> {
+    out.lines()
+        .filter_map(|line| {
+            let (name, versions) = line.trim().strip_suffix(')')?.split_once(" (")?;
+            let version = versions.trim_start_matches("default: ").split([',', ' ']).next()?;
+            Some(Package::new("gem", name, name, version))
+        })
+        .collect()
+}
+
+/// Parse `uv tool list`: a `name v1.2.3` line per tool, each followed by the
+/// commands it adds on `- name.exe` lines.
+fn parse_uv(out: &str) -> Vec<Package> {
+    out.lines()
+        .filter(|line| !line.starts_with('-'))
+        .filter_map(|line| {
+            let (name, rest) = line.trim().split_once(' ')?;
+            let version = rest.split(' ').next()?.strip_prefix('v')?;
+            Some(Package::new("uv", name, name, version))
+        })
+        .collect()
+}
+
+/// Parse `dotnet --list-sdks` (`8.0.100 [path]`) and `dotnet --list-runtimes`
+/// (`Microsoft.NETCore.App 8.0.25 [path]`).
+fn parse_dotnet_list(source: &str, out: &str) -> Vec<Package> {
+    out.lines()
+        .filter_map(|line| {
+            let mut words = line.split_whitespace();
+            let first = words.next()?;
+            let (name, version) = if first.starts_with(|c: char| c.is_ascii_digit()) {
+                (".NET SDK", first)
+            } else {
+                (first, words.next()?)
+            };
+            Some(Package::new(source, name, name, version))
+        })
+        .collect()
+}
+
+/// Parse `--list-extensions --show-versions` from VS Code or a fork: one
+/// `publisher.name@1.2.3` per line.
+fn parse_vscode(source: &str, out: &str) -> Vec<Package> {
     out.lines()
         .filter_map(|line| {
             let (id, version) = line.trim().rsplit_once('@')?;
-            id.contains('.').then(|| Package::new("vscode", id, id, version))
+            id.contains('.').then(|| Package::new(source, id, id, version))
         })
         .collect()
 }
@@ -1096,6 +1238,17 @@ fn parse_registry(out: &str) -> Vec<Package> {
         .collect()
 }
 
+/// Parse the Name,Version,PackageFamilyName CSV of `Get-AppxPackage`. The
+/// name is the package name, like `Microsoft.WindowsCalculator`: the display
+/// name lives in each app's manifest and is not read.
+fn parse_store(out: &str) -> Vec<Package> {
+    parse_csv(out)
+        .iter()
+        .filter(|cols| !field(cols, 0).is_empty())
+        .map(|cols| Package::new("store", &cols[0], field(cols, 2), field(cols, 1)))
+        .collect()
+}
+
 /// Parse `npm ls -g --depth=0 --json --long`:
 /// `{"dependencies": {name: {version, path, author}}}`.
 fn parse_npm(out: &str) -> Vec<Package> {
@@ -1119,6 +1272,61 @@ fn parse_npm(out: &str) -> Vec<Package> {
                 location: text("path").to_string(),
                 ..Package::new("npm", name, name, text("version"))
             }
+        })
+        .collect()
+}
+
+/// Parse `pnpm ls -g --depth=0 --json`: an array of global projects, each
+/// with the same `dependencies` map as npm.
+fn parse_pnpm(out: &str) -> Vec<Package> {
+    let Ok(projects) = serde_json::from_str::<Vec<serde_json::Value>>(out) else {
+        return Vec::new();
+    };
+    projects
+        .iter()
+        .filter_map(|p| p.get("dependencies")?.as_object())
+        .flatten()
+        .map(|(name, info)| {
+            let version = info.get("version").and_then(|v| v.as_str()).unwrap_or_default();
+            Package::new("pnpm", name, name, version)
+        })
+        .collect()
+}
+
+/// Parse `pipx list --json`: `{"venvs": {name: {"metadata": {"main_package":
+/// {"package": …, "package_version": …}}}}}`.
+fn parse_pipx(out: &str) -> Vec<Package> {
+    let Ok(root) = serde_json::from_str::<serde_json::Value>(out) else {
+        return Vec::new();
+    };
+    let Some(venvs) = root.get("venvs").and_then(|v| v.as_object()) else {
+        return Vec::new();
+    };
+    venvs
+        .values()
+        .filter_map(|venv| {
+            let main = venv.pointer("/metadata/main_package")?;
+            let name = main.get("package")?.as_str()?;
+            let version = main.get("package_version").and_then(|v| v.as_str()).unwrap_or_default();
+            Some(Package::new("pipx", name, name, version))
+        })
+        .collect()
+}
+
+/// Parse `conda env list --json`: `{"envs": [path, …]}`. An environment is
+/// named after its folder and has no version of its own.
+fn parse_conda(out: &str) -> Vec<Package> {
+    let Ok(root) = serde_json::from_str::<serde_json::Value>(out) else {
+        return Vec::new();
+    };
+    let Some(envs) = root.get("envs").and_then(|e| e.as_array()) else {
+        return Vec::new();
+    };
+    envs.iter()
+        .filter_map(|e| e.as_str())
+        .map(|path| {
+            let name = path.rsplit(['\\', '/']).next().unwrap_or(path);
+            Package::new("conda", name, path, "")
         })
         .collect()
 }
@@ -1211,7 +1419,9 @@ fn set_location(p: &mut Package, path: PathBuf) {
 fn add_file_details(source: &str, pkgs: &mut [Package]) {
     match source {
         "pip" => return pip_details(pkgs),
-        "vscode" => vscode_details(pkgs),
+        "vscode" | "code-insiders" | "cursor" | "codium" => vscode_details(source, pkgs),
+        // An environment's id is its folder.
+        "conda" => pkgs.iter_mut().for_each(|p| p.location = p.id.clone()),
         "choco" => {
             let lib = env_dir("ChocolateyInstall")
                 .unwrap_or_else(|| PathBuf::from(r"C:\ProgramData\chocolatey"))
@@ -1282,10 +1492,17 @@ fn dist_infos(site: &Path) -> HashMap<String, PathBuf> {
         .collect()
 }
 
-/// VS Code records each extension's install time, publisher name and folder in
-/// extensions.json beside the extension folders.
-fn vscode_details(pkgs: &mut [Package]) {
-    let Some(dir) = env_dir("VSCODE_EXTENSIONS").or_else(|| home().map(|h| h.join(".vscode").join("extensions"))) else {
+/// VS Code and its forks record each extension's install time, publisher name
+/// and folder in extensions.json beside the extension folders.
+fn vscode_details(source: &str, pkgs: &mut [Package]) {
+    let profile = match source {
+        "code-insiders" => ".vscode-insiders",
+        "cursor" => ".cursor",
+        "codium" => ".vscode-oss",
+        _ => ".vscode",
+    };
+    let custom = if source == "vscode" { env_dir("VSCODE_EXTENSIONS") } else { None };
+    let Some(dir) = custom.or_else(|| home().map(|h| h.join(profile).join("extensions"))) else {
         return;
     };
     let entries: Vec<serde_json::Value> = std::fs::read_to_string(dir.join("extensions.json"))
@@ -1622,10 +1839,126 @@ mytool v0.1.0 (C:\\src\\my tool):
 
     #[test]
     fn vscode_splits_on_the_last_at_sign() {
-        let pkgs = parse_vscode("anthropic.claude-code@2.1.314\r\nms-python.python@2026.1.0\r\n");
+        let pkgs = parse_vscode("vscode", "anthropic.claude-code@2.1.314\r\nms-python.python@2026.1.0\r\n");
         assert_eq!(pkgs.len(), 2);
         assert_eq!(pkgs[0], Package::new("vscode", "anthropic.claude-code", "anthropic.claude-code", "2.1.314"));
-        assert!(parse_vscode("Warning: 'list-extensions' is not in the list of known options").is_empty());
+        assert!(parse_vscode("vscode", "Warning: 'list-extensions' is not in the list of known options").is_empty());
+    }
+
+    #[test]
+    fn vscode_forks_keep_their_own_source_and_cannot_be_uninstalled() {
+        for fork in ["code-insiders", "cursor", "codium"] {
+            let pkgs = parse_packages(fork, "ms-python.python@2026.1.0\r\n");
+            assert_eq!(pkgs, vec![Package::new(fork, "ms-python.python", "ms-python.python", "2026.1.0")]);
+            assert!(uninstall_argv(fork, "ms-python.python", None).is_none());
+        }
+        // VSCodium with no extensions prints nothing and exits 0.
+        assert!(parse_packages("codium", "").is_empty());
+    }
+
+    #[test]
+    fn pnpm_collects_dependencies_from_every_global_project() {
+        // Real pnpm 11 output with no global packages.
+        let empty = r#"[
+  {
+    "path": "C:\\Users\\me\\AppData\\Local\\pnpm\\global\\v11",
+    "private": true,
+    "dependencies": {}
+  }
+]"#;
+        assert!(parse_pnpm(empty).is_empty());
+        let pkgs = parse_pnpm(r#"[{"path":"a","dependencies":{"typescript":{"from":"typescript","version":"5.8.2"}}},
+            {"path":"b","dependencies":{"@biomejs/biome":{"version":"2.1.0"}}}]"#);
+        assert_eq!(pkgs, vec![
+            Package::new("pnpm", "typescript", "typescript", "5.8.2"),
+            Package::new("pnpm", "@biomejs/biome", "@biomejs/biome", "2.1.0"),
+        ]);
+        assert!(parse_pnpm("[ERROR] The configured global bin directory is not in PATH").is_empty());
+    }
+
+    #[test]
+    fn pipx_reads_each_venv_main_package() {
+        let pkgs = parse_pipx(r#"{"pipx_spec_version": "0.1", "venvs": {"black": {"metadata": {
+            "injected_packages": {}, "main_package": {"app_paths": [], "package": "black",
+            "package_or_url": "black", "package_version": "24.2.0"}, "python_version": "Python 3.12.1"}}}}"#);
+        assert_eq!(pkgs, vec![Package::new("pipx", "black", "black", "24.2.0")]);
+        assert!(parse_pipx(r#"{"pipx_spec_version": "0.1", "venvs": {}}"#).is_empty());
+    }
+
+    #[test]
+    fn uv_reads_tool_lines_and_skips_their_commands() {
+        let pkgs = parse_uv("black v24.2.0\n- black.exe\n- blackd.exe\nruff v0.6.9\n- ruff.exe\n");
+        assert_eq!(pkgs, vec![
+            Package::new("uv", "black", "black", "24.2.0"),
+            Package::new("uv", "ruff", "ruff", "0.6.9"),
+        ]);
+        assert!(parse_uv("No tools installed").is_empty());
+    }
+
+    #[test]
+    fn conda_names_environments_after_their_folder() {
+        let pkgs = parse_conda(r#"{"envs": ["C:\\Users\\me\\miniconda3", "C:\\Users\\me\\miniconda3\\envs\\ml"]}"#);
+        assert_eq!(pkgs, vec![
+            Package::new("conda", "miniconda3", "C:\\Users\\me\\miniconda3", ""),
+            Package::new("conda", "ml", "C:\\Users\\me\\miniconda3\\envs\\ml", ""),
+        ]);
+        assert!(parse_conda("").is_empty());
+    }
+
+    #[test]
+    fn gem_takes_the_newest_version_without_default_or_platform() {
+        let pkgs = parse_gem("\n*** LOCAL GEMS ***\n\nbundler (default: 2.5.11, 2.4.10)\nnokogiri (1.16.7 x64-mingw-ucrt)\nrake (13.2.1)\n");
+        assert_eq!(pkgs, vec![
+            Package::new("gem", "bundler", "bundler", "2.5.11"),
+            Package::new("gem", "nokogiri", "nokogiri", "1.16.7"),
+            Package::new("gem", "rake", "rake", "13.2.1"),
+        ]);
+    }
+
+    #[test]
+    fn rustup_reads_the_channel_ahead_of_the_host_triple() {
+        // Real output.
+        let pkgs = parse_rustup("stable-x86_64-pc-windows-msvc (active, default)\n1.98.0-x86_64-pc-windows-msvc\n");
+        assert_eq!(pkgs, vec![
+            Package::new("rustup", "stable-x86_64-pc-windows-msvc", "stable-x86_64-pc-windows-msvc", "stable"),
+            Package::new("rustup", "1.98.0-x86_64-pc-windows-msvc", "1.98.0-x86_64-pc-windows-msvc", "1.98.0"),
+        ]);
+        assert_eq!(parse_rustup("nightly-2026-01-01-aarch64-pc-windows-msvc")[0].version, "nightly-2026-01-01");
+        // A linked custom toolchain has no triple, so no channel.
+        assert_eq!(parse_rustup("mytc")[0].version, "");
+        assert!(parse_rustup("no installed toolchains\n").is_empty());
+    }
+
+    #[test]
+    fn dotnet_lists_name_sdks_and_runtimes() {
+        // Real `dotnet --list-runtimes` output, trimmed.
+        let pkgs = parse_dotnet_list("dotnet-runtime", "\
+Microsoft.NETCore.App 8.0.25 [C:\\Program Files\\dotnet\\shared\\Microsoft.NETCore.App]
+Microsoft.WindowsDesktop.App 10.0.14 [C:\\Program Files\\dotnet\\shared\\Microsoft.WindowsDesktop.App]
+");
+        assert_eq!(pkgs, vec![
+            Package::new("dotnet-runtime", "Microsoft.NETCore.App", "Microsoft.NETCore.App", "8.0.25"),
+            Package::new("dotnet-runtime", "Microsoft.WindowsDesktop.App", "Microsoft.WindowsDesktop.App", "10.0.14"),
+        ]);
+        let sdks = parse_dotnet_list("dotnet-sdk", "8.0.100 [C:\\Program Files\\dotnet\\sdk]\r\n");
+        assert_eq!(sdks, vec![Package::new("dotnet-sdk", ".NET SDK", ".NET SDK", "8.0.100")]);
+        // A machine with only runtimes prints nothing for --list-sdks.
+        assert!(parse_dotnet_list("dotnet-sdk", "").is_empty());
+    }
+
+    #[test]
+    fn store_uses_the_package_family_as_the_id() {
+        // Real output, trimmed.
+        let pkgs = parse_store("\
+\"Name\",\"Version\",\"PackageFamilyName\"
+\"Microsoft.MicrosoftStickyNotes\",\"4.0.6104.0\",\"Microsoft.MicrosoftStickyNotes_8wekyb3d8bbwe\"
+\"Microsoft.Xbox.TCUI\",\"1.24.10001.0\",\"Microsoft.Xbox.TCUI_8wekyb3d8bbwe\"
+");
+        assert_eq!(pkgs.len(), 2);
+        assert_eq!(pkgs[0], Package::new(
+            "store", "Microsoft.MicrosoftStickyNotes", "Microsoft.MicrosoftStickyNotes_8wekyb3d8bbwe", "4.0.6104.0",
+        ));
+        assert!(parse_store("").is_empty());
     }
 
     #[test]

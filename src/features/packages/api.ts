@@ -4,7 +4,9 @@ import type { SourceResult, UninstallCheck } from './types'
 /** Every source the backend knows how to scan. Ids it does not recognise are
  *  dropped there, so this list can never widen what actually runs. */
 export const SOURCE_IDS = [
-  'winget', 'choco', 'scoop', 'npm', 'pip', 'cargo', 'dotnet', 'powershell', 'vscode', 'registry',
+  'winget', 'choco', 'scoop', 'npm', 'pnpm', 'pip', 'pipx', 'uv', 'conda', 'cargo', 'rustup', 'gem',
+  'dotnet', 'dotnet-sdk', 'dotnet-runtime', 'powershell', 'vscode', 'code-insiders', 'cursor', 'codium',
+  'registry', 'store',
 ]
 
 /** Scan the given package managers concurrently. One result per source, in the
