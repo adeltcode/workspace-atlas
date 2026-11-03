@@ -72,18 +72,26 @@ Docker WSL integration for it and update terminal/editor connections before use.
 
 ## Development
 
-Requires Node 20+, pnpm (via corepack), and the Rust toolchain with the Tauri v2 prerequisites for Windows.
+Requires Node 20+, pnpm on your PATH, and the Rust toolchain with the Tauri v2 prerequisites for Windows.
+
+Install pnpm once:
 
 ```bash
-corepack pnpm install
+npm install -g pnpm
+```
+
+Node 25 and later no longer include corepack. On older Node versions, `corepack enable pnpm` also works.
+
+```bash
+pnpm install
 ```
 
 ```bash
-corepack pnpm tauri dev
+pnpm tauri dev
 ```
 
 ```bash
-corepack pnpm tauri build
+pnpm tauri build
 ```
 
 Rust tests:

@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "com.workspaceatlas.app",
   "build": {
-    "beforeDevCommand": "corepack pnpm dev",
+    "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "corepack pnpm build",
+    "beforeBuildCommand": "pnpm build",
     "frontendDist": "../dist"
   },
   "app": {
