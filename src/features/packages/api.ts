@@ -13,6 +13,11 @@ export const SOURCE_IDS = [
 export const pkgScan = (sources: string[] = SOURCE_IDS) =>
   invoke<SourceResult[]>('pkg_scan', { sources })
 
+/** Upgrade one winget package. Resolves when winget exits 0; its output
+ *  streams to the terminal meanwhile. */
+export const pkgUpgrade = (id: string) =>
+  invoke<void>('pkg_upgrade', { source: 'winget', id })
+
 /** Save a CSV built by the caller. Returns the chosen path, or null if the save
  *  dialog was cancelled. */
 export const pkgExportCsv = (contents: string) =>

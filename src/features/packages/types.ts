@@ -8,6 +8,9 @@ export interface Package {
   available: string
   /** Scanner source id, matching `SourceResult.id`. */
   source: string
+  /** The exact command an upgrade runs. Null when this package cannot be
+   *  upgraded here (everything but winget packages with an update). */
+  upgrade_command: string | null
 }
 
 /** Outcome of scanning one package manager. */

@@ -1,19 +1,21 @@
 //! Package Scanner: enumerates what is installed across the machine's package
 //! managers.
 //!
-//! Read-only by design: every command in this module lists. Nothing here
-//! installs, upgrades, or removes, and no user-supplied string ever reaches a
-//! command line. The frontend selects sources by id, and the argv for each id
-//! is a compile-time constant.
+//! Scanning is read-only: every scan command lists, the frontend selects
+//! sources by id, and the argv for each id is a compile-time constant. The one
+//! write is `pkg_upgrade`, which upgrades a single winget package; its id is the
+//! only outside string that reaches a command line, and it is validated first.
 
-use std::process::Command;
+use std::io::{BufRead, BufReader};
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
 use tauri::Emitter;
 
 use crate::docker::is_in_path;
 use crate::shell::ShellOut;
-use crate::error::AtlasError;
+use crate::error::{AtlasError, ErrorKind};
 
 fn emit_line(app: &tauri::AppHandle, text: impl Into<String>, stderr: bool) {
     app.emit("shell-out", ShellOut { text: text.into(), stderr }).ok();
@@ -127,6 +129,9 @@ pub struct Package {
     pub available: String,
     /// Scanner source id, one of the `SOURCES` ids.
     pub source: String,
+    /// The exact command `pkg_upgrade` would run, for winget packages with an
+    /// upgrade available. None means the package cannot be upgraded here.
+    pub upgrade_command: Option<String>,
 }
 
 impl Package {
@@ -137,6 +142,7 @@ impl Package {
             version: version.to_string(),
             available: String::new(),
             source: source.to_string(),
+            upgrade_command: None,
         }
     }
 }
@@ -318,6 +324,121 @@ pub async fn pkg_export_csv(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Upgrading
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// winget ids look like `Git.Git` or `Microsoft.VisualStudioCode`. The id
+/// becomes a command-line argument, so anything outside this set is refused,
+/// including the `ARP\...` ids of apps winget did not install.
+fn valid_winget_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 128
+        && !id.starts_with('-')
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '+'))
+}
+
+fn upgrade_argv(id: &str) -> [&str; 8] {
+    [
+        "winget", "upgrade", "--id", id, "--exact",
+        "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity",
+    ]
+}
+
+/// One upgrade at a time, even if the view is closed and reopened mid-run.
+static UPGRADING: AtomicBool = AtomicBool::new(false);
+
+/// Upgrade one winget package, streaming winget's output to the terminal.
+///
+/// winget runs directly, not through `cmd /C`, so no shell ever reads the id.
+/// Installers that need administrator rights raise their own UAC prompt. There
+/// is no cancel, because stopping an installer halfway can break the app.
+#[tauri::command]
+pub async fn pkg_upgrade(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+    app: tauri::AppHandle,
+    source: String,
+    id: String,
+) -> Result<(), AtlasError> {
+    if source != "winget" {
+        return Err(AtlasError::invalid("Only winget packages can be upgraded here."));
+    }
+    if !valid_winget_id(&id) {
+        return Err(AtlasError::invalid("This package id cannot be passed to winget safely."));
+    }
+    if UPGRADING.swap(true, Ordering::SeqCst) {
+        return Err(AtlasError::new(ErrorKind::Busy, "Wait for the current upgrade to finish."));
+    }
+    let result = migration
+        .inner()
+        .clone()
+        .run_operation(move || run_upgrade(&app, &id))
+        .await;
+    UPGRADING.store(false, Ordering::SeqCst);
+    result
+}
+
+fn run_upgrade(app: &tauri::AppHandle, id: &str) -> Result<(), AtlasError> {
+    let argv = upgrade_argv(id);
+    emit_line(app, format!("$ {}", command_line(&argv)), false);
+
+    let mut c = Command::new(argv[0]);
+    c.args(&argv[1..]).stdout(Stdio::piped()).stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        c.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    let mut child = c.spawn().map_err(|e| format!("Failed to run winget: {}", e))?;
+
+    let err_app = app.clone();
+    let err_thread = child
+        .stderr
+        .take()
+        .map(|pipe| thread::spawn(move || stream_lines(&err_app, pipe, true)));
+    let tail = child
+        .stdout
+        .take()
+        .map(|pipe| stream_lines(app, pipe, false))
+        .unwrap_or_default();
+    if let Some(t) = err_thread {
+        t.join().ok();
+    }
+    let status = child.wait()?;
+
+    if status.success() {
+        emit_line(app, format!("  ✓ winget upgraded {}", id), false);
+        return Ok(());
+    }
+    // winget exits with an HRESULT, which is only recognisable in hex.
+    let code = format!("0x{:08X}", status.code().unwrap_or(-1) as u32);
+    emit_line(app, format!("  ✗ winget exited {}", code), true);
+    Err(AtlasError::new(ErrorKind::Unknown, format!("winget could not upgrade {}.", id))
+        .hint("The terminal shows winget's explanation. If the app is open, close it and try again.")
+        .detail(format!("Exit code {}\n{}", code, tail)))
+}
+
+/// Emit each line of a child's output as it arrives, and return the last few
+/// for the error detail. winget redraws its progress bar with `\r`, so only
+/// the final state of each line is kept.
+fn stream_lines(app: &tauri::AppHandle, pipe: impl std::io::Read, stderr: bool) -> String {
+    let mut tail: Vec<String> = Vec::new();
+    for chunk in BufReader::new(pipe).split(b'\n').map_while(Result::ok) {
+        let text = String::from_utf8_lossy(&chunk);
+        let Some(line) = text.rsplit('\r').map(str::trim_end).find(|s| !s.trim().is_empty()) else {
+            continue;
+        };
+        emit_line(app, line, stderr);
+        tail.push(line.to_string());
+        if tail.len() > 10 {
+            tail.remove(0);
+        }
+    }
+    tail.join("\n")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Parsers
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -419,9 +540,15 @@ fn parse_winget(out: &str) -> Vec<Package> {
     let has_available = columns >= 5;
 
     rows.iter()
-        .map(|cols| Package {
-            available: if has_available { field(cols, 3).to_string() } else { String::new() },
-            ..Package::new("winget", &cols[0], field(cols, 1), field(cols, 2))
+        .map(|cols| {
+            let id = field(cols, 1);
+            let available = if has_available { field(cols, 3) } else { "" };
+            Package {
+                available: available.to_string(),
+                upgrade_command: (!available.is_empty() && valid_winget_id(id))
+                    .then(|| command_line(&upgrade_argv(id))),
+                ..Package::new("winget", &cols[0], id, field(cols, 2))
+            }
         })
         .collect()
 }
@@ -546,16 +673,9 @@ fn parse_npm(out: &str) -> Vec<Package> {
         return Vec::new();
     };
     deps.iter()
-        .map(|(name, info)| Package {
-            name: name.clone(),
-            id: name.clone(),
-            version: info
-                .get("version")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_string(),
-            available: String::new(),
-            source: "npm".to_string(),
+        .map(|(name, info)| {
+            let version = info.get("version").and_then(|v| v.as_str()).unwrap_or_default();
+            Package::new("npm", name, name, version)
         })
         .collect()
 }
@@ -567,18 +687,9 @@ fn parse_pip(out: &str) -> Vec<Package> {
     };
     list.iter()
         .filter_map(|p| {
-            let name = p.get("name")?.as_str()?.to_string();
-            Some(Package {
-                id: name.clone(),
-                version: p
-                    .get("version")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default()
-                    .to_string(),
-                available: String::new(),
-                source: "pip".to_string(),
-                name,
-            })
+            let name = p.get("name")?.as_str()?;
+            let version = p.get("version").and_then(|v| v.as_str()).unwrap_or_default();
+            Some(Package::new("pip", name, name, version))
         })
         .collect()
 }
@@ -616,9 +727,38 @@ Name                           Id                        Version       Source
         assert_eq!(pkgs[1].name, "Adobe Photoshop 2022");
         assert_eq!(pkgs[1].version, "23.1.1.202");
         assert_eq!(pkgs[1].available, "");
-        // The one package with an upgrade available.
+        // The one package with an upgrade available, and the only one that
+        // carries an upgrade command.
         assert_eq!(pkgs[2].name, "Git");
         assert_eq!(pkgs[2].available, "2.51.0");
+        assert_eq!(
+            pkgs[2].upgrade_command.as_deref(),
+            Some("winget upgrade --id Git.Git --exact --accept-package-agreements --accept-source-agreements --disable-interactivity")
+        );
+        assert!(pkgs[0].upgrade_command.is_none());
+        assert!(pkgs[1].upgrade_command.is_none());
+    }
+
+    #[test]
+    fn only_plain_winget_ids_reach_the_upgrade_command() {
+        for ok in ["Git.Git", "Microsoft.VisualStudioCode", "7zip.7zip", "Python.Python.3.12", "Notepad++.Notepad++", "JanDeDobbeleer.Oh-My-Posh"] {
+            assert!(valid_winget_id(ok), "{ok}");
+        }
+        for bad in [
+            "", "Git.Git & calc", "Git.Git|calc", "Git.Git\" --override \"x", "--source", "-x",
+            "ARP\\Machine\\X64\\Foo", "Git Git", "Git.Git;calc", "%PATH%", "Gít.Git",
+        ] {
+            assert!(!valid_winget_id(bad), "{bad}");
+        }
+        assert!(!valid_winget_id(&"a".repeat(129)));
+        // A row whose id fails the check gets no upgrade button, even with an update.
+        let pkgs = parse_winget("\
+Name        Id                     Version  Available  Source
+-------------------------------------------------------------
+Odd         ARP\\Machine\\X64\\Odd    1.0      2.0        winget
+");
+        assert_eq!(pkgs[0].available, "2.0");
+        assert!(pkgs[0].upgrade_command.is_none());
     }
 
     #[test]
