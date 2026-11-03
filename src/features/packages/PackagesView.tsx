@@ -136,12 +136,13 @@ export default function PackagesView() {
   }
 
   // Rescan one source so its rows show what is installed now, not what the
-  // tool claimed it did. Null when the rescan itself failed.
+  // tool claimed it did. Null when the rescan itself failed. winget installs
+  // are also uninstall keys, so Installed apps is rescanned with winget.
   const rescanSource = async (id: string): Promise<Package[] | null> => {
     try {
-      const [fresh] = await api.pkgScan([id])
-      setResults(rs => rs && rs.map(r => (r.id === id ? fresh : r)))
-      return fresh.packages
+      const fresh = await api.pkgScan(id === 'winget' ? [id, 'registry'] : [id])
+      setResults(rs => rs && rs.map(r => fresh.find(f => f.id === r.id) ?? r))
+      return fresh[0].packages
     } catch (e) {
       setError(String(e))
       return null
