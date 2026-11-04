@@ -698,12 +698,15 @@ fn run_streamed(app: &tauri::AppHandle, argv: &[&str], failure: &str) -> Result<
         .take()
         .map(|pipe| stream_lines(app, pipe, false))
         .unwrap_or_default();
-    if let Some(t) = err_thread {
-        t.join().ok();
-    }
+    let err_tail = err_thread.and_then(|t| t.join().ok()).unwrap_or_default();
     let status = child.wait()?;
     if status.success() {
         return Ok(());
+    }
+    // `as_admin` has no error code to read, only Start-Process's message on stderr.
+    if err_tail.to_lowercase().contains("canceled by the user") {
+        return Err(AtlasError::new(ErrorKind::Elevation, "Administrator approval was not given, so nothing was changed.")
+            .hint("Run it again and approve the prompt if you want this to go ahead."));
     }
     // Windows Installer's "worked, but restart to finish", which Chocolatey passes on.
     if matches!(status.code(), Some(1641 | 3010)) {
