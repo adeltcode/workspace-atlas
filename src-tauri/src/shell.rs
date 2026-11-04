@@ -7,6 +7,18 @@ use std::time::Duration;
 use tauri::Emitter;
 use crate::error::AtlasError;
 
+/// A console program with no window. An installed copy has no console of its own,
+/// so without CREATE_NO_WINDOW Windows opens a new window for every command.
+pub(crate) fn hidden(program: &str) -> Command {
+    let mut command = Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000);
+    }
+    command
+}
+
 // ── Managed state ─────────────────────────────────────────────────────────────
 
 /// Holds the currently running child process so it can be killed from the
@@ -44,7 +56,7 @@ pub async fn shell_run(
 ) -> Result<i32, AtlasError> {
     let child_arc = state.0.clone();
     migration.inner().clone().run_operation(move || {
-        let mut child = Command::new("powershell")
+        let mut child = hidden("powershell")
             .args(["-NoProfile", "-NonInteractive", "-Command", &cmd])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

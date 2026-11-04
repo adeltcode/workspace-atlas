@@ -12,9 +12,10 @@ export const wslRunningNames = () => invoke<string[]>('wsl_running_names')
 export const wslInstallCatalog  = () => invoke<CatalogDistro[]>('wsl_install_catalog')
 /** Default install location (%LOCALAPPDATA%\WSL\<name>) for a downloaded distro. */
 export const wslDefaultInstallDir = (name: string) => invoke<string>('wsl_default_install_dir', { name })
-/** Stream-download a distro image (progress on `wsl-install-progress`), verify, and import it. */
+/** Stream-download a distro image (progress on `wsl-install-progress`), verify, and install it.
+ *  Resolves to whether first-run setup will run when its terminal opens. */
 export const wslInstallDownload = (name: string, url: string, sha256: string, installDir: string) =>
-  invoke<void>('wsl_install_download', { name, url, sha256, installDir })
+  invoke<boolean>('wsl_install_download', { name, url, sha256, installDir })
 export const wslDistroMetrics = (distro: string) => invoke<DistroMetrics>('wsl_distro_metrics', { distro })
 export const wslDistroStats   = (distro: string) => invoke<DistroStats>('wsl_distro_stats', { distro })
 export const wslDistroExtras  = (distro: string) => invoke<DistroExtras>('wsl_distro_extras', { distro })

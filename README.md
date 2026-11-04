@@ -4,6 +4,14 @@ A Windows developer utility for managing Docker and WSL2 from one native app. Yo
 
 Built with Tauri v2 (Rust) + React 19 + TypeScript + Vite + Tailwind v4.
 
+## Install
+
+Download the `x64-setup.exe` file from the [Releases page](https://github.com/adeltcode/workspace-atlas/releases) and run it. It installs for your Windows account only.
+
+The installer is not code signed, so Windows shows "Windows protected your PC". If you downloaded it from the Releases page, click **More info**, then **Run anyway**. Each new version can show this warning again.
+
+Some PCs may not offer **Run anyway**. Windows Smart App Control and company policies can block unsigned apps.
+
 ## Modules
 
 ### Docker & Containers
@@ -67,7 +75,7 @@ Docker WSL integration for it and update terminal/editor connections before use.
 - Every operation that touches disk or Docker prints the real, copy-pasteable command in the built-in terminal. No black boxes.
 - Destructive actions always dry-run first and show before/after numbers.
 - Keep-listed images are never pruned.
-- Runs unprivileged; elevation is requested just-in-time for the operations that need it (VHD compact).
+- Runs without administrator rights. Windows asks for your approval only when an operation needs them: VHD compact, Chocolatey upgrades, and pip when its folder is admin-only.
 - Fully offline apart from what you start: distro images, update checks, and package upgrades.
 
 ## Development

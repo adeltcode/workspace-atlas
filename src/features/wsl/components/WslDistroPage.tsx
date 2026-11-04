@@ -120,7 +120,7 @@ export default function WslDistroPage({ distros, onReload }: {
   const runOptimize = () => op.run(async () => {
     if (useAppStore.getState().wslBusyDistro) return
     setConfirmOpt(false); setBusyOp('optimize'); setBusyDistro(d.name)
-    setStatus({ kind: 'progress', text: 'Approve the UAC prompt to compact the disk…' })
+    setStatus({ kind: 'progress', text: 'Approve the Windows PowerShell prompt to compact the disk…' })
     try {
       const r = await api.wslOptimizeVhd(d.vhd_path)
       setStatus({
@@ -287,6 +287,15 @@ export default function WslDistroPage({ distros, onReload }: {
           <p className="modal-body">
             This compacts <code>ext4.vhdx</code> to reclaim unused space. It shuts down
             <strong> all WSL distributions</strong> and requires <strong>administrator approval</strong>.
+          </p>
+          <p className="modal-body">
+            Windows then asks you to approve <strong>Windows PowerShell</strong>, from Microsoft.
+            The prompt lists what it will run:
+          </p>
+          <code className="wsl-migration-command">wsl.exe --shutdown; Start-Sleep 3</code>
+          <code className="wsl-migration-command">Optimize-VHD -Path '{d.vhd_path}' -Mode Full</code>
+          <p className="wsl-estimate-note">
+            Errors go to a temporary file so Atlas can show them. Windows without Optimize-VHD runs diskpart's <code>compact vdisk</code> instead.
           </p>
           {extras && extras.disk_used_bytes > 0 ? (
             <div className="wsl-estimate">

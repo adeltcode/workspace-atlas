@@ -11,12 +11,14 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::UNIX_EPOCH;
 
 use tauri::Emitter;
+
+use crate::shell::hidden;
 
 use crate::docker::is_in_path;
 use crate::shell::ShellOut;
@@ -262,14 +264,9 @@ pub struct SourceResult {
 fn run_capture(argv: &[&str]) -> Result<(String, String, bool), AtlasError> {
     // Through `cmd /C` so PATHEXT resolves the `.cmd` shims npm and friends
     // ship as. `Command::new("npm")` only auto-appends `.exe` and would fail.
-    let mut c = Command::new("cmd");
-    c.arg("/C").args(argv);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        c.creation_flags(0x0800_0000); // CREATE_NO_WINDOW, no flashing console
-    }
-    let out = c
+    let out = hidden("cmd")
+        .arg("/C")
+        .args(argv)
         .output()
         .map_err(|e| format!("Failed to run {}: {}", argv[0], e))?;
     Ok((
@@ -684,14 +681,12 @@ fn pip_check(app: &tauri::AppHandle, id: &str) -> Result<Vec<String>, AtlasError
 fn run_streamed(app: &tauri::AppHandle, argv: &[&str], failure: &str) -> Result<(), AtlasError> {
     emit_line(app, format!("$ {}", command_line(argv)), false);
 
-    let mut c = Command::new(argv[0]);
-    c.args(&argv[1..]).stdout(Stdio::piped()).stderr(Stdio::piped());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        c.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-    }
-    let mut child = c.spawn().map_err(|e| format!("Failed to run {}: {}", argv[0], e))?;
+    let mut child = hidden(argv[0])
+        .args(&argv[1..])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to run {}: {}", argv[0], e))?;
 
     let err_app = app.clone();
     let err_thread = child
@@ -703,12 +698,15 @@ fn run_streamed(app: &tauri::AppHandle, argv: &[&str], failure: &str) -> Result<
         .take()
         .map(|pipe| stream_lines(app, pipe, false))
         .unwrap_or_default();
-    if let Some(t) = err_thread {
-        t.join().ok();
-    }
+    let err_tail = err_thread.and_then(|t| t.join().ok()).unwrap_or_default();
     let status = child.wait()?;
     if status.success() {
         return Ok(());
+    }
+    // `as_admin` has no error code to read, only Start-Process's message on stderr.
+    if err_tail.to_lowercase().contains("canceled by the user") {
+        return Err(AtlasError::new(ErrorKind::Elevation, "Administrator approval was not given, so nothing was changed.")
+            .hint("Run it again and approve the prompt if you want this to go ahead."));
     }
     // Windows Installer's "worked, but restart to finish", which Chocolatey passes on.
     if matches!(status.code(), Some(1641 | 3010)) {

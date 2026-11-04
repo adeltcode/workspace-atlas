@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { getVersion } from '@tauri-apps/api/app'
 import { Folder, RefreshCw, MoveRight, HardDriveDownload, Info, ExternalLink, Shield, Upload, Download } from 'lucide-react'
 import { useAppStore } from '../store/appStore'
 import { SheetHead } from '../components/ui'
@@ -34,6 +35,9 @@ export default function SettingsView() {
   const [refreshing, setRefreshing]       = useState(false)
   const [statusMsg, setStatusMsg]         = useState<{ type: 'success' | 'info' | 'error'; text: string } | null>(null)
 
+  const [version, setVersion]             = useState('')
+
+  useEffect(() => { getVersion().then(setVersion).catch(() => {}) }, [])
   useEffect(() => { setDirInput(backupDir) }, [backupDir])
 
   useEffect(() => {
@@ -299,7 +303,7 @@ export default function SettingsView() {
           <div className="settings-about-body">
             <div className="settings-about-row">
               <span className="settings-about-label">Version</span>
-              <span className="settings-about-value">v0.1.0-dev</span>
+              <span className="settings-about-value">{version && `v${version}`}</span>
             </div>
             <div className="settings-about-row">
               <span className="settings-about-label">Repository</span>
@@ -317,7 +321,7 @@ export default function SettingsView() {
               <span className="settings-about-label">Privacy</span>
               <span className="settings-about-value settings-about-privacy">
                 <Shield size={12} />
-                Fully offline - no telemetry, no account
+                Offline apart from what you start - no telemetry, no account
               </span>
             </div>
           </div>
