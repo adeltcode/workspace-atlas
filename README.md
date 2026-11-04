@@ -1,3 +1,7 @@
+<p align="center">
+  <img alt="Workspace Atlas icon" src="src-tauri/icons/128x128@2x.png" width="128">
+</p>
+
 <h1 align="center">Workspace Atlas</h1>
 
 <p align="center">
