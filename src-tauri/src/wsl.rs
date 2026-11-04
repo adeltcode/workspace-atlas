@@ -692,7 +692,7 @@ pub async fn wsl_import_distro(
 // `wsl --install` hides byte-level download progress when its output is piped, so
 // to show real speed/size we resolve the distro's official image URL from
 // Microsoft's manifest, stream-download the .wsl (a tar.gz) ourselves with
-// progress events, verify its SHA-256, then `wsl --import` it.
+// progress events, verify its SHA-256, then install it from the file.
 
 /// Microsoft's published distribution manifest (Name/FriendlyName + per-arch image
 /// URL and SHA-256). The same source `wsl --list --online` reads.
@@ -827,9 +827,38 @@ fn sha256_of(path: &str) -> Result<String, AtlasError> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
-/// Download a distro image with live progress, verify its checksum, and import it.
+/// Catalog names are plain identifiers, and one starting with `-` would reach
+/// `wsl.exe` as a flag.
+fn valid_install_name(name: &str) -> bool {
+    !name.is_empty() && !name.starts_with('-') && name == safe_name(name)
+}
+
+fn supports_install_from_file() -> bool {
+    hidden("wsl")
+        .env("WSL_UTF8", "1")
+        .arg("--help")
+        .output()
+        .map(|o| format!("{}{}", decode_wsl_output(&o.stdout), decode_wsl_output(&o.stderr)).contains("--from-file"))
+        .unwrap_or(false)
+}
+
+/// Whether WSL will run the distro's first-run setup when its terminal next opens.
+fn first_run_pending(name: &str) -> bool {
+    let script = format!(
+        "[bool](Get-ChildItem 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Lxss' | Get-ItemProperty | Where-Object {{ $_.DistributionName -eq '{}' -and $_.RunOOBE -eq 1 }})",
+        ps_single_quote(name)
+    );
+    hidden("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "True")
+        .unwrap_or(false)
+}
+
+/// Download a distro image with live progress, verify its checksum, and install it.
 /// `install_dir` empty falls back to the default location. Emits `wsl-install-progress`
-/// throughout and terminal lines at each milestone.
+/// throughout and terminal lines at each milestone. Returns whether first-run setup
+/// will run when the distro's terminal opens.
 #[tauri::command]
 pub async fn wsl_install_download(
     migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
@@ -838,10 +867,13 @@ pub async fn wsl_install_download(
     url: String,
     sha256: String,
     install_dir: String,
-) -> Result<(), AtlasError> {
+) -> Result<bool, AtlasError> {
     use std::io::{Read, Write};
     use std::time::{Duration, Instant};
     migration.inner().clone().run_operation(move || {
+        if !valid_install_name(&name) {
+            return Err(AtlasError::invalid("That catalog entry has an invalid distro name, so nothing was installed."));
+        }
         if !url.starts_with("https://") {
             return Err(AtlasError::invalid("That catalog entry points at a plain HTTP address, so the download was refused.")
                 .hint("This is a safety stop, not a network fault. Report the catalog entry rather than retrying."));
@@ -927,17 +959,24 @@ pub async fn wsl_install_download(
             std::fs::remove_file(&tmp).ok();
             return Err(format!("Cannot create install directory: {}", e).into());
         }
-        emit_line(&app, format!("$ wsl --import {} \"{}\" \"{}\" --version 2", name, dir, tmp_str), false);
-        let imported = import_distro(&name, &dir, &tmp_str, 2);
+        // `wsl --import` switches off the distro's first-run setup, so it is only the
+        // fallback for WSL builds too old to have `--install --from-file`.
+        let installed = if supports_install_from_file() {
+            emit_line(&app, format!("$ wsl --install --from-file \"{}\" --name {} --location \"{}\" --no-launch --version 2", tmp_str, name, dir), false);
+            run_wsl(&["--install", "--from-file", &tmp_str, "--name", &name, "--location", &dir, "--no-launch", "--version", "2"])
+        } else {
+            emit_line(&app, format!("$ wsl --import {} \"{}\" \"{}\" --version 2", name, dir, tmp_str), false);
+            import_distro(&name, &dir, &tmp_str, 2)
+        };
         std::fs::remove_file(&tmp).ok();
-        imported.map_err(|e| {
+        installed.map_err(|e| {
             emit_line(&app, format!("  ✗ {}", e), true);
             e
         })?;
 
         emit_progress(&app, InstallProgress { phase: "done".into(), downloaded, total: downloaded, bytes_per_sec: 0, percent: 100.0 });
         emit_line(&app, format!("  ✓ installed {}", name), false);
-        Ok(())
+        Ok(first_run_pending(&name))
     }).await
 }
 
@@ -2344,6 +2383,16 @@ $list | ConvertTo-Json -Compress -Depth 3
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn install_names_must_be_plain_catalog_identifiers() {
+        for good in ["Debian", "Ubuntu-24.04", "openSUSE-Leap-16.0", "OracleLinux_9_5"] {
+            assert!(valid_install_name(good), "{good}");
+        }
+        for bad in ["", "-d", "--help", "a b", "a;b", "a\"b"] {
+            assert!(!valid_install_name(bad), "{bad}");
+        }
+    }
 
     #[cfg(windows)]
     fn migration_output(stdout: &str, stderr: &str, exit_code: u32) -> std::process::Output {

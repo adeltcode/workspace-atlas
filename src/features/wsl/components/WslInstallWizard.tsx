@@ -31,7 +31,7 @@ const PHASE_LABEL: Record<InstallProgress['phase'], string> = {
 /** Catalog browser + guided install for a new WSL distribution. Three steps:
  *  choose → review → install. Downloads the official distro image directly so it
  *  can report real progress (speed, size, percent), verifies its SHA-256, then
- *  imports it. First-run user setup happens when the user opens a terminal. */
+ *  installs it. First-run user setup happens when the user opens a terminal. */
 export default function WslInstallWizard({ distros, onReload }: {
   distros: WslDistro[]
   onReload: () => Promise<void> | void
@@ -53,6 +53,7 @@ export default function WslInstallWizard({ distros, onReload }: {
   const [installing, setInstalling] = useState(false)
   const [installErr, setInstallErr] = useState<string | null>(null)
   const [done, setDone]       = useState(false)
+  const [firstRun, setFirstRun] = useState(false)
   const [progress, setProgress] = useState<InstallProgress | null>(null)
   const install  = useAsyncAction()
   const openTerm = useAsyncAction()
@@ -95,7 +96,7 @@ export default function WslInstallWizard({ distros, onReload }: {
     setStep('install'); setInstalling(true); setInstallErr(null); setDone(false); setProgress(null)
     const unlisten = await listen<InstallProgress>('wsl-install-progress', e => setProgress(e.payload))
     try {
-      await api.wslInstallDownload(pickedDistro.name, pickedDistro.url, pickedDistro.sha256, installDir)
+      setFirstRun(await api.wslInstallDownload(pickedDistro.name, pickedDistro.url, pickedDistro.sha256, installDir))
       addActivity({ module: 'wsl', action: `Installed ${pickedDistro.name}`, outcome: 'success' })
       setDone(true)
       await onReload()
@@ -229,7 +230,7 @@ export default function WslInstallWizard({ distros, onReload }: {
                 ? 'The download is checked against the catalog’s SHA-256 checksum before import.'
                 : 'The catalog has no checksum for this image. The download will not be verified before import.'}</span>
             </li>
-            <li><Terminal size={15} className="wiz-fact-icon" /><span>Open a terminal afterward to finish first-run setup (create your Linux username and password).</span></li>
+            <li><Terminal size={15} className="wiz-fact-icon" /><span>The first time you open its terminal, the distro runs any first-run setup it has, such as creating your Linux username and password.</span></li>
           </ul>
 
           <div className="wiz-location">
@@ -298,7 +299,9 @@ export default function WslInstallWizard({ distros, onReload }: {
               <span className="wiz-status-icon wiz-status-icon--ok"><CircleCheck size={34} /></span>
               <p className="wiz-status-title">{pickedDistro.friendly_name} installed</p>
               <p className="wiz-status-desc">
-                Open a terminal to finish first-run setup, where you’ll create your Linux username and password.
+                {firstRun
+                  ? 'Open a terminal to finish first-run setup. Most distros ask you to create your Linux username and password there.'
+                  : 'First-run setup will not run for this install, so its terminal opens as root. Add a user inside the distro if you do not want to work as root.'}
               </p>
               <div className="wiz-done-actions">
                 <button className="btn-filled btn-filled--accent" disabled={openTerm.pending}
