@@ -507,8 +507,7 @@ pub async fn wsl_optimize_vhd(
 ) -> Result<OptimizeResult, AtlasError> {
     let gate = migration.0.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let _guard = gate.try_write().map_err(|_| AtlasError::new(ErrorKind::Busy, "Another Docker, WSL, or terminal operation is active.")
-            .hint("Wait for the operation to finish or close the Compose log stream, then retry disk optimization."))?;
+        let _guard = acquire_migration_lock(&gate)?;
         let before = std::fs::metadata(&vhd_path)
             .map(|m| m.len())
             .map_err(|e| format!("Cannot read VHD '{}': {}", vhd_path, e))?;
@@ -1621,7 +1620,9 @@ fn migration_repair_error(action: &MigrationRepair, output: &std::process::Outpu
 }
 
 fn acquire_migration_lock(gate: &std::sync::RwLock<()>) -> Result<std::sync::RwLockWriteGuard<'_, ()>, AtlasError> {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    // Read-only checks hold this lock too and can take many seconds when WSL is slow.
+    // Terminal commands and log streams that keep running still reach the error below.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     loop {
         match gate.try_write() {
             Ok(guard) => return Ok(guard),
