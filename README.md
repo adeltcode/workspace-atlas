@@ -68,7 +68,7 @@ Docker WSL integration for it and update terminal/editor connections before use.
 - Destructive actions always dry-run first and show before/after numbers.
 - Keep-listed images are never pruned.
 - Runs unprivileged; elevation is requested just-in-time for the operations that need it (VHD compact).
-- Fully offline apart from downloads you start: distro images and package upgrades.
+- Fully offline apart from what you start: distro images, update checks, and package upgrades.
 
 ## Development
 

@@ -1,11 +1,12 @@
 //! Package Scanner: enumerates what is installed across the machine's package
 //! managers.
 //!
-//! Scanning is read-only: every scan command lists, the frontend selects
-//! sources by id, and the argv for each id is a compile-time constant. The
-//! writes are `pkg_upgrade` and `pkg_uninstall`, each acting on one package. A
-//! package id, and for winget a version, are the only outside strings that
-//! reach a command line, and both are validated first.
+//! Scanning is read-only and offline: every scan command lists, the frontend
+//! selects sources by id, and the argv for each id is a compile-time constant.
+//! `pkg_check_updates` is also read-only but needs the internet, so it runs only
+//! when the user asks. The writes are `pkg_upgrade` and `pkg_uninstall`, each
+//! acting on one package. A package id, and for winget a version, are the only
+//! outside strings that reach a command line, and both are validated first.
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
@@ -178,9 +179,12 @@ const SOURCES: &[SourceSpec] = &[
 
 /// The argv as one line that pastes into PowerShell or cmd. Arguments with
 /// spaces are double-quoted, which is also how Rust hands them to `cmd /C`.
-fn command_line(argv: &[&str]) -> String {
+fn command_line<S: AsRef<str>>(argv: &[S]) -> String {
     argv.iter()
-        .map(|a| if a.contains(' ') { format!("\"{a}\"") } else { a.to_string() })
+        .map(|a| {
+            let a = a.as_ref();
+            if a.contains(' ') { format!("\"{a}\"") } else { a.to_string() }
+        })
         .collect::<Vec<_>>()
         .join(" ")
 }
@@ -197,9 +201,9 @@ pub struct Package {
     /// conda environment path). Equal to `name` elsewhere.
     pub id: String,
     pub version: String,
-    /// Newer version the manager reports as installable. Empty when the source
-    /// does not report it in a plain list (everything but winget) or nothing is
-    /// available.
+    /// Newer version the manager reports as installable. Empty when nothing is
+    /// available, and for every source but winget, whose list includes it.
+    /// `pkg_check_updates` covers npm, pip and Chocolatey.
     pub available: String,
     /// Scanner source id, one of the `SOURCES` ids.
     pub source: String,
@@ -442,11 +446,181 @@ fn valid_winget_id(id: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '+'))
 }
 
-fn upgrade_argv(id: &str) -> [&str; 8] {
-    [
-        "winget", "upgrade", "--id", id, "--exact",
-        "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity",
-    ]
+/// The upgrade command for a package, or None when Atlas cannot upgrade it.
+/// npm ships as a `.cmd` shim, named in full so it runs without a `cmd /C`
+/// wrapper. A global `npm install` with no version takes the latest.
+fn upgrade_argv(source: &str, id: &str) -> Option<Vec<String>> {
+    if !valid_id(source, id) {
+        return None;
+    }
+    let argv = match source {
+        "winget" => vec![
+            "winget", "upgrade", "--id", id, "--exact",
+            "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity",
+        ],
+        "pip" => vec!["pip", "install", "--upgrade", id],
+        "npm" => vec!["npm.cmd", "install", "--global", id],
+        // Chocolatey's default folder is admin-only.
+        "choco" => return Some(as_admin(&["choco", "upgrade", id, "--yes"])),
+        _ => return None,
+    };
+    Some(argv.into_iter().map(String::from).collect())
+}
+
+fn upgrade_command(source: &str, id: &str) -> Option<String> {
+    upgrade_argv(source, id).map(|argv| command_line(&argv))
+}
+
+/// Wrap a command so Windows asks for approval and runs it in its own window,
+/// since an elevated process cannot stream to this one. The exit code still
+/// comes back. Validated ids keep quotes out of the string.
+fn as_admin<S: AsRef<str>>(argv: &[S]) -> Vec<String> {
+    let args: Vec<&str> = argv[1..].iter().map(AsRef::as_ref).collect();
+    let script = format!(
+        "exit (Start-Process {} -Verb RunAs -Wait -PassThru -ArgumentList '{}').ExitCode",
+        argv[0].as_ref(),
+        args.join(" ")
+    );
+    ["powershell", "-NoProfile", "-NonInteractive", "-Command", script.as_str()].map(String::from).to_vec()
+}
+
+/// Before replacing or removing a package, pip moves its files aside, and it
+/// only undoes that if the later install fails. An all-users Python lets it move
+/// site-packages but not `Scripts\*.exe`, so it stops halfway and leaves the
+/// package broken as `~name`. pip therefore runs elevated when its own folder is
+/// read-only.
+fn needs_admin(source: &str) -> bool {
+    if source != "pip" {
+        return false;
+    }
+    let Ok((stdout, _, _)) = run_capture(&["where", "pip"]) else {
+        return false;
+    };
+    stdout
+        .lines()
+        .next()
+        .and_then(|exe| Path::new(exe.trim()).parent())
+        .is_some_and(|folder| !can_create_files_in(folder))
+}
+
+fn can_create_files_in(folder: &Path) -> bool {
+    let probe = folder.join(format!("~atlas-write-test-{}", std::process::id()));
+    let created = std::fs::OpenOptions::new().write(true).create_new(true).open(&probe).is_ok();
+    if created {
+        std::fs::remove_file(&probe).ok();
+    }
+    created
+}
+
+/// One package with a newer version, from `pkg_check_updates`.
+#[derive(serde::Serialize, Clone, Debug, PartialEq)]
+pub struct PackageUpdate {
+    pub id: String,
+    pub available: String,
+    pub upgrade_command: Option<String>,
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct SourceUpdates {
+    pub source: String,
+    pub label: String,
+    pub updates: Vec<PackageUpdate>,
+    /// Set when the check failed, which does not mean nothing is outdated.
+    pub error: Option<String>,
+}
+
+/// Each lister that asks the internet for newer versions. winget is absent
+/// because its scan already reports them.
+const UPDATE_CHECKS: &[(&str, &[&str])] = &[
+    ("npm", &["npm", "outdated", "--global", "--json", "--fetch-retries=0"]),
+    ("pip", &["pip", "list", "--outdated", "--format=json", "--disable-pip-version-check"]),
+    ("choco", &["choco", "outdated", "--limit-output"]),
+];
+
+/// Offline, `pip list --outdated` spends minutes and then reports nothing
+/// outdated with exit 0, so this asks about one package first.
+const PIP_REACHABLE: &[&str] = &[
+    "pip", "index", "versions", "pip", "--disable-pip-version-check", "--retries", "0", "--timeout", "10",
+];
+
+/// `(id, newer version)` for each outdated package, or why the check failed.
+fn outdated(source: &str, argv: &[&str]) -> Result<Vec<(String, String)>, String> {
+    if source == "pip" && !run_capture(PIP_REACHABLE).map_err(|e| e.message)?.2 {
+        return Err("pip could not reach its package index.".to_string());
+    }
+    let (stdout, stderr, ok) = run_capture(argv).map_err(|e| e.message)?;
+    let found = match source {
+        "npm" => parse_npm_outdated(&stdout)?,
+        "pip" => parse_pip_outdated(&stdout),
+        // Chocolatey also exits 0 when offline.
+        _ if stdout.contains("Unable to connect to source") => {
+            return Err("Chocolatey could not reach its package source.".to_string());
+        }
+        _ => parse_choco_outdated(&stdout),
+    };
+    // npm exits 1 when it finds updates, so the exit code only counts when
+    // nothing came back.
+    if !ok && found.is_empty() {
+        return Err(stderr.lines().next().unwrap_or("The check exited with an error.").to_string());
+    }
+    Ok(found)
+}
+
+/// Ask npm, pip and Chocolatey which packages have newer versions. Read-only,
+/// but needs the internet. Tools that are not installed are left out.
+#[tauri::command]
+pub async fn pkg_check_updates(app: tauri::AppHandle) -> Result<Vec<SourceUpdates>, AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<SourceUpdates>, AtlasError> {
+        let checks: Vec<_> = UPDATE_CHECKS.iter().filter(|(_, argv)| is_in_path(argv[0])).collect();
+        for (source, argv) in &checks {
+            if *source == "pip" {
+                emit_line(&app, format!("$ {}", command_line(PIP_REACHABLE)), false);
+            }
+            emit_line(&app, format!("$ {}", command_line(argv)), false);
+        }
+
+        let results: Vec<SourceUpdates> = thread::scope(|scope| {
+            let handles: Vec<_> = checks
+                .iter()
+                .map(|(source, argv)| (*source, scope.spawn(move || outdated(source, argv))))
+                .collect();
+            handles
+                .into_iter()
+                .map(|(source, handle)| {
+                    let outcome = handle.join().unwrap_or_else(|_| Err("check thread panicked".to_string()));
+                    let (found, error) = match outcome {
+                        Ok(found) => (found, None),
+                        Err(e) => (Vec::new(), Some(e)),
+                    };
+                    let admin = needs_admin(source);
+                    SourceUpdates {
+                        source: source.to_string(),
+                        label: SOURCES.iter().find(|s| s.id == source).map_or(source, |s| s.label).to_string(),
+                        updates: found
+                            .into_iter()
+                            .map(|(id, available)| PackageUpdate {
+                                upgrade_command: upgrade_argv(source, &id)
+                                    .map(|argv| command_line(&if admin { as_admin(&argv) } else { argv })),
+                                id,
+                                available,
+                            })
+                            .collect(),
+                        error,
+                    }
+                })
+                .collect()
+        });
+
+        for r in &results {
+            match &r.error {
+                Some(err) => emit_line(&app, format!("  ✗ {}: {}", r.source, err), true),
+                None => emit_line(&app, format!("  ✓ {}: {} updates", r.source, r.updates.len()), false),
+            }
+        }
+        Ok(results)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// One package job (upgrade or uninstall) at a time, even if the view is
@@ -465,30 +639,45 @@ async fn one_job<T: Send + 'static>(
     result
 }
 
-/// Upgrade one winget package, streaming winget's output to the terminal.
+/// Upgrade one package, streaming the manager's output to the terminal. After a
+/// pip upgrade, returns the `pip check` lines that name the package.
 ///
-/// winget runs directly, not through `cmd /C`, so no shell ever reads the id.
-/// Installers that need administrator rights raise their own UAC prompt. There
-/// is no cancel, because stopping an installer halfway can break the app.
+/// The manager runs directly, not through `cmd /C`, so no shell ever reads the
+/// id. Installers that need administrator rights raise their own UAC prompt.
+/// There is no cancel, because stopping an installer halfway can break the app.
 #[tauri::command]
 pub async fn pkg_upgrade(
     migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
     app: tauri::AppHandle,
     source: String,
     id: String,
-) -> Result<(), AtlasError> {
-    if source != "winget" {
-        return Err(AtlasError::invalid("Only winget packages can be upgraded here."));
-    }
-    if !valid_winget_id(&id) {
-        return Err(AtlasError::invalid("This package id cannot be passed to winget safely."));
-    }
+) -> Result<Vec<String>, AtlasError> {
+    let Some(argv) = upgrade_argv(&source, &id) else {
+        return Err(AtlasError::invalid("This package cannot be upgraded here."));
+    };
     one_job(&migration, move || {
-        run_streamed(&app, &upgrade_argv(&id), &format!("winget could not upgrade {}.", id))?;
-        emit_line(&app, format!("  ✓ winget upgraded {}", id), false);
-        Ok(())
+        let argv = if needs_admin(&source) { as_admin(&argv) } else { argv };
+        let argv: Vec<&str> = argv.iter().map(String::as_str).collect();
+        run_streamed(&app, &argv, &format!("{} could not upgrade {}.", source, id))?;
+        emit_line(&app, format!("  ✓ {} upgraded {}", source, id), false);
+        if source == "pip" { pip_check(&app, &id) } else { Ok(Vec::new()) }
     })
     .await
+}
+
+/// Run `pip check` and report the lines that name `id`.
+fn pip_check(app: &tauri::AppHandle, id: &str) -> Result<Vec<String>, AtlasError> {
+    let check = ["pip", "check"];
+    emit_line(app, format!("$ {}", command_line(&check)), false);
+    let (stdout, _, _) = run_capture(&check)?;
+    let broken = broken_requirements(&stdout, id);
+    for line in &broken {
+        emit_line(app, format!("  ✗ {}", line), true);
+    }
+    if broken.is_empty() {
+        emit_line(app, format!("  ✓ pip check found no problem with {}", id), false);
+    }
+    Ok(broken)
 }
 
 /// Run argv directly, streaming its output to the terminal as it arrives.
@@ -519,6 +708,11 @@ fn run_streamed(app: &tauri::AppHandle, argv: &[&str], failure: &str) -> Result<
     }
     let status = child.wait()?;
     if status.success() {
+        return Ok(());
+    }
+    // Windows Installer's "worked, but restart to finish", which Chocolatey passes on.
+    if matches!(status.code(), Some(1641 | 3010)) {
+        emit_line(app, "  # restart Windows to finish", false);
         return Ok(());
     }
     // winget exits with an HRESULT, which is only recognisable in hex.
@@ -564,7 +758,7 @@ fn valid_id(source: &str, id: &str) -> bool {
     };
     match source {
         "winget" => valid_winget_id(id),
-        "pip" => plain(id),
+        "pip" | "choco" => plain(id),
         "npm" => match id.strip_prefix('@').and_then(|scoped| scoped.split_once('/')) {
             Some((scope, name)) => plain(scope) && plain(name),
             None => plain(id),
@@ -697,6 +891,9 @@ pub async fn pkg_uninstall_check(
     tauri::async_runtime::spawn_blocking(move || -> Result<UninstallCheck, AtlasError> {
         match source.as_str() {
             "pip" => {
+                if needs_admin("pip") {
+                    check.command = command_line(&as_admin(&["pip", "uninstall", "--yes", id.as_str()]));
+                }
                 let show = ["pip", "show", "--files", id.as_str()];
                 emit_line(&app, format!("$ {}", command_line(&show)), false);
                 let (stdout, _, _) = run_capture(&show)?;
@@ -767,7 +964,7 @@ pub async fn pkg_uninstall_check(
 
 /// Uninstall one package, streaming the manager's output to the terminal.
 /// A core tool needs its id typed as `confirm`. After a pip uninstall,
-/// returns the `pip check` lines that now name the removed package.
+/// returns the `pip check` lines that name the removed package.
 #[tauri::command]
 pub async fn pkg_uninstall(
     migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
@@ -788,22 +985,11 @@ pub async fn pkg_uninstall(
             return Err(AtlasError::invalid("This package cannot be uninstalled here."));
         };
         let tool = argv[0].trim_end_matches(".cmd");
+        let admin_argv = if needs_admin(&source) { as_admin(&argv) } else { Vec::new() };
+        let argv = if admin_argv.is_empty() { argv } else { admin_argv.iter().map(String::as_str).collect() };
         run_streamed(&app, &argv, &format!("{} could not uninstall {}.", tool, id))?;
         emit_line(&app, format!("  ✓ {} uninstalled {}", tool, id), false);
-        if source != "pip" {
-            return Ok(Vec::new());
-        }
-        let check = ["pip", "check"];
-        emit_line(&app, format!("$ {}", command_line(&check)), false);
-        let (stdout, _, _) = run_capture(&check)?;
-        let broken = broken_requirements(&stdout, &id);
-        for line in &broken {
-            emit_line(&app, format!("  ✗ {}", line), true);
-        }
-        if broken.is_empty() {
-            emit_line(&app, format!("  ✓ nothing installed needs {}", id), false);
-        }
-        Ok(broken)
+        if source == "pip" { pip_check(&app, &id) } else { Ok(Vec::new()) }
     })
     .await
 }
@@ -909,17 +1095,19 @@ fn vscode_dependents(manifests: impl Iterator<Item = String>, id: &str) -> Vec<S
     dependents
 }
 
-/// The lines of `pip check` that name `id` as a missing or wrong requirement.
-/// pip treats `-`, `_` and `.` in names as the same, and `requests` must not
-/// match `requests-oauthlib`.
+/// The lines of `pip check` that name `id`: either "a requires id, which is not
+/// installed" or "a has requirement id<2, but you have id 3". pip treats `-`,
+/// `_` and `.` in names as the same, and `requests` must not match
+/// `requests-oauthlib`.
 fn broken_requirements(out: &str, id: &str) -> Vec<String> {
     let norm = |s: &str| s.to_ascii_lowercase().replace(['_', '.'], "-");
-    let needle = format!("requires {}", norm(id));
+    let part_of_name = |c: char| c.is_ascii_alphanumeric() || c == '-';
+    let needle = norm(id);
     out.lines()
         .filter(|line| {
             let line = norm(line);
             line.match_indices(&needle).any(|(i, _)| {
-                !line[i + needle.len()..].starts_with(|c: char| c.is_ascii_alphanumeric() || c == '-')
+                !line[..i].ends_with(part_of_name) && !line[i + needle.len()..].starts_with(part_of_name)
             })
         })
         .map(|line| line.trim().to_string())
@@ -1041,8 +1229,7 @@ fn parse_winget(out: &str) -> Vec<Package> {
             let available = if has_available { field(cols, 3) } else { "" };
             Package {
                 available: available.to_string(),
-                upgrade_command: (!available.is_empty() && valid_winget_id(id))
-                    .then(|| command_line(&upgrade_argv(id))),
+                upgrade_command: if available.is_empty() { None } else { upgrade_command("winget", id) },
                 ..Package::new("winget", &cols[0], id, field(cols, 2))
             }
         })
@@ -1065,6 +1252,50 @@ fn parse_choco(out: &str) -> Vec<Package> {
             let (name, version) = line.trim().split_once('|')?;
             (!name.is_empty()).then(|| Package::new("choco", name, name, version))
         })
+        .collect()
+}
+
+/// Parse `choco outdated --limit-output`: `name|current|available|pinned`.
+/// Pinned packages stay put on upgrade, and a package Chocolatey could not look
+/// up comes back with available equal to current.
+fn parse_choco_outdated(out: &str) -> Vec<(String, String)> {
+    out.lines()
+        .filter_map(|line| {
+            let cols: Vec<&str> = line.trim().split('|').collect();
+            let [name, current, available, pinned] = cols[..] else {
+                return None;
+            };
+            (current != available && pinned != "true").then(|| (name.to_string(), available.to_string()))
+        })
+        .collect()
+}
+
+/// Parse `npm outdated --json`: `{"name": {"current": …, "latest": …}}`, or
+/// `{"error": {"summary": …}}` when the registry cannot be reached. A package
+/// can be named `error`, but it has no summary.
+fn parse_npm_outdated(out: &str) -> Result<Vec<(String, String)>, String> {
+    let Ok(root) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(out) else {
+        return Ok(Vec::new());
+    };
+    if let Some(summary) = root.get("error").and_then(|e| e.get("summary")).and_then(|s| s.as_str()) {
+        return Err(summary.to_string());
+    }
+    Ok(root
+        .iter()
+        .filter_map(|(name, info)| {
+            let latest = info.get("latest")?.as_str()?;
+            (info.get("current")?.as_str()? != latest).then(|| (name.clone(), latest.to_string()))
+        })
+        .collect())
+}
+
+/// Parse `pip list --outdated --format=json`: `[{"name": …, "latest_version": …}]`.
+fn parse_pip_outdated(out: &str) -> Vec<(String, String)> {
+    let Ok(list) = serde_json::from_str::<Vec<serde_json::Value>>(out) else {
+        return Vec::new();
+    };
+    list.iter()
+        .filter_map(|p| Some((p.get("name")?.as_str()?.to_string(), p.get("latest_version")?.as_str()?.to_string())))
         .collect()
 }
 
@@ -1787,8 +2018,96 @@ requests-toolbelt 1.0.0 requires requests, which is not installed.
 oauth 1.0 requires requests-oauthlib, which is not installed.
 ";
         assert_eq!(broken_requirements(out, "charset-normalizer"), vec!["requests 2.32.3 requires charset_normalizer, which is not installed."]);
-        assert_eq!(broken_requirements(out, "requests").len(), 1);
+        assert_eq!(
+            broken_requirements(out, "requests"),
+            vec![
+                "requests 2.32.3 requires charset_normalizer, which is not installed.",
+                "requests-toolbelt 1.0.0 requires requests, which is not installed.",
+            ]
+        );
         assert!(broken_requirements("No broken requirements found.", "requests").is_empty());
+        // What an upgrade breaks: another package's version limit, or its own.
+        let conflict = "reportlab 4.4 has requirement charset-normalizer<4, but you have charset-normalizer 5.0.";
+        assert_eq!(broken_requirements(conflict, "charset_normalizer"), vec![conflict]);
+        assert_eq!(broken_requirements(conflict, "reportlab"), vec![conflict]);
+        assert!(broken_requirements(conflict, "charset").is_empty());
+    }
+
+    #[test]
+    fn upgrade_commands_are_exact_and_refuse_odd_ids() {
+        assert_eq!(upgrade_command("pip", "certifi").as_deref(), Some("pip install --upgrade certifi"));
+        assert_eq!(upgrade_command("npm", "@scope/tool").as_deref(), Some("npm.cmd install --global @scope/tool"));
+        assert_eq!(
+            upgrade_command("choco", "git.install").as_deref(),
+            Some("powershell -NoProfile -NonInteractive -Command \"exit (Start-Process choco -Verb RunAs -Wait -PassThru -ArgumentList 'upgrade git.install --yes').ExitCode\"")
+        );
+        // These would break out of the quoted string that runs elevated.
+        for bad in ["a'b", "a b", "a;calc", "--force", "a$b", "a`b", ""] {
+            assert!(upgrade_command("choco", bad).is_none(), "{bad}");
+        }
+        assert!(upgrade_command("vscode", "ms-python.python").is_none());
+        assert!(upgrade_command("nope", "certifi").is_none());
+    }
+
+    #[test]
+    fn admin_commands_keep_the_exact_arguments() {
+        assert_eq!(
+            command_line(&as_admin(&["pip", "install", "--upgrade", "ninja"])),
+            "powershell -NoProfile -NonInteractive -Command \"exit (Start-Process pip -Verb RunAs -Wait -PassThru -ArgumentList 'install --upgrade ninja').ExitCode\""
+        );
+        assert!(!needs_admin("npm"));
+        assert!(!needs_admin("choco"));
+    }
+
+    #[test]
+    fn the_write_test_reports_access_and_leaves_nothing_behind() {
+        let folder = std::env::temp_dir().join(format!("atlas-write-test-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        assert!(can_create_files_in(&folder));
+        assert_eq!(std::fs::read_dir(&folder).unwrap().count(), 0);
+        std::fs::remove_dir(&folder).unwrap();
+        assert!(!can_create_files_in(&folder));
+    }
+
+    #[test]
+    fn choco_outdated_skips_pinned_and_packages_it_could_not_look_up() {
+        let out = "\
+visualstudio2019buildtools|16.11.61|16.11.62|false
+chocolatey|2.7.5|2.7.5|false
+git|2.40.0|2.51.0|true
+Some warning without columns
+";
+        assert_eq!(
+            parse_choco_outdated(out),
+            vec![("visualstudio2019buildtools".to_string(), "16.11.62".to_string())]
+        );
+    }
+
+    #[test]
+    fn npm_outdated_reads_updates_and_reports_a_network_error() {
+        let out = r#"{
+            "pnpm": {"current": "11.5.0", "wanted": "12.16.1", "latest": "12.16.1"},
+            "error": {"current": "1.0.0", "latest": "2.0.0"},
+            "same": {"current": "1.0.0", "latest": "1.0.0"},
+            "missing": {"wanted": "1.0.0", "latest": "1.0.0"}
+        }"#;
+        assert_eq!(
+            parse_npm_outdated(out),
+            Ok(vec![("error".to_string(), "2.0.0".to_string()), ("pnpm".to_string(), "12.16.1".to_string())])
+        );
+        assert_eq!(parse_npm_outdated(""), Ok(Vec::new()));
+        assert_eq!(
+            parse_npm_outdated(r#"{"error": {"code": "ENOTFOUND", "summary": "request failed"}}"#),
+            Err("request failed".to_string())
+        );
+    }
+
+    #[test]
+    fn pip_outdated_reads_name_and_latest_version() {
+        let out = r#"[{"name": "ImageIO", "version": "2.37.3", "latest_version": "2.38.1", "latest_filetype": "wheel"}]"#;
+        assert_eq!(parse_pip_outdated(out), vec![("ImageIO".to_string(), "2.38.1".to_string())]);
+        assert!(parse_pip_outdated("[]").is_empty());
+        assert!(parse_pip_outdated("not json").is_empty());
     }
 
     #[test]

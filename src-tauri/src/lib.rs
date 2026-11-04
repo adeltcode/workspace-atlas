@@ -84,6 +84,7 @@ pub fn run() {
             config::import_config,
             packages::pkg_scan,
             packages::pkg_export_csv,
+            packages::pkg_check_updates,
             packages::pkg_upgrade,
             packages::pkg_uninstall_check,
             packages::pkg_uninstall,

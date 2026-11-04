@@ -8,7 +8,7 @@ import {
   SheetHead, Prerequisite, Button, SearchField, ErrorBanner, Toolbar, EmptyState, Tag,
 } from '../../components/ui'
 import * as api from './api'
-import type { Package, SourceResult, UninstallCheck } from './types'
+import type { Package, PackageUpdate, SourceResult, SourceUpdates, UninstallCheck } from './types'
 
 type SortKey = 'name' | 'version' | 'updated' | 'publisher' | 'source'
 
@@ -43,6 +43,10 @@ function csvCell(value: string): string {
   return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe
 }
 
+/** The backend wraps a command this way when it needs administrator rights. */
+const runsAsAdmin = (command: string) => command.includes('-Verb RunAs')
+const ADMIN_NOTE = 'Windows asks for administrator approval, and this runs in its own window, so its output stays there.'
+
 /** Name and version, without repeating a version winget already put in the name. */
 const nameWithVersion = (p: Package) => (p.name.includes(p.version) ? p.name : `${p.name} ${p.version}`)
 
@@ -72,7 +76,12 @@ export default function PackagesView() {
   const [job, setJob]           = useState<{ kind: 'upgrade' | 'uninstall'; pkg: Package } | null>(null)
   const [done, setDone]         = useState<string | null>(null)
   const [jobError, setJobError] = useState<{ title: string; error: unknown } | null>(null)
-  const [broken, setBroken]     = useState<{ name: string; lines: string[] } | null>(null)
+  const [broken, setBroken]     = useState<{ title: string; lines: string[] } | null>(null)
+  const [checking, setChecking]       = useState(false)
+  const [checkFailed, setCheckFailed] = useState<SourceUpdates[]>([])
+  // Last successful check per source. Kept apart from the scan results so a
+  // rescan does not wipe it.
+  const [updates, setUpdates] = useState<Record<string, PackageUpdate[]>>({})
 
   const pkgColumns    = useAppStore(s => s.pkgColumns)
   const setPkgColumns = useAppStore(s => s.setPkgColumns)
@@ -136,7 +145,13 @@ export default function PackagesView() {
   const found   = useMemo(() => (results ?? []).filter(r => r.installed), [results])
   const missing = useMemo(() => (results ?? []).filter(r => !r.installed), [results])
   const failed  = useMemo(() => found.filter(r => r.error), [found])
-  const all     = useMemo(() => found.flatMap(r => r.packages), [found])
+  // A checked version equal to the installed one means it has since been upgraded.
+  const all     = useMemo(() => found.flatMap(r => r.packages).map(p => {
+    const update = updates[p.source]?.find(u => u.id === p.id)
+    return update && update.available !== p.version
+      ? { ...p, available: update.available, upgrade_command: update.upgrade_command }
+      : p
+  }), [found, updates])
   const outdatedCount = useMemo(() => all.filter(p => p.available).length, [all])
   const labels  = useMemo(() => Object.fromEntries(found.map(r => [r.id, r.label])), [found])
   // Sources with nothing listed stay out of the filter. A failed one already
@@ -211,14 +226,46 @@ export default function PackagesView() {
     setBroken(null)
   }
 
+  const checkUpdates = async () => {
+    setChecking(true)
+    setDone(null)
+    setCheckFailed([])
+    try {
+      const checked = await api.pkgCheckUpdates()
+      const ok = checked.filter(c => !c.error)
+      setUpdates(u => ({ ...u, ...Object.fromEntries(ok.map(c => [c.source, c.updates])) }))
+      setCheckFailed(checked.filter(c => c.error))
+      const count = ok.reduce((sum, c) => sum + c.updates.length, 0)
+      const summary = checked.length === 0
+        ? 'npm, pip and Chocolatey are not installed'
+        : `${count} update${count !== 1 ? 's' : ''} from ${ok.map(c => c.label).join(', ')}`
+      if (ok.length > 0 || checked.length === 0) setDone(summary)
+      addActivity({
+        module: 'packages',
+        action: 'Checked for updates',
+        outcome: checked.some(c => c.error) ? 'info' : 'success',
+        detail: [
+          ok.length > 0 || checked.length === 0 ? summary : '',
+          ...checked.filter(c => c.error).map(c => `${c.label}: ${c.error}`),
+        ].filter(Boolean).join('. '),
+      })
+    } catch (e) {
+      setError(String(e))
+      addActivity({ module: 'packages', action: 'Check for updates', outcome: 'failure', detail: String(e) })
+    } finally {
+      setChecking(false)
+    }
+  }
+
   // Rescan one source so its rows show what is installed now, not what the
-  // tool claimed it did. Null when the rescan itself failed. winget installs
-  // are also uninstall keys, so Installed apps is rescanned with winget.
+  // tool claimed it did. Null when the rescan itself failed. Installers that
+  // winget or Chocolatey run also write uninstall keys, which winget and
+  // Installed apps both list.
   const rescanSource = async (id: string): Promise<Package[] | null> => {
     try {
-      const fresh = await api.pkgScan(id === 'winget' ? [id, 'registry'] : [id])
+      const fresh = await api.pkgScan(id === 'winget' || id === 'choco' ? [id, 'winget', 'registry'] : [id])
       setResults(rs => rs && rs.map(r => fresh.find(f => f.id === r.id) ?? r))
-      return fresh[0].packages
+      return fresh.find(f => f.id === id)?.packages ?? null
     } catch (e) {
       setError(String(e))
       return null
@@ -228,31 +275,45 @@ export default function PackagesView() {
   const runUpgrade = async (p: Package) => {
     setConfirm(null)
     startJob('upgrade', p)
+    let conflicts: string[]
     try {
-      await api.pkgUpgrade(p.id)
+      conflicts = await api.pkgUpgrade(p.source, p.id)
     } catch (e) {
       setJobError({ title: `Could not upgrade ${p.name}`, error: e })
       addActivity({ module: 'packages', action: 'Upgrade package', outcome: 'failure', detail: `${p.name}: ${String(e)}` })
+      // A tool that stops halfway can still have changed what is installed.
+      await rescanSource(p.source)
       setJob(null)
       return
     }
     // One id can have several installs (an old x86 copy beside the x64 one),
     // so the new version is the one that was not there before.
-    const before = all.filter(x => x.source === 'winget' && x.id === p.id).map(x => x.version)
-    const fresh = await rescanSource('winget')
+    const before = all.filter(x => x.source === p.source && x.id === p.id).map(x => x.version)
+    const fresh = await rescanSource(p.source)
     const after = (fresh ?? []).filter(x => x.id === p.id).map(x => x.version)
     const now = after.find(v => !before.includes(v))
+    const tool = labels[p.source] ?? p.source
+    const conflictNote = conflicts.length ? `pip check reports: ${conflicts.join('; ')}` : ''
+    if (conflicts.length) setBroken({ title: `After upgrading ${p.name}, pip check reports a conflict`, lines: conflicts })
     if (now) {
       setDone(`${p.name} ${p.version} → ${now}`)
-      addActivity({ module: 'packages', action: 'Upgraded package', outcome: 'success', detail: `${p.name} ${p.version} → ${now}` })
+      addActivity({
+        module: 'packages',
+        action: 'Upgraded package',
+        outcome: conflicts.length ? 'info' : 'success',
+        detail: [`${p.name} ${p.version} → ${now}`, conflictNote].filter(Boolean).join('. '),
+      })
     } else {
       addActivity({
         module: 'packages',
         action: 'Upgraded package',
         outcome: 'info',
-        detail: fresh === null ? `winget finished upgrading ${p.name}. Rescan to see the installed version.`
-          : after.length === 0 ? `winget finished, but ${p.name} no longer appears in winget list.`
-          : `winget finished, but ${p.name} still reports ${p.version}. Some installers finish after a restart.`,
+        detail: [
+          fresh === null ? `${tool} finished upgrading ${p.name}. Rescan to see the installed version`
+            : after.length === 0 ? `${tool} finished, but ${p.name} no longer appears in its list`
+            : `${tool} finished, but ${p.name} still reports ${p.version}. Some installers finish after a restart`,
+          conflictNote,
+        ].filter(Boolean).join('. '),
       })
     }
     setJob(null)
@@ -290,13 +351,14 @@ export default function PackagesView() {
     } catch (e) {
       setJobError({ title: `Could not uninstall ${p.name}`, error: e })
       addActivity({ module: 'packages', action: 'Uninstall package', outcome: 'failure', detail: `${p.name}: ${String(e)}` })
+      await rescanSource(p.source)
       setJob(null)
       return
     }
     const fresh = await rescanSource(p.source)
     const gone = fresh !== null && !fresh.some(x => x.id === p.id && x.version === p.version)
     if (gone) setDone(`Removed ${nameWithVersion(p)}`)
-    if (missingReqs.length) setBroken({ name: p.name, lines: missingReqs })
+    if (missingReqs.length) setBroken({ title: `Removing ${p.name} left packages missing a requirement`, lines: missingReqs })
     addActivity({
       module: 'packages',
       action: 'Uninstalled package',
@@ -339,6 +401,15 @@ export default function PackagesView() {
                 onReset={() => setPkgColumns(useAppStore.getInitialState().pkgColumns)}
               />
             )}
+            {found.length > 0 && (
+              <Button
+                onClick={checkUpdates}
+                disabled={checking || loading}
+                title="Ask npm, pip and Chocolatey for newer versions. Needs the internet."
+              >
+                <CircleArrowUp size={13} /> {checking ? 'Checking…' : 'Check for updates'}
+              </Button>
+            )}
             <Button
               onClick={exportCsv}
               disabled={exporting || loading || rows.length === 0}
@@ -365,11 +436,11 @@ export default function PackagesView() {
         <ErrorBanner title={jobError.title} error={jobError.error} detailLabel="What the tool reported" />
       )}
 
-      {broken && (
-        <ErrorBanner title={`Removing ${broken.name} left packages missing a requirement`}>
-          {broken.lines.join(' ')}
-        </ErrorBanner>
-      )}
+      {broken && <ErrorBanner title={broken.title}>{broken.lines.join(' ')}</ErrorBanner>}
+
+      {checkFailed.map(c => (
+        <ErrorBanner key={c.source} title={`Could not check ${c.label} for updates`}>{c.error}</ErrorBanner>
+      ))}
 
       {loading && !results && <div className="img-loading">Scanning package managers…</div>}
 
@@ -401,9 +472,10 @@ export default function PackagesView() {
             </button>
 
             <span role="status">
+              {checking && <Tag tone="accent">Checking for updates, output in the terminal</Tag>}
               {job && (
                 <Tag tone="accent">
-                  {job.kind === 'upgrade' ? 'Upgrading' : 'Uninstalling'} {job.pkg.name}, output in the terminal
+                  {job.kind === 'upgrade' ? 'Upgrading' : 'Uninstalling'} {job.pkg.name}, see the terminal
                 </Tag>
               )}
               {done && <Tag tone="ok">{done}</Tag>}
@@ -541,7 +613,7 @@ export default function PackagesView() {
           <p className="pkg-note">
             {missing.length > 0 && <>Not found here: {missing.map(r => r.label).join(', ')}. </>}
             {empty.length > 0 && <>No packages: {empty.map(r => r.label).join(', ')}. </>}
-            Only winget reports available upgrades in a plain list, so the Updates count and the Upgrade button cover winget alone.
+            winget updates show after every scan. Check for updates adds npm, pip and Chocolatey, and needs the internet.
             Uninstall covers winget, pip, npm, and VS Code. Updated dates come from each tool's own record or the install
             folder, so treat them as approximate.
           </p>
@@ -552,9 +624,13 @@ export default function PackagesView() {
       {confirm?.upgrade_command && (
         <Modal icon={<CircleArrowUp size={16} />} title={`Upgrade ${confirm.name}?`} onClose={() => setConfirm(null)}>
           <p className="modal-body">
-            winget downloads version <strong>{confirm.available}</strong> and installs it over <strong>{confirm.version}</strong>.
-            This needs an internet connection. Close {confirm.name} first if it is open. Some installers ask for
-            administrator approval, and an upgrade cannot be stopped once it starts.
+            {labels[confirm.source] ?? confirm.source} downloads version <strong>{confirm.available}</strong> and
+            installs it over <strong>{confirm.version}</strong>. This needs an internet connection.
+            {(confirm.source === 'winget' || confirm.source === 'choco') && <> Close {confirm.name} first if it is open.</>}
+            {confirm.source === 'winget' && <> Some installers ask for administrator approval.</>}
+            {runsAsAdmin(confirm.upgrade_command) && <> {ADMIN_NOTE}</>}
+            {confirm.source === 'pip' && <> pip check runs afterwards to look for conflicts with other packages.</>}
+            {' '}An upgrade cannot be stopped once it starts.
           </p>
           <div className="cmd-block">
             <span className="cmd-block-label">Exact command</span>
@@ -747,6 +823,7 @@ function UninstallReview({ pkg, sourceLabel, check, pinned, installs, confirmTex
         <p className="wsl-estimate-note">Close it before uninstalling, or the uninstaller may fail or ask to restart.</p>
       )}
       {check.limits.map(limit => <p key={limit} className="wsl-estimate-note">{limit}</p>)}
+      {runsAsAdmin(check.command) && <p className="wsl-estimate-note">{ADMIN_NOTE}</p>}
       <div className="cmd-block">
         <span className="cmd-block-label">Exact command</span>
         <code className="cmd-block-code">{check.command}</code>
