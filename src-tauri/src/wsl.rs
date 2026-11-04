@@ -473,22 +473,43 @@ fn ps_single_quote(s: &str) -> String {
     s.replace('\'', "''")
 }
 
-fn parse_optimize_result(raw: &str) -> Result<String, AtlasError> {
-    let result = raw.trim_start_matches('\u{feff}');
-    if let Some(detail) = result.strip_prefix("error=") {
-        let detail = detail.trim();
-        let mut error = AtlasError::from(detail);
-        if error.kind == ErrorKind::Unknown {
-            error.message = detail.lines().next().unwrap_or("Disk optimization failed.").to_string();
-            error = error.detail(detail);
-        }
-        return Err(error);
+fn has_optimize_vhd() -> bool {
+    hidden("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", "[bool](Get-Command Optimize-VHD -ErrorAction SilentlyContinue)"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "True")
+        .unwrap_or(false)
+}
+
+/// What the elevated PowerShell runs. Windows prints it in the approval prompt, so it
+/// stays short plain text that people can read before saying yes, never encoded.
+/// The pause gives the stopped VM time to release the disk.
+fn optimize_script(uses_optimize_vhd: bool, vhd: &str, log: &str) -> String {
+    let (vhd, log) = (ps_single_quote(vhd), ps_single_quote(log));
+    if uses_optimize_vhd {
+        format!("wsl.exe --shutdown; Start-Sleep 3; Optimize-VHD -Path '{vhd}' -Mode Full *> '{log}'")
+    } else {
+        format!("wsl.exe --shutdown; Start-Sleep 3; $f = [IO.Path]::GetTempFileName(); 'select vdisk file=\"{vhd}\"', 'compact vdisk' | Set-Content -LiteralPath $f -Encoding ascii; diskpart /s $f *> '{log}'; $c = $LASTEXITCODE; Remove-Item -LiteralPath $f; exit $c")
     }
-    match result.trim().strip_prefix("method=") {
-        Some("Optimize-VHD") => Ok("Optimize-VHD".to_string()),
-        Some("diskpart") => Ok("diskpart".to_string()),
-        _ => Err("Optimization did not complete (no valid result was reported).".into()),
+}
+
+/// The unprivileged PowerShell that asks Windows to run `script` elevated. A `"` has to
+/// survive the command line Start-Process builds for the elevated PowerShell.
+fn elevation_command(script: &str) -> String {
+    OUTER_OPTIMIZE_PS.replace("__SCRIPT__", &ps_single_quote(&script.replace('"', "\\\"")))
+}
+
+fn optimize_failure(report: &str) -> AtlasError {
+    let report = report.trim();
+    if report.is_empty() {
+        return AtlasError::new(ErrorKind::Unknown, "Disk optimization did not finish.");
     }
+    let mut error = AtlasError::from(report);
+    if error.kind == ErrorKind::Unknown {
+        error.message = report.lines().next().unwrap_or("Disk optimization failed.").to_string();
+        error = error.detail(report);
+    }
+    error
 }
 
 /// Compact a distro's ext4.vhdx, reclaiming unused space. Requires admin, so a
@@ -497,8 +518,8 @@ fn parse_optimize_result(raw: &str) -> Result<String, AtlasError> {
 /// Full` and falls back to `diskpart compact vdisk` on editions without Hyper-V.
 ///
 /// The before/after sizes are measured by the unprivileged parent (the VHD is
-/// user-readable); the elevated child only reports success/failure and method
-/// via a temp file, since output cannot cross the integrity boundary.
+/// user-readable); the elevated child reports errors through a temp file, since
+/// output cannot cross the integrity boundary.
 #[tauri::command]
 pub async fn wsl_optimize_vhd(
     migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
@@ -512,55 +533,46 @@ pub async fn wsl_optimize_vhd(
             .map(|m| m.len())
             .map_err(|e| format!("Cannot read VHD '{}': {}", vhd_path, e))?;
 
-        let tmp = std::env::temp_dir();
         let run_id = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
-            .map_err(|e| format!("Cannot create optimization result path: {}", e))?.as_nanos();
-        let result_path = tmp.join(format!("atlas_wsl_optimize_{}_{}.txt", std::process::id(), run_id));
-        let result_str = result_path.to_string_lossy().to_string();
+            .map_err(|e| format!("Cannot create optimization log path: {}", e))?.as_nanos();
+        let log_path = std::env::temp_dir().join(format!("atlas_wsl_optimize_{}_{}.txt", std::process::id(), run_id));
+        let uses_optimize_vhd = has_optimize_vhd();
+        let script = optimize_script(uses_optimize_vhd, &vhd_path, &log_path.to_string_lossy());
 
-        // Inner script runs elevated. Placeholders avoid format! brace-escaping.
-        let inner = INNER_OPTIMIZE_PS
-            .replace("__VHD__", &ps_single_quote(&vhd_path))
-            .replace("__OUT__", &ps_single_quote(&result_str));
-
-        emit_line(&app, format!("# Optimizing {} - administrator approval required", vhd_path), false);
+        emit_line(&app, "# Windows asks for administrator approval. Its prompt names Windows PowerShell, from Microsoft, and lists these commands.", false);
         emit_line(&app, "$ wsl --shutdown", false);
+        emit_line(&app, if uses_optimize_vhd {
+            format!("$ Optimize-VHD -Path \"{}\" -Mode Full", vhd_path)
+        } else {
+            format!("$ 'select vdisk file=\"{}\"', 'compact vdisk' | diskpart", vhd_path)
+        }, false);
 
-        // Outer (unprivileged) launches the elevated child and waits for it.
-        let outer = OUTER_OPTIMIZE_PS.replace("__SCRIPT__", &ps_single_quote(&inner));
-
-        let output = Command::new("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-Command", &outer])
+        let output = hidden("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &elevation_command(&script)])
             .output()
             .map_err(|e| format!("Failed to request elevation: {}", e))?;
 
         if output.status.code() == Some(1223) {
-            emit_line(&app, "  ✗ administrator access was cancelled", true);
+            emit_line(&app, "  ✗ administrator approval was not given", true);
             return Err(AtlasError::new(ErrorKind::Elevation, "Administrator approval was not given, so nothing was changed.")
                 .hint("Compacting a VHD is a disk-level operation and Windows requires elevation for it. Run it again and approve the prompt."));
         }
 
-        let result_raw = std::fs::read_to_string(&result_path).unwrap_or_default();
-        std::fs::remove_file(&result_path).ok();
-        if !output.status.success() && !result_raw.trim_start_matches('\u{feff}').starts_with("error=") {
-            return Err(AtlasError::new(ErrorKind::Unknown, "Disk optimization did not finish.")
-                .detail(String::from_utf8_lossy(&output.stderr)));
+        let report = std::fs::read(&log_path).map(|bytes| decode_wsl_output(&bytes)).unwrap_or_default();
+        std::fs::remove_file(&log_path).ok();
+        if !output.status.success() {
+            let error = optimize_failure(&if report.trim().is_empty() {
+                String::from_utf8_lossy(&output.stderr).to_string()
+            } else {
+                report
+            });
+            emit_line(&app, format!("  ✗ {}", error.detail.as_deref().unwrap_or(&error.message)), true);
+            return Err(error);
         }
-
-        let method = parse_optimize_result(&result_raw).map_err(|e| {
-            emit_line(&app, format!("  ✗ {}", e.detail.as_deref().unwrap_or(&e.message)), true);
-            e
-        })?;
 
         let after = std::fs::metadata(&vhd_path).map(|m| m.len()).unwrap_or(before);
         let reclaimed = before.saturating_sub(after);
 
-        let cmd = if method == "Optimize-VHD" {
-            format!("Optimize-VHD -Path \"{}\" -Mode Full", vhd_path)
-        } else {
-            format!("diskpart: select/compact \"{}\"", vhd_path)
-        };
-        emit_line(&app, format!("$ {}", cmd), false);
         emit_line(
             &app,
             format!(
@@ -572,6 +584,7 @@ pub async fn wsl_optimize_vhd(
             false,
         );
 
+        let method = if uses_optimize_vhd { "Optimize-VHD" } else { "diskpart" }.to_string();
         Ok(OptimizeResult { before_bytes: before, after_bytes: after, reclaimed_bytes: reclaimed, method })
     })
     .await
@@ -2196,61 +2209,13 @@ pub async fn wsl_profile_shell(
 }
 
 const OUTER_OPTIMIZE_PS: &str = r#"$ErrorActionPreference='Stop'
-$encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes('__SCRIPT__'))
 try {
-  $p = Start-Process "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Verb RunAs -WindowStyle Hidden -Wait -PassThru -ArgumentList ('-NoProfile -NonInteractive -EncodedCommand ' + $encoded)
+  $p = Start-Process "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Verb RunAs -WindowStyle Hidden -Wait -PassThru -ArgumentList '-NoProfile -NonInteractive -Command "__SCRIPT__"'
   exit $p.ExitCode
 } catch {
-  if ($_.Exception.NativeErrorCode -eq 1223 -or $_.Exception.InnerException.NativeErrorCode -eq 1223) { exit 1223 }
+  # Start-Process drops the Windows error code here, leaving only its localized text.
+  if ($_.Exception.Message.Contains((New-Object ComponentModel.Win32Exception 1223).Message)) { exit 1223 }
   [Console]::Error.WriteLine($_.ToString())
-  exit 1
-}
-"#;
-
-const INNER_OPTIMIZE_PS: &str = r#"$ErrorActionPreference='Stop'
-$vhd='__VHD__'
-$out='__OUT__'
-try {
-  $shutdown = & wsl.exe --shutdown 2>&1 | Out-String
-  if ($LASTEXITCODE -ne 0) { throw ('WSL shutdown failed: ' + $shutdown.Trim()) }
-  $deadline = [DateTime]::UtcNow.AddSeconds(10)
-  $released = $false
-  while (-not $released) {
-    try {
-      $disk = [System.IO.File]::Open($vhd, 'Open', 'ReadWrite', 'None')
-      $disk.Dispose()
-      $released = $true
-    } catch [System.IO.IOException] {
-      if (($_.Exception.GetBaseException().HResult -band 0xffff) -notin @(32, 33)) { throw }
-      if ([DateTime]::UtcNow -ge $deadline) {
-        throw 'The virtual disk is still being used by another process. Quit Docker Desktop and close tools that use WSL, then retry.'
-      }
-      Start-Sleep -Milliseconds 250
-    }
-  }
-  if (Get-Command Optimize-VHD -ErrorAction SilentlyContinue) {
-    Optimize-VHD -Path $vhd -Mode Full
-    'method=Optimize-VHD' | Out-File -FilePath $out -Encoding utf8
-  } else {
-    $lines = @(
-      ('select vdisk file="' + $vhd + '"'),
-      'compact vdisk',
-      'exit'
-    )
-    $dpFile = [System.IO.Path]::GetTempFileName()
-    try {
-      $lines | Out-File -FilePath $dpFile -Encoding ascii
-      $r = & diskpart /s $dpFile 2>&1 | Out-String
-      if ($LASTEXITCODE -ne 0) { throw ('diskpart failed: ' + $r.Trim()) }
-    } finally {
-      Remove-Item -LiteralPath $dpFile -Force
-    }
-    'method=diskpart' | Out-File -FilePath $out -Encoding utf8
-  }
-} catch {
-  $detail = ($_ | Out-String).Trim()
-  if ($_.ErrorDetails.Message) { $detail += [Environment]::NewLine + $_.ErrorDetails.Message }
-  ('error=' + $_.Exception.Message + [Environment]::NewLine + $detail) | Out-File -FilePath $out -Encoding utf8
   exit 1
 }
 "#;
@@ -2495,124 +2460,101 @@ mod tests {
     }
 
     #[test]
-    fn optimize_result_preserves_windows_details_and_rejects_missing_success() {
-        assert_eq!(parse_optimize_result("\u{feff}method=Optimize-VHD\r\n").unwrap(), "Optimize-VHD");
-        assert_eq!(parse_optimize_result("\u{feff}method=diskpart\r\n").unwrap(), "diskpart");
-        assert!(parse_optimize_result("").is_err());
-        assert!(parse_optimize_result("method=unknown").is_err());
-        let error = parse_optimize_result("\u{feff}error=Failed to compact the virtual disk\r\nThe file is being used by another process.").unwrap_err();
+    fn optimize_failure_keeps_what_windows_reported() {
+        assert_eq!(optimize_failure("  ").message, "Disk optimization did not finish.");
+        let error = optimize_failure("Failed to compact the virtual disk\r\nThe file is being used by another process.");
         assert_eq!(error.kind, ErrorKind::Busy);
         assert!(error.detail.unwrap().contains("another process"));
-        let error = parse_optimize_result("error=Failed to compact the virtual disk\nWindows error 0x1234").unwrap_err();
+        let error = optimize_failure("Failed to compact the virtual disk\nWindows error 0x1234");
         assert_eq!(error.message, "Failed to compact the virtual disk");
         assert!(error.detail.unwrap().contains("Windows error 0x1234"));
     }
 
     #[cfg(windows)]
     #[test]
-    fn optimize_script_checks_shutdown_and_runs_both_backends() {
-        for (case, hyper_v, shutdown_code, compact_code) in [
-            ("hyperv", true, 0, 0),
-            ("diskpart", false, 0, 0),
-            ("shutdown", true, 1, 0),
-            ("hyperv-error", true, 0, 1),
-            ("diskpart-error", false, 0, 1),
-            ("locked", true, 0, 0),
+    fn optimize_script_shuts_down_first_and_reports_both_backends() {
+        for (case, hyper_v, compact_code) in [
+            ("hyperv", true, 0),
+            ("diskpart", false, 0),
+            ("hyperv-error", true, 1),
+            ("diskpart-error", false, 1),
         ] {
             let run_id = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
             let dir = std::env::temp_dir().join(format!("atlas optimize '{}' {} {}", case, std::process::id(), run_id));
             std::fs::create_dir(&dir).unwrap();
             let vhd = dir.join("ext4.vhdx");
-            let result = dir.join("result.txt");
-            let trace = dir.join("diskpart.txt");
-            std::fs::write(&vhd, b"test fixture, not a virtual disk").unwrap();
-            use std::os::windows::fs::OpenOptionsExt;
-            let held = if case == "locked" {
-                Some(std::fs::OpenOptions::new().read(true).share_mode(0).open(&vhd).unwrap())
-            } else { None };
+            let log = dir.join("log.txt");
+            let trace = dir.join("trace.txt");
             let mocks = format!(r#"
-$useHyperV = ${hyper_v}
-function wsl.exe {{ $global:LASTEXITCODE = {shutdown_code}; 'shutdown details' }}
-function Get-Command {{ param($Name) if ($useHyperV) {{ 'available' }} }}
+function wsl.exe {{ Add-Content -LiteralPath '{trace}' 'shutdown' }}
+function Start-Sleep {{ }}
 function Optimize-VHD {{
-  param($Path, $Mode)
-  if ({compact_code} -ne 0) {{ throw "Failed to compact the virtual disk`nWindows error 0x1234" }}
+  [CmdletBinding()] param($Path, $Mode)
+  Add-Content -LiteralPath '{trace}' "optimize $Path $Mode"
+  if ({compact_code} -ne 0) {{ $PSCmdlet.WriteError([Management.Automation.ErrorRecord]::new([Exception]::new('Windows error 0x1234'), 'x', 'NotSpecified', $null)) }}
 }}
 function diskpart {{
   param($switch, $path)
-  Get-Content -LiteralPath $path | Set-Content -LiteralPath '{trace}' -Encoding utf8
+  Add-Content -LiteralPath '{trace}' (Get-Content -LiteralPath $path)
   $global:LASTEXITCODE = {compact_code}
   'diskpart details'
 }}
 "#, trace = ps_single_quote(&trace.to_string_lossy()));
-            let script = format!("{}\n{}", mocks, INNER_OPTIMIZE_PS
-                .replace("__VHD__", &ps_single_quote(&vhd.to_string_lossy()))
-                .replace("__OUT__", &ps_single_quote(&result.to_string_lossy()))
-                .replace("AddSeconds(10)", "AddSeconds(0)"));
+            let script = optimize_script(hyper_v, &vhd.to_string_lossy(), &log.to_string_lossy());
             let output = Command::new("powershell")
-                .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+                .args(["-NoProfile", "-NonInteractive", "-Command", &format!("{}\n{}", mocks, script)])
                 .output().unwrap();
-            let raw = std::fs::read_to_string(&result).unwrap();
-            if case == "locked" {
-                assert!(!output.status.success());
-                let error = parse_optimize_result(&raw).unwrap_err();
-                assert_eq!(error.kind, ErrorKind::Busy);
-                assert!(error.detail.unwrap().contains("Quit Docker Desktop"));
-            } else if shutdown_code != 0 {
-                assert!(!output.status.success());
-                assert!(raw.contains("WSL shutdown failed: shutdown details"));
-                assert!(!trace.exists());
-            } else if compact_code != 0 {
-                assert!(!output.status.success());
-                let error = parse_optimize_result(&raw).unwrap_err();
-                assert!(error.detail.as_deref().unwrap_or(&error.message).contains(
-                    if hyper_v { "Windows error 0x1234" } else { "diskpart details" }
-                ));
+            assert_eq!(output.status.code(), Some(compact_code), "{case}: {}", String::from_utf8_lossy(&output.stderr));
+            let trace_text = std::fs::read_to_string(&trace).unwrap();
+            let steps: Vec<_> = trace_text.trim_start_matches('\u{feff}').lines().collect();
+            let expected = if hyper_v {
+                vec!["shutdown".to_string(), format!("optimize {} Full", vhd.display())]
             } else {
-                assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-                assert_eq!(parse_optimize_result(&raw).unwrap(), if hyper_v { "Optimize-VHD" } else { "diskpart" });
+                vec!["shutdown".to_string(), format!("select vdisk file=\"{}\"", vhd.display()), "compact vdisk".to_string()]
+            };
+            assert_eq!(steps, expected, "{case}");
+            if compact_code != 0 {
+                let report = decode_wsl_output(&std::fs::read(&log).unwrap());
+                assert!(report.contains(if hyper_v { "Windows error 0x1234" } else { "diskpart details" }), "{case}: {report}");
             }
-            if !hyper_v {
-                let commands = std::fs::read_to_string(&trace).unwrap();
-                let commands: Vec<_> = commands.trim_start_matches('\u{feff}').lines().collect();
-                assert_eq!(commands, [
-                    format!("select vdisk file=\"{}\"", vhd.display()),
-                    "compact vdisk".to_string(),
-                    "exit".to_string(),
-                ]);
-            }
-            drop(held);
-            std::fs::remove_file(vhd).unwrap();
-            std::fs::remove_file(result).unwrap();
-            if trace.exists() { std::fs::remove_file(trace).unwrap(); }
-            std::fs::remove_dir(dir).unwrap();
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn optimize_script_is_readable_in_the_approval_prompt() {
+        for hyper_v in [true, false] {
+            let script = optimize_script(hyper_v, r"E:\WSL\Debian\ext4.vhdx", r"C:\Temp\log.txt");
+            let command = elevation_command(&script);
+            assert!(command.contains("wsl.exe --shutdown"));
+            assert!(command.contains(r"E:\WSL\Debian\ext4.vhdx"));
+            assert!(!command.contains("EncodedCommand"));
         }
     }
 
     #[cfg(windows)]
     #[test]
-    fn optimize_elevation_preserves_the_script_and_distinguishes_cancellation() {
-        let script = "Write-Output 'C:\\disk path\\ext4.vhdx'\nWrite-Output 'quoted ''value'''";
-        for (native_error, expected_exit) in [(0, 0), (1223, 1223), (5, 1)] {
-            let mocks = format!(r#"
+    fn optimize_elevation_survives_quoting_and_recognises_a_refusal() {
+        let mock = |body: &str| format!(r#"
 function Start-Process {{
   param($FilePath, $Verb, $WindowStyle, [switch]$Wait, [switch]$PassThru, $ArgumentList)
   if ($Verb -ne 'RunAs' -or $WindowStyle -ne 'Hidden' -or -not $Wait -or -not $PassThru) {{ throw 'Wrong elevation arguments' }}
-  if ({native_error} -ne 0) {{ throw [System.ComponentModel.Win32Exception]::new({native_error}) }}
-  $encoded = $ArgumentList.Substring('-NoProfile -NonInteractive -EncodedCommand '.Length)
-  [Console]::Write([Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($encoded)))
-  return [pscustomobject]@{{ ExitCode = 0 }}
+  {body}
 }}
 "#);
-            let outer = format!("{}\n{}", mocks, OUTER_OPTIMIZE_PS.replace("__SCRIPT__", &ps_single_quote(script)));
-            let output = Command::new("powershell")
-                .args(["-NoProfile", "-NonInteractive", "-Command", &outer])
-                .output().unwrap();
-            assert_eq!(output.status.code(), Some(expected_exit), "{}", String::from_utf8_lossy(&output.stderr));
-            if native_error == 0 {
-                assert_eq!(String::from_utf8_lossy(&output.stdout), script);
-            }
-        }
+        let run = |body: &str, script: &str| Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &format!("{}\n{}", mock(body), elevation_command(script))])
+            .output().unwrap();
+
+        let script = "Write-Output 'select vdisk file=\"C:\\disk path\\it''s.vhdx\"'";
+        let output = run(r"Microsoft.PowerShell.Management\Start-Process $FilePath -Wait -PassThru -NoNewWindow -ArgumentList $ArgumentList", script);
+        assert_eq!(output.status.code(), Some(0), "{}", String::from_utf8_lossy(&output.stderr));
+        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "select vdisk file=\"C:\\disk path\\it's.vhdx\"");
+
+        // Windows PowerShell's Start-Process throws this shape, with no error code on it.
+        let refusal = |code: u32| format!("throw [InvalidOperationException]::new('This command cannot be run due to the error: ' + (New-Object ComponentModel.Win32Exception {code}).Message)");
+        assert_eq!(run(&refusal(1223), "Write-Output 'x'").status.code(), Some(1223));
+        assert_eq!(run(&refusal(5), "Write-Output 'x'").status.code(), Some(1));
     }
 
     #[test]
