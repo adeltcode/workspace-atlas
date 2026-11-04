@@ -5,6 +5,7 @@ use std::thread;
 
 use tauri::Emitter;
 use crate::error::{AtlasError, ErrorKind};
+use crate::shell::hidden;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -246,7 +247,7 @@ fn to_windows_path(path: &str) -> String {
         return win;
     }
     if path.starts_with('/') {
-        if let Ok(out) = Command::new("wsl").args(["wslpath", "-w", path]).output() {
+        if let Ok(out) = hidden("wsl").args(["wslpath", "-w", path]).output() {
             if out.status.success() {
                 let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
                 if !s.is_empty() {
@@ -264,15 +265,15 @@ fn to_windows_path(path: &str) -> String {
 /// path when a `/mnt/` mount was translated (for "# resolved to" logging).
 fn compose_base(config_file: &str) -> (Command, Option<String>) {
     if is_windows_absolute(config_file) {
-        let mut cmd = Command::new("docker");
+        let mut cmd = hidden("docker");
         cmd.args(["compose", "-f", config_file]);
         (cmd, None)
     } else if let Some(win_path) = wsl_mount_to_windows(config_file) {
-        let mut cmd = Command::new("docker");
+        let mut cmd = hidden("docker");
         cmd.args(["compose", "-f", &win_path]);
         (cmd, Some(win_path))
     } else {
-        let mut cmd = Command::new("wsl");
+        let mut cmd = hidden("wsl");
         cmd.args(["docker", "compose", "-f", config_file]);
         (cmd, None)
     }
@@ -280,7 +281,7 @@ fn compose_base(config_file: &str) -> (Command, Option<String>) {
 
 /// Read a file that lives inside WSL via `wsl cat`. Capped at `max_bytes`.
 fn read_via_wsl(path: &str, max_bytes: usize) -> Result<Vec<u8>, AtlasError> {
-    let output = Command::new("wsl")
+    let output = hidden("wsl")
         .args(["cat", path])
         .output()
         .map_err(|e| format!(
@@ -314,7 +315,7 @@ fn read_via_wsl(path: &str, max_bytes: usize) -> Result<Vec<u8>, AtlasError> {
 /// Returns IDs of containers that are currently **running** and have `volume_name`
 /// mounted. Uses `docker ps` (running-only by default, no `-a` flag).
 fn get_running_containers_for_volume(volume_name: &str) -> Vec<String> {
-    Command::new("docker")
+    hidden("docker")
         .args([
             "ps",
             "--filter", &format!("volume={}", volume_name),
@@ -478,7 +479,7 @@ fn parse_age_days(created_since: &str) -> i64 {
 // ─────────────────────────────────────────────────────────────────────────────
 
 fn get_all_images_sync() -> Result<Vec<DockerImage>, AtlasError> {
-    let output = Command::new("docker")
+    let output = hidden("docker")
         .args(["images", "--format", "{{json .}}"])
         .output()
         .map_err(|e| format!("Failed to run docker: {}", e))?;
@@ -526,7 +527,7 @@ fn get_all_images_sync() -> Result<Vec<DockerImage>, AtlasError> {
 }
 
 fn get_container_image_names_sync() -> HashSet<String> {
-    Command::new("docker")
+    hidden("docker")
         .args(["ps", "-a", "--format", "{{.Image}}"])
         .output()
         .map(|o| {
@@ -540,7 +541,7 @@ fn get_container_image_names_sync() -> HashSet<String> {
 }
 
 fn count_stopped_containers_sync() -> u32 {
-    Command::new("docker")
+    hidden("docker")
         .args(["ps", "-aq", "-f", "status=exited"])
         .output()
         .map(|o| {
@@ -553,7 +554,7 @@ fn count_stopped_containers_sync() -> u32 {
 }
 
 fn count_unused_volumes_sync() -> u32 {
-    Command::new("docker")
+    hidden("docker")
         .args(["volume", "ls", "-qf", "dangling=true"])
         .output()
         .map(|o| {
@@ -568,7 +569,7 @@ fn count_unused_volumes_sync() -> u32 {
 /// Run `docker system df -v` and return a map of volume name → size in bytes.
 /// Returns an empty map on any error so it degrades gracefully.
 fn get_volume_sizes_sync() -> std::collections::HashMap<String, u64> {
-    let output = match Command::new("docker")
+    let output = match hidden("docker")
         .args(["system", "df", "-v", "--format", "{{json .}}"])
         .output()
     {
@@ -576,7 +577,7 @@ fn get_volume_sizes_sync() -> std::collections::HashMap<String, u64> {
         Ok(o) if o.status.success() => o,
         _ => {
             // Fallback: plain text
-            match Command::new("docker").args(["system", "df", "-v"]).output() {
+            match hidden("docker").args(["system", "df", "-v"]).output() {
                 Ok(o) if o.status.success() => return parse_volume_sizes_text(&String::from_utf8_lossy(&o.stdout)),
                 _ => return std::collections::HashMap::new(),
             }
@@ -623,7 +624,7 @@ fn parse_volume_sizes_text(text: &str) -> std::collections::HashMap<String, u64>
 }
 
 fn get_networks_sync() -> Result<Vec<DockerNetwork>, AtlasError> {
-    let output = Command::new("docker")
+    let output = hidden("docker")
         .args(["network", "ls", "--format", "{{json .}}"])
         .output()
         .map_err(|e| format!("Failed to run docker network ls: {}", e))?;
@@ -715,7 +716,7 @@ pub async fn docker_check(
     migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
 ) -> Result<DockerStatus, AtlasError> {
     migration.inner().clone().run_operation(move || {
-        let result = Command::new("docker")
+        let result = hidden("docker")
             .args(["version", "--format", "{{.Server.Version}}"])
             .output();
 
@@ -801,7 +802,7 @@ pub async fn docker_system_df(
     migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
 ) -> Result<DockerSystemDf, AtlasError> {
     migration.inner().clone().run_operation(move || {
-        let output = Command::new("docker")
+        let output = hidden("docker")
             .args(["system", "df"])
             .output()
             .map_err(|e| format!("Failed to run docker: {}", e))?;
@@ -948,7 +949,7 @@ pub async fn docker_prune_run(
         match level {
             1 => {
                 emit("$ docker image prune -f");
-                let mut cmd = Command::new("docker");
+                let mut cmd = hidden("docker");
                 cmd.args(["image", "prune", "-f"]);
                 run_streaming(&app, cmd, true)?;
             }
@@ -958,7 +959,7 @@ pub async fn docker_prune_run(
                     emit("# Nothing to remove.");
                 } else {
                     emit(&format!("$ docker rmi {}", image_ids.join(" ")));
-                    let mut cmd = Command::new("docker");
+                    let mut cmd = hidden("docker");
                     cmd.arg("rmi");
                     for id in &image_ids {
                         cmd.arg(id);
@@ -969,13 +970,13 @@ pub async fn docker_prune_run(
 
             3 => {
                 emit("$ docker container prune -f");
-                let mut cmd = Command::new("docker");
+                let mut cmd = hidden("docker");
                 cmd.args(["container", "prune", "-f"]);
                 run_streaming(&app, cmd, true)?;
 
                 if !image_ids.is_empty() {
                     emit(&format!("$ docker rmi {}", image_ids.join(" ")));
-                    let mut cmd = Command::new("docker");
+                    let mut cmd = hidden("docker");
                     cmd.arg("rmi");
                     for id in &image_ids {
                         cmd.arg(id);
@@ -984,12 +985,12 @@ pub async fn docker_prune_run(
                 }
 
                 emit("$ docker volume prune -f");
-                let mut cmd = Command::new("docker");
+                let mut cmd = hidden("docker");
                 cmd.args(["volume", "prune", "-f"]);
                 run_streaming(&app, cmd, true)?;
 
                 emit("$ docker builder prune -a -f");
-                let mut cmd = Command::new("docker");
+                let mut cmd = hidden("docker");
                 cmd.args(["builder", "prune", "-a", "-f"]);
                 run_streaming(&app, cmd, true)?;
             }
@@ -1007,7 +1008,7 @@ pub async fn docker_prune_run(
 // ─────────────────────────────────────────────────────────────────────────────
 
 fn get_containers_sync() -> Result<Vec<DockerContainer>, AtlasError> {
-    let output = Command::new("docker")
+    let output = hidden("docker")
         .args(["ps", "-a", "--format", "{{json .}}"])
         .output()
         .map_err(|e| format!("Failed to run docker: {}", e))?;
@@ -1062,7 +1063,7 @@ fn get_containers_sync() -> Result<Vec<DockerContainer>, AtlasError> {
 }
 
 fn get_volumes_sync() -> Result<Vec<DockerVolume>, AtlasError> {
-    let output = Command::new("docker")
+    let output = hidden("docker")
         .args(["volume", "ls", "--format", "{{json .}}"])
         .output()
         .map_err(|e| format!("Failed to run docker: {}", e))?;
@@ -1074,7 +1075,7 @@ fn get_volumes_sync() -> Result<Vec<DockerVolume>, AtlasError> {
     // Docker's own reference-counting filter - the only reliable source of truth
     // for whether a volume is referenced by at least one container.
     // `dangling=true` means "not referenced by any container (running or stopped)".
-    let dangling: HashSet<String> = Command::new("docker")
+    let dangling: HashSet<String> = hidden("docker")
         .args(["volume", "ls", "-qf", "dangling=true"])
         .output()
         .map(|o| {
@@ -1105,7 +1106,7 @@ fn get_volumes_sync() -> Result<Vec<DockerVolume>, AtlasError> {
         // Only queried for in-use volumes; these are the containers that will be
         // paused during backup (shown as a warning in the UI).
         let containers: Vec<String> = if in_use {
-            Command::new("docker")
+            hidden("docker")
                 .args([
                     "ps",                                 // running-only (no -a)
                     "--filter", &format!("volume={}", name),
@@ -1170,7 +1171,7 @@ pub async fn docker_volumes(
 
 /// Run a one-shot `docker <args>` command: Ok on success, trimmed stderr on failure.
 fn docker_run_ok(args: &[&str]) -> Result<(), AtlasError> {
-    let output = Command::new("docker")
+    let output = hidden("docker")
         .args(args)
         .output()
         .map_err(|e| format!("Failed to run docker: {}", e))?;
@@ -1227,7 +1228,7 @@ pub async fn docker_container_logs(
 ) -> Result<Vec<String>, AtlasError> {
     migration.inner().clone().run_operation(move || {
         let tail_str = tail.to_string();
-        let output = Command::new("docker")
+        let output = hidden("docker")
             .args(["logs", "--tail", &tail_str, "--timestamps", &id])
             .output()
             .map_err(|e| format!("Failed to run docker logs: {}", e))?;
@@ -1345,7 +1346,7 @@ pub async fn docker_compose_ls(
     migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
 ) -> Result<Vec<ComposeProject>, AtlasError> {
     migration.inner().clone().run_operation(move || {
-        let output = Command::new("docker")
+        let output = hidden("docker")
             .args(["compose", "ls", "--all", "--format", "json"])
             .output()
             .map_err(|e| format!("Failed to run docker compose: {}", e))?;
@@ -1505,7 +1506,7 @@ pub async fn write_file_content(
         } else {
             // Pure WSL path - pipe content through `wsl tee`
             use std::io::Write as _;
-            let mut child = Command::new("wsl")
+            let mut child = hidden("wsl")
                 .args(["tee", &path])
                 .stdin(Stdio::piped())
                 .stdout(Stdio::null())
@@ -1565,7 +1566,7 @@ fn parse_mem_used(s: &str) -> u64 {
 }
 
 fn get_stats_sync() -> Result<Vec<ContainerStats>, AtlasError> {
-    let output = Command::new("docker")
+    let output = hidden("docker")
         .args(["stats", "--no-stream", "--format", "{{json .}}"])
         .output()
         .map_err(|e| format!("Failed to run docker stats: {}", e))?;
@@ -1629,7 +1630,7 @@ pub async fn get_disk_stats(
             drive
         );
 
-        let output = std::process::Command::new("powershell")
+        let output = hidden("powershell")
             .args(["-NoProfile", "-NonInteractive", "-Command", &script])
             .output()
             .map_err(|e| format!("powershell: {}", e))?;
@@ -1784,7 +1785,7 @@ pub async fn docker_volume_backup(
         emit_bp(&app, vol, "Checking alpine image…", 5, false, None, None,
             Some("docker image inspect alpine --format {{.Id}}".to_string()));
 
-        let alpine_ok = Command::new("docker")
+        let alpine_ok = hidden("docker")
             .args(["image", "inspect", "alpine", "--format", "{{.Id}}"])
             .output()
             .map(|o| o.status.success())
@@ -1793,7 +1794,7 @@ pub async fn docker_volume_backup(
         if !alpine_ok {
             emit_bp(&app, vol, "Pulling alpine image (one-time setup)…", 10, false, None, None,
                 Some("docker pull alpine".to_string()));
-            let pull = Command::new("docker")
+            let pull = hidden("docker")
                 .args(["pull", "alpine"])
                 .output()
                 .map_err(|e| format!("Failed to pull alpine: {}", e))?;
@@ -1815,7 +1816,7 @@ pub async fn docker_volume_backup(
                 30, false, None, None, Some(pause_cmd));
 
             for id in &running {
-                let ok = Command::new("docker")
+                let ok = hidden("docker")
                     .args(["pause", id])
                     .output()
                     .map(|o| o.status.success())
@@ -1837,7 +1838,7 @@ pub async fn docker_volume_backup(
         );
         emit_bp(&app, vol, "Creating archive…", 50, false, None, None, Some(archive_cmd));
 
-        let archive_result = Command::new("docker")
+        let archive_result = hidden("docker")
             .args([
                 "run", "--rm",
                 "--volume", &format!("{}:/source:ro", vol),
@@ -1854,7 +1855,7 @@ pub async fn docker_volume_backup(
             let unpause_cmd = format!("docker unpause {}", paused.join(" "));
             emit_bp(&app, vol, "Resuming containers…", 88, false, None, None, Some(unpause_cmd));
             for id in &paused {
-                Command::new("docker").args(["unpause", id]).output().ok();
+                hidden("docker").args(["unpause", id]).output().ok();
             }
         }
 
@@ -1928,7 +1929,7 @@ pub async fn docker_volume_restore(
                 15, false, None, None, Some(stop_cmd));
 
             for id in &running {
-                let ok = Command::new("docker")
+                let ok = hidden("docker")
                     .args(["stop", id])
                     .output()
                     .map(|o| o.status.success())
@@ -1946,7 +1947,7 @@ pub async fn docker_volume_restore(
         // Ensure the target volume exists
         emit_bp(&app, vol, "Preparing volume…", 25, false, None, None,
             Some(format!("docker volume create {}", vol)));
-        let create = Command::new("docker")
+        let create = hidden("docker")
             .args(["volume", "create", vol])
             .output()
             .map_err(|e| format!("Cannot create volume: {}", e))?;
@@ -1954,7 +1955,7 @@ pub async fn docker_volume_restore(
             let err = String::from_utf8_lossy(&create.stderr).trim().to_string();
             // Restart containers even on failure
             for id in &stopped {
-                Command::new("docker").args(["start", id]).output().ok();
+                hidden("docker").args(["start", id]).output().ok();
             }
             emit_bp(&app, vol, "Failed to prepare volume", 25, true, Some(err.clone()), None, None);
             return Err(err.into());
@@ -1972,7 +1973,7 @@ pub async fn docker_volume_restore(
         );
         emit_bp(&app, vol, "Restoring data…", 45, false, None, None, Some(docker_cmd));
 
-        let output = Command::new("docker")
+        let output = hidden("docker")
             .args([
                 "run", "--rm",
                 "--volume", &format!("{}:/target", vol),
@@ -1988,7 +1989,7 @@ pub async fn docker_volume_restore(
             let start_cmd = format!("docker start {}", stopped.join(" "));
             emit_bp(&app, vol, "Restarting containers…", 92, false, None, None, Some(start_cmd));
             for id in &stopped {
-                Command::new("docker").args(["start", id]).output().ok();
+                hidden("docker").args(["start", id]).output().ok();
             }
         }
 
@@ -2489,7 +2490,7 @@ pub async fn detect_compose_project_files(
                 "find '{}' -maxdepth {} \\( -name node_modules -o -name .git -o -name vendor -o -name target -o -name dist -o -name build \\) -prune -o -type f \\( -name Dockerfile -o -name 'Dockerfile.*' -o -name '*.dockerfile' \\) -print 2>/dev/null",
                 safe_dir, MAX_DEPTH
             );
-            let out = Command::new("wsl")
+            let out = hidden("wsl")
                 .args(["bash", "-lc", &find_cmd])
                 .output()
                 .unwrap_or_else(|_| std::process::Output {
@@ -2504,7 +2505,7 @@ pub async fn detect_compose_project_files(
                 }
             }
             // .env at the project root
-            let lsout = Command::new("wsl")
+            let lsout = hidden("wsl")
                 .args(["ls", "-1", &dir])
                 .output()
                 .unwrap_or_else(|_| std::process::Output {
@@ -2539,7 +2540,7 @@ pub struct EditorInfo {
 }
 
 pub(crate) fn is_in_path(cmd: &str) -> bool {
-    Command::new("where.exe")
+    hidden("where.exe")
         .arg(cmd)
         .output()
         .map(|o| o.status.success())
@@ -2582,13 +2583,8 @@ pub async fn open_in_editor(
 ) -> Result<(), AtlasError> {
     migration.inner().clone().run_operation(move || {
         let win_path = to_windows_path(&path);
-        let mut c = Command::new("cmd");
+        let mut c = hidden("cmd");
         c.args(["/C", &editor_cmd, &win_path]);
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            c.creation_flags(0x0800_0000); // CREATE_NO_WINDOW - no flashing console
-        }
         Ok(c.spawn()
             .map(|_| ())
             .map_err(|e| format!("Failed to open '{}' with '{}': {}", win_path, editor_cmd, e))?)

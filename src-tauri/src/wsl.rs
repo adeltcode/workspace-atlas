@@ -3,7 +3,7 @@ use std::process::{Command, Stdio};
 use tauri::Emitter;
 
 use crate::docker::bytes_to_human;
-use crate::shell::ShellOut;
+use crate::shell::{hidden, ShellOut};
 use crate::error::{AtlasError, ErrorKind, RecoveryAction};
 
 fn emit_line(app: &tauri::AppHandle, text: impl Into<String>, stderr: bool) {
@@ -256,7 +256,7 @@ pub async fn wslconfig_restore(
 
 /// Read a distro's `/etc/wsl.conf` (no event emission). Returns (content, exists).
 fn cat_wsl_conf(distro: &str) -> (String, bool) {
-    match Command::new("wsl")
+    match hidden("wsl")
         .env("WSL_UTF8", "1")
         .args(["-d", distro, "-u", "root", "cat", "/etc/wsl.conf"])
         .output()
@@ -269,7 +269,7 @@ fn cat_wsl_conf(distro: &str) -> (String, bool) {
 /// Write a distro's `/etc/wsl.conf` as root via `tee` (no event emission).
 fn tee_wsl_conf(distro: &str, content: &str) -> Result<(), AtlasError> {
     use std::io::Write as _;
-    let mut child = Command::new("wsl")
+    let mut child = hidden("wsl")
         .env("WSL_UTF8", "1")
         .args(["-d", distro, "-u", "root", "tee", "/etc/wsl.conf"])
         .stdin(Stdio::piped())
@@ -632,7 +632,7 @@ pub async fn wsl_export_distro(
 
         emit_line(&app, format!("$ wsl --export {} \"{}\"", name, dest_str), false);
 
-        let out = Command::new("wsl")
+        let out = hidden("wsl")
             .env("WSL_UTF8", "1")
             .args(["--export", &name, &dest_str])
             .output()
@@ -668,7 +668,7 @@ pub async fn wsl_import_distro(
 
         emit_line(&app, format!("$ wsl --import {} \"{}\" \"{}\"", name, install_dir, tar_path), false);
 
-        let out = Command::new("wsl")
+        let out = hidden("wsl")
             .env("WSL_UTF8", "1")
             .args(["--import", &name, &install_dir, &tar_path])
             .output()
@@ -818,7 +818,7 @@ fn http_agent() -> ureq::Agent {
 /// in a hashing crate just for one verification step.
 fn sha256_of(path: &str) -> Result<String, AtlasError> {
     let cmd = format!("(Get-FileHash -Algorithm SHA256 -LiteralPath '{}').Hash", ps_single_quote(path));
-    let out = Command::new("powershell")
+    let out = hidden("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", &cmd])
         .output()
         .map_err(|e| format!("Get-FileHash failed: {}", e))?;
@@ -962,7 +962,7 @@ fn run_in_distro(distro: &str, script: &str) -> Result<String, AtlasError> {
 /// genuinely need bash must guard themselves (see PROFILE_SCRIPT).
 fn run_in_distro_as(distro: &str, user: Option<&str>, script: &str) -> Result<String, AtlasError> {
     use std::io::Write as _;
-    let mut cmd = Command::new("wsl");
+    let mut cmd = hidden("wsl");
     cmd.env("WSL_UTF8", "1").arg("-d").arg(distro);
     if let Some(u) = user {
         cmd.arg("-u").arg(u);
@@ -1195,7 +1195,7 @@ pub async fn wsl_distro_metrics(
 /// Run `wsl <args>` with UTF-8 output, mapping a non-zero exit to an error.
 /// wsl.exe sometimes writes its error text to stdout, so both streams are checked.
 fn run_wsl(args: &[&str]) -> Result<(), AtlasError> {
-    let out = Command::new("wsl")
+    let out = hidden("wsl")
         .env("WSL_UTF8", "1")
         .args(args)
         .output()
@@ -1215,7 +1215,7 @@ fn run_wsl(args: &[&str]) -> Result<(), AtlasError> {
 /// Whether `wsl -l --running -q` currently lists the distro. Used to confirm a
 /// lifecycle change has actually taken effect before the UI re-reads the list.
 fn distro_is_running(distro: &str) -> bool {
-    Command::new("wsl")
+    hidden("wsl")
         .env("WSL_UTF8", "1")
         .args(["-l", "--running", "-q"])
         .output()
@@ -1244,7 +1244,7 @@ fn wait_for_running_state(distro: &str, want: bool) {
 #[tauri::command]
 pub async fn wsl_running_names() -> Result<Vec<String>, AtlasError> {
     tauri::async_runtime::spawn_blocking(|| -> Result<Vec<String>, AtlasError> {
-        let out = Command::new("wsl")
+        let out = hidden("wsl")
             .env("WSL_UTF8", "1")
             .args(["-l", "--running", "-q"])
             .output()
@@ -1266,7 +1266,7 @@ pub async fn wsl_running_names() -> Result<Vec<String>, AtlasError> {
 /// Returns None for root or on failure. `wsl --import` resets the default user to
 /// root, so import-based ops use this to restore it afterwards.
 fn distro_default_user(distro: &str) -> Option<String> {
-    let out = Command::new("wsl")
+    let out = hidden("wsl")
         .env("WSL_UTF8", "1")
         .args(["-d", distro, "--", "whoami"])
         .output()
@@ -1551,14 +1551,7 @@ fn capture_migration_command(app: &tauri::AppHandle, distro: &str, program: &str
     let display = format!("$ {} {}", program, args.iter().map(|arg| crate::wsl_migration::quote(arg)).collect::<Vec<_>>().join(" "));
     emit_line(app, &display, false);
     emit_migration_output(app, distro, format!("{}\n", display));
-    let mut command = Command::new(program);
-    command.env("WSL_UTF8", "1").args(args);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x08000000);
-    }
-    let output = command.output().map_err(|error| {
+    let output = hidden(program).env("WSL_UTF8", "1").args(args).output().map_err(|error| {
         let detail = format!("{}\nWindows could not start the command: {}", display, error);
         AtlasError::from(error).detail(detail)
     })?;
@@ -1747,7 +1740,7 @@ pub async fn wsl_migrate_distro(
 /// Names of every registered distro (`wsl -l -q`). Used to check that a name the
 /// frontend sends is really a registered distro before it is handed to `wsl.exe`.
 fn registered_distro_names() -> Vec<String> {
-    Command::new("wsl")
+    hidden("wsl")
         .env("WSL_UTF8", "1")
         .args(["-l", "-q"])
         .output()
@@ -2225,7 +2218,7 @@ try {
 /// Report whether WSL is installed (is `wsl.exe` resolvable on PATH).
 #[tauri::command]
 pub async fn wsl_check() -> WslStatus {
-    let found = Command::new("where.exe")
+    let found = hidden("where.exe")
         .arg("wsl.exe")
         .output()
         .map(|o| o.status.success())
@@ -2304,7 +2297,7 @@ foreach($k in $keys){
 $list | ConvertTo-Json -Compress -Depth 3
 "#;
 
-    let out = Command::new("powershell")
+    let out = hidden("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", script])
         .output()
         .map_err(|e| format!("powershell: {}", e))?;
