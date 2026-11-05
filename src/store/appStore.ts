@@ -10,7 +10,6 @@ export type DockerTab = 'overview' | 'images' | 'containers' | 'volumes' | 'netw
 export type WslView      = 'dashboard' | 'distro' | 'wslconfig' | 'install'
 export type WslDistroTab = 'overview' | 'startup' | 'performance' | 'config'
 
-/** Lightweight distro entry for the sidebar grandchild list. */
 export interface WslDistroNav {
   name: string
   running: boolean
@@ -24,9 +23,7 @@ const MAX_ACTIVITY       = 50
 export type ActivityModule  = 'docker' | 'wsl' | 'packages'
 export type ActivityOutcome = 'success' | 'failure' | 'dry-run' | 'info'
 
-/** One cross-module operation record for the unified activity log. Lightweight
- *  by design - a human summary, not full command output (that lives in the
- *  Terminal / Docker run-log). Every module appends to this. */
+/** A human summary for the activity log, not full command output. Every module appends to this. */
 export interface ActivityEntry {
   id: string
   ts: number
@@ -47,9 +44,8 @@ export interface DockerCache {
   fetchedAt: number
 }
 
-// Context handed to the bottom Terminal panel's "Logs" tab when the user opens
-// compose logs for a project. Carries everything ComposeLogPanel needs so the
-// wide bottom panel can stream logs independently of the Compose view.
+// Handed to the Terminal panel's "Logs" tab. Carries everything ComposeLogPanel needs, so it can
+// stream logs independently of the Compose view.
 export interface ComposeLogContext {
   project:        ComposeProject
   containers:     DockerContainer[]
@@ -58,7 +54,6 @@ export interface ComposeLogContext {
 }
 
 interface AppState {
-  // ── App
   theme: Theme
   activeView: View
   dockerTab: DockerTab
@@ -67,7 +62,6 @@ interface AppState {
   setActiveView: (view: View) => void
   setDockerTab: (tab: DockerTab) => void
 
-  // ── WSL navigation (view/distroTab/selected persisted; nav+badges ephemeral)
   wslView: WslView
   wslDistroTab: WslDistroTab
   wslSelectedDistro: string | null
@@ -78,17 +72,14 @@ interface AppState {
   setWslDistrosNav: (distros: WslDistroNav[]) => void
   wslBadges: { distros: string } | null
   setWslBadges: (b: { distros: string } | null) => void
-  /** Header "Import distro" button → opens the dialog inside the Distributions tab. */
   wslImportOpen: boolean
   setWslImportOpen: (open: boolean) => void
-  /** Distro currently mid lifecycle action (start/stop/restart). In-distro pollers
-   *  (metrics/stats/extras) must skip it so a probe doesn't reboot a distro that is
-   *  being stopped. Ephemeral. */
+  /** Distro mid lifecycle action (start, stop, restart). In-distro pollers must skip it, so a probe
+   *  does not reboot a distro that is being stopped. Ephemeral. */
   wslBusyDistro: string | null
   setWslBusyDistro: (name: string | null) => void
-  /** Catalog distro whose download/import is in flight. Survives the install
-   *  wizard unmounting (it runs in the backend), so re-opening the wizard can't
-   *  start a second concurrent install. Ephemeral. */
+  /** Catalog distro whose download or import is in flight. Survives the wizard unmounting (it runs
+   *  in the backend), so re-opening the wizard cannot start a second install. Ephemeral. */
   wslInstalling: string | null
   setWslInstalling: (name: string | null) => void
   /** Last-seen live metrics per distro, so reopening a distro's overview shows
@@ -96,7 +87,6 @@ interface AppState {
   wslMetrics: Record<string, DistroMetrics>
   setWslMetric: (distro: string, metrics: DistroMetrics) => void
 
-  // ── Layout sizes (persisted)
   sidebarWidth: number
   terminalHeight: number
   setSidebarWidth: (w: number) => void
@@ -105,11 +95,10 @@ interface AppState {
   pkgColumns: { widths: Record<string, number>; hidden: string[] }
   setPkgColumns: (c: { widths: Record<string, number>; hidden: string[] }) => void
 
-  // ── Backup directory (persisted)
   backupDir: string
   setBackupDir: (dir: string) => void
 
-  // ── Tab pre-filters - set before navigating, consumed once by target tab (ephemeral)
+  // Set before navigating, and consumed once by the target tab.
   imagesFilter: 'dangling' | 'unused-tagged' | null
   volumesFilter: 'unused' | null
   composePreselect: string | null
@@ -117,21 +106,19 @@ interface AppState {
   setVolumesFilter:   (f: 'unused' | null) => void
   setComposePreselect: (name: string | null) => void
 
-  // ── Docker sidebar nav data (ephemeral - updated by DockerView / ComposeTab)
+  // Updated by DockerView and ComposeTab.
   dockerBadges: { images: number; containers: string; volumes: string } | null
   setDockerBadges: (b: { images: number; containers: string; volumes: string } | null) => void
   composeProjectsNav: Array<{ name: string; status: string }>
   setComposeProjectsNav: (projects: Array<{ name: string; status: string }>) => void
-  // Compose projects we have seen (name → config files), persisted so a project
-  // that is `down` - and thus drops out of `docker compose ls` - still shows in
-  // the list and can be started again.
+  // Persisted, so a project that is `down`, and so gone from `docker compose ls`, still shows in the
+  // list and can be started again.
   knownComposeProjects: Record<string, string[]>
   rememberComposeProjects: (projects: Array<{ name: string; config_files: string[] }>) => void
   forgetComposeProject: (name: string) => void
   composeActiveProject: string | null
   setComposeActiveProject: (name: string | null) => void
-  // Active project's files, shown as a child menu in the sidebar (replaces the
-  // in-editor file tabs). Published by ComposeTab.
+  // Published by ComposeTab and shown as a child menu in the sidebar.
   composeFilesNav: Array<{ path: string; label: string; kind: 'compose' | 'dockerfile' | 'env' }>
   setComposeFilesNav: (files: Array<{ path: string; label: string; kind: 'compose' | 'dockerfile' | 'env' }>) => void
   composeActiveFilePath: string | null
@@ -142,35 +129,28 @@ interface AppState {
   // When true, ComposeTab should switch to main overview page (cleared after read)
   composeShowOverview: boolean
   setComposeShowOverview: (v: boolean) => void
-  // Preferred external editor for "Open in IDE" (persisted)
   preferredEditor: { name: string; command: string } | null
   setPreferredEditor: (e: { name: string; command: string } | null) => void
 
-  // ── Docker keep-list (persisted)
   dockerKeepList: string[]
   addToKeepList: (id: string) => void
   removeFromKeepList: (id: string) => void
 
-  // ── Docker run history (persisted)
   dockerLogs: LogEntry[]
   addDockerLog: (entry: LogEntry) => void
   clearDockerLogs: () => void
 
-  // ── Unified cross-module activity log (persisted)
   activityLog: ActivityEntry[]
   addActivity: (entry: Omit<ActivityEntry, 'id' | 'ts'>) => void
   clearActivity: () => void
 
-  // ── WSL cold-boot benchmark history, per distro (persisted)
   wslBenchmarks: Record<string, Array<{ ts: number; boot_ms: number }>>
   addWslBenchmark: (distro: string, bootMs: number) => void
 
-  // ── Docker data cache (ephemeral)
   dockerCache: DockerCache | null
   setDockerCache: (cache: DockerCache) => void
   clearDockerCache: () => void
 
-  // ── Global terminal (ephemeral)
   terminalLines: TerminalLine[]
   terminalOpen: boolean
   addTerminalLine: (text: string, type: TerminalLine['type']) => void
@@ -179,14 +159,12 @@ interface AppState {
   setTerminalOpen: (open: boolean) => void
   toggleTerminal: () => void
 
-  // ── Terminal tabs + compose log routing (ephemeral)
   terminalTab: 'shell' | 'logs'
   setTerminalTab: (tab: 'shell' | 'logs') => void
   composeLogContext: ComposeLogContext | null
   openComposeLogs: (ctx: ComposeLogContext) => void
   closeComposeLogs: () => void
 
-  // ── The index (Ctrl+K) and the keyboard reference (ephemeral)
   indexOpen: boolean
   setIndexOpen: (open: boolean) => void
   shortcutsOpen: boolean
@@ -211,7 +189,6 @@ let _lineId = 0
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
-      // ── App
       theme: getSystemTheme(),
       activeView: 'dashboard',
       dockerTab: 'overview',
@@ -220,7 +197,6 @@ export const useAppStore = create<AppState>()(
       setActiveView: (view) => { if (!get().wslBusyDistro) set({ activeView: view }) },
       setDockerTab:  (dockerTab) => set({ dockerTab }),
 
-      // ── WSL navigation
       wslView:           'dashboard',
       wslDistroTab:      'overview',
       wslSelectedDistro: null,
@@ -240,21 +216,18 @@ export const useAppStore = create<AppState>()(
       wslMetrics:           {},
       setWslMetric:         (distro, metrics) => set((s) => ({ wslMetrics: { ...s.wslMetrics, [distro]: metrics } })),
 
-      // ── Layout sizes (sidebarWidth 0 = auto/fit-content)
+      // sidebarWidth 0 means the CSS default (--sidebar-width).
       sidebarWidth:  0,
-      // Enough to read the last few commands without the pane claiming a
-      // quarter of the window before the user has asked it to.
+      // Enough to read the last few commands.
       terminalHeight: 180,
       setSidebarWidth:   (sidebarWidth)   => set({ sidebarWidth }),
       setTerminalHeight: (terminalHeight) => set({ terminalHeight }),
       pkgColumns: { widths: {}, hidden: ['publisher', 'location'] },
       setPkgColumns: (pkgColumns) => set({ pkgColumns }),
 
-      // ── Backup directory
       backupDir: '',
       setBackupDir: (backupDir) => set({ backupDir }),
 
-      // ── Tab pre-filters (ephemeral)
       imagesFilter:     null,
       volumesFilter:    null,
       composePreselect: null,
@@ -262,7 +235,6 @@ export const useAppStore = create<AppState>()(
       setVolumesFilter:    (volumesFilter)    => set({ volumesFilter }),
       setComposePreselect: (composePreselect) => set({ composePreselect }),
 
-      // ── Docker sidebar nav data (ephemeral)
       dockerBadges:           null,
       setDockerBadges:        (dockerBadges)        => set({ dockerBadges }),
       composeProjectsNav:     [],
@@ -293,7 +265,6 @@ export const useAppStore = create<AppState>()(
       preferredEditor:        null,
       setPreferredEditor:     (preferredEditor) => set({ preferredEditor }),
 
-      // ── Docker keep-list
       dockerKeepList: [],
       addToKeepList: (id) =>
         set((s) => ({
@@ -304,12 +275,10 @@ export const useAppStore = create<AppState>()(
       removeFromKeepList: (id) =>
         set((s) => ({ dockerKeepList: s.dockerKeepList.filter((k) => k !== id) })),
 
-      // ── Docker logs
       dockerLogs: [],
       addDockerLog:  (entry) => set((s) => ({ dockerLogs: [entry, ...s.dockerLogs].slice(0, MAX_DOCKER_LOGS) })),
       clearDockerLogs: () => set({ dockerLogs: [] }),
 
-      // ── Unified activity log
       activityLog: [],
       addActivity: (entry) =>
         set((s) => ({
@@ -322,7 +291,6 @@ export const useAppStore = create<AppState>()(
         })),
       clearActivity: () => set({ activityLog: [] }),
 
-      // ── WSL benchmark history (keep the 20 most recent per distro)
       wslBenchmarks: {},
       addWslBenchmark: (distro, bootMs) =>
         set((s) => ({
@@ -332,19 +300,13 @@ export const useAppStore = create<AppState>()(
           },
         })),
 
-      // ── Docker cache
       dockerCache: null,
       setDockerCache:   (cache) => set({ dockerCache: cache }),
       clearDockerCache: () => set({ dockerCache: null }),
 
-      // ── Terminal
       terminalLines: [],
-      // Collapsed by default, and persisted below. The claim that every
-      // operation shows its command is carried by the 32px header strip, which
-      // is visible whether the pane is open or not - so the promise is still on
-      // screen at launch without a third of the window going to a pane the user
-      // has not asked for yet. Ctrl+` opens it, and an operation that streams
-      // output (compose logs) opens it itself.
+      // Collapsed by default. Ctrl+` opens it, and an operation that streams output (compose logs) opens
+      // it itself.
       terminalOpen: false,
       addTerminalLine: (text, type) =>
         set((s) => ({
@@ -353,7 +315,6 @@ export const useAppStore = create<AppState>()(
             { id: `${++_lineId}`, text, type, ts: Date.now() },
           ].slice(-MAX_TERMINAL_LINES),
         })),
-      // Batch variant - one set() call for many lines, avoids per-line re-renders
       addTerminalLines: (items) =>
         set((s) => ({
           terminalLines: [
@@ -365,7 +326,6 @@ export const useAppStore = create<AppState>()(
       setTerminalOpen: (open) => set({ terminalOpen: open }),
       toggleTerminal:  () => set((s) => ({ terminalOpen: !s.terminalOpen })),
 
-      // ── Terminal tabs + compose log routing (ephemeral)
       terminalTab: 'shell',
       setTerminalTab: (terminalTab) => set({ terminalTab }),
       composeLogContext: null,
@@ -374,7 +334,6 @@ export const useAppStore = create<AppState>()(
       closeComposeLogs: () =>
         set({ composeLogContext: null, terminalTab: 'shell' }),
 
-      // ── The index + keyboard reference
       indexOpen: false,
       setIndexOpen: (indexOpen) => set({ indexOpen }),
       shortcutsOpen: false,

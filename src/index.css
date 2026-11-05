@@ -1,49 +1,26 @@
 @import "tailwindcss";
 
-/* =============================================================
-   WORKSPACE ATLAS - design tokens
-   -------------------------------------------------------------
-   A developer console, built to the craft level of Linear, Vercel and Raycast:
-   near-neutral greys, one restrained accent, hairline borders, small consistent
-   radii, tabular numerals, and colour reserved for state. No metaphor. The tool
-   should disappear into the task.
-
-   Dark is the default because the scene is a developer at their desk, often at
-   night, beside a dark terminal. Light is a true neutral, not a warm paper.
-
-   Every text value was checked against every ground it can land on, including
-   the hover surface, which is the lightest and fails first. All pairs clear
-   WCAG AA 4.5:1 in both themes.
-   ============================================================= */
 :root {
-  /* ── Grounds. Five steps, near-neutral with the barest cool cast. */
   --color-bg-base:       #0b0c0e;   /* app ground, rail, titlebar */
   --color-bg-primary:    #111214;   /* main panel */
   --color-bg-secondary:  #17181b;   /* cards, raised rows */
   --color-bg-tertiary:   #1e2024;   /* inputs, wells */
   --color-bg-hover:      #24262b;
 
-  /* ── Hairlines. Separation is a 1px line and a small tone shift, never a
-     shadow: surfaces in this world are flat and sit at the same height. */
   --color-border:        rgba(255,255,255,0.075);
   --color-border-light:  rgba(255,255,255,0.045);
   --color-border-strong: rgba(255,255,255,0.15);
 
-  /* ── Text. */
   --color-text-primary:   #f2f3f5;   /* 16.9:1 on the main panel */
   --color-text-secondary: #a2a9b2;   /*  7.9:1 */
   --color-text-tertiary:  #8d949e;   /*  6.1:1, 4.95:1 on hover */
 
-  /* ── One accent. Used for the primary action, the current selection and the
-     focus ring. Never for decoration. --color-accent is the text and border
-     value; --color-accent-fill is dark enough that white sits on it at 6.3:1. */
+  /* --color-accent is for text and borders. White on --color-accent-fill is 6.3:1. */
   --color-accent:        #7c84e8;
   --color-accent-fill:   #4c53c4;
   --color-accent-hover:  #959ced;
   --color-accent-subtle: rgba(124,132,232,0.14);
 
-  /* ── State. These three say "this succeeded / take care / this failed" and
-     nothing else. They are never chrome and never decoration. */
   --color-success:        #4ec26a;
   --color-success-subtle: rgba(78,194,106,0.13);
   --color-warning:        #e0a63a;
@@ -57,9 +34,8 @@
   --color-accent-border: color-mix(in srgb, var(--color-accent) 32%, transparent);
   --color-danger-border: color-mix(in srgb, var(--color-danger) 26%, transparent);
 
-  /* ── Chrome. Solid values, never alpha: these carry 11-12px text on the
-     darkest surface, and a translucent value composites down to whatever is
-     behind it. */
+  /* Keep these solid, not alpha: they carry 11-12px text, and a translucent value
+     blends with whatever is behind it. */
   --color-sidebar-bg:    #0b0c0e;
   --color-titlebar-bg:   #0b0c0e;
   --color-terminal-bg:   #0b0c0e;
@@ -72,14 +48,12 @@
   --chrome-surface-hover: rgba(255,255,255,0.075);
   --chrome-divider:       rgba(255,255,255,0.075);
 
-  /* ── Shape. Four steps, none of them large. */
   --radius-sm:   4px;
   --radius-md:   6px;
   --radius-lg:   8px;
   --radius-xl:   10px;
   --radius-full: 9999px;
 
-  /* ── Space. One 4px scale. */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -88,8 +62,6 @@
   --space-6: 32px;
   --space-7: 48px;
 
-  /* ── Type. Seven steps. Headings carry negative tracking; everything
-     numeric is tabular so columns line up. */
   --text-2xs:  11px;   /* counts, micro labels */
   --text-xs:   12px;   /* secondary, keycaps */
   --text-sm:   13px;   /* body, table rows */
@@ -98,20 +70,14 @@
   --text-lg:   19px;   /* page title */
   --text-xl:   22px;   /* the one big number */
 
-  /* Windows Terminal's own face first, so a command in this app and the same
-     command in a real terminal have the same shape. 29 declarations referenced
-     this token before it existed, which made every one of them invalid at
-     computed-value time and silently fell back to the UI font: command output,
-     image IDs and .env values were all rendering proportional. */
+  /* Windows Terminal's font first, so a command looks the same here and in a real terminal. */
   --font-mono: "Cascadia Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
 
-  /* ── Layout. */
   --titlebar-height:   44px;
   --sidebar-width:     212px;
   --context-width:     300px;
   --terminal-height:   240px;
 
-  /* ── Elevation. Flat by default; only true overlays lift. */
   --shadow-ink:  #000;
   --shadow-card: none;
   --shadow-sm:   0 1px 2px color-mix(in srgb, var(--shadow-ink) 30%, transparent);
@@ -124,12 +90,10 @@
   --z-modal:    500;
   --z-palette:  600;
 
-  /* ── Motion. Fast: the user is in a task, not watching choreography. */
   --transition-fast: 0.1s ease;
   --transition-base: 0.15s ease;
   --transition-slow: 0.24s ease;
 
-  /* ── Chart series. */
   --chart-1: #7c84e8;
   --chart-2: #4ec26a;
   --chart-3: #e0a63a;
@@ -139,10 +103,9 @@
   --chart-7: #e08a4a;
   --chart-8: #43c4b0;
 
-  --disk-other: #565d68;   /* 3.1:1 vs the panel, WCAG 1.4.11 non-text */
+  --disk-other: #565d68;
   --disk-free:  #1e2024;
 
-  /* ── Syntax annotation (compose files, Dockerfiles, .env). */
   --syntax-comment:    #7d858f;
   --syntax-key:        #7c84e8;
   --syntax-key-nested: #a2a9b2;
@@ -152,9 +115,6 @@
   --syntax-env:        #e08a4a;
 }
 
-/* =============================================================
-   Light
-   ============================================================= */
 [data-theme="light"] {
   --color-bg-base:       #f6f7f8;
   --color-bg-primary:    #ffffff;
@@ -175,11 +135,8 @@
   --color-accent-hover:  #3a40a8;
   --color-accent-subtle: rgba(76,83,196,0.10);
 
-  /* A state colour has to survive its own tint twice: the prune level card takes
-     the subtle ground when selected and the badge inside it takes the same
-     ground again, which is the darkest surface either can land on. Measured
-     there: success 4.67:1, warning 4.91:1, danger 4.56:1. Green and red were
-     4.00:1 before this and are the reason both moved a stop darker. */
+  /* Measured on the darkest ground these reach: a badge on a selected prune card, which
+     stacks the subtle ground twice. Success 4.67:1, warning 4.91:1, danger 4.56:1. */
   --color-success:        #1a6d36;
   --color-success-subtle: rgba(26,109,54,0.10);
   --color-warning:        #7d5307;
@@ -225,9 +182,6 @@
   --syntax-env:        #a8551f;
 }
 
-/* =============================================================
-   Base Reset
-   ============================================================= */
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -240,9 +194,7 @@ html, body, #root {
   overflow: hidden;
 }
 
-/* Segoe UI Variable ships with Windows 11, so it costs no bytes, needs no
-   network, and is optically sized for UI at these small sizes. "Text" is the
-   optical size for 12-28px, which is where nearly all of this app lives. */
+/* Segoe UI Variable ships with Windows 11. "Text" is its optical size for 12-28px. */
 body {
   font-family: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
   background: var(--color-bg-base);
@@ -280,9 +232,6 @@ ul, ol { list-style: none; }
 ::-webkit-scrollbar-thumb   { background: var(--color-border); border-radius: var(--radius-md); }
 ::-webkit-scrollbar-thumb:hover { background: var(--color-text-tertiary); }
 
-/* =============================================================
-   App Shell
-   ============================================================= */
 .app-shell {
   display: flex;
   flex-direction: column;
@@ -299,12 +248,8 @@ ul, ol { list-style: none; }
   overflow: hidden;
 }
 
-/* Content column. The terminal is absolutely positioned against this box, so
-   `bottom: 0` resolves to the padding box's floor and stays pinned regardless
-   of the padding below. That padding is how the column reserves the terminal's
-   own height: the main panel shrinks to sit above it, so the last row of a page
-   is never buried under the terminal. Closed, the reserve is the 32px header
-   strip that is always visible. */
+/* The terminal is absolute against this box, so `bottom: 0` ignores the padding. The padding
+   reserves the terminal's height; closed, that is the 32px header strip. */
 .app-content {
   --terminal-height: clamp(100px, var(--terminal-preferred-height), calc(100dvh - var(--titlebar-height) - var(--main-panel-min-height)));
   display: flex;
@@ -316,14 +261,10 @@ ul, ol { list-style: none; }
   position: relative;
   padding-bottom: 32px;
 }
-/* Snapped, not transitioned: the terminal's own open/close is a compositor
-   transform, and animating this padding would relayout the whole page on every
-   frame of it. The column resizes once and the panel slides in over it. */
+/* Not transitioned: animating this padding would relayout the page on every frame of the
+   terminal's slide. */
 .app-content--terminal-open { padding-bottom: var(--terminal-height); }
 
-/* =============================================================
-   Titlebar
-   ============================================================= */
 .titlebar {
   height: var(--titlebar-height);
   min-height: var(--titlebar-height);
@@ -342,7 +283,6 @@ ul, ol { list-style: none; }
   padding-left: 16px;
 }
 
-/* Flex-grow spacer that fills the middle of the titlebar - also a drag region */
 .titlebar-spacer {
   flex: 1;
   height: 100%;
@@ -374,7 +314,6 @@ ul, ol { list-style: none; }
   display: flex;
   align-items: center;
   height: 100%;
-  /* no-drag counterpart also removed - no longer needed without the parent drag region */
 }
 
 .titlebar-btn {
@@ -403,16 +342,7 @@ ul, ol { list-style: none; }
   color: #fff;
 }
 
-/* Titlebar stays dark - no light overrides needed */
-
-/* =============================================================
-   Sidebar
-   ============================================================= */
-/* =============================================================
-   Sidebar
-   ============================================================= */
 .sidebar {
-  /* When --sidebar-w is set by the user's drag, use it; otherwise shrink to content */
   width: var(--sidebar-w, fit-content);
   min-width: var(--sidebar-w, fit-content);
   background: var(--color-sidebar-bg);
@@ -433,7 +363,6 @@ ul, ol { list-style: none; }
   color: var(--chrome-text);
 }
 
-/* Left accent bar on active item */
 .sidebar-item.active::before {
   content: '';
   position: absolute;
@@ -453,54 +382,14 @@ ul, ol { list-style: none; }
 }
 
 
-/* Child navigation - tree connector style */
-
-
-/*
- * Vertical trunk line.
- * Sits at x=23px which is the icon center of the parent item:
- *   sidebar-item padding-left(10) + icon-wrap half-width(14) = 24px.
- * Fades out near the bottom so it terminates naturally at the last child.
- */
-
-/*
- * Child item.
- * padding-left: 47px aligns the text with the parent item's label:
- *   padding-left(10) + icon-wrap(28) + gap(9) = 47px.
- */
-
-
 .sidebar-child-item.active {
   background: color-mix(in srgb, var(--color-accent) 10%, transparent);
   color: var(--chrome-text);
 }
 
-/*
- * Curved L-shaped branch: left border from top to midpoint,
- * then a bottom border curving right to meet the dot.
- * Starts on the trunk (left: 24px) and extends 13px to the right.
- */
-
-/*
- * Dot at the end of the branch connector.
- * Center at x=37px (24 + 13 = 37, dot is 4px so left: 35px).
- */
-
 .sidebar-child-item.active::after {
   background: var(--color-accent);
 }
-
-/*
- * Grandchild navigation - mirrors the child level exactly.
- *
- * Level 2 geometry:  trunk@23, branch left=24 width=13, dot@35, text@47
- * Level 3 geometry:  trunk@47, branch left=48 width=13, dot@59, text@71
- *
- * In both levels the delta from trunk to text-start is 24px, and every
- * spacing value (gap, vertical padding, margin) is identical.
- */
-
-
 
 .sidebar-grandchild-item.active {
   background: color-mix(in srgb, var(--color-accent) 10%, transparent);
@@ -511,9 +400,6 @@ ul, ol { list-style: none; }
 .sidebar-grandchild-item.active::after {
   background: var(--color-accent);
 }
-
-/* ── Sidebar child/grandchild inline layout extras ──────────────────────── */
-
 
 .sidebar-file-item.active { background: color-mix(in srgb, var(--color-accent) 10%, transparent); color: var(--chrome-text); }
 .sidebar-file-item.active .sidebar-file-icon { color: var(--color-accent); }
@@ -527,7 +413,7 @@ ul, ol { list-style: none; }
 .sidebar-compose-frac.frac--warn { color: var(--color-warning); }
 .sidebar-compose-frac.frac--off  { color: var(--chrome-text-subtle); }
 
-/* Footer - matches terminal-header height (32px) */
+/* Same 32px height as .terminal-header. */
 .sidebar-footer {
   height: 32px;
   min-height: 32px;
@@ -542,26 +428,8 @@ ul, ol { list-style: none; }
 
 .sidebar-settings-btn.active { color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 15%, transparent); }
 
-/* Sidebar stays dark - no light overrides needed */
-
-/* =============================================================
-   Dashboard
-   ============================================================= */
-
-
-
-
-
-
-
-
-
-
-
-/* These meter fills animate `width`, not `transform: scaleX()`. Deliberate: the
-   fill sits in a fixed-size clipping track so nothing around it reflows, while
-   scaleX would distort the corner radii and cannot express the stacked disk
-   segments at all (siblings there depend on real width for layout). */
+/* These fills animate `width`, not scaleX: scaleX distorts the corner radii and cannot
+   express the stacked disk segments. */
 
 .sys-bar--accent  { background: var(--color-accent); }
 .sys-bar--success { background: var(--color-success); }
@@ -672,11 +540,7 @@ ul, ol { list-style: none; }
 
 
 
-/* =============================================================
-   Section label (shared utility)
-   ============================================================= */
-/* Group label. Same size, weight and tracking as `.panel-title` and the table
-   header, because all three are the same thing: the name of a group of facts. */
+/* Keep in step with `.panel-title` and the table header: same size, weight and tracking. */
 .section-label, .wsl-dash-section-label, .stats-col-label {
   font-size: var(--text-2xs);
   font-weight: 600;
@@ -686,22 +550,8 @@ ul, ol { list-style: none; }
   margin-bottom: var(--space-3);
 }
 
-/* =============================================================
-   THE BUTTON
-   -------------------------------------------------------------
-   There is one button. It has four variants (default, primary, danger, ghost)
-   and three sizes (24 / 28 / 32), and every control in the app that reads as a
-   button is one of those twelve things.
-
-   The legacy families below - btn-primary, btn-secondary, btn-refresh,
-   btn-filled, btn-ghost, btn-icon, ctr-action-btn and the per-module ones -
-   are aliases onto the same base rather than twelve independent
-   implementations. They existed with five different heights, four radii, three
-   font sizes and two different disabled treatments, which is why a toolbar
-   never lined up with the header above it. Aliasing normalises every call site
-   at once; the class names are being migrated to <Button> as each module is
-   touched.
-   ============================================================= */
+/* THE BUTTON
+   Four variants and three sizes (24, 28, 32). The legacy classes below are aliases onto this base. */
 
 .btn,
 .btn-primary, .btn-secondary, .btn-refresh, .btn-filled, .btn-ghost,
@@ -737,8 +587,7 @@ ul, ol { list-style: none; }
 }
 .btn:active:not(:disabled) { background: var(--color-bg-tertiary); }
 
-/* Disabled removes weight, never colour: a greyed-out red button still has to
-   read as the destructive one. */
+/* Keep the color when disabled: a disabled danger button must still read as destructive. */
 .btn:disabled,
 .btn-primary:disabled, .btn-secondary:disabled, .btn-refresh:disabled,
 .btn-filled:disabled, .btn-ghost:disabled, .btn-icon:disabled,
@@ -750,7 +599,6 @@ ul, ol { list-style: none; }
   filter: none;
 }
 
-/* ── Sizes. */
 .btn--sm, .btn-sm, .ctr-action-btn, .compose-card-btn, .compose-edit-btn,
 .compose-save-btn, .compose-cancel-edit-btn {
   height: 24px;
@@ -758,7 +606,7 @@ ul, ol { list-style: none; }
 }
 .btn--lg { height: 32px; padding: 0 var(--space-4); font-size: var(--text-sm); }
 
-/* ── Icon-only. Square at the size's own height, and every one needs a label. */
+/* Icon-only buttons are square, and every one needs a label. */
 .btn--icon, .btn-icon, .ctr-action-btn, .settings-dir-refresh {
   width: 24px;
   padding: 0;
@@ -768,8 +616,7 @@ ul, ol { list-style: none; }
 .btn--icon.btn--sm { width: 24px; }
 .ctr-action-btn--labeled { width: auto; padding: 0 var(--space-2); gap: 5px; }
 
-/* ── Variants. Each fill names its own foreground: a single on-brand white
-   fails badly on the bright pencils, white on dark-theme amber is 2.1:1. */
+/* Each fill sets its own text color, because one white does not work on all of them. */
 .btn--primary, .btn-primary, .btn-filled--accent {
   background: var(--color-accent-fill);
   border-color: var(--color-accent-fill);
@@ -790,10 +637,7 @@ ul, ol { list-style: none; }
 .btn--danger:hover:not(:disabled),
 .btn-filled--danger:hover:not(:disabled) { filter: brightness(1.12); }
 
-/* Outlined danger. A destructive action that lives in a toolbar next to a
-   filter must not carry the same weight as the confirm button in the dialog it
-   opens: the app's rule is that the most dangerous action is the hardest to
-   trigger, and a solid red button in a toolbar invites the click. */
+/* For toolbars: it must carry less weight than the solid confirm button in the dialog it opens. */
 .btn--danger-outline, .btn-prune-unused {
   background: var(--color-danger-subtle);
   border-color: var(--color-danger-border);
@@ -825,8 +669,7 @@ ul, ol { list-style: none; }
   color: var(--color-text-primary);
 }
 
-/* ── Row actions. The hover tint is the only place a row action states its
-   consequence, so it is kept even though the resting state is neutral. */
+/* The hover tint is the only sign of what a row action does, so keep it. */
 .ctr-action-start:hover:not(:disabled),
 .compose-card-btn--up:hover:not(:disabled)      { color: var(--color-success); background: var(--color-success-subtle); }
 .ctr-action-stop:hover:not(:disabled),
@@ -842,18 +685,15 @@ ul, ol { list-style: none; }
 }
 .ctr-action-confirm:hover:not(:disabled) { background: var(--color-danger-subtle); filter: brightness(1.15); }
 
-/* ── Toggle. A button that stays pressed reads as selected, not as hovered. */
 .btn--on, .btn--on:hover:not(:disabled), .compose-edit-btn.active {
   background: var(--color-accent-subtle);
   border-color: var(--color-accent-border);
   color: var(--color-accent);
 }
-/* A count inside a pressed toggle stays dim, as it does in a segment. */
 .btn--on .segmented-count { color: inherit; opacity: 0.75; }
 
-/* THE CHIP. Every small inline label takes the Tag's shape; each legacy family
-   below keeps only its colours. Must stay above those families so their
-   border-color wins. */
+/* THE CHIP: the shared shape for small inline labels. Must stay above the label families
+   below so their border-color wins. */
 .tag, .badge, .ctr-port-chip, .compose-tag-chip, .cst-state-badge, .env-ref-chip,
 .wsl-svc-badge, .wiz-card-badge, .prune-extra-badge, .log-level-badge {
   display: inline-flex;
@@ -877,14 +717,7 @@ ul, ol { list-style: none; }
 }
 .spin { animation: spin 0.8s linear infinite; }
 
-/* =============================================================
-   Docker - Error / Offline States
-   ============================================================= */
-/* THE ERROR BANNER.
-   An icon, a sentence, and - when the backend classified the failure - the
-   recovery below it. The old version led with the word ERROR in caps, which
-   spent the first thing the eye lands on saying something the red ground and
-   the icon already said. The sentence leads now. */
+/* THE ERROR BANNER: an icon, a sentence, and the recovery when the backend classified the failure. */
 .error-banner {
   display: flex;
   gap: var(--space-3);
@@ -913,9 +746,7 @@ ul, ol { list-style: none; }
   overflow-wrap: anywhere;
 }
 .error-headline + .error-msg { margin-top: 2px; }
-/* The recovery. Secondary weight, because the user reads the failure first and
-   the fix second, but never dimmer than 4.5:1 - this is the line that gets them
-   unstuck. */
+/* Secondary weight, but never below 4.5:1: this line gets the user unstuck. */
 .error-hint {
   margin-top: var(--space-2);
   font-size: var(--text-xs);
@@ -975,9 +806,8 @@ ul, ol { list-style: none; }
   gap: var(--space-2);
   margin-top: var(--space-3);
 }
-/* The banner carries a bottom margin for the pages that stack it against loose
-   content. Inside a flex column that owns its own gaps, that margin is a double
-   space, and inside a bled tab body it has to reach the view edges. */
+/* --flush drops the margin inside a flex column that owns its gaps. --bleed reaches the view
+   edges inside a bled tab body. */
 .error-banner--flush { margin-bottom: 0; }
 .error-banner--bleed { margin: 0 var(--space-6) var(--space-3); }
 
@@ -1007,11 +837,7 @@ ul, ol { list-style: none; }
   margin-bottom: 12px;
 }
 
-/* The one-line quiet state: "Loading services…", "No distributions match".
-   It is not a second empty-state treatment - `EmptyState` teaches a surface
-   that has nothing on it, this is a transient line inside a surface that does.
-   They differ in job, so they are allowed to differ in weight, but they share
-   the same colour, size and centre line. */
+/* A one-line transient state inside a surface that has content. An empty surface uses EmptyState. */
 .empty-state, .img-loading, .log-viewer-empty {
   display: block;
   font-size: var(--text-xs);
@@ -1025,13 +851,9 @@ ul, ol { list-style: none; }
   text-align: center;
   margin-top: var(--space-1);
 }
-/* =============================================================
-   Docker - In-content tab strip
-   ============================================================= */
 
-/* Keep-alive wrappers around VolumesTab and ComposeTab. They stay mounted so
-   in-progress backups and the sidebar's compose list survive a tab switch, so
-   the wrapper has to pass the fill down rather than collapse to its content. */
+/* VolumesTab and ComposeTab stay mounted across tab switches, so this wrapper must pass the
+   fill down rather than collapse to its content. */
 .docker-pane-fill {
   display: flex;
   flex-direction: column;
@@ -1040,12 +862,7 @@ ul, ol { list-style: none; }
 }
 .docker-pane-fill > * { flex: 1; min-height: 0; }
 
-/* =============================================================
-   Docker - Images Tab
-   ============================================================= */
-/* A table page: toolbar pinned at the top, note pinned at the bottom, and the
-   table itself is the thing that scrolls. That is what lets the column headers
-   stay visible through four hundred rows. */
+/* The table scrolls, not the page, so the column headers stay visible. */
 .img-tab, .pkg-tab {
   display: flex;
   flex-direction: column;
@@ -1054,7 +871,7 @@ ul, ol { list-style: none; }
   min-height: 0;
 }
 
-/* Pre-filter banner - shown when navigated from overview cleanup panel */
+/* Shown when arriving from the Overview cleanup panel. */
 .prefilter-banner {
   display: flex;
   align-items: center;
@@ -1085,9 +902,6 @@ ul, ol { list-style: none; }
 }
 .prefilter-banner-close:hover { background: color-mix(in srgb, var(--color-accent) 15%, transparent); }
 
-/* ── The toolbar. The row above every table: search, filters, count. One
-   height so nothing in it sits half a pixel off its neighbour, and the search
-   is the only thing that grows. */
 .toolbar, .img-toolbar {
   display: flex;
   align-items: center;
@@ -1100,7 +914,6 @@ ul, ol { list-style: none; }
   min-width: 180px;
   max-width: 360px;
 }
-/* Everything after the search is a fact or a filter and sits at the far end. */
 .toolbar-spacer { flex: 1; }
 
 .age-filter {
@@ -1119,11 +932,6 @@ ul, ol { list-style: none; }
   margin-left: auto;
 }
 
-/* ── THE TABLE
-   One table. Header row is 11px uppercase tertiary on the raised ground and
-   sticks to the top of its own scroll box, so column names survive a 400-row
-   scroll. Body rows are 34px with a hairline between them, hover lifts one
-   ground layer, and every numeric column is tabular. */
 .img-table-wrap {
   flex: 1;
   min-height: 0;
@@ -1160,7 +968,7 @@ ul, ol { list-style: none; }
 .img-th.sortable { cursor: pointer; }
 .img-th.sortable:hover { color: var(--color-text-primary); }
 .img-th.active { color: var(--color-accent); }
-/* Sort header - th keeps display:table-cell; inner div is flex */
+/* The th must stay display:table-cell, so the inner div does the flex layout. */
 .img-th-sort {
   cursor: pointer;
   user-select: none;
@@ -1168,7 +976,6 @@ ul, ol { list-style: none; }
 .img-th-sort:hover { color: var(--color-text-primary); }
 .img-th-sort.active { color: var(--color-text-primary); }
 
-/* Inner wrapper provides flex alignment without breaking table layout */
 .th-sort-inner {
   display: inline-flex;
   align-items: center;
@@ -1177,7 +984,6 @@ ul, ol { list-style: none; }
 
 .sort-idle { opacity: 0.3; }
 
-/* Checkbox column */
 .img-th-check, .img-td-check {
   width: 36px;
   text-align: center;
@@ -1185,7 +991,6 @@ ul, ol { list-style: none; }
   padding-right: 4px;
 }
 
-/* Checkbox style */
 .row-checkbox {
   width: 14px;
   height: 14px;
@@ -1193,26 +998,22 @@ ul, ol { list-style: none; }
   accent-color: var(--color-accent);
 }
 
-/* Volume name header - offset for chevron space (11px icon + 5px gap = 16px) */
+/* 28px: the header's 12px padding + 16px for the chevron (11px icon + 5px gap). */
 .img-th-vol-name { padding-left: 28px; }
 
 .img-th-pin { width: 44px; }
 
-/* Row selected state - set on tr so there are no inter-cell gaps */
+/* Set on the tr so there are no gaps between cells. */
 .row-selected { background: var(--color-accent-subtle) !important; }
 .row-selected td { background: transparent !important; }
 .row-selected:hover { filter: brightness(1.05); }
 
-/* Row with logs open. The accent ground already says "this one is expanded",
-   and the log panel is attached directly beneath it, so the 3px accent stripe
-   that used to run down the left was saying it a second time. */
 .row-logs-open {
   background: var(--color-accent-subtle) !important;
 }
 .row-logs-open td { background: transparent !important; border-bottom: none !important; }
 .row-logs-open:hover { filter: brightness(1.04); }
 
-/* ── Accordion slide-down animation (for table cells) ──────────────── */
 @keyframes slide-down {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -1280,9 +1081,6 @@ ul, ol { list-style: none; }
 
 
 
-/* =============================================================
-   Docker - Prune Tab
-   ============================================================= */
 .prune-tab { display: flex; flex-direction: column; gap: 16px; }
 
 .prune-levels {
@@ -1342,12 +1140,8 @@ ul, ol { list-style: none; }
   font-variant-numeric: tabular-nums;
 }
 
-/* THE COMMAND BLOCK.
-   "Every operation shows the command it ran" is the product's whole claim, so
-   the thing that carries it is not a prune detail. The dry-run preview, both
-   destructive-confirm dialogs and the prune result all draw this one block, and
-   the text is selectable in every one of them - a command the user cannot copy
-   is a screenshot of transparency rather than the thing itself. */
+/* Drawn by the dry-run preview, both destructive-confirm dialogs and the prune result. The
+   text must stay selectable. */
 .cmd-block {
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--color-border);
@@ -1374,7 +1168,6 @@ ul, ol { list-style: none; }
   overflow-wrap: anywhere;
   user-select: text;
 }
-/* Inside a dialog the block is one item in a stack, not a divided section. */
 .modal .cmd-block { padding: 0 0 var(--space-3); border-bottom: none; }
 
 .prune-image-list { padding: 12px 16px; }
@@ -1410,7 +1203,6 @@ ul, ol { list-style: none; }
   color: var(--color-danger);
 }
 
-/* Live log during prune run */
 .prune-log-panel {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -1438,9 +1230,6 @@ ul, ol { list-style: none; }
   gap: 2px;
 }
 
-/* =============================================================
-   Shared log line styles (prune + log tab)
-   ============================================================= */
 .log-line { color: var(--color-text-secondary); line-height: 1.5; }
 .log-cmd  { color: var(--color-accent); font-weight: 600; }
 .log-err  { color: var(--color-danger); }
@@ -1453,13 +1242,8 @@ ul, ol { list-style: none; }
 }
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 
-/* =============================================================
-   Docker - Confirmation Modal
-   ============================================================= */
-/* Every modal is a native <dialog> opened with showModal(), which brings focus
-   trapping, focus restore, Escape, and inertness of the page behind it. The
-   dialog element itself plays the overlay, so these resets strip the UA's
-   centred-box defaults and let the existing overlay rules below stand. */
+/* Modals are native <dialog> elements opened with showModal(). These resets remove the
+   browser's centered-box defaults so the overlay rules below apply. */
 dialog.modal-overlay,
 dialog.compose-modal-backdrop,
 dialog.compose-inspect-overlay,
@@ -1473,7 +1257,7 @@ dialog.index-scrim {
   border: none;
   color: inherit;
 }
-/* The dim lives on the dialog itself, so the real backdrop stays out of it. */
+/* The dialog element draws the dim, so the real backdrop stays transparent. */
 dialog::backdrop { background: transparent; }
 
 .modal-overlay {
@@ -1535,9 +1319,6 @@ dialog::backdrop { background: transparent; }
 .modal-input + .modal-actions,
 .confirm-list + .modal-actions { margin-top: 0; }
 
-/* The confirm dialog runs wider than a plain message box because it has to list
-   objects by name. Naming them is the point: "7 volumes" is a number, and
-   `pgdata  1.9 GB` is the thing the user is actually deciding about. */
 /* `.modal` sets a fixed 440px width, so a max-width alone would not widen it. */
 .modal--wide { width: 520px; }
 .modal-actions-escape { margin-right: auto; }
@@ -1580,10 +1361,6 @@ dialog::backdrop { background: transparent; }
 }
 .confirm-list-meta { color: var(--color-text-tertiary); flex-shrink: 0; }
 
-/* THE PRUNE RESULT.
-   The run used to end by clearing the preview, so the last thing the user saw
-   after the app's most consequential operation was an empty page. This is the
-   other half of the dry-run: what was promised, then what was actually taken. */
 .prune-result {
   margin-top: var(--space-4);
   padding: var(--space-4);
@@ -1609,9 +1386,6 @@ dialog::backdrop { background: transparent; }
 }
 .prune-result .cmd-block { padding: 0 0 0 22px; border-bottom: none; }
 
-/* =============================================================
-   Docker - Log Tab
-   ============================================================= */
 .log-tab { display: flex; flex-direction: column; gap: 16px; }
 
 .log-tab-header {
@@ -1627,8 +1401,6 @@ dialog::backdrop { background: transparent; }
   border-radius: var(--radius-md);
   overflow: hidden;
 }
-/* Outcome reads from the whole card's border rather than a 3px left stripe.
-   Same information, and it stops every log entry wearing the status-card tab. */
 .log-card-ok  { border-color: color-mix(in srgb, var(--color-success) 45%, transparent); }
 .log-card-err { border-color: color-mix(in srgb, var(--color-danger) 45%, transparent); }
 
@@ -1664,14 +1436,8 @@ dialog::backdrop { background: transparent; }
 
 .log-empty { padding: 24px 0; }
 
-/* =============================================================
-   Animations & micro-interactions
-   ============================================================= */
-
-/* View transition on switch. A fade and nothing else: a `translateY` that ends
-   at 0 is still a transform, which makes the view a containing block for every
-   fixed-position descendant under it, and it pushed the panel 4px into overflow
-   for the length of the animation. The travel bought nothing either way. */
+/* Fade only. Any transform, even one ending at translateY(0), makes the view a containing
+   block for its fixed-position descendants. */
 .main-panel > * {
   animation: view-fade-in 0.18s ease both;
 }
@@ -1680,7 +1446,6 @@ dialog::backdrop { background: transparent; }
   to   { opacity: 1; }
 }
 
-/* Pin pop when activated */
 @keyframes pin-pop {
   0%   { transform: scale(1); }
   40%  { transform: scale(1.35) rotate(-8deg); }
@@ -1689,7 +1454,6 @@ dialog::backdrop { background: transparent; }
 }
 .pin-btn.pinned { animation: pin-pop 0.28s ease; }
 
-/* Button active press */
 .btn-secondary:active:not(:disabled),
 .btn-ghost:active:not(:disabled),
 .btn-filled:active:not(:disabled),
@@ -1698,9 +1462,6 @@ dialog::backdrop { background: transparent; }
 }
 
 
-/* =============================================================
-   Prune level cards - improved selection state
-   ============================================================= */
 .prune-level-card {
   display: flex;
   align-items: center;
@@ -1785,7 +1546,6 @@ dialog::backdrop { background: transparent; }
   flex-shrink: 0;
 }
 
-/* Modal icon wrap */
 .modal-icon-wrap {
   width: 34px;
   height: 34px;
@@ -1798,16 +1558,10 @@ dialog::backdrop { background: transparent; }
 .modal-icon-wrap.danger  { background: var(--color-danger-subtle); color: var(--color-danger); }
 .modal-icon-wrap.warning { background: var(--color-warning-subtle); color: var(--color-warning); }
 
-/* =============================================================
-   Global interactive polish
-   ============================================================= */
 button { transition: opacity var(--transition-fast); }
 
-/* One focus ring for every focusable thing. Individual rules further down set
-   `outline: none` on inputs and textareas to suppress the UA default; this
-   selector is more specific than a bare element rule and carries !important so
-   the ring survives them. Without it, tabbing into the terminal input, the
-   compose editor, or the log search leaves no visible focus at all. */
+/* !important so the ring survives the `outline: none` that later rules set on inputs and
+   textareas. */
 button:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
@@ -1817,11 +1571,6 @@ select:focus-visible,
   outline-offset: 2px;
 }
 
-/* =============================================================
-   Global Terminal panel
-   ============================================================= */
-/* Floats over the bottom of the content column so the main panel keeps 100%
-   height regardless of the terminal's size. Prep for a detachable terminal. */
 .terminal-panel {
   position: absolute;
   left: 0;
@@ -1834,10 +1583,8 @@ select:focus-visible,
   flex-direction: column;
   overflow: hidden;
 
-  /* The panel is always full height and slides out of view when closed, so the
-     open/close toggle is a compositor transform rather than a height animation
-     that relayouts the scrollback on every frame. The body is unmounted while
-     closed (see Terminal.tsx), so nothing focusable hides below the fold. */
+  /* Always full height. Open and close use a transform, so the scrollback does not relayout on
+     every frame. The body unmounts while closed (Terminal.tsx), so nothing focusable hides off screen. */
   height: var(--terminal-height);
   transform: translateY(calc(var(--terminal-height) - 32px));
   transition: transform var(--transition-slow);
@@ -1847,7 +1594,6 @@ select:focus-visible,
   transform: translateY(0);
 }
 
-/* No animation while dragging the resize handle. */
 .app-content.resizing-terminal .terminal-panel {
   transition: none;
 }
@@ -1926,7 +1672,6 @@ select:focus-visible,
 
 .rotate-180 { transform: rotate(180deg); }
 
-/* ── Terminal tab bar (shell / compose logs) ── */
 .terminal-tabs {
   display: flex;
   align-items: stretch;
@@ -1976,10 +1721,8 @@ select:focus-visible,
 }
 .terminal-tab-close:hover { background: var(--chrome-surface-hover); color: var(--color-danger); }
 
-/* Empty strip between tabs and controls - click to expand/collapse */
 .terminal-header-grip { flex: 1; align-self: stretch; cursor: pointer; min-width: 8px; }
 
-/* Tab bodies */
 .terminal-shell { flex: 1; min-height: 0; min-width: 0; flex-direction: column; }
 .terminal-logs-host { flex: 1; min-height: 0; }
 .terminal-logs-host .log-panel {
@@ -2040,7 +1783,6 @@ select:focus-visible,
   user-select: text;
 }
 
-/* Line type colors */
 .tl-cmd     .tl-text { color: var(--color-accent-hover); font-weight: 500; }
 .tl-stdout  .tl-text { color: var(--chrome-text); }
 .tl-stderr  .tl-text { color: var(--color-danger); }
@@ -2058,9 +1800,6 @@ select:focus-visible,
   margin-top: 2px;
 }
 
-/* =============================================================
-   Terminal - interactive input row
-   ============================================================= */
 .terminal-input-row {
   display: flex;
   align-items: center;
@@ -2105,7 +1844,6 @@ select:focus-visible,
   cursor: not-allowed;
 }
 
-/* "running" badge in the header */
 .terminal-running-badge {
   font-size: var(--text-2xs);
   font-weight: 700;
@@ -2126,7 +1864,6 @@ select:focus-visible,
 
 
 
-/* Prune running notice */
 .prune-running-notice {
   font-size: var(--text-sm);
   color: var(--color-text-tertiary);
@@ -2136,9 +1873,6 @@ select:focus-visible,
   gap: 6px;
 }
 
-/* =============================================================
-   Resize handles
-   ============================================================= */
 .sidebar-resize-handle {
   width: 4px;
   flex-shrink: 0;
@@ -2151,7 +1885,6 @@ select:focus-visible,
   background: color-mix(in srgb, var(--color-accent) 35%, transparent);
 }
 
-/* Sits on the terminal's top edge. The terminal is absolute, so this is too. */
 .terminal-resize-handle {
   position: absolute;
   left: 0;
@@ -2167,22 +1900,10 @@ select:focus-visible,
   background: color-mix(in srgb, var(--color-accent) 30%, transparent);
 }
 
-/* =============================================================
-   Responsive layout
-   ============================================================= */
-/* The window floor is 900x600 (tauri.conf.json), so a breakpoint below 900 can
-   never fire. 1000px is the narrowest useful step: at that width the sidebar
-   still takes 200-360px, leaving a genuinely tight content column. */
+/* The window minimum is 900x600 (tauri.conf.json), so a breakpoint below 900 can never fire. */
 @media (max-width: 1000px) {
 }
 
-/* =============================================================
-   Overview bar cards
-   ============================================================= */
-
-/* One rhythm down the page: a section head, its group, one step of air. The
-   old page set a flat 16px gap between six unlabelled bordered boxes, which
-   made a summary strip look like a peer of a disk chart. */
 .overview-tab {
   display: flex;
   flex-direction: column;
@@ -2241,12 +1962,6 @@ select:focus-visible,
 .sk-line.w-16   { width: 64px; }
 .sk-line.w-12   { width: 48px; }
 
-/* =============================================================
-   Overview - a run of things that need attention
-   ============================================================= */
-
-/* A warning is a row you can act on, so it looks like a row and not like a
-   toast: full width, danger ground, and it names the section it opens. */
 .hero-warnings {
   display: flex;
   flex-direction: column;
@@ -2287,10 +2002,6 @@ select:focus-visible,
   color: var(--color-text-tertiary);
 }
 
-/* =============================================================
-   Overview - Cleanup rows
-   ============================================================= */
-
 .cleanup-rows {
   display: flex;
   flex-direction: column;
@@ -2323,7 +2034,6 @@ select:focus-visible,
 
 .cleanup-row-arrow--open { transform: rotate(180deg); }
 
-/* Expand panel */
 .cleanup-expand {
   border-top: 1px solid var(--color-border-light);
   padding: 8px 14px 10px;
@@ -2405,7 +2115,6 @@ select:focus-visible,
   margin-top: 4px;
 }
 
-/* Category dot - matches bar card colors */
 .cleanup-dot {
   width: 8px;
   height: 8px;
@@ -2455,11 +2164,6 @@ select:focus-visible,
   flex-shrink: 0;
 }
 
-/* =============================================================
-   Overview - Resource usage (stats grid)
-   ============================================================= */
-
-
 .stats-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2483,7 +2187,6 @@ select:focus-visible,
 }
 .stats-row:last-child { margin-bottom: 0; }
 
-/* Live Activity - one row per container with CPU + mem sparklines */
 .realtime-body {
   padding: 10px 14px;
 }
@@ -2532,9 +2235,8 @@ select:focus-visible,
   overflow: hidden;
 }
 
-/* Stays on width deliberately: min-width keeps a 2px sliver visible at 0% so the
-   bar reads as present-but-empty rather than absent, and a scaled fill would
-   collapse to nothing. The animation is cheap here, the affordance is not. */
+/* Animates width on purpose: min-width keeps a 2px sliver visible at 0%, which a scaled fill
+   would lose. */
 .stats-bar {
   height: 100%;
   border-radius: var(--radius-md);
@@ -2553,7 +2255,7 @@ select:focus-visible,
   white-space: nowrap;
 }
 
-/* Compose stack rows reuse .cleanup-row but have a different grid (dot + name + status + arrow) */
+/* Reuses .cleanup-row with a different grid: dot, name, status, arrow. */
 .cleanup-row--compose {
   grid-template-columns: 10px 1fr auto auto;
 }
@@ -2563,10 +2265,6 @@ select:focus-visible,
   color: var(--color-text-tertiary);
   white-space: nowrap;
 }
-
-/* =============================================================
-   Overview - Active Projects (rich compose stack cards)
-   ============================================================= */
 
 .project-cards {
   display: flex;
@@ -2651,10 +2349,6 @@ select:focus-visible,
   white-space: nowrap;
 }
 
-/* =============================================================
-   Overview - Two-column layout (Health + Resource Monitoring)
-   ============================================================= */
-
 .overview-two-col {
   display: grid;
   grid-template-columns: 250px 1fr;
@@ -2665,10 +2359,6 @@ select:focus-visible,
 @media (max-width: 900px) {
   .overview-two-col { grid-template-columns: 1fr; }
 }
-
-/* =============================================================
-   Overview - Health & Alerts Panel
-   ============================================================= */
 
 .health-panel {
   display: flex;
@@ -2711,10 +2401,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   opacity: 0.45;
   flex-shrink: 0;
 }
-
-/* =============================================================
-   Overview - System Insights Grid
-   ============================================================= */
 
 .insights-grid {
   display: grid;
@@ -2761,14 +2447,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   white-space: nowrap;
 }
 
-/* =============================================================
-   Overview - Disk usage stacked horizontal bar
-   ============================================================= */
-
-/* =============================================================
-   Live Charts - dual CPU / Memory charts with hover
-   ============================================================= */
-
 .live-charts {
   padding: 12px 14px 14px;
 }
@@ -2801,7 +2479,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   overflow: visible;
 }
 
-/* Tooltip card */
 .live-chart-tooltip {
   position: absolute;
   background: var(--color-bg-primary);
@@ -2857,7 +2534,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   font-variant-numeric: tabular-nums;
 }
 
-/* Legend row */
 .live-chart-legend {
   display: flex;
   flex-wrap: wrap;
@@ -2901,7 +2577,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   padding: 12px 14px 4px;
 }
 
-/* Grid of drive columns - each drive gets its own column */
 .drive-bars-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -2909,7 +2584,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   margin-bottom: 12px;
 }
 
-/* Per-drive bar group: label row + stacked bar */
 .drive-bar-group {
   display: flex;
   flex-direction: column;
@@ -2945,9 +2619,8 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   margin-bottom: 12px;
 }
 
-/* Each segment - color variants */
-/* Width is the layout here, not an effect: these segments sit side by side in
-   a row and each one is sized by its share, so transform would leave gaps. */
+/* Segments sit side by side, each sized by its share, so width is the layout. A transform
+   would leave gaps. */
 .disk-seg {
   height: 100%;
   border-radius: var(--radius-sm);
@@ -2959,12 +2632,11 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .disk-seg--volumes    { background: var(--color-warning); }
 .disk-seg--cache      { background: var(--color-danger); }
 .disk-seg--backups    { background: var(--chart-5); }
-/* "Other apps" and "free" must read as clearly distinct greys (and distinct from
-   the track) - shared with the legend keys via the same tokens. */
+/* "Other apps" and "free" must stay distinct greys, and distinct from the track. The legend
+   keys use the same tokens. */
 .disk-seg--other      { background: var(--disk-other); }
 .disk-seg--free       { background: var(--disk-free); }
 
-/* Legend */
 .disk-legend {
   display: flex;
   flex-direction: column;
@@ -3021,7 +2693,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   vertical-align: middle;
 }
 
-/* Summary line */
 .disk-summary {
   display: flex;
   flex-wrap: wrap;
@@ -3048,9 +2719,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   font-size: var(--text-xs);
 }
 
-/* =============================================================
-   Docker - State badges (shared by Containers + Images)
-   ============================================================= */
 .badge-running {
   background: var(--color-success-subtle);
   color: var(--color-success);
@@ -3064,14 +2732,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   color: var(--color-accent);
 }
 
-/* =============================================================
-   Docker - Containers & Volumes shared toolbar controls
-   ============================================================= */
-
-/* Segmented filter (All / Running / Stopped) */
-/* ── Segmented control. One-of-many, so it is a single bordered group with
-   hairline dividers, not a row of loose buttons. It matches the button's height
-   exactly, which is what lets a toolbar sit on one baseline. */
+/* Same height as the button, so a toolbar sits on one baseline. */
 .segmented, .ctr-state-filter {
   display: flex;
   height: 28px;
@@ -3100,16 +2761,12 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   background: var(--color-accent-subtle);
   color: var(--color-accent);
 }
-/* The count is a fact about the segment, so it stays dim even when selected. */
 .segmented-count {
   font-size: var(--text-2xs);
   color: var(--color-text-tertiary);
 }
 .segmented-item--active .segmented-count { color: inherit; opacity: 0.75; }
 
-/* =============================================================
-   Docker - Containers Tab
-   ============================================================= */
 .ctr-th-actions { width: 76px; text-align: center; }
 
 .ctr-td-actions {
@@ -3119,7 +2776,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   gap: 4px;
 }
 
-/* Port list: mono, small, ellipsis */
 .ctr-ports {
   font-family: "Cascadia Code", "Consolas", monospace;
   font-size: var(--text-xs);
@@ -3131,11 +2787,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 
-/* =============================================================
-   Docker - Volumes Tab
-   ============================================================= */
-
-/* Clickable row style */
 .img-row--clickable {
   cursor: pointer;
 }
@@ -3143,9 +2794,8 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .img-row--clickable.img-row--expanded td { background: var(--color-accent-subtle); }
 .img-row--clickable.img-row--expanded:hover td { background: var(--color-accent-subtle); filter: brightness(1.05); }
 
-/* Volume name cell (chevron + name, no button wrapper) */
-/* A button, because it is the volume row's disclosure and a row cannot take
-   focus. It carries no button chrome: the row is still the visible affordance. */
+/* A real button, because a row cannot take focus. No button chrome: the row stays the visible
+   affordance. */
 .vol-name-cell {
   display: inline-flex;
   align-items: center;
@@ -3171,10 +2821,8 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .img-row--clickable:hover .vol-name-chevron { color: var(--color-accent); }
 .img-row--expanded .vol-name-chevron { color: var(--color-accent); }
 
-/* Row state when backup panel is expanded */
 .img-row--expanded td { border-bottom: none; }
 
-/* Expanded backup panel row */
 .vol-backup-expand-row { background: var(--color-bg-secondary); }
 .vol-backup-expand-td {
   padding: 0 !important;
@@ -3205,7 +2853,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 .vol-backup-settings-link:hover { opacity: 0.8; }
 
-/* Backup list */
 .vol-backup-list {
   list-style: none;
   padding: 0;
@@ -3263,9 +2910,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   flex-shrink: 0;
 }
 
-/* ── Inline toolbar bulk controls (no layout shift) ─────────────── */
-
-/* Vertical divider separating filters from bulk actions */
 .toolbar-divider {
   width: 1px;
   height: 16px;
@@ -3275,7 +2919,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   opacity: 0.5;
 }
 
-/* "N selected" label */
 .toolbar-sel-count {
   font-size: var(--text-sm);
   font-weight: 600;
@@ -3284,7 +2927,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   flex-shrink: 0;
 }
 
-/* Compact action buttons that live inside the toolbar */
 .toolbar-bulk-btn {
   display: inline-flex;
   align-items: center;
@@ -3316,7 +2958,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   border: 1px solid color-mix(in srgb, var(--color-danger) 22%, transparent);
   color: var(--color-danger);
 }
-/* Ghost: icon-only "clear" button */
 .toolbar-bulk-btn--ghost {
   background: transparent;
   border: 1px solid var(--color-border);
@@ -3325,7 +2966,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 .toolbar-bulk-btn--ghost:hover:not(:disabled) { color: var(--color-text-primary); filter: none; background: var(--color-bg-hover); }
 
-/* ── Container name cell with log chevron ──────────────────────────── */
 .ctr-name-cell {
   display: inline-flex;
   align-items: center;
@@ -3343,18 +2983,13 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   color: var(--color-accent);
 }
 
-/* =============================================================
-   Docker - Compose Tab
-   ============================================================= */
 .compose-tab {
   height: 100%;
   display: flex;
   flex-direction: column;
-  /* Bleed to view-container edges (32px padding on each side) */
   margin: 0 -32px;
 }
 
-/* ── Horizontal project tab bar ─────────────────────────────── */
 .compose-project-tabs-bar {
   display: flex;
   align-items: center;
@@ -3434,7 +3069,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   color: var(--color-accent);
 }
 
-/* ── Viewer area ────────────────────────────────────────────── */
 .compose-viewer {
   flex: 1;
   min-height: 0;
@@ -3455,7 +3089,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   min-height: 40px;
 }
 
-/* Vertical separator between toolbar groups */
 .compose-toolbar-sep {
   width: 1px;
   height: 18px;
@@ -3478,10 +3111,8 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .compose-file-tabs::-webkit-scrollbar { height: 6px; }
 .compose-file-tabs::-webkit-scrollbar-track { background: transparent; }
 .compose-file-tabs::-webkit-scrollbar-thumb { background: var(--color-border-strong); border-radius: var(--radius-md); }
-/* Tabs keep their width and scroll horizontally instead of wrapping/squishing */
 .compose-file-tabs > .compose-file-path-item { flex-shrink: 0; }
 
-/* File tab items in the toolbar tab strip */
 .compose-file-path-item {
   display: flex;
   align-items: center;
@@ -3507,7 +3138,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   border-color: var(--color-border);
 }
 
-/* Full path text - direction rtl so the filename end is always visible */
+/* direction: rtl keeps the end of the filename visible when truncated. */
 .compose-file-path-text {
   font-family: "Cascadia Code", "Consolas", monospace;
   font-size: var(--text-xs);
@@ -3527,7 +3158,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   flex-shrink: 0;
 }
 
-/* Inline path in toolbar (replaces separate breadcrumb row) */
 .compose-path-inline {
   display: flex;
   align-items: center;
@@ -3547,9 +3177,8 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   direction: rtl;
   text-align: left;
 }
-/* Don't show path inline on narrow viewports */
 
-/* ── Accordion animation wrapper (CSS grid trick) ───────────────── */
+/* Transitioning grid-template-rows from 0fr to 1fr animates to the content's height. */
 .compose-accordion-wrap {
   display: grid;
   grid-template-rows: 0fr;
@@ -3564,7 +3193,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   overflow: hidden;
 }
 
-/* Backup toggle button in toolbar */
 .compose-backup-toggle-btn {
   display: inline-flex;
   align-items: center;
@@ -3585,7 +3213,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .compose-backup-toggle-chevron { color: var(--color-text-tertiary); transition: transform var(--transition-fast); flex-shrink: 0; }
 .compose-backup-toggle-chevron.open { transform: rotate(180deg); }
 
-/* Count badge inside the Backup toggle button */
 .compose-backup-btn-count {
   font-size: var(--text-2xs);
   font-weight: 700;
@@ -3600,7 +3227,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   background: color-mix(in srgb, var(--color-accent) 22%, transparent);
 }
 
-/* Inline toolbar status message (replaces accordion head row) */
 .compose-toolbar-status {
   font-size: var(--text-sm);
   white-space: nowrap;
@@ -3610,7 +3236,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .compose-toolbar-status.error   { color: var(--color-danger);  }
 .compose-toolbar-status.info    { color: var(--color-text-tertiary); }
 
-/* Backup accordion - no separate head, just the list */
 .compose-backup-accordion {
   border-top: 1px solid var(--color-border);
   background: var(--color-bg-secondary);
@@ -3624,7 +3249,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   margin: 0;
 }
 
-/* "Run Backup" - secondary accent style, not green */
 .compose-run-backup-btn {
   display: inline-flex;
   align-items: center;
@@ -3652,7 +3276,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .compose-backup-msg.error   { color: var(--color-danger);  }
 .compose-backup-msg.info    { color: var(--color-text-secondary); }
 
-/* ── Polished backup entry list ─────────────────────────────── */
 .compose-backup-list {
   list-style: none;
   margin: 0;
@@ -3694,7 +3317,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   white-space: nowrap;
   min-width: 0;
 }
-/* Spacer pushes actions to the right */
 .compose-backup-entry-actions {
   display: flex;
   align-items: center;
@@ -3735,7 +3357,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .path-origin-win  + .compose-breadcrumb-label { color: var(--syntax-key); background: color-mix(in srgb, var(--syntax-key) 10%, transparent); }
 .path-origin-wsl  + .compose-breadcrumb-label { color: var(--syntax-env); background: color-mix(in srgb, var(--syntax-env) 10%, transparent); }
 
-/* Separator before the folder icon */
 .compose-breadcrumb-label + .compose-breadcrumb-icon { margin-left: 2px; }
 
 .compose-breadcrumb-path {
@@ -3749,7 +3370,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   text-align: left;
 }
 
-/* ── Path badges on file tabs ───────────────────────────────── */
 .path-badge {
   display: inline-flex;
   align-items: center;
@@ -3762,9 +3382,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   line-height: 1.5;
   flex-shrink: 0;
 }
-/* A Windows path and a WSL path are the two sides this app translates between,
-   so they take the syntax palette's key and env pencils rather than a private
-   blue and orange. Both themes follow the tokens; no override needed. */
 .path-badge--win {
   background: color-mix(in srgb, var(--syntax-key) 12%, transparent);
   color: var(--syntax-key);
@@ -3795,7 +3412,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 .compose-viewer-error { color: var(--color-danger); }
 
-/* Placeholder when no project selected */
 .compose-viewer-placeholder {
   display: flex;
   flex-direction: column;
@@ -3813,7 +3429,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   color: var(--color-text-tertiary);
 }
 
-/* ── Syntax-highlighted YAML code view ──────────────────────── */
 .compose-code-wrap {
   display: flex;
   font-family: "Cascadia Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
@@ -3841,8 +3456,8 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 .compose-line-nums span { display: block; }
 
-/* Scroll container for read-only code content; line-nums are outside it
-   and scroll-synced via JS so they stay pinned during horizontal scroll. */
+/* Line numbers sit outside this box and are scroll-synced from JS, so they stay pinned during
+   horizontal scroll. */
 .compose-code-area {
   flex: 1;
   min-width: 0;
@@ -3858,7 +3473,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 
 .yaml-line { display: block; white-space: pre; }
 
-/* ── Backup history (shared list styles, used in accordion) ─── */
 .compose-history-icon { color: var(--color-text-tertiary); flex-shrink: 0; }
 
 .compose-history-list {
@@ -3908,8 +3522,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   min-width: 0;
 }
 
-/* YAML token colours. Both themes come from the --syntax-* tokens, so there is
-   no per-theme override here any more and no way for the two to drift apart. */
 .yaml-comment  { color: var(--syntax-comment); font-style: italic; }
 .yaml-key-root { color: var(--syntax-key); font-weight: 600; }
 .yaml-key      { color: var(--syntax-key-nested); }
@@ -3921,7 +3533,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .yaml-dash     { color: var(--color-text-tertiary); }
 .yaml-env      { color: var(--syntax-env); font-style: italic; }
 
-/* ── Clickable YAML values ──────────────────────────────────── */
 .yaml-port-link,
 .yaml-path-link {
   display: inline-flex;
@@ -3948,7 +3559,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .yaml-port-link:hover .yaml-port-icon,
 .yaml-path-link:hover .yaml-path-icon { opacity: 0.7; }
 
-/* ── Fraction badge in project pills ───────────────────────── */
 .compose-tab-fraction {
   font-size: var(--text-2xs);
   font-weight: 700;
@@ -3962,7 +3572,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .compose-tab-fraction.frac--warn { background: var(--color-warning-subtle); color: var(--color-warning); }
 .compose-tab-fraction.frac--off  { background: var(--color-bg-tertiary);    color: var(--color-text-tertiary); }
 
-/* ── Lifecycle action toolbar ───────────────────────────────── */
 .compose-lifecycle-btns {
   display: flex;
   align-items: center;
@@ -3997,12 +3606,10 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .compose-lifecycle-btn--danger:hover:not(:disabled)  { color: var(--color-danger);  border-color: var(--color-danger-border); background: var(--color-danger-subtle); }
 .compose-lifecycle-btn--warning:hover:not(:disabled) { color: var(--color-warning); border-color: color-mix(in srgb, var(--color-warning) 35%, transparent); background: var(--color-warning-subtle); }
 
-/* Always-on semantic tint so the toolbar reads at a glance (intensifies on hover above) */
 .compose-lifecycle-btn--success { color: color-mix(in srgb, var(--color-success) 62%, var(--color-text-secondary)); }
 .compose-lifecycle-btn--danger  { color: color-mix(in srgb, var(--color-danger) 58%, var(--color-text-secondary)); }
 .compose-lifecycle-btn--warning { color: color-mix(in srgb, var(--color-warning) 62%, var(--color-text-secondary)); }
 
-/* Primary call-to-action: filled "Up" when nothing is running */
 .compose-lifecycle-btn--primary {
   color: #fff;
   background: var(--color-success);
@@ -4015,7 +3622,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   border-color: var(--color-success);
 }
 
-/* ── .env toggle button ─────────────────────────────────────── */
 .compose-env-toggle-btn {
   display: inline-flex;
   align-items: center;
@@ -4035,7 +3641,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .compose-env-toggle-btn.active { background: var(--color-warning-subtle); color: var(--color-warning); border-color: color-mix(in srgb, var(--color-warning) 35%, transparent); }
 .compose-env-toggle-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
-/* ── .env accordion content ─────────────────────────────────── */
 .compose-env-accordion {
   min-height: 0;
   overflow: hidden;
@@ -4045,7 +3650,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 
 .compose-backup-empty--error { color: var(--color-danger); }
 
-/* ── .env key-value table ───────────────────────────────────── */
 .env-table {
   width: 100%;
   border-collapse: collapse;
@@ -4076,7 +3680,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   width: 30%;
 }
 .env-key {
-  /* layout for the name + optional sensitive lock */
 }
 .env-key-name { font-weight: 600; }
 .env-sensitive-icon {
@@ -4110,7 +3713,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .env-empty { color: var(--color-text-tertiary); font-style: italic; }
 
 
-/* ── Inline confirm strip ────────────────────────────────────── */
 .backup-inline-confirm {
   display: flex;
   flex-direction: column;
@@ -4127,10 +3729,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 
 .backup-confirm-actions { display: flex; gap: 6px; }
 
-/* =============================================================
-   Backup - per-volume progress bar
-   ============================================================= */
-
 .vol-progress-wrap {
   padding: 4px 12px 6px;
   background: var(--color-bg-secondary);
@@ -4143,7 +3741,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   gap: 4px;
 }
 
-/* Inline variant inside the backup panel */
 .vol-progress-wrap--inline {
   background: transparent;
   border: none;
@@ -4167,7 +3764,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   background: var(--color-accent);
 }
 
-/* Animated stripe while running */
 .vol-progress-fill.running {
   background: repeating-linear-gradient(
     -45deg,
@@ -4199,14 +3795,8 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .vol-progress-label.ok  { color: var(--color-success); }
 .vol-progress-label.err { color: var(--color-danger); }
 
-/* =============================================================
-   Keep-alive tab wrapper - hidden but mounted
-   ============================================================= */
 .tab-hidden { display: none !important; }
 
-/* =============================================================
-   Sidebar - tab count badges
-   ============================================================= */
 .sidebar-tab-badge {
   font-size: var(--text-2xs);
   line-height: 1;
@@ -4224,9 +3814,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   color: var(--color-accent);
 }
 
-/* =============================================================
-   Port chips - Containers tab
-   ============================================================= */
 .ctr-port-chips {
   display: flex;
   flex-wrap: wrap;
@@ -4255,11 +3842,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   border-color: color-mix(in srgb, var(--color-warning) 20%, transparent);
 }
 
-/* =============================================================
-   Log viewer - inline row panel
-   ============================================================= */
-
-/* Log viewer row: left accent stripe ties it visually to the active row */
 .log-viewer-row {
   box-shadow: inset 3px 0 0 var(--color-accent);
 }
@@ -4362,9 +3944,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 [data-theme="light"] .log-viewer-header { background: var(--color-bg-tertiary); }
 [data-theme="light"] .log-ts { color: var(--color-text-tertiary); }
 
-/* =============================================================
-   Networks tab
-   ============================================================= */
 .net-protected-name { opacity: 0.7; }
 .net-id-hint {
   display: block;
@@ -4373,21 +3952,18 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   font-family: ui-monospace, monospace;
   margin-top: 1px;
 }
-/* Flags moved inline with network name - column removed */
 .net-name-row {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
 }
-/* kept for any remaining callers; not used in table any more */
 .net-flag-row {
   display: flex;
   gap: 4px;
   flex-wrap: wrap;
 }
 
-/* ── Containers: merged status cell ─────────────────────────────────────────── */
 .ctr-status-cell {
   display: flex;
   flex-direction: column;
@@ -4404,13 +3980,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   max-width: 200px;
 }
 
-/* =============================================================
-   Settings View
-   ============================================================= */
-
-/* Settings is prose plus controls, so the column is capped rather than full
-   width. The cap lives on the children, not the scroll box, so the scrollbar
-   stays on the panel edge where every other page puts it. */
+/* The cap is on the children, not the scroll box, so the scrollbar stays on the panel edge. */
 .settings-body > * { max-width: 640px; }
 .settings-body > * + * { margin-top: var(--space-5); }
 
@@ -4456,7 +4026,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   border-radius: var(--radius-md);
 }
 
-/* Directory picker row */
 .settings-dir-row {
   display: flex;
   align-items: center;
@@ -4464,8 +4033,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   padding: var(--space-3) var(--space-4);
 }
 
-/* Same 28px height and 6px corner as every other field and button, so the
-   path, Browse and the check button sit on one line. */
+/* Same 28px height as the buttons beside it, so the row sits on one line. */
 .settings-dir-input-wrap {
   display: flex;
   align-items: center;
@@ -4526,7 +4094,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .settings-status--info    { background: var(--color-bg-tertiary);    color: var(--color-text-secondary); border: 1px solid var(--color-border); }
 .settings-status--error   { background: var(--color-danger-subtle);  color: var(--color-danger); border: 1px solid color-mix(in srgb, var(--color-danger) 20%, transparent); }
 
-/* Transfer dialog */
 .settings-transfer-card {
   margin: 0 16px 14px;
   border: 1px solid var(--color-border);
@@ -4578,7 +4145,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   flex-wrap: wrap;
 }
 
-/* ── About card ──────────────────────────────────────────────────────────────── */
 .settings-about-body {
   display: flex;
   flex-direction: column;
@@ -4623,10 +4189,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   color: var(--color-success);
 }
 
-/* =============================================================
-   Compose - Two-column project layout
-   ============================================================= */
-
 .compose-project-topbar {
   display: flex;
   align-items: center;
@@ -4640,7 +4202,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 .compose-topbar-spacer { flex: 1; min-width: 4px; }
 
-/* ── Project identity (detail header) ── */
 .compose-project-topbar .compose-back-btn--icon {
   padding: 5px;
   flex-shrink: 0;
@@ -4718,7 +4279,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   min-height: 38px;
 }
 
-/* Active-file label (files are now chosen from the sidebar, not tabs) */
 .compose-active-file {
   display: flex;
   align-items: center;
@@ -4747,7 +4307,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   scrollbar-gutter: stable;
 }
 
-/* Was 860px, which is below the 900px window floor and so never fired. */
 @media (max-width: 1000px) {
   .compose-project-layout { flex-direction: column; }
   .compose-project-right {
@@ -4757,7 +4316,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   }
 }
 
-/* ── Right sidebar sections ── */
 .compose-right-section {
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
@@ -4782,7 +4340,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Service cards (sidebar) ── */
 .csc-list {
   display: flex;
   flex-direction: column;
@@ -4847,7 +4404,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .csc-btn--restart:hover:not(:disabled) { color: var(--color-warning); border-color: color-mix(in srgb, var(--color-warning) 35%, transparent); background: var(--color-warning-subtle); }
 .csc-btn--inspect:hover:not(:disabled) { color: var(--color-accent);  border-color: var(--color-accent-border); background: var(--color-accent-subtle); }
 
-/* ── Sidebar tool list ── */
 .compose-sidebar-tools {
   display: flex;
   flex-direction: column;
@@ -4878,7 +4434,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .compose-sidebar-tool-chevron { color: var(--color-text-tertiary); transition: transform var(--transition-fast); flex-shrink: 0; }
 .compose-sidebar-tool-chevron.open { transform: rotate(180deg); }
 
-/* ── Inline panels inside the sidebar ── */
 .compose-sidebar-panel {
   border-top: 1px solid var(--color-border);
   flex-shrink: 0;
@@ -4900,13 +4455,11 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   overflow: auto;
   max-height: 320px;
 }
-/* Log panel inside sidebar - remove its own border, constrain height */
 .compose-sidebar-panel .log-panel {
   border: none;
   max-height: 460px;
 }
-/* Compose log lines: break at sensible boundaries with a hanging indent so
-   wrapped continuation lines sit under the message, not the service prefix. */
+/* Hanging indent: wrapped lines sit under the message, not the service prefix. */
 .log-panel-body .log-line {
   white-space: pre-wrap;
   word-break: normal;
@@ -4914,10 +4467,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   padding-left: 1.1em;
   text-indent: -1.1em;
 }
-
-/* =============================================================
-   Compose - Back button (project detail view)
-   ============================================================= */
 
 .compose-back-btn {
   display: inline-flex;
@@ -4947,10 +4496,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   font-weight: 600;
 }
 
-/* =============================================================
-   Compose - Main overview page
-   ============================================================= */
-
 .compose-page {
   padding: 16px 24px 32px;
   display: flex;
@@ -4958,7 +4503,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   gap: 20px;
 }
 
-/* ── Stats strip ── */
 .compose-stats-strip {
   display: flex;
   align-items: center;
@@ -5005,7 +4549,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .compose-stat--conflict .compose-stat-value { font-size: var(--text-md); }
 .compose-stat--conflict .compose-stat-label { color: var(--color-warning); opacity: 0.85; }
 
-/* ── Section headings ── */
 .compose-page-section { display: flex; flex-direction: column; gap: 10px; }
 .compose-page-section-title {
   display: flex;
@@ -5018,14 +4561,12 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   letter-spacing: 0.06em;
 }
 
-/* ── Card grid ── */
 .compose-card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 14px;
 }
 
-/* ── Project card ── */
 .compose-project-card {
   display: flex;
   flex-direction: column;
@@ -5091,7 +4632,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .compose-card-star:hover { color: var(--color-warning); }
 .compose-card-star.active { color: var(--color-warning); }
 
-/* ── Health row ── */
 .compose-card-health-row {
   display: flex;
   align-items: center;
@@ -5108,7 +4648,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .health--warn  { color: var(--color-warning); }
 .health--bad   { color: var(--color-danger); }
 
-/* ── Service dots (small, denser than sidebar dots) ── */
 .compose-service-dots {
   display: flex;
   align-items: center;
@@ -5138,7 +4677,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   flex-shrink: 0;
 }
 
-/* ── Meta row (resources + tags) ── */
 .compose-card-meta-row {
   display: flex;
   align-items: center;
@@ -5167,7 +4705,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   border-color: var(--color-accent-border);
 }
 
-/* ── Port chips ── */
 .compose-card-ports {
   display: flex;
   gap: 5px;
@@ -5201,7 +4738,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   animation: pulse-amber 1.5s ease-in-out infinite;
 }
 
-/* ── Card action buttons ── */
 .compose-card-actions {
   display: flex;
   gap: 5px;
@@ -5211,11 +4747,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   flex-wrap: wrap;
   align-items: center;
 }
-/* Lifecycle buttons keep the shared base and only add their consequence tint on
-   hover, which lives with the other row actions in THE BUTTON. */
-/* The one accent-on-accent-tint pairing in the app. The resting accent measured
-   4.43:1 on its own 14% ground and 4.16:1 on the 18% hover ground, so this is
-   the brighter accent in both states: 5.78:1 and 5.43:1 dark, 7.1:1 light. */
 .compose-card-btn--detail {
   margin-left: auto;
   color: var(--color-accent-hover);
@@ -5228,7 +4759,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   color: var(--color-accent-hover);
 }
 
-/* ── Empty state ── */
 .compose-page-empty {
   display: flex;
   flex-direction: column;
@@ -5255,10 +4785,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   font-family: var(--font-mono);
 }
 
-/* =============================================================
-   Compose - Inline editor (Area 3d)
-   ============================================================= */
-
 .compose-editor-wrap {
   display: flex;
   flex: 1;
@@ -5266,10 +4792,8 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   overflow: hidden;
 }
 .compose-line-nums--edit {
-  /* Reuse existing line-nums styles; no change needed - same font + sizing */
 }
-/* Plain textarea editor (Dockerfile / .env) - typography matched to the
-   read-only viewer so switching into edit mode no longer shifts the text. */
+/* Typography must match the read-only viewer, or the text shifts when entering edit mode. */
 .compose-editor-textarea {
   flex: 1;
   resize: none;
@@ -5287,9 +4811,8 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   tab-size: 2;
 }
 
-/* ── YAML editor: live syntax highlight behind a transparent textarea ── */
 .compose-code-wrap--edit { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; }
-/* Line numbers are clipped to the visible area and scroll-synced from JS */
+/* Clipped to the visible area and scroll-synced from JS. */
 .compose-code-wrap--edit .compose-line-nums { overflow: hidden; }
 .compose-editor-overlay {
   position: relative;
@@ -5297,8 +4820,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   min-width: 0;
   align-self: stretch;
 }
-/* Highlight layer - same box as .compose-code-body, taken out of flow and
-   scroll-mirrored from the textarea on top. */
+/* Same box as .compose-code-body, out of flow, and scroll-mirrored from the textarea on top. */
 .compose-editor-highlight {
   position: absolute;
   inset: 0;
@@ -5308,9 +4830,8 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   user-select: none;
   tab-size: 2;
 }
-/* Transparent textarea overlay - text is invisible (the highlight shows
-   through), only the caret and selection render. Typography MUST match
-   .compose-code-wrap / .compose-code-body exactly for the caret to line up. */
+/* Only the caret and selection show. Typography must match .compose-code-wrap and
+   .compose-code-body exactly, or the caret will not line up. */
 .compose-overlay-textarea {
   position: absolute;
   inset: 0;
@@ -5348,15 +4869,12 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   margin-left: 2px;
 }
 
-/* Edit / Save / Cancel controls */
 .compose-edit-controls {
   display: flex;
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
 }
-/* Save states its own outcome; cancel only states it on hover, so the
-   destructive reading is not the resting one. */
 .compose-save-btn:not(:disabled) {
   color: var(--color-success);
   border-color: color-mix(in srgb, var(--color-success) 35%, transparent);
@@ -5371,10 +4889,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   border-color: var(--color-danger-border);
   background: var(--color-danger-subtle);
 }
-
-/* =============================================================
-   Compose - Down split button (Area 3g)
-   ============================================================= */
 
 .compose-split-btn-wrap {
   position: relative;
@@ -5438,10 +4952,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 .compose-split-dropdown-item:hover { background: var(--color-bg-hover); color: var(--color-text-primary); }
 .compose-split-dropdown-item--danger:hover { color: var(--color-danger); background: var(--color-danger-subtle); }
-
-/* =============================================================
-   Compose - Service table (Area 3f)
-   ============================================================= */
 
 .compose-service-section {
   padding: 0 24px 24px;
@@ -5530,7 +5040,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   align-items: center;
   gap: 3px;
 }
-/* Icon-only action buttons in service table */
 .cst-btn {
   display: inline-flex;
   align-items: center;
@@ -5552,10 +5061,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .cst-btn--stop:hover:not(:disabled)    { color: var(--color-danger);  border-color: var(--color-danger-border); background: var(--color-danger-subtle); }
 .cst-btn--restart:hover:not(:disabled) { color: var(--color-warning); border-color: color-mix(in srgb, var(--color-warning) 35%, transparent); background: var(--color-warning-subtle); }
 .cst-btn--inspect:hover:not(:disabled) { color: var(--color-accent);  border-color: var(--color-accent-border); background: var(--color-accent-subtle); }
-
-/* =============================================================
-   Compose - Inspect drawer (Area 3f)
-   ============================================================= */
 
 .compose-inspect-overlay {
   position: fixed;
@@ -5628,10 +5133,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .inspect-state--restarting { color: var(--color-warning); }
 .inspect-state--stopped    { color: var(--color-text-tertiary); }
 
-/* =============================================================
-   Compose - Wipe confirmation modal (Area 3g)
-   ============================================================= */
-
 .compose-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -5696,10 +5197,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 .compose-modal-btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* =============================================================
-   Compose - Toolbar secondary action buttons (Area 3e/3h/3i)
-   ============================================================= */
-
 .compose-toolbar-action-btn {
   display: inline-flex;
   align-items: center;
@@ -5727,14 +5224,9 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 .compose-toolbar-action-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
-/* Extra file tabs (Dockerfiles, .env) */
 .compose-file-path-item--extra {
   border-color: var(--color-border-light);
 }
-
-/* =============================================================
-   Compose - .env first-class tab (Area 3b)
-   ============================================================= */
 
 .env-tab-wrap {
   display: flex;
@@ -5795,10 +5287,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   font-size: var(--text-xs);
 }
 
-/* =============================================================
-   Compose - Dockerfile viewer (Area 3c)
-   ============================================================= */
-
 .dockerfile-instr { color: var(--syntax-key); font-weight: 600; }
 .dockerfile-arg   { color: var(--color-text-primary); }
 .compose-dockerfile-toolbar {
@@ -5819,10 +5307,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   color: var(--syntax-key);
   opacity: 0.8;
 }
-
-/* =============================================================
-   Compose - Log multiplexer panel (Area 3h)
-   ============================================================= */
 
 .log-panel {
   display: flex;
@@ -5925,10 +5409,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   margin-top: 4px;
 }
 
-/* =============================================================
-   Compose - Project Metadata panel (Area 3j)
-   ============================================================= */
-
 .compose-meta-panel {
   border-top: 1px solid var(--color-border);
   background: var(--color-bg-secondary);
@@ -6020,10 +5500,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   color: var(--color-text-secondary);
 }
 
-/* =============================================================
-   Compose - Config validator drawer (Area 3i)
-   ============================================================= */
-
 .compose-validator-drawer {
   border-top: 1px solid var(--color-border);
   background: var(--color-bg-secondary);
@@ -6045,10 +5521,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   word-break: break-word;
   line-height: 1.55;
 }
-
-/* =============================================================
-   Compose - Open in IDE picker (Area 3e)
-   ============================================================= */
 
 .compose-ide-pick-btn {
   display: flex;
@@ -6074,11 +5546,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   color: var(--color-text-tertiary);
 }
 
-/* =============================================================
-   WSL module
-   ============================================================= */
-
-/* ── Services table shell (Startup tab) ─────────────────────────────────── */
 .wsl-compare-wrap {
   margin-bottom: 16px;
   border: 1px solid var(--color-border);
@@ -6108,7 +5575,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 .wsl-compare tbody tr:last-child td { border-bottom: none; }
 
-/* ── WSL startup manager (services) ─────────────────────────────────────── */
 .wsl-startup { margin-top: 0; }
 .wsl-svc-toolbar { margin-top: var(--space-4); }
 
@@ -6179,11 +5645,8 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   white-space: nowrap;
 }
 
-/* ── WSL tabs + .wslconfig editor ─────────────────────────────────────── */
-/* Tab content wrapper - consistent top rhythm regardless of which tab renders. */
 .wsl-tab-content { margin-top: 20px; }
 
-/* ── Header active-distro switcher (custom dropdown) ────────────────────── */
 .wsl-switcher { position: relative; margin-left: 6px; }
 .wsl-switcher-trigger {
   display: inline-flex;
@@ -6271,18 +5734,14 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wsl-switcher-item-state { margin-left: auto; font-size: var(--text-xs); color: var(--color-text-tertiary); }
 .wsl-switcher-check { color: var(--color-accent); flex-shrink: 0; }
 
-/* ── WSL bento home ─────────────────────────────────────────────────────── */
-/* Full-width bento panels stacked below the cards. */
 .wsl-home-panel { margin-top: 14px; }
 
 .wsl-home-grid {
   display: grid;
-  /* auto-fit so a partial row stretches to fill instead of leaving an orphaned
-     half-width card; min 300px lets three cards share a row at the usual width. */
+  /* auto-fit stretches a partial row. 300px lets three cards share a row at the usual width. */
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 14px;
 }
-/* Whole-card hover cue so it's obvious the card opens the distro page. */
 .wsl-bcard:has(.wsl-bcard-head:hover) { border-color: var(--color-border-strong); }
 .wsl-bcard {
   display: flex;
@@ -6314,7 +5773,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   white-space: nowrap;
 }
 .wsl-bcard-head:hover .wsl-bcard-name { color: var(--color-accent); }
-/* Visible "this opens a page" affordance: a small ghost icon button. */
 .wsl-bcard-open {
   margin-left: auto;
   display: inline-flex;
@@ -6360,7 +5818,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   text-overflow: ellipsis;
   font-variant-numeric: tabular-nums;
 }
-/* Loading placeholder for a stat value (e.g. package count while scanning). */
 .wsl-bstat-sk { display: inline-block; width: 36px; height: 11px; vertical-align: middle; }
 .wsl-bcard-path {
   display: flex;
@@ -6381,7 +5838,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wsl-bcard-path svg { flex-shrink: 0; }
 .wsl-bcard-path-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wsl-bcard-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-/* The everyday per-card primary (Terminal): accent-tinted so one action leads. */
 .wsl-bcard-primary {
   background: var(--color-accent-subtle);
   border-color: var(--color-accent);
@@ -6421,12 +5877,9 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wsl-bpanel-head svg { flex-shrink: 0; }
 .wsl-bpanel-head .wsl-link { margin-left: auto; text-transform: none; letter-spacing: 0; }
 .wsl-bpanel-empty { font-size: var(--text-sm); color: var(--color-text-tertiary); margin: 0; }
-/* Chart-shaped placeholder shown while the first live sample is still arriving. */
 .wsl-mon-skeleton { display: flex; gap: 14px; }
 .wsl-mon-sk { flex: 1; height: 148px; border-radius: var(--radius-md); }
 @media (max-width: 700px) { .wsl-mon-skeleton { flex-direction: column; } }
-/* Flatten the shared activity list inside a panel: the panel already provides
-   the surface, so rows are divider-only instead of individually boxed. */
 .wsl-bpanel .activity-list { margin-top: 0; border: none; border-radius: 0; overflow: visible; }
 .wsl-bpanel .activity-row { background: none; padding: 8px 0; }
 .wsl-bpanel .activity-row:not(:last-child) { border-bottom: 1px solid var(--color-border-light); }
@@ -6480,7 +5933,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   font-family: var(--font-mono);
 }
 
-/* ── WSL distro page (identity strip + tab menu) ────────────────────────── */
 .wsl-identity {
   display: flex;
   align-items: center;
@@ -6491,7 +5943,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wsl-identity-name { font-size: var(--text-md); font-weight: 700; color: var(--color-text-primary); }
 .wsl-identity-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 
-/* "Manage" action dropdown in the identity strip. */
 /* `menu-*` is the module-neutral name for the same dropdown. */
 .wsl-menu, .menu { position: relative; display: inline-flex; }
 .wsl-menu-caret { transition: transform var(--transition-fast); }
@@ -6529,13 +5980,9 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wsl-menu-item:hover, .menu-item:hover { background: var(--color-bg-hover); }
 .wsl-menu-item > svg:first-child, .menu-item > svg:first-child { color: var(--color-text-tertiary); flex-shrink: 0; }
 .menu-item[aria-checked="true"] > svg:first-child { color: var(--color-accent); }
-/* Holds the check mark's place when an item is unchecked. */
 .menu-check { width: 14px; flex-shrink: 0; }
 .wsl-menu-badge { margin-left: auto; }
 
-/* Delete is the only entry in the menu with no rollback artifact, so it is
-   separated from the reversible operations and reads as danger before it is
-   clicked, not only once the dialog is open. */
 .wsl-menu-sep, .menu-sep { height: 1px; margin: 5px 4px; background: var(--color-border); }
 .wsl-menu-item--danger,
 .wsl-menu-item--danger > svg:first-child { color: var(--color-danger); }
@@ -6573,7 +6020,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 
-/* ── Info affordance ────────────────────────────────────────────────────── */
 .wsl-info {
   color: var(--color-text-tertiary);
   cursor: help;
@@ -6581,7 +6027,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 .wsl-info:hover { color: var(--color-text-secondary); }
 
-/* ── Live pill (section header) ─────────────────────────────────────────── */
 .wsl-live-pill {
   display: inline-flex;
   align-items: center;
@@ -6591,7 +6036,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   color: var(--color-text-tertiary);
 }
 
-/* ── Resource limits table ──────────────────────────────────────────────── */
 .wsl-limits-table { width: 100%; border-collapse: collapse; font-size: var(--text-base); }
 .wsl-limits-table th {
   text-align: left;
@@ -6612,7 +6056,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 
 .wsl-net-sub { color: var(--color-text-tertiary); font-size: var(--text-xs); }
 
-/* ── Optimize dry-run estimate ──────────────────────────────────────────── */
 .wsl-estimate {
   margin: 4px 0 4px;
   border: 1px solid var(--color-border);
@@ -6625,7 +6068,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wsl-estimate-row--accent { border-top: 1px solid var(--color-border-light); margin-top: 3px; padding-top: 6px; }
 .wsl-estimate-row--accent strong { color: var(--color-accent); }
 .wsl-estimate-note { margin: 4px 0; font-size: var(--text-sm); color: var(--color-text-tertiary); }
-/* Install paths are long and arbitrary, so they wrap rather than stretch the row. */
 .wsl-estimate-path { font-family: var(--font-mono); font-size: var(--text-sm); text-align: right; overflow-wrap: anywhere; }
 
 .wslconf-context {
@@ -6684,7 +6126,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   color: var(--color-text-tertiary);
 }
 
-/* ── .wslconfig form / raw toggle ─────────────────────────────────────── */
 .wslcfg-toolbar {
   display: flex;
   align-items: center;
@@ -6754,7 +6195,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   color: var(--color-accent-hover);
 }
 
-/* ── WSL dashboard ──────────────────────────────────────────────────────── */
 .wsl-dashboard { margin-top: 0; }
 .wsl-live-dot {
   width: 8px; height: 8px; border-radius: 50%;
@@ -6762,7 +6202,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   box-shadow: 0 0 0 3px var(--color-success-subtle);
 }
 
-/* Section header (shared by the resource-monitoring header and the panels). */
 .wsl-dash-section-head { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
 .wsl-viewall {
   margin-left: auto;
@@ -6776,11 +6215,10 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 .wsl-viewall:hover { text-decoration: underline; }
 
-/* Resource-monitoring band - header + standalone gauge cards, no outer panel. */
 .wsl-dash-rm { margin-bottom: 16px; }
 .wsl-gauges {
   display: grid;
-  /* 4-up across the panel width so Disk joins the row instead of orphaning. */
+  /* Four across at panel width, so Disk joins the row. */
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 14px;
 }
@@ -6817,7 +6255,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wsl-gauge-fill--warning, .wsl-gauge-dot--warning { background: var(--color-warning); }
 .wsl-gauge-fill--danger,  .wsl-gauge-dot--danger  { background: var(--color-danger); }
 
-/* Bordered detail panels (Top processes, Network & DNS, Resource limits). */
 .wsl-dash-section {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -6839,7 +6276,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   border-bottom: 1px solid var(--color-border-light);
 }
 
-/* Network & DNS - vertical, icon + stacked label/value. */
 .wsl-net { display: flex; flex-direction: column; gap: 14px; }
 .wsl-net-item { display: flex; gap: 11px; align-items: flex-start; }
 .wsl-net-icon { color: var(--color-text-tertiary); flex-shrink: 0; margin-top: 1px; }
@@ -6875,15 +6311,14 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wsl-dash-cols {
   display: grid;
   grid-template-columns: 1.4fr 1fr;
-  /* Each column hugs its own content; without this the shorter Top-processes
-     panel stretches to match the taller side column and shows dead space. */
+  /* Without this, the shorter Top-processes panel stretches to the taller column and shows dead
+     space. */
   align-items: start;
   gap: 18px;
   margin-top: 18px;
 }
 @media (max-width: 900px) { .wsl-dash-cols { grid-template-columns: 1fr; } }
 
-/* ── WSL performance analyzer ───────────────────────────────────────────── */
 .wsl-perf { margin-top: 0; }
 .wsl-perf-cols {
   display: grid;
@@ -6979,7 +6414,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wslcfg-field-control:focus { outline: none; border-color: var(--color-accent); }
 .wslcfg-field-hint { font-size: var(--text-sm); color: var(--color-text-secondary); line-height: 1.45; }
 
-/* ── .wslconfig backups ───────────────────────────────────────────────── */
 .wslcfg-backups {
   margin-top: 24px;
   border: 1px solid var(--color-border);
@@ -7037,9 +6471,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wslcfg-backup-btn:hover { background: var(--color-bg-hover); color: var(--color-text-primary); }
 .wslcfg-backup-del:hover { color: var(--color-danger); border-color: var(--color-danger); }
 
-/* ── WSL VHD optimize ─────────────────────────────────────────────────── */
-/* Admin-required indicator folded into the button, so the meaning is attached
-   to the action rather than floating beside it as a bare glyph. */
 .btn-admin-badge { color: var(--color-warning); margin-left: 2px; }
 
 .wsl-opt-progress {
@@ -7063,7 +6494,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   color: var(--color-danger);
 }
 
-/* ── WSL export / import ──────────────────────────────────────────────── */
 .modal-close {
   margin-left: auto;
   display: flex;
@@ -7134,7 +6564,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wsl-menu-item:disabled { opacity: 0.5; cursor: not-allowed; }
 
 
-/* ── Distro brand badge (official logo, or lettered avatar fallback) ───────── */
 .distro-logo {
   display: inline-flex;
   align-items: center;
@@ -7148,14 +6577,12 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .distro-logo-text { font-weight: 700; letter-spacing: -0.02em; text-shadow: 0 1px 1px color-mix(in srgb, var(--shadow-ink) 25%, transparent); }
 .distro-logo--off { filter: grayscale(0.65); opacity: 0.55; }
 
-/* ── WSL install wizard ───────────────────────────────────────────────────── */
 .wsl-wizard {
   display: flex;
   flex-direction: column;
   gap: 18px;
 }
 
-/* Stepper: numbered circles joined by progress lines. */
 .wiz-steps {
   display: flex;
   align-items: center;
@@ -7215,7 +6642,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   gap: 16px;
 }
 
-/* Notice shown when a background install is still running. */
 .wiz-inflight-note {
   display: flex;
   align-items: center;
@@ -7229,7 +6655,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 .wiz-inflight-note svg { color: var(--color-accent); flex-shrink: 0; }
 
-/* Catalog grid of selectable distro cards. */
 .wiz-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -7295,7 +6720,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   background: var(--color-success-subtle);
 }
 
-/* Footer action row shared across steps. */
 .wiz-actions {
   display: flex;
   align-items: center;
@@ -7309,7 +6733,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   margin-right: auto;
 }
 
-/* Review step. */
 .wiz-review {
   display: flex;
   align-items: center;
@@ -7350,11 +6773,9 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wiz-fact-icon { color: var(--color-text-tertiary); flex-shrink: 0; margin-top: 1px; }
 .wiz-fact-icon--warning { color: var(--color-warning); }
 
-/* Install location field (review step). */
 .wiz-location { display: flex; flex-direction: column; gap: 6px; }
 .wiz-location-label { font-size: var(--text-sm); font-weight: 600; color: var(--color-text-secondary); }
 
-/* Install / result step - centred status block. */
 .wiz-status {
   display: flex;
   flex-direction: column;
@@ -7366,7 +6787,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   border-radius: var(--radius-lg);
   background: var(--color-bg-secondary);
 }
-/* Active install: logo, phase title, and a real progress bar. */
 .wiz-install {
   display: flex;
   flex-direction: column;
@@ -7385,10 +6805,8 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   background: var(--color-bg-tertiary);
   overflow: hidden;
 }
-/* Stays on width deliberately: the indeterminate and pulse variants below both
-   animate width as a marching bar, and the reduced-motion block overrides that
-   same property. Scaling only the determinate half would split one control
-   across two mechanisms for no gain on a bar that appears once per install. */
+/* Animates width on purpose: the indeterminate and pulse variants and the reduced-motion block
+   all work on that property. */
 .wiz-progress-fill {
   height: 100%;
   border-radius: var(--radius-full);
@@ -7448,16 +6866,10 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 
 
-/* =============================================================
-   Packages
-   -------------------------------------------------------------
-   The list reuses the Docker table (.img-table and friends) and the
-   segmented source filter (.ctr-state-filter); only what has no
-   equivalent there is defined here.
-   ============================================================= */
+/* Packages reuses the Docker table (.img-table). Only what it lacks is defined here. */
 
-/* Columns take the widths the user set, so every cell truncates rather than
-   wraps, and long values carry the full text in a title attribute. */
+/* Columns use the widths the user set, so cells truncate. Long values carry the full text in a
+   title attribute. */
 .pkg-table { table-layout: fixed; min-width: 100%; }
 .pkg-table .img-th,
 .pkg-table .img-td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -7467,8 +6879,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   color: var(--color-text-tertiary);
 }
 
-/* Column resize grip on a header cell's right edge. The header cell is sticky,
-   so it positions the grip. */
+/* The sticky header cell positions this grip. */
 .col-resize {
   position: absolute;
   top: 0;
@@ -7496,7 +6907,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .pkg-upgrade { margin-left: var(--space-2); }
 .pkg-check-warn strong { color: var(--color-warning); }
 
-/* Source filter. Many sources wrap onto another line instead of scrolling. */
 .pkg-sources {
   display: flex;
   flex-wrap: wrap;
@@ -7507,10 +6917,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .pkg-source:not(.btn--on) { color: var(--color-text-secondary); }
 .pkg-source:not(.btn--on):hover:not(:disabled) { color: var(--color-text-primary); }
 
-/* Standalone toggle. The segmented filter next to it is a one-of-many choice,
-   this is an independent on/off, so it reads as its own control - and its
-   pressed state is amber because what it filters to is "needs an update".
-   At rest it matches a segment, count included. */
 .pkg-toggle {
   gap: var(--space-1);
   padding: 0 10px;
@@ -7527,13 +6933,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .pkg-note { font-size: var(--text-sm); color: var(--color-text-tertiary); line-height: 1.5; }
 
 
-/* =============================================================
-   SHELL - titlebar, rail, main, context panel, command pane
-   ============================================================= */
-
-/* ── Titlebar. Carries the brand, the global search, and the window controls.
-   Search lives here rather than behind a keystroke, because an affordance
-   nobody can see is not an affordance. */
 .titlebar {
   height: var(--titlebar-height);
   display: flex;
@@ -7600,9 +6999,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .titlebar-btn:hover { background: var(--chrome-surface-hover); color: var(--chrome-text); }
 .titlebar-btn.close-btn:hover { background: var(--titlebar-close); color: #fff; }
 
-/* ── The rail. Modules, with their children nested underneath. The nesting is
-   the point: a compose project's status and a distro's size are things you read
-   at a glance, not things you go and look up. */
 .sidebar {
   width: var(--sidebar-w, var(--sidebar-width));
   min-width: var(--sidebar-w, var(--sidebar-width));
@@ -7644,8 +7040,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .rail-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rail-count { font-size: var(--text-2xs); color: var(--color-text-tertiary); font-variant-numeric: tabular-nums; }
 
-/* Children, and grandchildren. The guide line replaces indentation as the
-   signal, so three levels stay readable at 212px. */
 .rail-kids {
   position: relative;
   display: flex;
@@ -7687,7 +7081,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 
 .rail-foot { margin-top: auto; padding-top: var(--space-2); }
 
-/* ── Main panel. */
 .main-panel {
   flex: 1;
   min-width: 0;
@@ -7697,11 +7090,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   overflow: hidden;
 }
 
-/* ── The page shape. Every view is the same three parts: a pinned head that
-   carries the breadcrumb, title, status and primary actions; an optional tab
-   strip on the same fixed block; and one scrolling body under them. The head
-   staying put is what makes Refresh reachable from the bottom of a 400-row
-   table, and it is why the view owns its scroll rather than the main panel. */
+/* The view owns its scroll, not the main panel, so the head stays pinned above the body. */
 .view-container {
   display: flex;
   flex-direction: column;
@@ -7710,16 +7099,13 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   padding: 0;
 }
 
-/* The head sits on a hairline, so the body scrolling under it reads as a
-   separate plane rather than as text sliding off the title. */
 .page-head {
   padding: var(--space-5) var(--space-6) var(--space-4);
   flex-shrink: 0;
   border-bottom: 1px solid var(--color-border);
 }
 
-/* The scrolling body. `scrollbar-gutter: stable` keeps the column from shifting
-   sideways when a short page becomes a long one. */
+/* scrollbar-gutter: stable stops a sideways shift when a short page becomes long. */
 .page-scroll {
   flex: 1;
   min-height: 0;
@@ -7728,8 +7114,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   padding: var(--space-5) var(--space-6) var(--space-7);
 }
 
-/* A body that fills instead of scrolling. A table page and the compose page
-   both want their own interior to scroll rather than the whole column. */
+/* For pages that scroll their own interior: table pages and compose. */
 .page-fill {
   flex: 1;
   min-height: 0;
@@ -7741,9 +7126,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 /* The compose page manages its own gutters. */
 .page-fill--bleed { padding: 0; }
 
-/* Vertical rhythm inside a page. A section head after anything gets a full
-   step of air above it; that one rule replaces the per-module margins that
-   made every page space its sections differently. */
 .page-scroll > * + .section-head,
 .page-fill  > * + .section-head { margin-top: var(--space-6); }
 .page-scroll > * + .panel,
@@ -7764,14 +7146,12 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 
 .sheet-head { display: flex; align-items: flex-start; gap: var(--space-3); }
 .sheet-head-main { flex: 1; min-width: 0; }
-/* Actions sit on the title's line. The 28px floor matches the button height, so
-   a head without actions is the same height as one with them. */
+/* The 28px floor is the button height, so a head without actions matches one with them. */
 .sheet-title-row { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; min-height: 28px; }
 .sheet-title { font-size: var(--text-lg); font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; }
 .sheet-sub { margin-top: 2px; font-size: var(--text-xs); color: var(--color-text-tertiary); }
 .sheet-actions { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; margin-left: auto; }
 
-/* Status pill: a dot and a fact, nothing more. */
 .pill {
   display: inline-flex; align-items: center; gap: var(--space-1);
   height: 20px; padding: 0 var(--space-2);
@@ -7783,8 +7163,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   white-space: nowrap;
 }
 
-/* ── Context panel. Selection has somewhere to go, so detail stops needing
-   a modal. */
 .context-panel {
   width: var(--context-width);
   flex-shrink: 0;
@@ -7807,13 +7185,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .kv-k { color: var(--color-text-tertiary); }
 .kv-v { color: var(--color-text-secondary); text-align: right; font-variant-numeric: tabular-nums; }
 
-/* =============================================================
-   PRIMITIVES
-   ============================================================= */
-
-/* The button lives in THE BUTTON, above. This block used to redeclare it here
-   with the same values, which is how `.btn--danger-outline` ended up losing to
-   a rule the reader could not see from the definition. */
+/* PRIMITIVES */
 
 .field {
   display: flex; align-items: center; gap: var(--space-2);
@@ -7888,24 +7260,13 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   font-family: inherit;
 }
 
-/* ── Section head. A title, an optional fact, and a rule that runs out to the
-   edge of the column so the group has a visible top. */
-/* A fixed height so the title sits on the same line whether the head carries a
-   button, a segmented control, or nothing at all. */
+/* 28px floor, so the title holds its line with or without a control. */
 .section-head { display: flex; align-items: center; gap: var(--space-3); min-height: 28px; margin-bottom: var(--space-3); }
 .section-title { font-size: var(--text-2xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-tertiary); white-space: nowrap; }
 .section-meta { font-size: var(--text-2xs); color: var(--color-text-tertiary); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .section-rule { flex: 1; height: 1px; background: var(--color-border); }
 
-/* =============================================================
-   THE STAT CARD
-   -------------------------------------------------------------
-   One number, stated, with an optional meter under it. The Overview drew this
-   as `metric-card` with a track and the Docker summary drew it as `hero-tile`
-   without one, in a fixed six-column grid that left two thirds of the row empty
-   once the tile count dropped to three. Same fact, one card, and a row that
-   fills the column at any count.
-   ============================================================= */
+/* THE STAT CARD: one number, with an optional meter under it. */
 .stat-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
@@ -7974,13 +7335,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 .stat-sub--err { color: var(--color-danger); }
 
-/* =============================================================
-   THE PANEL
-   -------------------------------------------------------------
-   A bordered group with an optional head. Replaces `overview-section`,
-   `rowlist`, `wsl-dash-section` and three more card treatments that differed
-   only in padding.
-   ============================================================= */
+/* THE PANEL: a bordered group with an optional head. */
 .panel {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
@@ -8037,18 +7392,10 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .act-detail { color: var(--color-text-tertiary); font-size: var(--text-2xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .act-time   { margin-left: auto; flex-shrink: 0; white-space: nowrap; color: var(--color-text-tertiary); font-size: var(--text-2xs); font-variant-numeric: tabular-nums; }
 
-/* =============================================================
-   COMMAND PANE
-   -------------------------------------------------------------
-   The header strip is always visible, even collapsed, so the promise that
-   every command is shown is visible rather than something you go and find.
-   ============================================================= */
 .pane-strip { display: flex; align-items: center; gap: var(--space-3); font-size: var(--text-2xs); color: var(--color-text-tertiary); }
 .pane-live  { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--color-text-secondary); }
 .pane-live-dot { width: 6px; height: 6px; border-radius: var(--radius-full); background: var(--color-success); }
 
-/* ── Focus. Visible on everything, because the app commits to WCAG AA and a
-   keyboard user has to be able to see where they are. */
 .rail-item:focus-visible, .rail-kid:focus-visible, .crumb:focus-visible,
 .tab:focus-visible, .btn:focus-visible, .rowitem:focus-visible, .segmented-item:focus-visible,
 .tb-search:focus-visible, .field-clear:focus-visible, .index-row:focus-visible {
@@ -8057,7 +7404,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 .field:focus-within { outline: 2px solid var(--color-accent); outline-offset: -2px; border-color: var(--color-accent); }
 
-/* ── The index (Ctrl+K). */
 .index-scrim {
   position: fixed; inset: 0; z-index: var(--z-palette);
   background: color-mix(in srgb, var(--shadow-ink) 55%, transparent);
@@ -8098,28 +7444,14 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .shortcut-keys { display: flex; gap: 3px; flex-shrink: 0; width: 92px; }
 .shortcut-desc { flex: 1; min-width: 0; }
 
-/* =============================================================
-   Reduced motion
-   -------------------------------------------------------------
-   Honours prefers-reduced-motion, which is what the Windows "Show animations"
-   setting maps to. Deliberately NOT a blanket animation kill: the looping
-   opacity pulses are the only signal that a distro is booting, a service is
-   restarting, or a prune is running, and destroying them would remove state,
-   not motion. What goes is everything that actually travels - spin, slide,
-   shimmer, scale, and the marching indeterminate bar.
-
-   The neutralised animations are redefined by name rather than by selector so
-   that any future rule reusing the name inherits the reduced variant too.
-   ============================================================= */
+/* Not a blanket kill: the opacity pulses are the only sign that a distro is booting or a prune
+   is running. Keyframes are redefined by name, so every rule using them gets the reduced version. */
 @media (prefers-reduced-motion: reduce) {
-  /* Transitions end at the correct state, so making them instant loses
-     nothing. This also stops the terminal panel height animation. */
   *, *::before, *::after {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
 
-  /* Entrances: keep the fade, drop the travel. */
   @keyframes slide-down      { from { opacity: 0; } to { opacity: 1; } }
   @keyframes view-fade-in    { from { opacity: 0; } to { opacity: 1; } }
   @keyframes tl-appear       { from { opacity: 0; } to { opacity: 1; } }
@@ -8128,7 +7460,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   @keyframes index-scrim-in  { from { opacity: 0; } to { opacity: 1; } }
   @keyframes index-panel-in  { from { opacity: 0; } to { opacity: 1; } }
 
-  /* Flourish with nothing to say once the motion is gone. */
   @keyframes pin-pop { from { transform: none; } to { transform: none; } }
 
   /* "Working" indicators: pulse in place instead of rotating or travelling. */

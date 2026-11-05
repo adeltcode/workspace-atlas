@@ -24,8 +24,7 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])
 
-  // ── Global keys. These are the only app-wide bindings; per-module keys (Ctrl+R)
-  // stay with the module that owns the data they refresh.
+  // Only app-wide bindings go here. Per-module keys like Ctrl+R stay with the module that owns the data.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey
@@ -43,12 +42,12 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  // ── Sidebar resize - direct DOM write during drag, store only on release ──
+  // Writes to the DOM during the drag and to the store only on release.
   const onSidebarResize = (e: React.MouseEvent) => {
     e.preventDefault()
     const startX    = e.clientX
     const body      = e.currentTarget.parentElement as HTMLElement   // .app-body
-    // Capture the actual rendered width (works even when sidebar is fit-content)
+    // Read the rendered width, because sidebarWidth is 0 until the first drag.
     const sidebarEl = body.querySelector<HTMLElement>('.sidebar')
     const startW    = sidebarEl?.offsetWidth ?? (useAppStore.getState().sidebarWidth || 200)
     let current     = startW
@@ -58,7 +57,7 @@ export default function App() {
       body.style.setProperty('--sidebar-w', `${current}px`)
     }
     const onUp = () => {
-      useAppStore.getState().setSidebarWidth(current)             // persist on release
+      useAppStore.getState().setSidebarWidth(current)
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
     }
@@ -66,9 +65,8 @@ export default function App() {
     document.addEventListener('mouseup', onUp)
   }
 
-  // ── Terminal resize - drive the --terminal-height var during drag, store on release ─
-  // The terminal (absolute) and its resize handle both read --terminal-height,
-  // so updating that one variable moves them together.
+  // --terminal-height clamps the value written here. The terminal and its handle both read it, so
+  // one write moves both. Stored on release.
   const onTerminalResize = (e: React.MouseEvent) => {
     e.preventDefault()
     const startY  = e.clientY
@@ -76,7 +74,7 @@ export default function App() {
     const startH  = content.querySelector<HTMLElement>('.terminal-panel')?.offsetHeight ?? TERMINAL_MIN
     let current   = startH
 
-    content.classList.add('resizing-terminal')                     // disable height transition
+    content.classList.add('resizing-terminal')                     // turns off the panel's transition during the drag
 
     const onMove = (mv: MouseEvent) => {
       const maxHeight = Math.max(TERMINAL_MIN, Math.min(TERMINAL_MAX, content.clientHeight - MAIN_PANEL_MIN))
@@ -84,7 +82,7 @@ export default function App() {
       content.style.setProperty('--terminal-preferred-height', `${current}px`)
     }
     const onUp = () => {
-      useAppStore.getState().setTerminalHeight(current)            // persist on release
+      useAppStore.getState().setTerminalHeight(current)
       content.classList.remove('resizing-terminal')
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
@@ -104,8 +102,7 @@ export default function App() {
       >
         <Sidebar />
         <div className="sidebar-resize-handle" onMouseDown={onSidebarResize} />
-        {/* The open class is what reserves the terminal's height in the content
-            column, so a page's last row is never buried under the panel. */}
+        {/* The open class reserves the terminal's height, so the panel never covers a page's last row. */}
         <div
           className={clsx('app-content', terminalOpen && 'app-content--terminal-open')}
           style={{ '--terminal-preferred-height': `${terminalHeight}px`, '--main-panel-min-height': `${MAIN_PANEL_MIN}px` } as React.CSSProperties}

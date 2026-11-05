@@ -1,18 +1,7 @@
 import { useEffect, useRef } from 'react'
 
-/**
- * Native `<dialog>` wrapper used by every modal in the app.
- *
- * `showModal()` gives us four things that a `position: fixed` div does not:
- * focus moves into the dialog, focus is trapped while it is open, focus returns
- * to the trigger on close, and Escape works. The alternative is hand-rolling all
- * four, which is how they end up subtly wrong.
- *
- * The dialog element itself plays the part of the full-screen overlay, so the
- * existing overlay classes (background dim, flex centering, z-index) keep
- * working unchanged and only the UA dialog defaults need resetting in CSS.
- * Render it conditionally: it opens on mount and closes by unmounting.
- */
+/** Native `<dialog>` wrapper for every modal. Render it conditionally: it opens on mount and
+ *  closes by unmounting. */
 export default function ModalShell({ className, label, onClose, closeOnBackdrop = true, returnFocusRef, children }: {
   className: string
   label: string

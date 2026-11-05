@@ -23,7 +23,6 @@ function parseEnv(content: string): EnvPair[] {
   }).filter(Boolean) as EnvPair[]
 }
 
-/** Extract all ${VAR} and $VAR references from a YAML string */
 function extractYamlVarRefs(yaml: string): Set<string> {
   const refs = new Set<string>()
   const re = /\$\{([^}]+)\}|\$([A-Z_a-z][A-Z0-9_a-z]*)/g
@@ -34,7 +33,7 @@ function extractYamlVarRefs(yaml: string): Set<string> {
 
 interface Props {
   filePath:    string
-  content:     string          // current file content from parent
+  content:     string
   yamlContent: string          // compose YAML for cross-reference
   onSaved:     (newContent: string) => void
 }
@@ -49,7 +48,6 @@ export default function ComposeEnvTab({ filePath, content, yamlContent, onSaved 
   const setDraft = (value: string) => useAppStore.getState().setEditorDraft(filePath, value)
   const [saving,   setSaving]   = useState(false)
 
-  // Toggling "Hide all" also clears any individually-revealed rows.
   const toggleMaskAll = () => setMasked(m => { if (!m) setRevealed(new Set()); return !m })
   const toggleReveal  = (k: string) => setRevealed(prev => {
     const next = new Set(prev)
@@ -81,7 +79,6 @@ export default function ComposeEnvTab({ filePath, content, yamlContent, onSaved 
 
   return (
     <div className="env-tab-wrap">
-      {/* Toolbar */}
       <div className="env-tab-toolbar">
         <button
           className={clsx('env-mask-btn', !masked && 'unmasked')}
@@ -111,7 +108,6 @@ export default function ComposeEnvTab({ filePath, content, yamlContent, onSaved 
         {isModified && <span className="compose-modified-dot" title="Unsaved changes" />}
       </div>
 
-      {/* View mode: key/value table */}
       {!editMode && (
         <div className="env-table-wrap">
           {pairs.length === 0 ? (
@@ -167,7 +163,6 @@ export default function ComposeEnvTab({ filePath, content, yamlContent, onSaved 
               </tbody>
             </table>
           )}
-          {/* Warn about YAML vars with no .env declaration */}
           {(() => {
             const envKeys = new Set(pairs.map(p => p.key))
             const missing = [...yamlRefs].filter(r => !envKeys.has(r))
@@ -182,7 +177,6 @@ export default function ComposeEnvTab({ filePath, content, yamlContent, onSaved 
         </div>
       )}
 
-      {/* Edit mode: raw textarea */}
       {editMode && (
         <div className="compose-editor-wrap">
           <div className="compose-line-nums" aria-hidden>

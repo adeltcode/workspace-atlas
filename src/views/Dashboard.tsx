@@ -1,9 +1,3 @@
-/* Overview.
- *
- * A user arrives here because something is wrong, so the page answers what is
- * the state of this machine, what can I get back, and what has been done to it.
- * Reclaimable space leads, because "my disk is full" is the reason this product
- * exists. */
 import { useEffect, useState } from 'react'
 import { Box, HardDrive, Package, Layers, Database, ChevronRight, RefreshCw } from 'lucide-react'
 import clsx from 'clsx'

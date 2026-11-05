@@ -1,9 +1,3 @@
-/* The rail.
- *
- * Modules with their children nested underneath, because a compose project's
- * status and a distro's size are things you read at a glance rather than go and
- * look up. The guide line carries the nesting instead of deep indentation, so
- * three levels stay readable at 212px. */
 import { LayoutDashboard, Box, HardDrive, Package, Settings, Keyboard } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore, type DockerTab, type WslView } from '../store/appStore'
@@ -95,7 +89,6 @@ export default function Sidebar() {
                   {tabCount(id) && <span className="rail-frac">{tabCount(id)}</span>}
                 </button>
 
-                {/* Compose projects: the grandchild level, with live state. */}
                 {id === 'compose' && dockerTab === 'compose' && composeProjectsNav.length > 0 && (
                   <div className="rail-kids">
                     {composeProjectsNav.map(p => {
@@ -141,7 +134,7 @@ export default function Sidebar() {
                 onClick={() => goWslDistro(d.name)}
                 style={{ width: '100%' }}
                 aria-current={wslView === 'distro' && wslSelectedDistro === d.name ? 'page' : undefined}
-                // The dot is the only carrier of running state, and colour alone is not a carrier.
+                // The dot is the only visual sign of running state, so the label must say it too.
                 aria-label={`${d.name}, ${d.running ? 'running' : 'stopped'}${d.is_default ? ', default' : ''}`}
               >
                 <span className={clsx('rail-dot', d.running ? 'running' : 'stopped')} />

@@ -1,7 +1,5 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react'
 
-// ── Dockerfile syntax highlighter ─────────────────────────────────────────────
-
 const INSTRUCTIONS = new Set([
   'FROM','RUN','COPY','ADD','WORKDIR','EXPOSE','ENV','ARG','LABEL',
   'CMD','ENTRYPOINT','USER','VOLUME','HEALTHCHECK','SHELL','STOPSIGNAL','ONBUILD','MAINTAINER',
@@ -38,7 +36,6 @@ export function DockerfileLine({ line }: { line: string }) {
 }
 
 function renderDockerArg(text: string): ReactNode {
-  // Highlight ${VAR} and $VAR references
   if (!text.includes('$')) return <span>{text}</span>
   const parts = text.split(/(\$\{[^}]+\}|\$[A-Z_a-z][A-Z0-9_a-z]*)/g)
   return (
@@ -52,8 +49,7 @@ function renderDockerArg(text: string): ReactNode {
   )
 }
 
-// ── View-only component (editing is owned by ComposeTab so the Edit/Save
-//    controls live in the shared toolbar, consistent with the compose view) ────
+// View only. ComposeTab owns editing, so Edit and Save live in its shared toolbar.
 
 interface Props {
   content:           string

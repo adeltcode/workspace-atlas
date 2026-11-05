@@ -1,8 +1,3 @@
-/* The keyboard reference.
- *
- * The shortcuts already existed. They were documented only inside `title`
- * attributes, which are neither keyboard reachable nor reliably announced, so
- * in practice nobody knew they were there. */
 import { useAppStore } from '../store/appStore'
 import ModalShell from './ModalShell'
 import { Button, Kbd } from './ui'

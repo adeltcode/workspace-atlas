@@ -4,16 +4,14 @@ import clsx from 'clsx'
 import { useAppStore } from '../../../store/appStore'
 import type { WslDistro } from '../types'
 
-/** Custom active-distro dropdown for the view-header on per-distro tabs.
- *  Replaces a native <select> so it can carry status dots, a default tag, and a
- *  selected checkmark in the app's visual language. Writes the global selection. */
+/** A custom dropdown rather than a native <select>, so it can carry status dots, a default tag
+ *  and a checkmark. Writes the global selection. */
 export default function DistroSwitcher({ distros }: { distros: WslDistro[] }) {
   const selected    = useAppStore(s => s.wslSelectedDistro)
   const setSelected = useAppStore(s => s.setWslSelectedDistro)
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
-  // Close on outside click or Escape.
   useEffect(() => {
     if (!open) return
     const onDown = (e: MouseEvent) => {

@@ -28,10 +28,8 @@ const PHASE_LABEL: Record<InstallProgress['phase'], string> = {
   done:        'Finishing up',
 }
 
-/** Catalog browser + guided install for a new WSL distribution. Three steps:
- *  choose → review → install. Downloads the official distro image directly so it
- *  can report real progress (speed, size, percent), verifies its SHA-256, then
- *  installs it. First-run user setup happens when the user opens a terminal. */
+/** Downloads the official image directly so it can report real progress, then verifies its SHA-256
+ *  and installs it. First-run user setup happens when the user opens a terminal. */
 export default function WslInstallWizard({ distros, onReload }: {
   distros: WslDistro[]
   onReload: () => Promise<void> | void
@@ -70,7 +68,6 @@ export default function WslInstallWizard({ distros, onReload }: {
 
   useEffect(() => { loadCatalog() }, [loadCatalog])
 
-  // Prefill the install location with the default for the picked distro.
   useEffect(() => {
     if (!picked) { setInstallDir(''); return }
     let alive = true
@@ -110,7 +107,6 @@ export default function WslInstallWizard({ distros, onReload }: {
 
   const reset = () => { setStep('select'); setPicked(null); setInstallErr(null); setDone(false); setProgress(null) }
 
-  // ── Install-step display ────────────────────────────────────────────────────
   const phase = progress?.phase ?? 'downloading'
   const downloading = phase === 'downloading'
   const total = progress?.total ?? 0
@@ -119,7 +115,6 @@ export default function WslInstallWizard({ distros, onReload }: {
 
   return (
     <div className="wsl-wizard">
-      {/* ── Stepper ──────────────────────────────────────────────────── */}
       <div className="wiz-steps">
         {STEPS.map((s, i) => (
           <Fragment key={s.id}>
@@ -132,14 +127,12 @@ export default function WslInstallWizard({ distros, onReload }: {
         ))}
       </div>
 
-      {/* A download started from an earlier visit is still running in the background. */}
       {wslInstalling && !installing && (
         <div className="wiz-inflight-note">
           <RotateCw size={13} className="spin" /> Installing {wslInstalling} in the background - wait for it to finish before starting another.
         </div>
       )}
 
-      {/* ── Step 1: choose ───────────────────────────────────────────── */}
       {step === 'select' && (
         <div className="wiz-panel">
           <Toolbar>
@@ -209,7 +202,6 @@ export default function WslInstallWizard({ distros, onReload }: {
         </div>
       )}
 
-      {/* ── Step 2: review ───────────────────────────────────────────── */}
       {step === 'review' && pickedDistro && (
         <div className="wiz-panel">
           <div className="wiz-review">
@@ -252,7 +244,6 @@ export default function WslInstallWizard({ distros, onReload }: {
         </div>
       )}
 
-      {/* ── Step 3: install / result ─────────────────────────────────── */}
       {step === 'install' && pickedDistro && (
         <div className="wiz-panel">
           {installing && (

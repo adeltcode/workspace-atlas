@@ -131,7 +131,6 @@ export default function PackagesView() {
 
   useEffect(() => { scan() }, [scan])
 
-  // Ctrl+R / Cmd+R → rescan, matching the other module views.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'r' && !e.shiftKey) {
@@ -257,10 +256,8 @@ export default function PackagesView() {
     }
   }
 
-  // Rescan one source so its rows show what is installed now, not what the
-  // tool claimed it did. Null when the rescan itself failed. Installers that
-  // winget or Chocolatey run also write uninstall keys, which winget and
-  // Installed apps both list.
+  // Null when the rescan itself failed. Installers that winget or Chocolatey run also write
+  // uninstall keys, which winget and Installed apps both list.
   const rescanSource = async (id: string): Promise<Package[] | null> => {
     try {
       const fresh = await api.pkgScan(id === 'winget' || id === 'choco' ? [id, 'winget', 'registry'] : [id])
@@ -731,7 +728,6 @@ function ResizeHandle({ label, width, onResize }: {
   )
 }
 
-/** Toggles which optional columns the table shows. */
 function ColumnsMenu({ hidden, onToggle, onReset }: {
   hidden: string[]
   onToggle: (key: string) => void

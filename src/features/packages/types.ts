@@ -1,12 +1,10 @@
-/** One installed package, as reported by its manager. */
 export interface Package {
   name: string
   /** Package id where the manager has one distinct from the name (winget). */
   id: string
   version: string
-  /** Newer version the manager reports as installable. Empty when not reported.
-   *  A scan fills this for winget; a check for updates adds npm, pip and
-   *  Chocolatey. */
+  /** Newer version the manager reports as installable. Empty when not reported. A scan fills this
+   *  for winget; a check for updates adds npm, pip and Chocolatey. */
   available: string
   /** Scanner source id, matching `SourceResult.id`. */
   source: string
@@ -23,14 +21,12 @@ export interface Package {
   location: string
 }
 
-/** One package with a newer version, from a check for updates. */
 export interface PackageUpdate {
   id: string
   available: string
   upgrade_command: string | null
 }
 
-/** Outcome of checking one package manager for updates. */
 export interface SourceUpdates {
   source: string
   label: string
@@ -58,7 +54,6 @@ export interface UninstallCheck {
   limits: string[]
 }
 
-/** Outcome of scanning one package manager. */
 export interface SourceResult {
   id: string
   label: string

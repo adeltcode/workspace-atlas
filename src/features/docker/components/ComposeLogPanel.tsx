@@ -14,7 +14,6 @@ interface Props {
 }
 
 export default function ComposeLogPanel({ project, containers, configFile, initialService, onClose }: Props) {
-  // Services available for this project
   const services = [...new Set(
     containers
       .filter(c => c.compose_project === project.name && c.compose_service)
@@ -35,7 +34,6 @@ export default function ComposeLogPanel({ project, containers, configFile, initi
 
   pausedRef.current = paused
 
-  // Start/restart watch whenever enabled set changes
   const startWatch = useCallback(async () => {
     if (enabled.size === 0) return
     setWatching(true)
@@ -51,7 +49,6 @@ export default function ComposeLogPanel({ project, containers, configFile, initi
     return () => { api.composeLogsStop().catch(() => {}) }
   }, [enabled]) // eslint-disable-line
 
-  // Listen to batched log events
   useEffect(() => {
     let unlisten: (() => void) | undefined
     listen<string[]>('compose-log-batch', e => {
@@ -64,9 +61,8 @@ export default function ComposeLogPanel({ project, containers, configFile, initi
     return () => { unlisten?.() }
   }, [])
 
-  // Pin to the bottom when not searching. Sets scrollTop directly (no smooth
-  // behavior) so opening the panel lands at the latest line instantly - no
-  // top-to-bottom scroll animation, and it never scrolls the page.
+  // Sets scrollTop directly, so opening the panel lands on the latest line with no scroll animation,
+  // and it never scrolls the page.
   useEffect(() => {
     if (!search && !paused && bodyRef.current) {
       bodyRef.current.scrollTop = bodyRef.current.scrollHeight
@@ -75,7 +71,6 @@ export default function ComposeLogPanel({ project, containers, configFile, initi
 
   const handlePause = () => {
     if (paused) {
-      // Resume: flush buffer
       setLines(prev => [...prev, ...bufferRef.current].slice(-5000))
       bufferRef.current = []
     }
@@ -104,11 +99,9 @@ export default function ComposeLogPanel({ project, containers, configFile, initi
 
   return (
     <div className="log-panel">
-      {/* Header */}
       <div className="log-panel-header">
         <span className="log-panel-title">Logs - {project.name}</span>
 
-        {/* Service filter chips */}
         <div className="log-panel-chips">
           {services.map(svc => (
             <button
@@ -123,7 +116,6 @@ export default function ComposeLogPanel({ project, containers, configFile, initi
 
         <div style={{ flex: 1 }} />
 
-        {/* Controls */}
         <div className="log-panel-controls">
           <button className={clsx('log-ctrl-btn', paused && 'active')} onClick={handlePause} title={paused ? 'Resume' : 'Pause'}>
             {paused ? <Play size={11} /> : <Pause size={11} />}
@@ -140,7 +132,6 @@ export default function ComposeLogPanel({ project, containers, configFile, initi
         </div>
       </div>
 
-      {/* Search bar */}
       <div className="log-panel-search">
         <Search size={11} className="log-search-icon" />
         <input
@@ -155,7 +146,6 @@ export default function ComposeLogPanel({ project, containers, configFile, initi
         )}
       </div>
 
-      {/* Log output */}
       <div className="log-panel-body" ref={bodyRef}>
         {visibleLines.length === 0 && !watching && (
           <span className="log-empty">No log lines yet.</span>

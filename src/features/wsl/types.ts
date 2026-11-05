@@ -98,7 +98,6 @@ export interface DistroMetrics {
   top_procs: TopProc[]
 }
 
-/** Lightweight per-distro usage sample for the home dashboard chart. */
 export interface DistroStats {
   cpu_pct: number
   mem_used_bytes: number

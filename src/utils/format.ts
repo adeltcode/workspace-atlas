@@ -1,7 +1,4 @@
-/**
- * Parse and classify a Docker Compose status string like "running(2), exited(1)".
- * Returns a human-readable label and a dot colour for status indicators.
- */
+/** Classifies a Compose status string like "running(2), exited(1)". */
 export function composeStatusLabel(raw: string): { text: string; dot: 'running' | 'partial' | 'stopped'; running: number; total: number } {
   const parts = raw.split(',').map(s => s.trim()).filter(Boolean).map(part => {
     const m = part.match(/^(\w+)\((\d+)\)$/)
@@ -32,14 +29,8 @@ export function fmtBytes(b: number): string {
   return b ? bytesToHuman(b) : '-'
 }
 
-/**
- * Parse a size the Docker CLI printed ("1.83GB", "412MB", "0B") into bytes.
- *
- * Docker reports decimal units here, not binary, so the multipliers are powers
- * of 1000 and match `bytesToHuman` above. Anything unrecognised falls through
- * to the leading number, which is what `docker system df` prints for a plain
- * count.
- */
+/** Parse a size the Docker CLI printed ("1.83GB", "412MB", "0B") into bytes. Units are decimal,
+ *  matching `bytesToHuman`. Anything unrecognized falls through to the leading number, for plain counts. */
 export function parseSizeBytes(s: string): number {
   const n = parseFloat(s)
   if (Number.isNaN(n)) return 0

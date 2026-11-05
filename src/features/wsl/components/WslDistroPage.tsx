@@ -28,9 +28,6 @@ const TABS: { id: WslDistroTab; label: string; icon: typeof LayoutDashboard }[] 
 
 type PageStatus = { kind: 'ok' | 'err' | 'progress'; text: string; error?: AppError } | null
 
-/** Per-distribution page: identity strip with the management actions, plus
- *  Overview/Startup/Performance/Config tabs. The distro shown is the global
- *  selection (header dropdown / sidebar). */
 export default function WslDistroPage({ distros, onReload }: {
   distros: WslDistro[]
   onReload: () => Promise<void> | void
@@ -44,7 +41,6 @@ export default function WslDistroPage({ distros, onReload }: {
 
   const d = distros.find(x => x.name === selected)
 
-  // ── Management state (export / optimize / clone / migrate / delete) ───────
   const [extras, setExtras]   = useState<DistroExtras | null>(null)
   const [busyOp, setBusyOp]   = useState<'export' | 'optimize' | 'clone' | 'delete' | null>(null)
   const [status, setStatus]   = useState<PageStatus>(null)
@@ -57,24 +53,19 @@ export default function WslDistroPage({ distros, onReload }: {
   const [showDelete, setShowDelete]     = useState(false)
   const [deleteText, setDeleteText]     = useState('')
   const [deleteErr, setDeleteErr]       = useState<string | null>(null)
-  // Shared re-entry guard for the management ops (export/optimize/clone/migrate),
-  // and per-button guards for the fire-and-forget terminal/file launches.
   const op    = useAsyncAction()
   const term  = useAsyncAction()
   const files = useAsyncAction()
-  // "Manage" dropdown holding the heavier image ops (export/clone/migrate/optimize).
   const [manageOpen, setManageOpen] = useState(false)
   const manageRef = useRef<HTMLDivElement>(null)
   const manageButtonRef = useRef<HTMLButtonElement>(null)
 
-  // Reset management state when switching distros.
   useEffect(() => {
     setExtras(null); setStatus(null)
     setConfirmOpt(false); setShowClone(false); setShowMigrate(false); setManageOpen(false)
     setShowDelete(false); setDeleteText(''); setDeleteErr(null)
   }, [selected])
 
-  // Close the Manage menu on outside-click / Escape.
   useEffect(() => {
     if (!manageOpen) return
     const onDown = (e: MouseEvent) => { if (manageRef.current && !manageRef.current.contains(e.target as Node)) setManageOpen(false) }
@@ -84,9 +75,8 @@ export default function WslDistroPage({ distros, onReload }: {
     return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
   }, [manageOpen])
 
-  // Disk usage for the optimize dry-run estimate (only read while running, so a
-  // stopped distro is never booted just by opening its page). Skip the distro
-  // mid-action so the probe can't reboot one that's being stopped.
+  // Only read while running, so opening this page never boots a stopped distro. Skip a distro
+  // mid-action, so the probe cannot reboot one that is being stopped.
   useEffect(() => {
     if (!d?.running || d.name === busyDistro) return
     let alive = true
@@ -179,14 +169,10 @@ export default function WslDistroPage({ distros, onReload }: {
 
   return (
     <div className="wsl-distro-page">
-      {/* The page header above already names this distro and states whether it
-          is running, so this row is the logo and the actions, not a second
-          copy of the identity. */}
       <div className="wsl-identity">
         <DistroLogo name={d.name} size={24} dimmed={!d.running} />
         {d.is_default && <Star size={11} className="wsl-distro-star" />}
         <div className="wsl-identity-actions">
-          {/* Quick actions - the daily-use buttons stay inline. */}
           <button className="btn-secondary wsl-bcard-primary" onClick={() => term.run(openTerminal)} disabled={term.pending || busy} title="Open a terminal in this distro">
             <Terminal size={13} /> Terminal
           </button>
@@ -194,8 +180,6 @@ export default function WslDistroPage({ distros, onReload }: {
             <FolderOpen size={13} /> Files
           </button>
 
-          {/* Manage - the heavier, less-frequent image ops, grouped to keep the
-              strip uncluttered and the actions logically organized. */}
           <div className="wsl-menu" ref={manageRef}>
             <button
               ref={manageButtonRef}
@@ -226,8 +210,6 @@ export default function WslDistroPage({ distros, onReload }: {
                     <ShieldAlert size={12} className="btn-admin-badge wsl-menu-badge" />
                   </button>
                 )}
-                {/* Destructive, so it sits below a divider at the end of the
-                    menu rather than next to the reversible operations. */}
                 <div className="wsl-menu-sep" role="separator" />
                 <button
                   className="wsl-menu-item wsl-menu-item--danger"
@@ -281,7 +263,6 @@ export default function WslDistroPage({ distros, onReload }: {
         )}
       </div>
 
-      {/* ── Management dialogs ───────────────────────────────────────── */}
       {confirmOpt && (
         <Modal icon={<ShieldAlert size={16} />} iconWarning title={`Optimize ${d.name}?`} onClose={() => setConfirmOpt(false)} returnFocusRef={manageButtonRef}>
           <p className="modal-body">
@@ -341,10 +322,8 @@ export default function WslDistroPage({ distros, onReload }: {
           returnFocusRef={manageButtonRef} />
       )}
 
-      {/* Delete is the one action with no rollback artifact: no backup .tar, no
-          recycle bin, no undo. It is gated on typing the distro name exactly,
-          so it cannot be reached by muscle memory or a stray Enter. The dialog
-          stays open (and undismissable) while the unregister runs. */}
+      {/* Delete has no rollback, so it is gated on typing the distro name exactly. The dialog stays open
+         and cannot be dismissed while the unregister runs. */}
       {showDelete && (
         <Modal
           icon={<Trash2 size={16} />}

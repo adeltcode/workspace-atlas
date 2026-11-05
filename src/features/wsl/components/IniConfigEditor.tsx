@@ -23,7 +23,6 @@ export interface IniBackend {
 type Status = { type: 'success' | 'error'; text: string } | null
 type Mode = 'form' | 'raw'
 
-/** One labelled control for a key (select for bool/enum, text otherwise). */
 function FieldRow({ field, value, onChange }: {
   field: WslField; value: string; onChange: (v: string) => void
 }) {
@@ -128,7 +127,6 @@ export default function IniConfigEditor({
     try { setBackups(await backend.listBackups()) } catch { /* ignore */ }
   }, [backend])
 
-  // Reload whenever the backend changes (e.g. a different distro is selected).
   useEffect(() => { loadBackups() }, [loadBackups])
 
   const setField = (field: WslField, section: string, val: string) => {
@@ -157,7 +155,7 @@ export default function IniConfigEditor({
       setOriginal(text)
       clearDraft(path, text)
       setExists(true)
-      // The backend emits the command + result to the terminal (no black box).
+      // The backend emits the command and result to the terminal.
       addActivity({ module: 'wsl', action: `Edited ${label}`, outcome: 'success' })
       setStatus({ type: 'success', text: 'Saved. Restart WSL to apply changes.' })
     } catch (e) {
@@ -168,8 +166,7 @@ export default function IniConfigEditor({
     }
   }
 
-  // Snapshot the config. Saves first if there are unsaved edits, so the backup
-  // reflects what the user sees.
+  // Saves first if there are unsaved edits, so the backup reflects what the user sees.
   const backup = async () => {
     setBacking(true)
     setStatus(null)
@@ -228,7 +225,6 @@ export default function IniConfigEditor({
     }
   }
 
-  // ── Form layout: optionally split the first section into common/advanced ──
   const first = sections[0]
   const common = commonSplit ? first.fields.filter(f => f.common) : []
   const advanced = commonSplit ? first.fields.filter(f => !f.common) : []

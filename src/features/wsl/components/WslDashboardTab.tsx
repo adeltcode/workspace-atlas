@@ -14,7 +14,6 @@ import { ErrorBanner } from '../../../components/ui'
 
 type BarColor = 'accent' | 'success' | 'warning' | 'danger'
 
-/** Severity colour for a saturation bar: neutral, then amber, then red. */
 function levelColor(pct: number): BarColor {
   if (pct >= 90) return 'danger'
   if (pct >= 75) return 'warning'
@@ -38,8 +37,6 @@ function InfoDot({ tip }: { tip: string }) {
   return <span className="wsl-info" title={tip}><Info size={11} /></span>
 }
 
-/** Gauge card: header (icon + label + value), a sub-row (detail + %), and a thin
- *  track with a dot marker at the current value. */
 function Gauge({ icon: Icon, label, value, pct, sub, color, tip }: {
   icon: typeof Cpu
   label: string
@@ -104,7 +101,6 @@ function ProcList({ procs, kind, limit }: {
   )
 }
 
-/** Status colour for the systemd init chip - never contradicts the word shown. */
 function initChipClass(m: DistroMetrics): string {
   if (!m.systemd) return 'wsl-chip--muted'
   const s = m.systemd_state
@@ -118,9 +114,8 @@ export default function WslDashboardTab({ distros, onReload }: {
 }) {
   const selected = useAppStore(s => s.wslSelectedDistro) ?? ''
   const busyDistro = useAppStore(s => s.wslBusyDistro)
-  // Metrics are cached per distro in the store, so reopening this page (tab switch,
-  // distro switch, leaving and returning) shows the last sample immediately and
-  // refreshes in the background - no skeleton flash every time.
+  // Cached per distro in the store, so reopening this page shows the last sample immediately, not a
+  // skeleton.
   const metrics = useAppStore(s => s.wslMetrics[selected]) ?? null
   const setWslMetric = useAppStore(s => s.setWslMetric)
   const [error, setError]     = useState<string | null>(null)
@@ -131,10 +126,7 @@ export default function WslDashboardTab({ distros, onReload }: {
 
   const current  = distros.find(d => d.name === selected)
   const running  = current?.running ?? false
-  // What we render follows the distro's real running state (kept fresh by the
-  // list poll) so this page never contradicts the title. Whether we *probe* is a
-  // separate decision: skip a distro mid lifecycle action so the metrics probe
-  // can't reboot one that's being stopped.
+  // Skip a distro mid lifecycle action, so the metrics probe cannot reboot one that is being stopped.
   const shouldPoll = running && selected !== busyDistro
 
   const load = useCallback(async () => {
@@ -147,8 +139,7 @@ export default function WslDashboardTab({ distros, onReload }: {
     }
   }, [selected, setWslMetric])
 
-  // Explicit start from the offline card: actually boot the distro and refresh
-  // the shared list, so every view updates to "running" together.
+  // Refresh the shared list too, so every view updates to "running" together.
   const startDistro = async () => {
     setStarting(true); setError(null)
     try {
@@ -161,11 +152,8 @@ export default function WslDashboardTab({ distros, onReload }: {
     }
   }
 
-  // Clear only the transient error when the distro changes; metrics come from the
-  // per-distro cache so there's no reset-to-skeleton on switch.
   useEffect(() => { setError(null) }, [selected])
 
-  // Read .wslconfig limits once (global, not per-distro).
   useEffect(() => {
     readWslConfig()
       .then(c => setLimits({
@@ -176,8 +164,6 @@ export default function WslDashboardTab({ distros, onReload }: {
       .catch(() => {})
   }, [])
 
-  // Poll every 10 s while a running, non-transitioning distro is selected and
-  // the window is on screen.
   useEffect(() => {
     if (shouldPoll) load()
   }, [shouldPoll, load])
@@ -220,7 +206,6 @@ export default function WslDashboardTab({ distros, onReload }: {
 
       {running && metrics && (
         <>
-          {/* ── Resource monitoring ─────────────────────────────────── */}
           <div className="wsl-dash-rm">
             <div className="wsl-dash-section-head">
               <span className="wsl-dash-section-label">Resource Monitoring</span>
@@ -250,7 +235,6 @@ export default function WslDashboardTab({ distros, onReload }: {
             </div>
           </div>
 
-          {/* ── System status strip ─────────────────────────────────── */}
           <div className="wsl-dash-chips">
             <div className={clsx('wsl-chip', initChipClass(metrics))}>
               <Activity size={12} />
@@ -265,8 +249,6 @@ export default function WslDashboardTab({ distros, onReload }: {
               <span className="wsl-chip-label">docker</span>
               <span className="wsl-chip-val">{metrics.docker_present ? `${metrics.docker_running} running` : 'not installed'}</span>
             </div>
-            {/* Zombies only earn a chip when there are some. "zombies 0" is a
-                stat that reports nothing, and it sat next to three that do. */}
             {metrics.zombies > 0 && (
               <div className="wsl-chip wsl-chip--warn">
                 <Skull size={12} />
@@ -282,7 +264,6 @@ export default function WslDashboardTab({ distros, onReload }: {
             </div>
           </div>
 
-          {/* ── Detail columns ──────────────────────────────────────── */}
           <div className="wsl-dash-cols">
             <div className="wsl-dash-section">
               <div className="wsl-dash-section-head">
