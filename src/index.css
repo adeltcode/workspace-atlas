@@ -231,6 +231,7 @@ ul, ol { list-style: none; }
 ::-webkit-scrollbar-track   { background: transparent; }
 ::-webkit-scrollbar-thumb   { background: var(--color-border); border-radius: var(--radius-md); }
 ::-webkit-scrollbar-thumb:hover { background: var(--color-text-tertiary); }
+::-webkit-scrollbar-corner  { background: transparent; }
 
 .app-shell {
   display: flex;
@@ -7450,7 +7451,8 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .shortcut-keys { display: flex; gap: 3px; flex-shrink: 0; width: 92px; }
 .shortcut-desc { flex: 1; min-width: 0; }
 
-.holder-port { width: 88px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.holder-port { font-weight: 600; font-variant-numeric: tabular-nums; }
+.holder-code { font-family: var(--font-mono); font-size: var(--text-xs); }
 .holder-path {
   display: block;
   max-width: 420px;

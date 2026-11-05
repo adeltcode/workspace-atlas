@@ -1,16 +1,69 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { useAppStore } from '../../store/appStore'
 import { useVisiblePoll } from '../../hooks/useVisiblePoll'
+import { bytesToHuman, timeAgo } from '../../utils/format'
 import { Button, EmptyState, ErrorBanner, SearchField, Segmented, SegmentedItem, SheetHead, Tag, Toolbar } from '../../components/ui'
+import { ColumnsMenu, TableHead, useTableColumns, type TableColumn } from '../../components/TableColumns'
 import * as api from './api'
 import type { PortEntry, PortList } from './api'
-import { filterPorts, type PortFilter } from './rules'
-import { CloseProgramDialog, HolderAction, ProgramCell } from './HolderBits'
+import { addressList, filterPorts, reachableLabel, runsIn, sinceTitle, sortPorts, type PortFilter, type PortSortKey } from './rules'
+import { CloseProgramDialog, HolderAction } from './HolderBits'
 
 const POLL_MS = 10_000
 // A program's sockets close just after it exits, so a list read straight away can still show them.
 const AFTER_CLOSE_MS = 400
+
+/** The defaults that start visible add up to about 930, which fits the table at a 1280px window. */
+const COLUMNS: TableColumn<PortSortKey>[] = [
+  { key: 'port',      label: 'Port',            width: 76,  sort: 'port' },
+  { key: 'program',   label: 'Program',         width: 180, sort: 'program' },
+  { key: 'pid',       label: 'PID',             width: 76,  sort: 'pid',       hideable: true },
+  { key: 'runs-in',   label: 'Runs in',         width: 150, sort: 'runs-in',   hideable: true },
+  { key: 'reachable', label: 'Reachable from',  width: 144, sort: 'reachable', hideable: true },
+  { key: 'since',     label: 'Listening since', width: 140, sort: 'since',     hideable: true },
+  { key: 'command',   label: 'Command line',    width: 320, sort: 'command',   hideable: true },
+  { key: 'folder',    label: 'Working folder',  width: 240, sort: 'folder',    hideable: true },
+  { key: 'memory',    label: 'Memory',          width: 90,  sort: 'memory',    hideable: true },
+  { key: 'parent',    label: 'Started by',      width: 130, sort: 'parent',    hideable: true },
+  { key: 'address',   label: 'Addresses',       width: 170, sort: 'address',   hideable: true },
+  { key: 'path',      label: 'File path',       width: 280, sort: 'path',      hideable: true },
+  { key: 'actions',   label: 'Action',          width: 160 },
+]
+
+const Dash = () => <span className="pkg-dash">-</span>
+
+function PortCell({ column, entry, onClose }: { column: string; entry: PortEntry; onClose: () => void }) {
+  const text = (value: string | null, className = 'img-td img-age') => (
+    <td className={className} title={value ?? undefined}>{value ?? <Dash />}</td>
+  )
+  switch (column) {
+    case 'port':      return <td className="img-td holder-port">{entry.port}</td>
+    case 'program':   return <td className="img-td img-repo" title={entry.process.path ?? entry.process.name}>{entry.process.name}</td>
+    case 'pid':       return <td className="img-td img-age num">{entry.process.pid || <Dash />}</td>
+    case 'runs-in':   return text(runsIn(entry))
+    case 'reachable': return <td className="img-td img-age" title={addressList(entry)}>{reachableLabel(entry)}</td>
+    case 'since':
+      return (
+        <td className="img-td img-age num" title={sinceTitle(entry)}>
+          {entry.listening_since === null ? <Dash /> : timeAgo(entry.listening_since * 1000)}
+        </td>
+      )
+    case 'command':   return text(entry.details.command, 'img-td img-age holder-code')
+    case 'folder':    return text(entry.details.folder)
+    case 'memory':
+      return <td className="img-td img-age num">{entry.details.memory_bytes === null ? <Dash /> : bytesToHuman(entry.details.memory_bytes)}</td>
+    case 'parent':    return text(entry.details.parent)
+    case 'address':   return text(addressList(entry))
+    case 'path':      return text(entry.process.path)
+    default:
+      return (
+        <td className="img-td holder-actions">
+          <HolderAction process={entry.process} holds={`holding port ${entry.port}`} onClose={onClose} />
+        </td>
+      )
+  }
+}
 
 export default function PortsView() {
   const [list, setList] = useState<PortList | null>(null)
@@ -19,8 +72,20 @@ export default function PortsView() {
   const [closeError, setCloseError] = useState<unknown>(null)
   const [query, setQuery] = useState('')
   const [show, setShow] = useState<PortFilter>('programs')
+  const [sortKey, setSortKey] = useState<PortSortKey>('port')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [closing, setClosing] = useState<PortEntry | null>(null)
   const [result, setResult] = useState<{ tone: 'ok' | 'warn'; text: string } | null>(null)
+
+  const portColumns = useAppStore(s => s.portColumns)
+  const setPortColumns = useAppStore(s => s.setPortColumns)
+  const table = useTableColumns<PortSortKey>({
+    columns: COLUMNS,
+    fill: 'program',
+    prefs: portColumns,
+    read: () => useAppStore.getState().portColumns,
+    save: setPortColumns,
+  })
 
   const load = useCallback(async () => {
     loading.current = true
@@ -40,7 +105,14 @@ export default function PortsView() {
   useEffect(() => { load() }, [load])
   useVisiblePoll(() => { if (!loading.current) load() }, POLL_MS, !closing)
 
-  const all = list?.entries ?? []
+  const handleSort = (key: PortSortKey) => {
+    if (key === sortKey) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
+    else { setSortKey(key); setSortDir('asc') }
+  }
+
+  const all = useMemo(() => list?.entries ?? [], [list])
+  const rows = useMemo(() => sortPorts(filterPorts(all, query, show), sortKey, sortDir), [all, query, show, sortKey, sortDir])
+
   const holdsText = ({ process }: PortEntry) => {
     const ports = all.filter(e => e.process.pid === process.pid && e.process.distro === process.distro).map(e => e.port)
     return `Holds ${ports.length === 1 ? 'port' : 'ports'} ${ports.join(', ')}`
@@ -60,8 +132,6 @@ export default function PortsView() {
       : { tone: 'ok', text: `Closed ${closed.process.name}. Port ${closed.port} is free.` })
   }
 
-  const rows = filterPorts(all, query, show)
-
   return (
     <div className="view-container">
       <div className="page-head">
@@ -72,7 +142,17 @@ export default function PortsView() {
           ]}
           title="Ports"
           subtitle="Programs listening for connections on this PC, in Docker, and in running WSL distros."
-          actions={<Button onClick={() => { setResult(null); load() }}><RefreshCw size={12} /> Refresh</Button>}
+          actions={
+            <>
+              <ColumnsMenu
+                columns={COLUMNS}
+                hidden={portColumns.hidden}
+                onToggle={table.toggle}
+                onReset={() => setPortColumns(useAppStore.getInitialState().portColumns)}
+              />
+              <Button onClick={() => { setResult(null); load() }}><RefreshCw size={12} /> Refresh</Button>
+            </>
+          }
         />
       </div>
 
@@ -83,7 +163,7 @@ export default function PortsView() {
               value={query}
               onChange={setQuery}
               placeholder="Search ports"
-              label="Search by port, program, or PID"
+              label="Search by port, program, PID, command, or folder"
             />
             <Segmented label="Show ports">
               <SegmentedItem active={show === 'programs'} count={filterPorts(all, '', 'programs').length} onClick={() => setShow('programs')}>
@@ -108,7 +188,7 @@ export default function PortsView() {
             <EmptyState
               title={query ? 'No ports match this search' : 'No programs are listening'}
               description={query
-                ? 'Search by port number, program name, or PID, or clear the search to see every port.'
+                ? 'Search by port number, program name, PID, command, or folder, or clear the search to see every port.'
                 : 'When a server or dev tool starts listening, it appears here.'}
               actions={query ? <Button onClick={() => setQuery('')}>Clear search</Button> : undefined}
             />
@@ -116,32 +196,20 @@ export default function PortsView() {
 
           {rows.length > 0 && (
             <div className="img-table-wrap">
-              <table className="img-table">
-                <thead>
-                  <tr>
-                    <th className="img-th holder-port">Port</th>
-                    <th className="img-th">Program</th>
-                    <th className="img-th">PID</th>
-                    <th className="img-th">Reachable from</th>
-                    <th className="img-th holder-actions">Action</th>
-                  </tr>
-                </thead>
+              <table className="img-table pkg-table" style={{ width: table.tableWidth }}>
+                <TableHead table={table} sortKey={sortKey} sortDir={sortDir} onSort={handleSort} actionsClass="holder-actions" />
                 <tbody>
                   {rows.map(e => (
                     <tr key={`${e.port}-${e.process.pid}-${e.process.name}`} className="img-row">
-                      <td className="img-td holder-port">{e.port}</td>
-                      <td className="img-td"><ProgramCell process={e.process} /></td>
-                      <td className="img-td img-age num">{e.process.pid || '-'}</td>
-                      <td className="img-td img-age" title={e.addresses.join(', ')}>
-                        {e.reachable === 'this-pc' ? 'This PC only' : 'Your network'}
-                      </td>
-                      <td className="img-td holder-actions">
-                        <HolderAction
-                          process={e.process}
-                          holds={`holding port ${e.port}`}
+                      {table.visible.map(c => (
+                        <PortCell
+                          key={c.key}
+                          column={c.key}
+                          entry={e}
                           onClose={() => { setCloseError(null); setResult(null); setClosing(e) }}
                         />
-                      </td>
+                      ))}
+                      {table.fillFixed && <td className="img-td" aria-hidden="true" />}
                     </tr>
                   ))}
                 </tbody>

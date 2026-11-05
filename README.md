@@ -81,7 +81,7 @@ Every disk or Docker operation prints the real command it runs, so you can check
 
 ### Tools
 
-- **Ports**: see what is listening on each TCP port, on Windows, in Docker containers, and in running WSL distros, and whether other devices can reach it. Close a stuck program after you confirm
+- **Ports**: see what is listening on each TCP port, on Windows, in Docker containers, and in running WSL distros, and whether other devices can reach it. Close a stuck program after you confirm. The table can be sorted, resized, and given more columns: when the port started listening, command line, working folder, memory, the program that started it, addresses, and file path
 - **File locks**: when Windows won't let you delete or move something, see which program holds that file or folder, and close it after you confirm
 
 Atlas won't close Windows, Docker, or WSL's own programs, or anything that needs administrator rights.

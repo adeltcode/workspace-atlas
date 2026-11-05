@@ -18,33 +18,86 @@ const compile = (path, shims = {}) => {
 
 const rules = compile('../src/features/holders/rules.ts')
 
-const proc = (name, pid, owner = 'app', distro = null) => ({ pid, name, path: null, started_at: 1, owner, distro })
-const entry = (port, process) => ({ port, addresses: ['127.0.0.1'], reachable: 'this-pc', process })
+const proc = (name, pid, owner = 'app', distro = null, path = null) => ({ pid, name, path, started_at: 1, owner, distro })
+const entry = (port, process, more = {}) => ({
+  port,
+  addresses: ['127.0.0.1'],
+  reachable: 'this-pc',
+  listening_since: null,
+  source: process.distro ? 'wsl' : process.owner === 'docker' ? 'docker' : 'windows',
+  details: { command: null, folder: null, memory_bytes: null, parent: null },
+  process,
+  ...more,
+})
 const entries = [
   entry(53, proc('System service', 0, 'distro-system', 'kali')),
   entry(135, proc('svchost.exe', 900, 'windows')),
   entry(903, proc('vmware-authd.exe', 950, 'admin')),
-  entry(3000, proc('node.exe', 4100)),
-  entry(5173, proc('node', 4200, 'wsl', 'kali')),
-  entry(8081, { ...proc('web-nginx', 0, 'docker'), path: 'Docker container' }),
+  entry(3000, proc('node.exe', 4100, 'app', null, 'C:\\node\\node.exe'), {
+    listening_since: 500,
+    details: { command: 'node vite.js', folder: 'C:\\dev\\shop', memory_bytes: 2000, parent: 'cmd.exe' },
+  }),
+  entry(5173, proc('node', 4200, 'wsl', 'kali'), {
+    listening_since: 900,
+    details: { command: 'node server.js', folder: '/home/me/api', memory_bytes: 9000, parent: 'bash' },
+  }),
+  entry(8081, proc('web-nginx', 0, 'docker'), { listening_since: 100, details: { command: 'nginx:alpine', folder: null, memory_bytes: null, parent: null } }),
   entry(49664, proc('Unknown program', 4400, 'unknown')),
 ]
 const ports = (...args) => rules.filterPorts(entries, ...args).map(e => e.port)
+const sorted = (key, dir) => rules.sortPorts(entries, key, dir).map(e => e.port)
 
 test('the Programs filter hides system rows, and All keeps them', () => {
   assert.deepEqual(ports('', 'programs'), [903, 3000, 5173, 8081])
   assert.deepEqual(ports('', 'all'), [53, 135, 903, 3000, 5173, 8081, 49664])
 })
 
-test('search finds a port, a program, a PID, or where it runs', () => {
+test('search finds a port, a program, a PID, where it runs, its command, or its folder', () => {
   assert.deepEqual(ports('3000', 'programs'), [3000])
   assert.deepEqual(ports(':5173', 'programs'), [5173])
   assert.deepEqual(ports(' NODE ', 'programs'), [3000, 5173])
   assert.deepEqual(ports('4200', 'programs'), [5173])
   assert.deepEqual(ports('docker', 'programs'), [8081])
+  assert.deepEqual(ports('kali', 'programs'), [5173])
+  assert.deepEqual(ports('vite.js', 'programs'), [3000])
+  assert.deepEqual(ports('dev\\shop', 'programs'), [3000])
   assert.deepEqual(ports('svchost', 'programs'), [])
   assert.deepEqual(ports('svchost', 'all'), [135])
   assert.deepEqual(ports('0', 'programs'), [], 'a container has no PID to match')
+})
+
+test('every column sorts, and unknown values stay last in both directions', () => {
+  assert.deepEqual(sorted('port', 'desc'), [49664, 8081, 5173, 3000, 903, 135, 53])
+  assert.deepEqual(sorted('since', 'asc').slice(0, 3), [8081, 3000, 5173])
+  assert.deepEqual(sorted('since', 'desc').slice(0, 3), [5173, 3000, 8081])
+  assert.deepEqual(sorted('since', 'desc').slice(3), [53, 135, 903, 49664], 'ties fall back to the port')
+  assert.deepEqual(sorted('memory', 'desc').slice(0, 2), [5173, 3000])
+  assert.deepEqual(sorted('memory', 'asc').slice(0, 2), [3000, 5173])
+  assert.deepEqual(sorted('pid', 'asc').slice(0, 2), [135, 903])
+  assert.deepEqual(sorted('pid', 'asc').slice(-2), [53, 8081], 'a container or nameless service has no PID')
+  assert.equal(sorted('command', 'asc')[0], 8081)
+  for (const key of ['program', 'runs-in', 'reachable', 'folder', 'parent', 'address', 'path']) {
+    assert.equal(rules.sortPorts(entries, key, 'asc').length, entries.length, key)
+  }
+})
+
+test('sorting leaves the list it was given alone', () => {
+  const before = entries.map(e => e.port)
+  rules.sortPorts(entries, 'port', 'desc')
+  assert.deepEqual(entries.map(e => e.port), before)
+})
+
+test('where a port runs reads plainly', () => {
+  assert.equal(rules.runsIn(entries[3]), 'Windows')
+  assert.equal(rules.runsIn(entries[4]), 'WSL: kali')
+  assert.equal(rules.runsIn(entries[5]), 'Docker')
+})
+
+test('the time says what it measures, and an unknown time has no explanation', () => {
+  assert.doesNotMatch(rules.sinceTitle(entries[3]), /started/)
+  assert.match(rules.sinceTitle(entries[4]), /when the program started/)
+  assert.match(rules.sinceTitle(entries[5]), /when the container started/)
+  assert.equal(rules.sinceTitle(entries[0]), undefined)
 })
 
 test('only programs we can really close get a Close button', () => {

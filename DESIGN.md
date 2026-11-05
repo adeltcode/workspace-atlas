@@ -398,7 +398,7 @@ Use these for anything that switches panels. A row of plain buttons with an `.ac
 
 ### Table
 
-There is no shared table component. Tables use the `.img-table` classes inside `.img-table-wrap`.
+There is no shared table component. Tables use the `.img-table` classes inside `.img-table-wrap`. For resizable columns, sorting, and a Columns menu, add `.pkg-table` and use `useTableColumns`, `TableHead`, and `ColumnsMenu` from `src/components/TableColumns.tsx`, with the choices saved in the store.
 
 | Part | Style |
 |---|---|

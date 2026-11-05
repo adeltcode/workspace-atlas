@@ -12,10 +12,25 @@ export interface ProcessInfo {
   distro: string | null
 }
 
+export interface PortDetails {
+  /** The command line. For a container, its image. */
+  command: string | null
+  /** The working folder. For a container, its Compose project's folder. */
+  folder: string | null
+  memory_bytes: number | null
+  /** The program that started this one. */
+  parent: string | null
+}
+
 export interface PortEntry {
   port: number
   addresses: string[]
   reachable: 'this-pc' | 'network'
+  /** Seconds since 1970. When Windows opened the socket; for Docker and WSL, when the container or
+   *  program started. */
+  listening_since: number | null
+  source: 'windows' | 'docker' | 'wsl'
+  details: PortDetails
   process: ProcessInfo
 }
 

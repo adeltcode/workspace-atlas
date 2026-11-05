@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { RefreshCw, Download, CircleArrowUp, Trash2, Columns3, Check, RotateCcw } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { RefreshCw, Download, CircleArrowUp, Trash2 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../../store/appStore'
-import { SortHeader } from '../docker/components/TableBits'
 import { Modal } from '../wsl/components/Dialog'
 import {
   SheetHead, Prerequisite, Button, SearchField, ErrorBanner, Toolbar, EmptyState, Tag,
 } from '../../components/ui'
+import { ColumnsMenu, TableHead, useTableColumns, type TableColumn } from '../../components/TableColumns'
 import * as api from './api'
 import type { Package, PackageUpdate, SourceResult, SourceUpdates, UninstallCheck } from './types'
 
@@ -14,7 +14,7 @@ type SortKey = 'name' | 'version' | 'updated' | 'publisher' | 'source'
 
 /** Table columns in display order, with default widths in px. Name and Actions
  *  cannot be hidden. */
-const COLUMNS: { key: string; label: string; width: number; sort?: SortKey; hideable?: boolean }[] = [
+const COLUMNS: TableColumn<SortKey>[] = [
   // The defaults that start visible add up to 930, which fits the table at a
   // 1280px window. Name takes whatever is left over.
   { key: 'name',      label: 'Name',      width: 180, sort: 'name' },
@@ -27,8 +27,6 @@ const COLUMNS: { key: string; label: string; width: number; sort?: SortKey; hide
   { key: 'source',    label: 'Source',    width: 128, sort: 'source', hideable: true },
   { key: 'actions',   label: 'Actions',   width: 96 },
 ]
-const MIN_WIDTH = 60
-const MAX_WIDTH = 900
 
 /** Local calendar date as YYYY-MM-DD. */
 function formatDate(secs: number): string {
@@ -85,37 +83,14 @@ export default function PackagesView() {
 
   const pkgColumns    = useAppStore(s => s.pkgColumns)
   const setPkgColumns = useAppStore(s => s.setPkgColumns)
-  // Widths while a drag is in progress, so the saved settings are written once
-  // when it ends rather than on every pointer move.
-  const [dragWidths, setDragWidths] = useState<Record<string, number> | null>(null)
-  const widths  = dragWidths ?? pkgColumns.widths
-  const visible = COLUMNS.filter(c => !pkgColumns.hidden.includes(c.key))
-  const shows   = (key: string) => visible.some(c => c.key === key)
-  const widthOf = (c: (typeof COLUMNS)[number]) => widths[c.key] ?? c.width
-  // Name fills the spare width until it is resized, then a filler column does.
-  const nameFixed  = widths.name !== undefined
-  const tableWidth = visible.reduce((sum, c) => sum + widthOf(c), 0)
-
-  // Both read the store at call time: two clicks can land before a re-render.
-  const resizeColumn = (key: string, width: number | null, done: boolean) => {
-    const saved = useAppStore.getState().pkgColumns
-    const next = { ...saved.widths }
-    if (width === null) delete next[key]
-    else next[key] = Math.round(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, width)))
-    if (done) {
-      setPkgColumns({ ...saved, widths: next })
-      setDragWidths(null)
-    } else {
-      setDragWidths(next)
-    }
-  }
-  const toggleColumn = (key: string) => {
-    const saved = useAppStore.getState().pkgColumns
-    setPkgColumns({
-      ...saved,
-      hidden: saved.hidden.includes(key) ? saved.hidden.filter(k => k !== key) : [...saved.hidden, key],
-    })
-  }
+  const table = useTableColumns<SortKey>({
+    columns: COLUMNS,
+    fill: 'name',
+    prefs: pkgColumns,
+    read: () => useAppStore.getState().pkgColumns,
+    save: setPkgColumns,
+  })
+  const { shows } = table
 
   const scan = useCallback(async () => {
     setLoading(true)
@@ -393,8 +368,9 @@ export default function PackagesView() {
           <>
             {found.length > 0 && (
               <ColumnsMenu
+                columns={COLUMNS}
                 hidden={pkgColumns.hidden}
-                onToggle={toggleColumn}
+                onToggle={table.toggle}
                 onReset={() => setPkgColumns(useAppStore.getInitialState().pkgColumns)}
               />
             )}
@@ -514,36 +490,8 @@ export default function PackagesView() {
             />
           ) : (
             <div className="img-table-wrap">
-              <table className="img-table pkg-table" style={{ width: tableWidth }}>
-                <colgroup>
-                  {visible.map(c => (
-                    <col key={c.key} style={c.key === 'name' && !nameFixed ? undefined : { width: widthOf(c) }} />
-                  ))}
-                  {nameFixed && <col />}
-                </colgroup>
-                <thead>
-                  <tr>
-                    {visible.map(c => {
-                      const handle = (
-                        <ResizeHandle
-                          label={c.label}
-                          width={widthOf(c)}
-                          onResize={(w, done) => resizeColumn(c.key, w, done)}
-                        />
-                      )
-                      return c.sort ? (
-                        <SortHeader key={c.key} label={c.label} col={c.sort} sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>
-                          {handle}
-                        </SortHeader>
-                      ) : (
-                        <th key={c.key} className={clsx('img-th', c.key === 'actions' && 'ctr-th-actions')}>
-                          {c.label}{handle}
-                        </th>
-                      )
-                    })}
-                    {nameFixed && <th className="img-th" aria-hidden="true" />}
-                  </tr>
-                </thead>
+              <table className="img-table pkg-table" style={{ width: table.tableWidth }}>
+                <TableHead table={table} sortKey={sortKey} sortDir={sortDir} onSort={handleSort} actionsClass="ctr-th-actions" />
                 <tbody>
                   {rows.map((p, i) => (
                     // winget lists the same id more than once (two 7-Zip builds
@@ -599,7 +547,7 @@ export default function PackagesView() {
                           </Button>
                         )}
                       </td>
-                      {nameFixed && <td className="img-td" />}
+                      {table.fillFixed && <td className="img-td" />}
                     </tr>
                   ))}
                 </tbody>
@@ -672,100 +620,6 @@ export default function PackagesView() {
             )}
           </div>
         </Modal>
-      )}
-    </div>
-  )
-}
-
-/** The right edge of a header cell. Drag it, or focus it and press the arrow
- *  keys, to resize the column. Double-click restores the default width. */
-function ResizeHandle({ label, width, onResize }: {
-  label: string
-  width: number
-  /** `null` resets to the default. `done` is false while a drag is moving. */
-  onResize: (width: number | null, done: boolean) => void
-}) {
-  const cellWidth = (el: HTMLElement) => el.parentElement?.getBoundingClientRect().width ?? width
-
-  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return
-    e.preventDefault()
-    const el = e.currentTarget
-    const x0 = e.clientX
-    const w0 = cellWidth(el)
-    let last = w0
-    const move = (ev: PointerEvent) => { last = w0 + ev.clientX - x0; onResize(last, false) }
-    const end = () => {
-      el.removeEventListener('pointermove', move)
-      el.removeEventListener('lostpointercapture', end)
-      onResize(last, true)
-    }
-    el.setPointerCapture(e.pointerId)
-    el.addEventListener('pointermove', move)
-    el.addEventListener('lostpointercapture', end)
-  }
-
-  return (
-    <div
-      className="col-resize"
-      role="separator"
-      aria-orientation="vertical"
-      aria-label={`Resize ${label} column`}
-      aria-valuenow={Math.round(width)}
-      aria-valuemin={MIN_WIDTH}
-      aria-valuemax={MAX_WIDTH}
-      tabIndex={0}
-      onPointerDown={onPointerDown}
-      // The header cell sorts on click, and a resize is not a sort.
-      onClick={e => e.stopPropagation()}
-      onDoubleClick={e => { e.stopPropagation(); onResize(null, true) }}
-      onKeyDown={e => {
-        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
-        e.preventDefault()
-        onResize(cellWidth(e.currentTarget) + (e.key === 'ArrowRight' ? 16 : -16), true)
-      }}
-    />
-  )
-}
-
-function ColumnsMenu({ hidden, onToggle, onReset }: {
-  hidden: string[]
-  onToggle: (key: string) => void
-  onReset: () => void
-}) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
-    const onKey  = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
-  }, [open])
-
-  return (
-    <div className="menu" ref={ref}>
-      <Button onClick={() => setOpen(o => !o)} aria-haspopup="menu" aria-expanded={open}>
-        <Columns3 size={13} /> Columns
-      </Button>
-      {open && (
-        <div className="menu-panel" role="menu" aria-label="Columns">
-          {COLUMNS.filter(c => c.hideable).map(c => {
-            const on = !hidden.includes(c.key)
-            return (
-              <button key={c.key} className="menu-item" role="menuitemcheckbox" aria-checked={on} onClick={() => onToggle(c.key)}>
-                {on ? <Check size={14} /> : <span className="menu-check" />}
-                {c.label}
-              </button>
-            )
-          })}
-          <div className="menu-sep" role="separator" />
-          <button className="menu-item" role="menuitem" onClick={() => { onReset(); setOpen(false) }}>
-            <RotateCcw size={14} /> Reset columns
-          </button>
-        </div>
       )}
     </div>
   )
