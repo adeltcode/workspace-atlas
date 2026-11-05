@@ -11,6 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/adeltcode/workspace-atlas/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/adeltcode/workspace-atlas"></a>
+  <a href="#project-status"><img alt="Status: beta" src="https://img.shields.io/badge/status-beta-E6833A"></a>
   <a href="https://github.com/adeltcode/workspace-atlas/actions/workflows/ci.yml"><img alt="Test status" src="https://github.com/adeltcode/workspace-atlas/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/github/license/adeltcode/workspace-atlas"></a>
   <img alt="Platform: Windows x64" src="https://img.shields.io/badge/platform-Windows%20x64-0078D4">
@@ -34,6 +35,9 @@
 Workspace Atlas is a desktop app for keeping a Windows dev machine in order. Use it to clean up Docker, manage WSL distros, and keep track of installed packages, instead of juggling separate scripts and commands.
 
 Every disk or Docker operation prints the real command it runs, so you can check it or copy it. No telemetry, no account.
+
+> [!NOTE]
+> Workspace Atlas is in beta. Features can change between versions, and some parts haven't been tested on a real system yet. See [Project status](#project-status).
 
 ## Features
 
@@ -220,7 +224,7 @@ GitHub runs both on every push.
 
 1. Set the new version in `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json`.
 2. Run `cargo update --workspace --manifest-path src-tauri/Cargo.toml` to update the lockfile, then commit.
-3. Push a matching tag, such as `v1.0.1`.
+3. Push a matching tag, such as `v0.2.0`.
 
 GitHub then runs the tests, builds the installer, and creates a draft release with the installer's checksum. Check the draft, add your notes, and publish it.
 
@@ -252,7 +256,9 @@ tests/                    Node tests that check the frontend source
 
 ## Project status
 
-Workspace Atlas is new: 1.0.0 was the first release. Two Optimize cases haven't been tested on a real system yet: Windows Home, which uses `diskpart`, and a disk that is still in use.
+Workspace Atlas is in beta, so its version numbers start with 0. Version 1.0.0 will come once the planned features are built and tested.
+
+Two Optimize cases haven't been tested on a real system yet: Windows Home, which uses `diskpart`, and a disk that is still in use.
 
 ## Contributing
 
