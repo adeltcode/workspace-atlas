@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+      - name: Install pnpm
+        run: npm install -g pnpm@11.5.0
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Check the tag matches the app version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ($env:TAG -ne "v$version") { throw "Tag $env:TAG does not match app version $version" }
+      - name: Frontend tests
+        run: node --test tests/
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Build the installer
+        run: pnpm tauri build --bundles nsis
+      - name: Create a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          $installer = Get-Item 'src-tauri/target/release/bundle/nsis/*_x64-setup.exe'
+          $hash = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash
+          $notes = @(
+            'Download the `x64-setup.exe` file below and run it. The installer is not code signed, so Windows shows "Windows protected your PC". Click **More info**, then **Run anyway**.'
+            ''
+            'To check your download, open PowerShell in the download folder and run `Get-FileHash .\Workspace*x64-setup.exe`. The result should be:'
+            ''
+            "``$hash``"
+          ) -join "`n"
+          gh release create $env:TAG $installer.FullName --draft --verify-tag --generate-notes --title "Workspace Atlas $($env:TAG.TrimStart('v'))" --notes $notes

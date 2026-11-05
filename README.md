@@ -11,6 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/adeltcode/workspace-atlas/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/adeltcode/workspace-atlas"></a>
+  <a href="https://github.com/adeltcode/workspace-atlas/actions/workflows/ci.yml"><img alt="Test status" src="https://github.com/adeltcode/workspace-atlas/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/github/license/adeltcode/workspace-atlas"></a>
   <img alt="Platform: Windows x64" src="https://img.shields.io/badge/platform-Windows%20x64-0078D4">
   <a href="https://v2.tauri.app"><img alt="Tauri 2" src="https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white"></a>
@@ -213,9 +214,20 @@ Frontend tests (run `pnpm install` first):
 node --test tests/
 ```
 
+GitHub runs both on every push.
+
+### Release a new version
+
+1. Set the new version in `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json`.
+2. Run `cargo update --workspace --manifest-path src-tauri/Cargo.toml` to update the lockfile, then commit.
+3. Push a matching tag, such as `v1.0.1`.
+
+GitHub then runs the tests, builds the installer, and creates a draft release with the installer's checksum. Check the draft, add your notes, and publish it.
+
 ### Project layout
 
 ```text
+.github/workflows/        Tests on every push, draft release on every version tag
 src/                      React frontend
   components/             Shared UI parts
   features/docker/        Docker module (api, hooks, types, components)
