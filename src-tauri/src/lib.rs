@@ -1,6 +1,7 @@
 mod config;
 mod error;
 mod docker;
+mod holders;
 mod packages;
 mod shell;
 mod system;
@@ -77,6 +78,10 @@ pub fn run() {
             docker::docker_compose_config,
             docker::compose_logs_watch,
             docker::compose_logs_stop,
+            holders::ports_list,
+            holders::locks_find,
+            holders::process_close,
+            holders::pick_any_file,
             shell::shell_run,
             shell::shell_kill,
             system::get_system_metrics,

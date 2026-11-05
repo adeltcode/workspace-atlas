@@ -7450,6 +7450,22 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .shortcut-keys { display: flex; gap: 3px; flex-shrink: 0; width: 92px; }
 .shortcut-desc { flex: 1; min-width: 0; }
 
+.holder-port { width: 88px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.holder-path {
+  display: block;
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-2xs);
+  color: var(--color-text-tertiary);
+  user-select: text;
+}
+.holder-actions { width: 124px; text-align: right; white-space: nowrap; }
+.holder-note { font-size: var(--text-xs); color: var(--color-text-tertiary); }
+.holder-summary { font-size: var(--text-xs); color: var(--color-text-secondary); overflow-wrap: anywhere; user-select: text; }
+.toolbar > .holder-target { flex: 1 1 320px; max-width: none; }
+
 /* Not a blanket kill: the opacity pulses are the only sign that a distro is booting or a prune
    is running. Keyframes are redefined by name, so every rule using them gets the reduced version. */
 @media (prefers-reduced-motion: reduce) {

@@ -1013,7 +1013,7 @@ fn probe_distro(distro: &str, script: &str) -> Result<String, AtlasError> {
 
 /// Like `wait_with_output`, but kills the child and returns `None` once `limit` passes.
 /// That stops `wsl.exe`; a process stuck inside the distro keeps running.
-fn output_within(
+pub(crate) fn output_within(
     mut child: std::process::Child,
     limit: std::time::Duration,
 ) -> std::io::Result<Option<std::process::Output>> {
@@ -1064,7 +1064,7 @@ fn output_within(
 /// Prefers bash but falls back to sh, so busybox-based distros (Alpine,
 /// docker-desktop) still run the POSIX-compatible probe scripts. Scripts that
 /// genuinely need bash must guard themselves (see PROFILE_SCRIPT).
-fn run_in_distro_as(
+pub(crate) fn run_in_distro_as(
     distro: &str,
     user: Option<&str>,
     script: &str,
@@ -2081,7 +2081,7 @@ pub async fn wsl_service_detail(
 }
 
 /// Single-quote a string for safe embedding in a bash command.
-fn shell_quote(s: &str) -> String {
+pub(crate) fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 

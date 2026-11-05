@@ -1,4 +1,4 @@
-import { LayoutDashboard, Box, HardDrive, Package, Settings, Keyboard } from 'lucide-react'
+import { LayoutDashboard, Box, HardDrive, Package, Plug, Lock, Settings, Keyboard } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore, type DockerTab, type WslView } from '../store/appStore'
 import { composeStatusLabel } from '../utils/format'
@@ -160,6 +160,26 @@ export default function Sidebar() {
             </button>
           </div>
         )}
+      </div>
+
+      <span className="rail-section">Tools</span>
+      <div className="rail-group">
+        <button
+          className={clsx('rail-item', activeView === 'ports' && 'active')}
+          onClick={() => setActiveView('ports')}
+          aria-current={activeView === 'ports' ? 'page' : undefined}
+        >
+          <span className="rail-icon"><Plug size={15} /></span>
+          <span className="rail-label">Ports</span>
+        </button>
+        <button
+          className={clsx('rail-item', activeView === 'locks' && 'active')}
+          onClick={() => setActiveView('locks')}
+          aria-current={activeView === 'locks' ? 'page' : undefined}
+        >
+          <span className="rail-icon"><Lock size={15} /></span>
+          <span className="rail-label">File locks</span>
+        </button>
       </div>
 
       <span className="rail-section">System</span>

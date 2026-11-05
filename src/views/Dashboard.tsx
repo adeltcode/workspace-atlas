@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Box, HardDrive, Package, Layers, Database, ChevronRight, RefreshCw } from 'lucide-react'
+import { Box, HardDrive, Package, Layers, Database, ChevronRight, RefreshCw, Wrench } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore, type ActivityEntry, type ActivityModule, type DockerTab } from '../store/appStore'
 import { useVisiblePoll } from '../hooks/useVisiblePoll'
@@ -8,7 +8,7 @@ import { bytesToHuman, timeAgo } from '../utils/format'
 import { SheetHead, SectionHead, EmptyState, Button, StatCard, StatRow } from '../components/ui'
 import { OutputDialog, OutputText } from '../components/CommandOutput'
 
-const MODULE_ICON: Record<ActivityModule, typeof Box> = { docker: Box, wsl: HardDrive, packages: Package }
+const MODULE_ICON: Record<ActivityModule, typeof Box> = { docker: Box, wsl: HardDrive, packages: Package, system: Wrench }
 
 /** Split "12.4GB (61%)" into the amount and the share, so the row can show the
  *  number large and the qualifier small. Docker gives us this as one string. */
