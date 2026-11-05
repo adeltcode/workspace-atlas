@@ -57,7 +57,7 @@ export interface LockReport {
 }
 
 export const portsList = () => invoke<PortList>('ports_list')
-export const locksFind = (path: string) => invoke<LockReport>('locks_find', { path })
+export const locksFind = (paths: string[]) => invoke<LockReport[]>('locks_find', { paths })
 export const processClose = (p: ProcessInfo) =>
   invoke<void>('process_close', { pid: p.pid, startedAt: p.started_at, name: p.name, distro: p.distro })
 export const pickAnyFile = () => invoke<string | null>('pick_any_file')

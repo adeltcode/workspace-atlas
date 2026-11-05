@@ -7463,10 +7463,38 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   color: var(--color-text-tertiary);
   user-select: text;
 }
+.holder-item { display: block; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .holder-actions { width: 124px; text-align: right; white-space: nowrap; }
 .holder-note { font-size: var(--text-xs); color: var(--color-text-tertiary); }
 .holder-summary { font-size: var(--text-xs); color: var(--color-text-secondary); overflow-wrap: anywhere; user-select: text; }
 .toolbar > .holder-target { flex: 1 1 320px; max-width: none; }
+
+.file-drop { position: relative; }
+.file-drop-cover {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-dropdown);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border: 2px dashed var(--color-accent);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-bg-primary) 90%, transparent);
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.file-drop-prompt {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-lg);
+}
 
 .sandbox-form { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); }
 .sandbox-option { display: flex; align-items: flex-start; gap: var(--space-2); font-size: var(--text-sm); color: var(--color-text-primary); }

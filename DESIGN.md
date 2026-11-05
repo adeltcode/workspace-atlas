@@ -432,6 +432,20 @@ Shows an error with `role="alert"`. A `busy` error also gets a button that opens
 
 Shows an optional icon, a title, a description, and actions, centered. The text should explain what belongs in the view and how to add it, not only say that it is empty.
 
+### FileDropZone
+
+Wraps an area that takes files and folders dragged in from outside the app, from `src/components/FileDropZone.tsx`. While a file is over the area, a dashed cover shows the label. HTML drop events do not work here, because Tauri takes file drags first.
+
+| Prop | Effect |
+|---|---|
+| `label` | The text on the cover. Say what the drop will do, such as "Drop to check for locks". |
+| `disabled` | Ignores drags and shows no cover. Set it while a dialog is open or work is running. |
+| `onDrop` | Gets every dropped path, and always at least one. The page decides what to do with more than one. |
+
+Put `FileDropPrompt` inside the zone while the area has nothing else to show. It is an `EmptyState` in a dashed box.
+
+Always offer another way to choose a path, such as a path field or a Browse button. Windows blocks these drags when the app runs as administrator.
+
 ### Prerequisite
 
 Shows that a module's tool is missing: a title, a description, optional numbered steps, the install command in `.cmd`, and actions. Use it for every missing tool, so they all look the same.
