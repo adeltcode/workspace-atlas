@@ -37,10 +37,10 @@
   /* ── One accent. Used for the primary action, the current selection and the
      focus ring. Never for decoration. --color-accent is the text and border
      value; --color-accent-fill is dark enough that white sits on it at 6.3:1. */
-  --color-accent:        #7c84e8;
+  --color-accent:        #8c94ee;
   --color-accent-fill:   #4c53c4;
   --color-accent-hover:  #959ced;
-  --color-accent-subtle: rgba(124,132,232,0.14);
+  --color-accent-subtle: rgba(140,148,238,0.12);
 
   /* ── State. These three say "this succeeded / take care / this failed" and
      nothing else. They are never chrome and never decoration. */
@@ -48,9 +48,9 @@
   --color-success-subtle: rgba(78,194,106,0.13);
   --color-warning:        #e0a63a;
   --color-warning-subtle: rgba(224,166,58,0.13);
-  --color-danger:         #f2665e;
+  --color-danger:         #f77f78;
   --color-danger-fill:    #b8362e;
-  --color-danger-subtle:  rgba(242,102,94,0.13);
+  --color-danger-subtle:  rgba(247,127,120,0.13);
 
   --color-on-brand:      #fff;
   --color-on-fill:       #0b0c0e;
@@ -222,7 +222,7 @@
   --syntax-string:     #7d5307;
   --syntax-bool:       #7b3fb5;
   --syntax-number:     #1f7a3d;
-  --syntax-env:        #a8551f;
+  --syntax-env:        #a5531e;
 }
 
 /* =============================================================
@@ -777,9 +777,10 @@ ul, ol { list-style: none; }
 }
 .btn--primary:hover:not(:disabled), .btn-primary:hover:not(:disabled),
 .btn-filled--accent:hover:not(:disabled) {
-  background: var(--color-accent-hover);
-  border-color: var(--color-accent-hover);
+  background: var(--color-accent-fill);
+  border-color: var(--color-accent-fill);
   color: var(--color-on-brand);
+  filter: brightness(1.12);
 }
 
 .btn--danger, .btn-filled--danger {
@@ -787,8 +788,13 @@ ul, ol { list-style: none; }
   border-color: var(--color-danger-fill);
   color: var(--color-on-brand);
 }
+/* Must restate the fill, or `.btn:hover` replaces it and white text sits on the hover ground. */
 .btn--danger:hover:not(:disabled),
-.btn-filled--danger:hover:not(:disabled) { filter: brightness(1.12); }
+.btn-filled--danger:hover:not(:disabled) {
+  background: var(--color-danger-fill);
+  border-color: var(--color-danger-fill);
+  filter: brightness(1.12);
+}
 
 /* Outlined danger. A destructive action that lives in a toolbar next to a
    filter must not carry the same weight as the confirm button in the dialog it
@@ -800,7 +806,7 @@ ul, ol { list-style: none; }
   color: var(--color-danger);
 }
 .btn--danger-outline:hover:not(:disabled), .btn-prune-unused:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--color-danger) 20%, transparent);
+  background: color-mix(in srgb, var(--color-danger) 18%, transparent);
   border-color: color-mix(in srgb, var(--color-danger) 45%, transparent);
   color: var(--color-danger);
 }
@@ -4004,13 +4010,13 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 
 /* Primary call-to-action: filled "Up" when nothing is running */
 .compose-lifecycle-btn--primary {
-  color: #fff;
+  color: var(--color-on-fill);
   background: var(--color-success);
   border-color: var(--color-success);
   font-weight: 600;
 }
 .compose-lifecycle-btn--primary:hover:not(:disabled) {
-  color: #fff;
+  color: var(--color-on-fill);
   background: color-mix(in srgb, var(--color-success) 88%, var(--color-bg-base));
   border-color: var(--color-success);
 }
