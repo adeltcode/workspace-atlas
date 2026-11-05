@@ -802,7 +802,8 @@ export default function ComposeTab({
         const projectCtrs = ctrs.filter(c => c.compose_project === projectName)
         if (projectCtrs.length > 0 && projectCtrs.every(c => c.state === 'running')) {
           const elapsed = Date.now() - startMs
-          const currentMeta = metadata[projectName] ?? emptyMeta()
+          // Read what is saved now: tags or notes may have changed during this wait.
+          const currentMeta = (await api.metadataLoad())[projectName] ?? emptyMeta()
           const updated = { ...currentMeta, startup_times: [...(currentMeta.startup_times ?? []).slice(-9), elapsed] }
           setMetadata(prev => ({ ...prev, [projectName]: updated }))
           api.metadataSaveProject(projectName, updated).catch(() => {})
