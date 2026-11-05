@@ -384,7 +384,7 @@ export function ConfirmDestructive({
 
         <div className="modal-actions">
           {escape && <div className="modal-actions-escape">{escape}</div>}
-          <Button onClick={onCancel} disabled={busy}>Cancel</Button>
+          <Button data-autofocus onClick={onCancel} disabled={busy}>Cancel</Button>
           <Button variant="danger" onClick={onConfirm} disabled={busy}>
             {busy ? busyLabel : confirmLabel}
           </Button>
