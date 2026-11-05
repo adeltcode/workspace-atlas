@@ -7499,6 +7499,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .sandbox-form { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); }
 .sandbox-option { display: flex; align-items: flex-start; gap: var(--space-2); font-size: var(--text-sm); color: var(--color-text-primary); }
 .sandbox-help { display: block; font-size: var(--text-xs); color: var(--color-text-secondary); }
+.sandbox-start { display: flex; gap: var(--space-2); }
 .sandbox-memory { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--color-text-primary); }
 .sandbox-folder { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
 .sandbox-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }

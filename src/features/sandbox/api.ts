@@ -20,6 +20,8 @@ export interface SandboxOptions extends SandboxSwitches {
   writable: boolean
   /** Null leaves the amount to Windows. */
   memory_mb: number | null
+  /** A file to copy in and open as soon as the sandbox is ready. */
+  try_file: string | null
 }
 
 export const sandboxStatus = () => invoke<SandboxStatus>('sandbox_status')

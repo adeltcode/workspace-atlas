@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AppWindow, FolderOpen, RefreshCw } from 'lucide-react'
+import { AppWindow, File, FolderOpen, RefreshCw } from 'lucide-react'
 import { useAppStore } from '../../store/appStore'
 import { useVisiblePoll } from '../../hooks/useVisiblePoll'
 import { Button, ConfirmDestructive, EmptyState, ErrorBanner, Panel, Prerequisite, SheetHead } from '../../components/ui'
+import { FileDropZone } from '../../components/FileDropZone'
+import { pickAnyFile } from '../holders/api'
 import { pickDirectory } from '../wsl/api'
 import * as api from './api'
 import type { SandboxStatus, SandboxSwitches } from './api'
@@ -63,15 +65,16 @@ export default function SandboxView() {
     return api.sandboxOpenWindow(id).catch(setActionError)
   }
 
-  const start = async () => {
+  const start = async (tryFile: string | null = null) => {
     const { setSandboxStarting, addActivity } = useAppStore.getState()
     const sharing = folder ? `${writable ? 'Can change' : 'Read-only'}: ${folder}` : 'No shared folder'
     const alsoOn = SWITCHES.filter(s => switches[s.key]).map(s => s.key).join(', ') || 'nothing'
-    const detail = `Network ${networking ? 'on' : 'off'}. ${sharing}. Also on: ${alsoOn}. Memory: ${memoryGb ? `${memoryGb} GB` : 'Windows default'}`
+    const memory = memoryGb ? `${memoryGb} GB` : 'Windows default'
+    const detail = `${tryFile ? `Tried: ${tryFile}. ` : ''}Network ${networking ? 'on' : 'off'}. ${sharing}. Also on: ${alsoOn}. Memory: ${memory}`
     setActionError(null)
     setSandboxStarting(true)
     try {
-      const id = await api.sandboxStart({ networking, folder, writable, ...switches, memory_mb: memoryGb && memoryGb * 1024 })
+      const id = await api.sandboxStart({ networking, folder, writable, ...switches, memory_mb: memoryGb && memoryGb * 1024, try_file: tryFile })
       addActivity({ module: 'system', action: 'Start sandbox', outcome: 'success', detail })
       await openWindow(id)
     } catch (e) {
@@ -81,6 +84,16 @@ export default function SandboxView() {
       setSandboxStarting(false)
       load()
     }
+  }
+
+  const chooseTryFile = async () => {
+    const picked = await pickAnyFile()
+    if (picked) start(picked)
+  }
+
+  const dropTryFile = (paths: string[]) => {
+    if (paths.length === 1) start(paths[0])
+    else setActionError('Drop one file at a time.')
   }
 
   const stop = async (id: string) => {
@@ -137,60 +150,67 @@ export default function SandboxView() {
 
         {status?.available && (
           <>
-            <Panel title="New sandbox">
-              <div className="panel-body sandbox-form">
-                <label className="sandbox-option">
-                  <input type="checkbox" checked={networking} onChange={e => setNetworking(e.target.checked)} />
-                  <span>
-                    Allow network access
-                    <span className="sandbox-help">Programs inside can reach the internet and your local network.</span>
-                  </span>
-                </label>
-
-                {SWITCHES.map(({ key, label, help }) => (
-                  <label key={key} className="sandbox-option">
-                    <input type="checkbox" checked={switches[key]} onChange={e => setSwitches({ ...switches, [key]: e.target.checked })} />
-                    <span>
-                      {label}
-                      <span className="sandbox-help">{help}</span>
-                    </span>
-                  </label>
-                ))}
-
-                <label className="sandbox-memory">
-                  Memory
-                  <select className="wslcfg-field-control" value={memoryGb ?? ''} onChange={e => setMemoryGb(e.target.value ? Number(e.target.value) : null)}>
-                    <option value="">Windows default</option>
-                    {MEMORY_GB.map(gb => <option key={gb} value={gb}>{gb} GB</option>)}
-                  </select>
-                </label>
-
-                <div className="sandbox-folder">
-                  <Button onClick={chooseFolder}><FolderOpen size={12} /> {folder ? 'Change folder' : 'Share a folder'}</Button>
-                  {folder && (
-                    <>
-                      <span className="holder-path" title={folder}>{folder}</span>
-                      <Button size="sm" variant="ghost" onClick={() => { setFolder(null); setWritable(false) }}>Remove</Button>
-                    </>
-                  )}
-                </div>
-
-                {folder && (
+            <FileDropZone label="Drop to open it in a new sandbox" disabled={starting || running.length > 0} onDrop={dropTryFile}>
+              <Panel title="New sandbox">
+                <div className="panel-body sandbox-form">
                   <label className="sandbox-option">
-                    <input type="checkbox" checked={writable} onChange={e => setWritable(e.target.checked)} />
+                    <input type="checkbox" checked={networking} onChange={e => setNetworking(e.target.checked)} />
                     <span>
-                      Let programs inside change this folder
-                      <span className="sandbox-help">The folder appears on the sandbox desktop. When this is on, programs inside can edit or delete your real files.</span>
+                      Allow network access
+                      <span className="sandbox-help">Programs inside can reach the internet and your local network.</span>
                     </span>
                   </label>
-                )}
 
-                <Button variant="primary" disabled={starting || running.length > 0} onClick={start}>
-                  {starting ? 'Starting…' : 'Start sandbox'}
-                </Button>
-                {running.length > 0 && <span className="sandbox-help">Windows runs one sandbox at a time. Stop this one to start another.</span>}
-              </div>
-            </Panel>
+                  {SWITCHES.map(({ key, label, help }) => (
+                    <label key={key} className="sandbox-option">
+                      <input type="checkbox" checked={switches[key]} onChange={e => setSwitches({ ...switches, [key]: e.target.checked })} />
+                      <span>
+                        {label}
+                        <span className="sandbox-help">{help}</span>
+                      </span>
+                    </label>
+                  ))}
+
+                  <label className="sandbox-memory">
+                    Memory
+                    <select className="wslcfg-field-control" value={memoryGb ?? ''} onChange={e => setMemoryGb(e.target.value ? Number(e.target.value) : null)}>
+                      <option value="">Windows default</option>
+                      {MEMORY_GB.map(gb => <option key={gb} value={gb}>{gb} GB</option>)}
+                    </select>
+                  </label>
+
+                  <div className="sandbox-folder">
+                    <Button onClick={chooseFolder}><FolderOpen size={12} /> {folder ? 'Change folder' : 'Share a folder'}</Button>
+                    {folder && (
+                      <>
+                        <span className="holder-path" title={folder}>{folder}</span>
+                        <Button size="sm" variant="ghost" onClick={() => { setFolder(null); setWritable(false) }}>Remove</Button>
+                      </>
+                    )}
+                  </div>
+
+                  {folder && (
+                    <label className="sandbox-option">
+                      <input type="checkbox" checked={writable} onChange={e => setWritable(e.target.checked)} />
+                      <span>
+                        Let programs inside change this folder
+                        <span className="sandbox-help">The folder appears on the sandbox desktop. When this is on, programs inside can edit or delete your real files.</span>
+                      </span>
+                    </label>
+                  )}
+
+                  <div className="sandbox-start">
+                    <Button variant="primary" disabled={starting || running.length > 0} onClick={() => start()}>
+                      {starting ? 'Starting…' : 'Start sandbox'}
+                    </Button>
+                    <Button disabled={starting || running.length > 0} onClick={chooseTryFile}><File size={12} /> Try a file…</Button>
+                  </div>
+                  {running.length > 0
+                    ? <span className="sandbox-help">Windows runs one sandbox at a time. Stop this one to start another.</span>
+                    : <span className="sandbox-help">Or drop a file on this panel. A copy opens in a new sandbox with these settings. Programs start by themselves, and other files appear in a folder.</span>}
+                </div>
+              </Panel>
+            </FileDropZone>
 
             <Panel title="Running" meta={running.length > 0 ? String(running.length) : undefined}>
               {running.length === 0 ? (
