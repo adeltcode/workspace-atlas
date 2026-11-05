@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { LogEntry, DockerStatus, DockerSystemDf, DockerImage, DockerContainer, DockerVolume, ComposeProject } from '../features/docker/types'
 import type { DistroMetrics } from '../features/wsl/types'
+import type { SandboxDetails, SandboxSharedItem } from '../features/sandbox/api'
 import type { TerminalLine } from '../types/terminal'
 
 export type View      = 'dashboard' | 'docker' | 'wsl' | 'sandbox' | 'packages' | 'ports' | 'locks' | 'settings'
@@ -90,6 +91,11 @@ interface AppState {
   /** Outlives the Sandbox page, so coming back to it cannot start a second sandbox by accident. Ephemeral. */
   sandboxStarting: boolean
   setSandboxStarting: (starting: boolean) => void
+  sandboxDetails: Record<string, SandboxDetails>
+  setSandboxDetails: (id: string, details: SandboxDetails) => void
+  /** What a sandbox started with, by ID. Only known for sandboxes started since the app opened. */
+  sandboxShared: Record<string, SandboxSharedItem[]>
+  setSandboxShared: (id: string, shared: SandboxSharedItem[]) => void
 
   sidebarWidth: number
   terminalHeight: number
@@ -225,6 +231,10 @@ export const useAppStore = create<AppState>()(
 
       sandboxStarting:      false,
       setSandboxStarting:   (sandboxStarting) => set({ sandboxStarting }),
+      sandboxDetails:       {},
+      setSandboxDetails:    (id, details) => set(s => ({ sandboxDetails: { ...s.sandboxDetails, [id]: details } })),
+      sandboxShared:        {},
+      setSandboxShared:     (id, shared) => set(s => ({ sandboxShared: { ...s.sandboxShared, [id]: shared } })),
 
       // sidebarWidth 0 means the CSS default (--sidebar-width).
       sidebarWidth:  0,

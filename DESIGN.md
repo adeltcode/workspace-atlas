@@ -211,7 +211,7 @@ Panels, cards, and tables have no shadow. Shadows are for content that sits abov
 | `--shadow-ink` | `#000` | Same | Shadow and overlay color |
 | `--shadow-card` | `none` | Same | Not used |
 | `--shadow-sm` | `0 1px 2px color-mix(in srgb, var(--shadow-ink) 30%, transparent)` | `0 1px 2px rgba(16,20,26,0.08)` | Not used |
-| `--shadow-md` | `0 8px 24px -6px color-mix(in srgb, var(--shadow-ink) 50%, transparent)` | `0 8px 24px -6px rgba(16,20,26,0.14)` | Chart tooltip |
+| `--shadow-md` | `0 8px 24px -6px color-mix(in srgb, var(--shadow-ink) 50%, transparent)` | `0 8px 24px -6px rgba(16,20,26,0.14)` | Chart tooltip, drag text |
 | `--shadow-lg` | `0 20px 56px -16px color-mix(in srgb, var(--shadow-ink) 65%, transparent)` | `0 20px 56px -16px rgba(16,20,26,0.20)` | Command index |
 
 | Token | Value | Use |
@@ -357,6 +357,14 @@ A bordered group with an optional header: `--color-bg-secondary` background, 8px
 
 Use `.panel-body` for 12px by 16px padding inside a panel.
 
+### DisclosurePanel
+
+A `Panel` that starts closed and opens from its head, using the native `<details>` element. It takes `title` and `meta`. Put a one-line summary of what is inside in `meta`, so the panel still says something when closed. Its children stay mounted while closed.
+
+### Select
+
+The `.select` class is a native `<select>`: 28px tall, 6px radius, 12px text at weight 500, on `--color-bg-tertiary`, matching the height of a default button.
+
 ### StatCard and StatRow
 
 `StatCard` shows one number, with an optional unit, meter, and sub-line. Place cards in a `StatRow`, which spaces them 12px apart.
@@ -367,7 +375,7 @@ Use `.panel-body` for 12px by 16px padding inside a panel.
 | `null` | Draws an empty track |
 | `undefined` | Draws no track, for values with no upper limit |
 
-The meter uses `--color-accent` below 75, `--color-warning` from 75, and `--color-danger` from 90. The `tone` prop overrides this. The meter has `role="meter"` with min, max, and current values. Add `onClick` to make the whole card a button.
+The meter uses `--color-accent` below 75, `--color-warning` from 75, and `--color-danger` from 90. The `tone` prop overrides this. The meter has `role="meter"` with min, max, and current values. Add `onClick` to make the whole card a button. The `icon` prop draws a 12px icon before the label. The `loading` prop draws a placeholder in place of the value, unit, meter, and sub-line.
 
 ### SheetHead
 
@@ -434,15 +442,17 @@ Shows an optional icon, a title, a description, and actions, centered. The text 
 
 ### FileDropZone
 
-Wraps an area that takes files and folders dragged in from outside the app, from `src/components/FileDropZone.tsx`. While a file is over the area, a dashed cover shows the label. HTML drop events do not work here, because Tauri takes file drags first.
+Wraps an area that takes files and folders dragged in from outside the app, from `src/components/FileDropZone.tsx`. While a file is over the area, text beside the cursor says what the drop will do, and a 2px outline marks the area. HTML drop events do not work here, because Tauri takes file drags first.
 
 | Prop | Effect |
 |---|---|
-| `label` | The text on the cover. Say what the drop will do, such as "Drop to check for locks". |
-| `disabled` | Ignores drags and shows no cover. Set it while a dialog is open or work is running. |
+| `label` | The text beside the cursor. Say what the drop will do, such as "Drop to check for locks". A function gets the dragged paths and returns a `DropHint`, so the text can differ by file. |
+| `disabled` | Ignores drags and shows no text. Set it while a dialog is open or the area cannot be used. |
 | `onDrop` | Gets every dropped path, and always at least one. The page decides what to do with more than one. |
 
-Put `FileDropPrompt` inside the zone while the area has nothing else to show. It is an `EmptyState` in a dashed box.
+A `DropHint` has a `title`, an optional `note`, an optional `icon`, and an optional `tone`. `danger` colors the text box and outline red, for a drop that loses data. `blocked` means a drop does nothing, and removes the outline. The text is `aria-hidden`, because a drag is mouse only, so the other way to choose a path has to do the same job.
+
+Put `FileDropPrompt` inside the zone while the area has nothing else to show. It is an `EmptyState` in a dashed box, with optional actions. The `row` prop lays it out flat for tight spaces.
 
 Always offer another way to choose a path, such as a path field or a Browse button. Windows blocks these drags when the app runs as administrator.
 
@@ -457,8 +467,8 @@ The dialog for bulk destructive actions. It shows, in order:
 1. The title.
 2. What will be lost.
 3. The exact command.
-4. A summary of counts and totals.
-5. The affected items, by name.
+4. A summary of counts and totals, if `items` is passed.
+5. The affected items, by name, if `items` is passed. Leave it out when the command already names the only item.
 6. Cancel and a solid `danger` confirm button.
 
 The optional `escape` prop adds a safer option at the left of the buttons, such as backing up first. While `busy` is true, both buttons are disabled, and Escape and clicking outside do nothing.

@@ -76,10 +76,11 @@ Every disk or Docker operation prints the real command it runs, so you can check
 
 - **Start**: open a clean, throwaway copy of Windows. The network stays off unless you turn it on
 - **Privacy switches**: the microphone, camera, clipboard, printers, and graphics card all start off. Turn on only what you need
-- **Memory**: keep the Windows default, or choose 4, 8, or 16 GB
-- **Share a folder**: show one folder from your PC on the sandbox desktop. It is read-only unless you allow changes
+- **Memory**: keep the Windows default of 4 GB, or choose 8 or 16 GB
+- **Share a folder**: show one folder from your PC on the sandbox desktop. Choose it, or drop it on the page. It is read-only unless you allow changes
 - **Open a file**: drop a file on the page, or choose one, and a read-only copy opens in a new sandbox. Only the copy is shared, so programs cannot see the files next to the original. `.exe`, `.msi`, `.bat`, and `.cmd` files start by themselves, and other files appear in a folder. Atlas deletes the copies when you stop the sandbox from the page or start a new one
-- **Open a file in a running sandbox**: while a sandbox runs, a file you open goes into that sandbox, and its window comes back if you closed it. Tick **Replace the running sandbox** to stop it and start a new one instead, which deletes everything inside
+- **Open a file in a running sandbox**: while a sandbox runs, a file you open goes into that sandbox, and its window comes back if you closed it. Tick **Open in a new sandbox** to stop it and start a new one instead. This deletes everything inside, so it asks first
+- **Running sandbox details**: see its CPU, memory in use, free disk space, network address, and Windows build, read from the sandbox itself
 - **Running sandboxes**: open a sandbox's window again, or stop it. Stopping deletes everything inside
 
 ### Tools

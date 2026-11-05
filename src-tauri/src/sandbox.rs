@@ -3,7 +3,7 @@ use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
+use sysinfo::{CpuRefreshKind, ProcessRefreshKind, ProcessesToUpdate, RefreshKind, System};
 
 use crate::error::{AtlasError, ErrorKind};
 use crate::shell::hidden;
@@ -15,18 +15,50 @@ const START_TIME_LIMIT: Duration = Duration::from_secs(300);
 const STOP_TIME_LIMIT: Duration = Duration::from_secs(60);
 const SHARE_TIME_LIMIT: Duration = Duration::from_secs(30);
 const EXEC_TIME_LIMIT: Duration = Duration::from_secs(20);
+// PowerShell in a fresh sandbox took over 20 s with the host CPU at 84%, and nothing waits on these reads.
+const DETAIL_TIME_LIMIT: Duration = Duration::from_secs(180);
 const LOGON_TIME_LIMIT: Duration = Duration::from_secs(60);
 const NOT_LOGGED_ON_YET: &str = "0x80070520";
-const MEMORY_CHOICES_MB: [u32; 3] = [4096, 8192, 16384];
+const NO_NETWORK: &str = "0x803B0001";
+const MEMORY_CHOICES_MB: [u32; 2] = [8192, 16384];
 const DESKTOP_INSIDE: &str = r"C:\Users\WDAGUtilityAccount\Desktop";
 const OPENS_BY_ITSELF: [&str; 4] = ["exe", "msi", "bat", "cmd"];
 const WINDOW_PROGRAM: &str = "WindowsSandboxRemoteSession.exe";
+const MEMORY_PROGRAM: &str = "vmmemWindowsSandbox";
+
+const READ_THREADS: &str = "cmd.exe /c exit %NUMBER_OF_PROCESSORS%";
+const READ_MEMORY_MB: &str = "powershell.exe -NoProfile -Command exit [int]((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1MB)";
+const READ_DISK_TOTAL_GB: &str = "powershell.exe -NoProfile -Command exit [int](((Get-PSDrive C).Used + (Get-PSDrive C).Free)/1GB)";
+const READ_DISK_FREE_GB: &str = "powershell.exe -NoProfile -Command exit [int]((Get-PSDrive C).Free/1GB)";
+const READ_WINDOWS_BUILD: &str = "powershell.exe -NoProfile -Command exit [Environment]::OSVersion.Version.Build";
+// A closed or open window adds a Remote Display adapter, which is not a graphics card.
+const READ_GRAPHICS_CARDS: &str = "powershell.exe -NoProfile -Command exit @(Get-CimInstance Win32_VideoController | Where-Object Name -NotMatch Remote).Count";
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
 pub struct SandboxStatus {
     /// False when this PC has no `wsb` command.
     pub available: bool,
     pub running: Vec<String>,
+    /// Closing the window does not stop the sandbox, so this can be false while one runs.
+    pub window_open: bool,
+    /// What the sandbox uses right now, seen from this PC.
+    pub memory_used_bytes: Option<u64>,
+}
+
+/// None means the sandbox did not answer.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct SandboxDetails {
+    /// Read from this PC, because a sandbox reports the same CPU as its host.
+    pub cpu_name: Option<String>,
+    pub cpu_threads: Option<u32>,
+    pub memory_mb: Option<u32>,
+    pub disk_total_gb: Option<u32>,
+    pub disk_free_gb: Option<u32>,
+    pub windows_build: Option<u32>,
+    pub graphics: Option<bool>,
+    /// False when wsb failed for another reason than the sandbox having no network.
+    pub network_known: bool,
+    pub ip_address: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -127,12 +159,30 @@ fn shared_folder_inside(number: u32) -> String {
     }
 }
 
+fn opens_by_itself(name: &str) -> bool {
+    let extension = Path::new(name).extension().and_then(|e| e.to_str()).unwrap_or_default();
+    OPENS_BY_ITSELF.iter().any(|e| e.eq_ignore_ascii_case(extension))
+}
+
+/// Says what a dragged path would do, without reading its contents.
+fn path_kind(raw: &str) -> &'static str {
+    let path = Path::new(raw);
+    if path.is_dir() {
+        "folder"
+    } else if !path.is_file() {
+        "missing"
+    } else if opens_by_itself(raw) {
+        "program"
+    } else {
+        "file"
+    }
+}
+
 /// The quotes are safe because a Windows file name cannot contain one.
 /// Other file types may have no app inside, so the folder opens with the file selected instead.
 fn open_command(folder_inside: &str, name: &str) -> String {
     let inside = format!(r"{}\{}", folder_inside, name);
-    let extension = Path::new(name).extension().and_then(|e| e.to_str()).unwrap_or_default();
-    if OPENS_BY_ITSELF.iter().any(|e| e.eq_ignore_ascii_case(extension)) {
+    if opens_by_itself(name) {
         format!(r#"explorer.exe "{}""#, inside)
     } else {
         format!(r#"explorer.exe /select,"{}""#, inside)
@@ -256,11 +306,76 @@ fn parse_started(json: &str) -> Result<String, AtlasError> {
     Ok(started.id)
 }
 
+fn running_programs() -> System {
+    let mut system = System::new();
+    system.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing().with_memory());
+    system
+}
+
+fn program_memory(system: &System, name: &str) -> Option<u64> {
+    let memory = system.processes_by_exact_name(name.as_ref()).next().map(|program| program.memory());
+    memory
+}
+
+/// Windows runs one sandbox at a time, so any window program belongs to the running sandbox.
+fn window_is_open() -> bool {
+    program_memory(&running_programs(), WINDOW_PROGRAM).is_some()
+}
+
 fn status() -> Result<SandboxStatus, AtlasError> {
+    let mut status = SandboxStatus { available: true, running: Vec::new(), window_open: false, memory_used_bytes: None };
     match run_wsb(&["list", "--raw"], LIST_TIME_LIMIT) {
-        Ok(json) => Ok(SandboxStatus { available: true, running: parse_running(&json)? }),
-        Err(e) if e.kind == ErrorKind::NotFound => Ok(SandboxStatus { available: false, running: Vec::new() }),
-        Err(e) => Err(e),
+        Ok(json) => status.running = parse_running(&json)?,
+        Err(e) if e.kind == ErrorKind::NotFound => status.available = false,
+        Err(e) => return Err(e),
+    }
+    if !status.running.is_empty() {
+        let system = running_programs();
+        status.window_open = program_memory(&system, WINDOW_PROGRAM).is_some();
+        status.memory_used_bytes = program_memory(&system, MEMORY_PROGRAM).filter(|bytes| *bytes > 0);
+    }
+    Ok(status)
+}
+
+fn parse_exit_code(output: &str) -> Option<u32> {
+    output.strip_prefix("Process exited with code:")?.trim().parse().ok()
+}
+
+fn host_cpu_name() -> Option<String> {
+    let system = System::new_with_specifics(RefreshKind::nothing().with_cpu(CpuRefreshKind::nothing()));
+    system.cpus().first().map(|cpu| cpu.brand().trim().to_string()).filter(|name| !name.is_empty())
+}
+
+/// wsb exec returns no output, only an exit code, so each fact comes back as one number.
+/// The System account needs no window, and no writable folder has to be shared for this.
+fn read_details(id: &str, log: impl Fn(&[&str]) + Sync) -> SandboxDetails {
+    let read = |command: &str| {
+        let args = ["exec", "--id", id, "-r", "System", "-c", command];
+        log(&args);
+        run_wsb(&args, DETAIL_TIME_LIMIT).ok().and_then(|output| parse_exit_code(&output))
+    };
+    let read = &read;
+    let [cpu_threads, memory_mb, disk_total_gb, disk_free_gb, windows_build, graphics_cards] = std::thread::scope(|scope| {
+        [READ_THREADS, READ_MEMORY_MB, READ_DISK_TOTAL_GB, READ_DISK_FREE_GB, READ_WINDOWS_BUILD, READ_GRAPHICS_CARDS]
+            .map(|command| scope.spawn(move || read(command)))
+            .map(|reading| reading.join().ok().flatten())
+    });
+    let ip_args = ["ip", "--id", id];
+    log(&ip_args);
+    let (network_known, ip_address) = match run_wsb(&ip_args, LIST_TIME_LIMIT) {
+        Ok(ip) => (true, Some(ip).filter(|ip| !ip.is_empty())),
+        Err(e) => (e.to_string().contains(NO_NETWORK), None),
+    };
+    SandboxDetails {
+        cpu_name: host_cpu_name(),
+        cpu_threads,
+        memory_mb,
+        disk_total_gb,
+        disk_free_gb,
+        windows_build,
+        graphics: graphics_cards.map(|cards| cards > 0),
+        network_known,
+        ip_address,
     }
 }
 
@@ -305,14 +420,6 @@ fn open_window(id: &str) -> Result<(), AtlasError> {
     Ok(())
 }
 
-/// Windows runs one sandbox at a time, so any window program belongs to the running sandbox.
-fn window_is_open() -> bool {
-    let mut system = System::new();
-    system.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
-    let open = system.processes_by_exact_name(WINDOW_PROGRAM.as_ref()).next().is_some();
-    open
-}
-
 /// wsb refuses with this code until the sandbox has logged on, a few seconds after its first window opens.
 fn run_once_logged_on(args: &[&str]) -> Result<String, AtlasError> {
     let waited = Instant::now();
@@ -326,6 +433,15 @@ fn run_once_logged_on(args: &[&str]) -> Result<String, AtlasError> {
     }
 }
 
+/// A second connect would open a second window. Without any window, a file opens out of sight.
+fn open_window_if_closed(app: &tauri::AppHandle, id: &str) -> Result<(), AtlasError> {
+    if window_is_open() {
+        return Ok(());
+    }
+    emit_line(app, command_line(&["connect", "--id", id]), false);
+    open_window(id)
+}
+
 fn open_in_running(app: &tauri::AppHandle, id: &str, file: &str) -> Result<(), AtlasError> {
     check_id(id)?;
     check_open_file(file)?;
@@ -336,11 +452,7 @@ fn open_in_running(app: &tauri::AppHandle, id: &str, file: &str) -> Result<(), A
     let inside = shared_folder_inside(number);
     run_logged(app, &["share", "--id", id, "--host-path", &folder.to_string_lossy(), "--sandbox-path", &inside], SHARE_TIME_LIMIT)?;
 
-    // Without a window the file would open out of sight, and a second connect would open a second window.
-    if !window_is_open() {
-        emit_line(app, command_line(&["connect", "--id", id]), false);
-        open_window(id)?;
-    }
+    open_window_if_closed(app, id)?;
 
     let name = copy.file_name().unwrap_or_default().to_string_lossy();
     let command = open_command(&inside, &name);
@@ -377,8 +489,7 @@ pub async fn sandbox_stop(app: tauri::AppHandle, id: String) -> Result<(), Atlas
 pub async fn sandbox_open_window(app: tauri::AppHandle, id: String) -> Result<(), AtlasError> {
     in_background(move || {
         check_id(&id)?;
-        emit_line(&app, command_line(&["connect", "--id", &id]), false);
-        open_window(&id)
+        open_window_if_closed(&app, &id)
     })
     .await
 }
@@ -386,6 +497,20 @@ pub async fn sandbox_open_window(app: tauri::AppHandle, id: String) -> Result<()
 #[tauri::command]
 pub async fn sandbox_open_file(app: tauri::AppHandle, id: String, file: String) -> Result<(), AtlasError> {
     in_background(move || open_in_running(&app, &id, &file)).await
+}
+
+#[tauri::command]
+pub async fn sandbox_path_kinds(paths: Vec<String>) -> Result<Vec<&'static str>, AtlasError> {
+    in_background(move || Ok(paths.iter().map(|path| path_kind(path)).collect())).await
+}
+
+#[tauri::command]
+pub async fn sandbox_details(app: tauri::AppHandle, id: String) -> Result<SandboxDetails, AtlasError> {
+    in_background(move || {
+        check_id(&id)?;
+        Ok(read_details(&id, |args| emit_line(&app, command_line(args), false)))
+    })
+    .await
 }
 
 #[cfg(test)]
@@ -508,6 +633,22 @@ mod tests {
     }
 
     #[test]
+    fn a_dragged_path_is_named_by_what_dropping_it_would_do() {
+        let folder = std::env::temp_dir().join(format!("atlas-path-kinds-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let program = folder.join("Setup.EXE");
+        let notes = folder.join("notes.txt");
+        std::fs::write(&program, "x").unwrap();
+        std::fs::write(&notes, "x").unwrap();
+
+        assert_eq!(path_kind(folder.to_str().unwrap()), "folder");
+        assert_eq!(path_kind(program.to_str().unwrap()), "program");
+        assert_eq!(path_kind(notes.to_str().unwrap()), "file");
+        assert_eq!(path_kind(folder.join("gone.exe").to_str().unwrap()), "missing");
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
     fn each_copy_gets_a_new_folder_with_only_that_file_and_read_only_copies_can_be_deleted() {
         let root = std::env::temp_dir().join(format!("atlas-open-copy-{}", std::process::id()));
         let source = root.join("source");
@@ -576,6 +717,22 @@ mod tests {
     }
 
     #[test]
+    fn an_exit_code_is_read_only_from_wsb_real_wording() {
+        assert_eq!(parse_exit_code("Process exited with code: 12"), Some(12));
+        assert_eq!(parse_exit_code("Process exited with code: 0"), Some(0));
+        for bad in ["", "12", "Process exited with code: ", "Process exited with code: -1", "A specified logon session does not exist."] {
+            assert_eq!(parse_exit_code(bad), None, "{}", bad);
+        }
+    }
+
+    #[test]
+    fn the_commands_that_read_details_have_no_double_quotes_to_break_pasting() {
+        for command in [READ_THREADS, READ_MEMORY_MB, READ_DISK_TOTAL_GB, READ_DISK_FREE_GB, READ_WINDOWS_BUILD, READ_GRAPHICS_CARDS] {
+            assert!(!command.contains('"'), "{}", command);
+        }
+    }
+
+    #[test]
     fn wsb_answers_are_read_from_its_real_output() {
         let list = "{\n  \"WindowsSandboxEnvironments\": [\n    {\n      \"Id\": \"8bff7ba0-c91e-40dc-9ab8-3903c82f70b5\"\n    }\n  ]\n}";
         assert_eq!(parse_running(list).unwrap(), vec!["8bff7ba0-c91e-40dc-9ab8-3903c82f70b5"]);
@@ -625,6 +782,38 @@ mod tests {
             assert!(!after.running.contains(&id));
         }
         std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    /// Boots a real sandbox twice, all off then all on, with no window, and reads what each reports.
+    #[test]
+    #[ignore]
+    fn real_sandbox_reports_its_details() {
+        assert!(status().unwrap().running.is_empty(), "stop the running sandbox first");
+        let host_threads = System::new_with_specifics(RefreshKind::nothing().with_cpu(CpuRefreshKind::nothing())).cpus().len() as u32;
+
+        for (options, memory_mb, shared) in [(all_off(), 4096, false), (all_on(), 8192, true)] {
+            let config = build_config(&options, None);
+            let id = parse_started(&run_wsb(&["start", "--raw", "--config", &config], START_TIME_LIMIT).unwrap()).unwrap();
+            let waited = Instant::now();
+            let details = read_details(&id, |_| {});
+            let read_seconds = waited.elapsed().as_secs();
+            let running = status();
+            let stopped = run_wsb(&["stop", "--id", &id], STOP_TIME_LIMIT);
+            eprintln!("{:?} in {} s, status {:?}", details, read_seconds, running);
+
+            stopped.unwrap();
+            let running = running.unwrap();
+            assert!(running.memory_used_bytes.unwrap() > 0);
+            assert!(!running.window_open);
+            assert!(details.cpu_name.is_some());
+            assert_eq!(details.cpu_threads, Some(host_threads));
+            assert!(details.memory_mb.unwrap().abs_diff(memory_mb) < 64, "{:?}", details.memory_mb);
+            assert!(details.disk_free_gb.unwrap() > 0 && details.disk_free_gb <= details.disk_total_gb);
+            assert!(details.windows_build.unwrap() > 0);
+            assert_eq!(details.graphics, Some(shared));
+            assert!(details.network_known);
+            assert_eq!(details.ip_address.is_some(), shared);
+        }
     }
 
     /// A script that lists what it can see into a file in the shared results folder.
