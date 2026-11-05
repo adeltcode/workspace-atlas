@@ -98,6 +98,9 @@ interface AppState {
   /** Packages table: column widths in px by column key, and hidden column keys. */
   pkgColumns: { widths: Record<string, number>; hidden: string[] }
   setPkgColumns: (c: { widths: Record<string, number>; hidden: string[] }) => void
+  /** Ports table: column widths in px by column key, and hidden column keys. */
+  portColumns: { widths: Record<string, number>; hidden: string[] }
+  setPortColumns: (c: { widths: Record<string, number>; hidden: string[] }) => void
 
   backupDir: string
   setBackupDir: (dir: string) => void
@@ -231,6 +234,8 @@ export const useAppStore = create<AppState>()(
       setTerminalHeight: (terminalHeight) => set({ terminalHeight }),
       pkgColumns: { widths: {}, hidden: ['publisher', 'location'] },
       setPkgColumns: (pkgColumns) => set({ pkgColumns }),
+      portColumns: { widths: {}, hidden: ['command', 'folder', 'memory', 'parent', 'address', 'path'] },
+      setPortColumns: (portColumns) => set({ portColumns }),
 
       backupDir: '',
       setBackupDir: (backupDir) => set({ backupDir }),
@@ -368,6 +373,7 @@ export const useAppStore = create<AppState>()(
         terminalHeight:  s.terminalHeight,
         terminalOpen:    s.terminalOpen,
         pkgColumns:      s.pkgColumns,
+        portColumns:     s.portColumns,
         backupDir:       s.backupDir,
         dockerKeepList:  s.dockerKeepList,
         dockerLogs:      s.dockerLogs,

@@ -59,12 +59,45 @@ pub enum Reachable {
     Network,
 }
 
+#[derive(Serialize, Clone, Copy, PartialEq, Debug)]
+#[serde(rename_all = "kebab-case")]
+pub enum PortSource {
+    Windows,
+    Docker,
+    Wsl,
+}
+
+#[derive(Serialize, Clone, Default, Debug)]
+pub struct PortDetails {
+    /// The command line. For a container, its image.
+    pub command: Option<String>,
+    /// The working folder. For a container, its Compose project's folder.
+    pub folder: Option<String>,
+    pub memory_bytes: Option<u64>,
+    /// The program that started this one.
+    pub parent: Option<String>,
+}
+
 #[derive(Serialize, Clone, Debug)]
 pub struct PortEntry {
     pub port: u16,
     pub addresses: Vec<String>,
     pub reachable: Reachable,
+    /// Seconds since 1970. When Windows opened the socket; for Docker and WSL, when the container or
+    /// program started, because they do not record the socket's own time.
+    pub listening_since: Option<u64>,
+    pub source: PortSource,
+    pub details: PortDetails,
     pub process: ProcessInfo,
+}
+
+struct Listener {
+    address: IpAddr,
+    port: u16,
+    since: Option<u64>,
+    source: PortSource,
+    details: PortDetails,
+    process: ProcessInfo,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -160,21 +193,22 @@ fn describe(system: &System, pid: u32) -> ProcessInfo {
 
 #[cfg(windows)]
 fn tcp_rows<Row: Copy>(family: u32) -> Result<Vec<Row>, AtlasError> {
-    use windows_sys::Win32::NetworkManagement::IpHelper::{GetExtendedTcpTable, TCP_TABLE_OWNER_PID_LISTENER};
+    use windows_sys::Win32::NetworkManagement::IpHelper::{GetExtendedTcpTable, TCP_TABLE_OWNER_MODULE_LISTENER};
     const ERROR_INSUFFICIENT_BUFFER: u32 = 122;
 
     let mut size = 0u32;
-    // Whole u32s, because the table starts with a u32 count and every row aligns to 4 bytes.
-    let mut buffer: Vec<u32> = vec![0];
+    // u64s, because these rows hold a 64-bit time, so they start 8 bytes in, after the u32 count.
+    let mut buffer: Vec<u64> = vec![0];
     for _ in 0..5 {
-        buffer.resize((size as usize).div_ceil(4).max(1), 0);
+        buffer.resize((size as usize).div_ceil(8).max(1), 0);
         let code = unsafe {
-            GetExtendedTcpTable(buffer.as_mut_ptr().cast(), &mut size, 0, family, TCP_TABLE_OWNER_PID_LISTENER, 0)
+            GetExtendedTcpTable(buffer.as_mut_ptr().cast(), &mut size, 0, family, TCP_TABLE_OWNER_MODULE_LISTENER, 0)
         };
         match code {
             0 => {
+                let count = unsafe { buffer.as_ptr().cast::<u32>().read() } as usize;
                 let rows = unsafe { buffer.as_ptr().add(1).cast::<Row>() };
-                return Ok(unsafe { std::slice::from_raw_parts(rows, buffer[0] as usize) }.to_vec());
+                return Ok(unsafe { std::slice::from_raw_parts(rows, count) }.to_vec());
             }
             ERROR_INSUFFICIENT_BUFFER => continue,
             code => return Err(format!("Windows could not list open ports (error {}).", code).into()),
@@ -183,46 +217,61 @@ fn tcp_rows<Row: Copy>(family: u32) -> Result<Vec<Row>, AtlasError> {
     Err("Windows could not list open ports: the list kept changing.".into())
 }
 
+/// Windows file times count 100 ns steps from 1601. Zero means it did not record one.
+fn filetime_seconds(filetime: i64) -> Option<u64> {
+    const SECONDS_FROM_1601_TO_1970: u64 = 11_644_473_600;
+    u64::try_from(filetime).ok()?.checked_div(10_000_000)?.checked_sub(SECONDS_FROM_1601_TO_1970)
+}
+
+/// (address, port, PID, when the socket opened)
 #[cfg(windows)]
-fn tcp_listeners() -> Result<Vec<(IpAddr, u16, u32)>, AtlasError> {
-    use windows_sys::Win32::NetworkManagement::IpHelper::{MIB_TCP6ROW_OWNER_PID, MIB_TCPROW_OWNER_PID};
+fn tcp_listeners() -> Result<Vec<(IpAddr, u16, u32, Option<u64>)>, AtlasError> {
+    use windows_sys::Win32::NetworkManagement::IpHelper::{MIB_TCP6ROW_OWNER_MODULE, MIB_TCPROW_OWNER_MODULE};
     const AF_INET: u32 = 2;
     const AF_INET6: u32 = 23;
     // Port numbers sit in the low 16 bits, in network byte order.
     let port = |raw: u32| u16::from_be(raw as u16);
 
     let mut listeners = Vec::new();
-    for row in tcp_rows::<MIB_TCPROW_OWNER_PID>(AF_INET)? {
+    for row in tcp_rows::<MIB_TCPROW_OWNER_MODULE>(AF_INET)? {
         let address = IpAddr::from(row.dwLocalAddr.to_ne_bytes());
-        listeners.push((address, port(row.dwLocalPort), row.dwOwningPid));
+        listeners.push((address, port(row.dwLocalPort), row.dwOwningPid, filetime_seconds(row.liCreateTimestamp)));
     }
-    for row in tcp_rows::<MIB_TCP6ROW_OWNER_PID>(AF_INET6)? {
-        listeners.push((IpAddr::from(row.ucLocalAddr), port(row.dwLocalPort), row.dwOwningPid));
+    for row in tcp_rows::<MIB_TCP6ROW_OWNER_MODULE>(AF_INET6)? {
+        listeners.push((IpAddr::from(row.ucLocalAddr), port(row.dwLocalPort), row.dwOwningPid, filetime_seconds(row.liCreateTimestamp)));
     }
     Ok(listeners)
 }
 
 #[cfg(not(windows))]
-fn tcp_listeners() -> Result<Vec<(IpAddr, u16, u32)>, AtlasError> {
+fn tcp_listeners() -> Result<Vec<(IpAddr, u16, u32, Option<u64>)>, AtlasError> {
     Err(AtlasError::invalid("Listing ports is only available on Windows."))
 }
 
-fn to_entries(listeners: Vec<(IpAddr, u16, ProcessInfo)>) -> Vec<PortEntry> {
-    let mut grouped: BTreeMap<(u16, u32, String), (ProcessInfo, Vec<IpAddr>)> = BTreeMap::new();
-    for (address, port, process) in listeners {
-        let key = (port, process.pid, process.name.clone());
-        let (_, addresses) = grouped.entry(key).or_insert((process, Vec::new()));
+fn to_entries(listeners: Vec<Listener>) -> Vec<PortEntry> {
+    let mut grouped: BTreeMap<(u16, u32, String), (Listener, Vec<IpAddr>)> = BTreeMap::new();
+    for listener in listeners {
+        let key = (listener.port, listener.process.pid, listener.process.name.clone());
+        let (address, since) = (listener.address, listener.since);
+        let (kept, addresses) = grouped.entry(key).or_insert_with(|| (listener, Vec::new()));
         if !addresses.contains(&address) {
             addresses.push(address);
         }
+        kept.since = match (kept.since, since) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
     }
     grouped
-        .into_iter()
-        .map(|((port, ..), (process, addresses))| PortEntry {
-            port,
+        .into_values()
+        .map(|(listener, addresses)| PortEntry {
+            port: listener.port,
             reachable: if addresses.iter().all(|a| a.to_canonical().is_loopback()) { Reachable::ThisPc } else { Reachable::Network },
             addresses: addresses.iter().map(ToString::to_string).collect(),
-            process,
+            listening_since: listener.since,
+            source: listener.source,
+            details: listener.details,
+            process: listener.process,
         })
         .collect()
 }
@@ -272,27 +321,91 @@ fn output_of(command: &mut std::process::Command) -> Option<Option<std::process:
     output_within(child, SOURCE_TIME_LIMIT).ok()
 }
 
+fn now_seconds() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// Seconds since 1970 for a UTC time as Docker prints it: `2026-11-05T08:52:37.628493201Z`.
+fn utc_seconds(text: &str) -> Option<u64> {
+    let (date, time) = text.trim_end_matches('Z').split_once('T')?;
+    let mut date = date.split('-').map(|part| part.parse::<i64>().ok());
+    let (year, month, day) = (date.next()??, date.next()??, date.next()??);
+    let mut time = time.split('.').next()?.split(':').map(|part| part.parse::<i64>().ok());
+    let (hour, minute, second) = (time.next()??, time.next()??, time.next()??);
+    // Days from 1970 by the civil calendar, counting years from March so leap days fall last.
+    let (y, m) = if month <= 2 { (year - 1, month + 9) } else { (year, month - 3) };
+    let era = y.div_euclid(400);
+    let year_of_era = y - era * 400;
+    let day_of_year = (153 * m + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    let days = era * 146_097 + day_of_era - 719_468;
+    u64::try_from(days * 86_400 + hour * 3600 + minute * 60 + second).ok()
+}
+
+fn non_empty(text: &str) -> Option<String> {
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_string())
+}
+
 /// `Err` means Docker did not answer in time. A missing or stopped Docker simply has no ports.
-fn docker_listeners() -> Result<Vec<(IpAddr, u16, ProcessInfo)>, ()> {
-    let Some(output) = output_of(hidden("docker").args(["ps", "--format", "{{.Names}}\t{{.Ports}}"])) else {
+fn docker_listeners() -> Result<Vec<Listener>, ()> {
+    const COLUMNS: &str = "{{.Names}}\t{{.Ports}}\t{{.Image}}\t{{.Label \"com.docker.compose.project.working_dir\"}}";
+    let Some(output) = output_of(hidden("docker").args(["ps", "--format", COLUMNS])) else {
         return Ok(Vec::new());
     };
     let output = output.ok_or(())?;
     if !output.status.success() {
         return Ok(Vec::new());
     }
+    let text = String::from_utf8_lossy(&output.stdout).to_string();
+    let published: Vec<Vec<&str>> = text
+        .lines()
+        .map(|line| line.split('\t').collect::<Vec<_>>())
+        .filter(|fields| fields.len() >= 2 && !parse_docker_ports(fields[1]).is_empty())
+        .collect();
+    if published.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut inspect = hidden("docker");
+    inspect.args(["inspect", "--format", "{{.Name}}\t{{.State.StartedAt}}"]);
+    inspect.args(published.iter().map(|fields| fields[0]));
+    let started: BTreeMap<String, u64> = output_of(&mut inspect)
+        .flatten()
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| {
+            let (name, time) = line.split_once('\t')?;
+            Some((name.trim_start_matches('/').to_string(), utc_seconds(time)?))
+        })
+        .collect();
+
     let mut listeners = Vec::new();
-    for line in String::from_utf8_lossy(&output.stdout).lines() {
-        let Some((name, ports)) = line.split_once('\t') else { continue };
+    for fields in &published {
         let process = ProcessInfo {
             pid: 0,
-            name: name.to_string(),
-            path: Some("Docker container".to_string()),
+            name: fields[0].to_string(),
+            path: None,
             started_at: 0,
             owner: ProcessOwner::Docker,
             distro: None,
         };
-        listeners.extend(parse_docker_ports(ports).into_iter().map(|(address, port)| (address, port, process.clone())));
+        let details = PortDetails {
+            command: fields.get(2).and_then(|t| non_empty(t)),
+            folder: fields.get(3).and_then(|t| non_empty(t)),
+            ..PortDetails::default()
+        };
+        for (address, port) in parse_docker_ports(fields[1]) {
+            listeners.push(Listener {
+                address,
+                port,
+                since: started.get(fields[0]).copied(),
+                source: PortSource::Docker,
+                details: details.clone(),
+                process: process.clone(),
+            });
+        }
     }
     Ok(listeners)
 }
@@ -309,24 +422,77 @@ fn running_distros() -> Result<Vec<String>, ()> {
         .collect())
 }
 
-fn distro_listeners(distro: &str) -> Result<Vec<(IpAddr, u16, ProcessInfo)>, AtlasError> {
-    let output = run_in_distro_as(distro, Some("root"), "ss -ltnpH", Some(SOURCE_TIME_LIMIT))?;
-    Ok(output
+/// Listeners, then a line for each listening program: PID, seconds running, memory in KiB, parent's
+/// name, working folder, command line.
+const DISTRO_PORTS_SCRIPT: &str = r#"ss -ltnpH || exit 1
+echo ---
+for p in $(ss -ltnpH | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u); do
+  set -- $(ps -o etimes=,rss=,ppid= -p "$p" 2>/dev/null)
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$p" "$1" "$2" "$(ps -o comm= -p "$3" 2>/dev/null)" "$(readlink "/proc/$p/cwd" 2>/dev/null)" "$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null)"
+done
+true"#;
+
+/// One program line of `DISTRO_PORTS_SCRIPT`: (PID, seconds running, details).
+fn parse_distro_program(line: &str) -> Option<(u32, Option<u64>, PortDetails)> {
+    let fields: Vec<&str> = line.split('\t').collect();
+    let pid = fields.first()?.parse().ok()?;
+    let details = PortDetails {
+        memory_bytes: fields.get(2).and_then(|kib| kib.trim().parse::<u64>().ok()).map(|kib| kib * 1024),
+        parent: fields.get(3).and_then(|t| non_empty(t)),
+        folder: fields.get(4).and_then(|t| non_empty(t)),
+        command: fields.get(5).and_then(|t| non_empty(t)),
+    };
+    Some((pid, fields.get(1).and_then(|s| s.trim().parse().ok()), details))
+}
+
+fn parse_distro_ports(distro: &str, output: &str, now: u64) -> Vec<Listener> {
+    let (listeners, programs) = output.split_once("---\n").unwrap_or((output, ""));
+    let programs: BTreeMap<u32, (Option<u64>, PortDetails)> = programs
+        .lines()
+        .filter_map(parse_distro_program)
+        .map(|(pid, running, details)| (pid, (running, details)))
+        .collect();
+    listeners
         .lines()
         .filter_map(parse_ss_line)
         .map(|(address, port, name, pid)| {
             let pid = pid.unwrap_or(0);
-            let process = ProcessInfo {
-                pid,
-                owner: distro_owner(pid, name.as_deref()),
-                name: name.unwrap_or_else(|| "System service".to_string()),
-                path: Some(format!("WSL: {}", distro)),
-                started_at: 0,
-                distro: Some(distro.to_string()),
-            };
-            (address, port, process)
+            let (running, details) = programs.get(&pid).cloned().unwrap_or_default();
+            Listener {
+                address,
+                port,
+                since: running.and_then(|seconds| now.checked_sub(seconds)),
+                source: PortSource::Wsl,
+                details,
+                process: ProcessInfo {
+                    pid,
+                    owner: distro_owner(pid, name.as_deref()),
+                    name: name.unwrap_or_else(|| "System service".to_string()),
+                    path: None,
+                    started_at: 0,
+                    distro: Some(distro.to_string()),
+                },
+            }
         })
-        .collect())
+        .collect()
+}
+
+fn distro_listeners(distro: &str) -> Result<Vec<Listener>, AtlasError> {
+    let output = run_in_distro_as(distro, Some("root"), DISTRO_PORTS_SCRIPT, Some(SOURCE_TIME_LIMIT))?;
+    Ok(parse_distro_ports(distro, &output, now_seconds()))
+}
+
+fn windows_details(system: &System, pid: u32) -> PortDetails {
+    let Some(process) = system.process(Pid::from_u32(pid)) else {
+        return PortDetails::default();
+    };
+    let command = process.cmd().iter().map(|part| part.to_string_lossy()).collect::<Vec<_>>().join(" ");
+    PortDetails {
+        command: non_empty(&command),
+        folder: process.cwd().map(|folder| folder.to_string_lossy().to_string()),
+        memory_bytes: Some(process.memory()).filter(|bytes| *bytes > 0),
+        parent: process.parent().and_then(|id| system.process(id)).map(|parent| parent.name().to_string_lossy().to_string()),
+    }
 }
 
 /// Each source wins over the one after it for the same port. Docker's published ports also show up
@@ -346,11 +512,32 @@ fn merge_ports(docker: Vec<PortEntry>, distros: Vec<PortEntry>, windows: Vec<Por
 }
 
 fn list_ports() -> Result<PortList, AtlasError> {
-    let system = process_snapshot();
+    let found = tcp_listeners()?;
+    let mut system = process_snapshot();
+    // Reading these takes a look inside each program, so only the ones holding a port are read.
+    let pids: Vec<Pid> = found.iter().map(|(_, _, pid, _)| Pid::from_u32(*pid)).collect();
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&pids),
+        false,
+        ProcessRefreshKind::nothing()
+            .with_memory()
+            .with_cmd(UpdateKind::OnlyIfNotSet)
+            .with_cwd(UpdateKind::OnlyIfNotSet),
+    );
     let windows = to_entries(
-        tcp_listeners()?
+        found
             .into_iter()
-            .map(|(address, port, pid)| (address, port, describe(&system, pid)))
+            .map(|(address, port, pid, since)| {
+                let process = describe(&system, pid);
+                Listener {
+                    address,
+                    port,
+                    since: since.or(Some(process.started_at).filter(|t| *t > 0)),
+                    source: PortSource::Windows,
+                    details: windows_details(&system, pid),
+                    process,
+                }
+            })
             .collect(),
     );
 
@@ -776,7 +963,21 @@ mod tests {
             port,
             addresses: vec!["0.0.0.0".to_string()],
             reachable: Reachable::Network,
+            listening_since: None,
+            source: PortSource::Windows,
+            details: PortDetails::default(),
             process: ProcessInfo { pid, ..process(owner, 1) },
+        }
+    }
+
+    fn listener(address: IpAddr, port: u16, since: Option<u64>) -> Listener {
+        Listener {
+            address,
+            port,
+            since,
+            source: PortSource::Windows,
+            details: PortDetails::default(),
+            process: process(ProcessOwner::App, 1),
         }
     }
 
@@ -883,18 +1084,53 @@ mod tests {
         let any6: IpAddr = "::".parse().unwrap();
         let local: IpAddr = "127.0.0.1".parse().unwrap();
         let mapped: IpAddr = "::ffff:127.0.0.1".parse().unwrap();
-        let node = process(ProcessOwner::App, 1);
         let entries = to_entries(vec![
-            (any6, 3000, node.clone()),
-            (any4, 3000, node.clone()),
-            (any4, 3000, node.clone()),
-            (local, 80, node.clone()),
-            (mapped, 80, node),
+            listener(any6, 3000, Some(200)),
+            listener(any4, 3000, Some(100)),
+            listener(any4, 3000, None),
+            listener(local, 80, None),
+            listener(mapped, 80, None),
         ]);
         assert_eq!(entries.iter().map(|e| e.port).collect::<Vec<_>>(), vec![80, 3000]);
         assert_eq!(entries[1].addresses, vec!["::".to_string(), "0.0.0.0".to_string()]);
         assert_eq!(entries[0].reachable, Reachable::ThisPc);
         assert_eq!(entries[1].reachable, Reachable::Network);
+        assert_eq!(entries[1].listening_since, Some(100), "the earliest time of its addresses");
+        assert_eq!(entries[0].listening_since, None);
+    }
+
+    #[test]
+    fn times_convert_from_windows_and_docker_formats() {
+        // 2026-11-05 08:52:37 UTC
+        assert_eq!(utc_seconds("2026-11-05T08:52:37.628493201Z"), Some(1_793_868_757));
+        assert_eq!(utc_seconds("1970-01-01T00:00:00Z"), Some(0));
+        assert_eq!(utc_seconds("2024-03-01T00:00:00Z"), Some(1_709_251_200), "after a leap day");
+        assert_eq!(utc_seconds("0001-01-01T00:00:00Z"), None, "Docker's value for never started");
+        assert_eq!(utc_seconds("nonsense"), None);
+        assert_eq!(filetime_seconds(116_444_736_000_000_000), Some(0));
+        assert_eq!(filetime_seconds(116_444_736_000_000_000 + 50_000_000), Some(5));
+        assert_eq!(filetime_seconds(0), None);
+    }
+
+    #[test]
+    fn distro_output_joins_each_listener_to_its_program() {
+        let output = "LISTEN 0 511 127.0.0.1:3000 0.0.0.0:* users:((\"node\",pid=12,fd=3))\n\
+                      LISTEN 0 4096 *:8081 *:*\n\
+                      ---\n\
+                      12\t60\t2048\tbash\t/home/me/app\tnode server.js --port 3000 \n";
+        let listeners = parse_distro_ports("kali", output, 1000);
+        assert_eq!(listeners.len(), 2);
+        let node = &listeners[0];
+        assert_eq!((node.port, node.process.pid), (3000, 12));
+        assert_eq!(node.process.distro.as_deref(), Some("kali"));
+        assert_eq!(node.since, Some(940));
+        assert_eq!(node.source, PortSource::Wsl);
+        assert_eq!(node.details.command.as_deref(), Some("node server.js --port 3000"));
+        assert_eq!(node.details.folder.as_deref(), Some("/home/me/app"));
+        assert_eq!(node.details.parent.as_deref(), Some("bash"));
+        assert_eq!(node.details.memory_bytes, Some(2_097_152));
+        assert_eq!(listeners[1].process.owner, ProcessOwner::DistroSystem);
+        assert_eq!(listeners[1].since, None);
     }
 
     #[test]
@@ -919,6 +1155,13 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         let ports = list_ports().unwrap();
         let entry = ports.entries.iter().find(|e| e.port == port).expect("the port is listed");
+        assert_eq!(entry.source, PortSource::Windows);
+        let age = now_seconds().abs_diff(entry.listening_since.expect("Windows records when it opened"));
+        assert!(age < 60, "opened {age} seconds from now");
+        assert!(entry.details.memory_bytes.is_some());
+        assert!(entry.details.command.is_some());
+        assert!(entry.details.folder.is_some());
+        assert!(entry.details.parent.is_some());
         assert_eq!(entry.process.pid, std::process::id());
         assert_eq!(entry.process.owner, ProcessOwner::ThisApp);
         assert_eq!(entry.reachable, Reachable::ThisPc);

@@ -1,6 +1,9 @@
 import type { HoldReason, PortEntry, ProcessInfo, ProcessOwner } from './api'
 
 export type PortFilter = 'programs' | 'all'
+export type PortSortKey =
+  | 'port' | 'program' | 'pid' | 'runs-in' | 'reachable' | 'since'
+  | 'command' | 'folder' | 'memory' | 'parent' | 'address' | 'path'
 
 export function closeCommand(process: ProcessInfo): string {
   return process.distro
@@ -29,6 +32,24 @@ export const HOLD_REASON: Record<HoldReason, string> = {
   'running-from-here': 'Running from this folder',
 }
 
+export function runsIn(entry: PortEntry): string {
+  if (entry.source === 'docker') return 'Docker'
+  return entry.source === 'wsl' ? `WSL: ${entry.process.distro}` : 'Windows'
+}
+
+export const reachableLabel = (entry: PortEntry) =>
+  entry.reachable === 'this-pc' ? 'This PC only' : 'Your network'
+
+export const addressList = (entry: PortEntry) => entry.addresses.join(', ')
+
+/** Spells out what the time means, because Docker and WSL do not record when the socket opened. */
+export function sinceTitle(entry: PortEntry): string | undefined {
+  if (entry.listening_since === null) return undefined
+  const when = new Date(entry.listening_since * 1000).toLocaleString()
+  if (entry.source === 'docker') return `${when}, when the container started`
+  return entry.source === 'wsl' ? `${when}, when the program started` : when
+}
+
 export function filterPorts(entries: PortEntry[], query: string, show: PortFilter): PortEntry[] {
   const q = query.trim().toLowerCase().replace(/^:/, '')
   return entries.filter(e => {
@@ -36,7 +57,37 @@ export function filterPorts(entries: PortEntry[], query: string, show: PortFilte
     if (!q) return true
     return String(e.port).startsWith(q)
       || (e.process.pid > 0 && String(e.process.pid).startsWith(q))
-      || e.process.name.toLowerCase().includes(q)
-      || (e.process.path ?? '').toLowerCase().includes(q)
+      || [e.process.name, e.process.path, runsIn(e), e.details.command, e.details.folder]
+        .some(text => (text ?? '').toLowerCase().includes(q))
+  })
+}
+
+function sortValue(e: PortEntry, key: PortSortKey): string | number | null {
+  switch (key) {
+    case 'port':      return e.port
+    case 'program':   return e.process.name
+    case 'pid':       return e.process.pid || null
+    case 'runs-in':   return runsIn(e)
+    case 'reachable': return reachableLabel(e)
+    case 'since':     return e.listening_since
+    case 'command':   return e.details.command
+    case 'folder':    return e.details.folder
+    case 'memory':    return e.details.memory_bytes
+    case 'parent':    return e.details.parent
+    case 'address':   return addressList(e)
+    case 'path':      return e.process.path
+  }
+}
+
+/** Unknown values sort last in both directions, and ties fall back to the port. */
+export function sortPorts(entries: PortEntry[], key: PortSortKey, dir: 'asc' | 'desc'): PortEntry[] {
+  return [...entries].sort((a, b) => {
+    const va = sortValue(a, key), vb = sortValue(b, key)
+    const byPort = a.port - b.port || a.process.pid - b.process.pid
+    if (va === null || vb === null) return va === vb ? byPort : va === null ? 1 : -1
+    const cmp = typeof va === 'number' && typeof vb === 'number'
+      ? va - vb
+      : String(va).localeCompare(String(vb), undefined, { sensitivity: 'base', numeric: true })
+    return (dir === 'asc' ? cmp : -cmp) || byPort
   })
 }
