@@ -419,7 +419,7 @@ The text must be the exact command, and it must work if pasted into PowerShell.
 
 ### ErrorBanner
 
-Shows an error with `role="alert"`.
+Shows an error with `role="alert"`. A `busy` error also gets a button that opens the File locks page.
 
 | Prop | Effect |
 |---|---|

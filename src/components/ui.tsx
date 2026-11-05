@@ -4,6 +4,7 @@ import clsx from 'clsx'
 import CommandOutput from './CommandOutput'
 import { toAppError } from '../utils/errors'
 import ModalShell from './ModalShell'
+import { useAppStore } from '../store/appStore'
 
 type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   /** `danger` is the solid confirm inside a dialog; `danger-outline` is the
@@ -290,7 +291,12 @@ export function ErrorBanner({ title, error, action, className, detailLabel = 'Wh
             <CommandOutput text={e.detail} title={detailLabel} />
           </details>
         )}
-        {action && <div className="error-actions">{action}</div>}
+        {(action || e?.kind === 'busy') && (
+          <div className="error-actions">
+            {action}
+            {e?.kind === 'busy' && <Button size="sm" onClick={() => useAppStore.getState().setActiveView('locks')}>See what holds it</Button>}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -299,7 +305,7 @@ export function ErrorBanner({ title, error, action, className, detailLabel = 'Wh
 /** The dialog a bulk destructive action opens. The escape path sits on the left, away from
  *  the confirm, because it is a different decision. */
 export function ConfirmDestructive({
-  title, consequence, command, items, summary, confirmLabel, onConfirm, onCancel, busy, escape,
+  title, consequence, command, items, summary, confirmLabel, busyLabel = 'Removing…', onConfirm, onCancel, busy, escape,
 }: {
   title: string
   /** What is lost. Concrete, not "this cannot be undone" alone. */
@@ -310,6 +316,7 @@ export function ConfirmDestructive({
   /** Counts and totals: "7 volumes · 2.4 GB". */
   summary: string
   confirmLabel: string
+  busyLabel?: string
   onConfirm: () => void
   onCancel: () => void
   busy?: boolean
@@ -347,7 +354,7 @@ export function ConfirmDestructive({
           {escape && <div className="modal-actions-escape">{escape}</div>}
           <Button onClick={onCancel} disabled={busy}>Cancel</Button>
           <Button variant="danger" onClick={onConfirm} disabled={busy}>
-            {busy ? 'Removing…' : confirmLabel}
+            {busy ? busyLabel : confirmLabel}
           </Button>
         </div>
       </div>
