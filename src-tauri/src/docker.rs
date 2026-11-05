@@ -2686,7 +2686,8 @@ pub async fn compose_logs_watch(
 ) -> Result<(), AtlasError> {
     // Kill any previous stream
     {
-        let mut guard = state.0.lock().unwrap();
+        // A poisoned lock still holds a usable handle, and one panic must not break logs for good.
+        let mut guard = state.0.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(ref mut child) = *guard { child.kill().ok(); }
         *guard = None;
     }
@@ -2705,7 +2706,7 @@ pub async fn compose_logs_watch(
         let stderr = child.stderr.take();
 
         // Store child so compose_logs_stop can kill it
-        *child_arc.lock().unwrap() = Some(child);
+        *child_arc.lock().unwrap_or_else(|e| e.into_inner()) = Some(child);
 
         // Merge stdout + stderr into one channel via a shared sender
         let (tx, rx) = std::sync::mpsc::channel::<String>();
@@ -2765,7 +2766,7 @@ pub async fn compose_logs_watch(
 pub async fn compose_logs_stop(
     state: tauri::State<'_, ComposeLogState>,
 ) -> Result<(), AtlasError> {
-    let mut guard = state.0.lock().unwrap();
+    let mut guard = state.0.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(ref mut child) = *guard { child.kill().ok(); }
     *guard = None;
     Ok(())

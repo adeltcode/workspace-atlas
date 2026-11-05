@@ -68,8 +68,9 @@ pub async fn shell_run(
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
 
-        // Store child for kill support
-        *child_arc.lock().unwrap() = Some(child);
+        // Store child for kill support. A poisoned lock still holds a usable handle,
+        // and one panic must not break the terminal for good.
+        *child_arc.lock().unwrap_or_else(|e| e.into_inner()) = Some(child);
 
         // Spawn reader threads - each line is emitted as a shell-out event
         let stdout_app = app.clone();
@@ -100,7 +101,7 @@ pub async fn shell_run(
         // without deadlocking on a blocking wait() call.
         let exit_code = loop {
             let result = {
-                let mut guard = child_arc.lock().unwrap();
+                let mut guard = child_arc.lock().unwrap_or_else(|e| e.into_inner());
                 guard
                     .as_mut()
                     .ok_or_else(|| "process handle lost".to_string())?
@@ -121,7 +122,7 @@ pub async fn shell_run(
         if let Some(h) = stderr_handle { h.join().ok(); }
 
         // Clear stored child
-        *child_arc.lock().unwrap() = None;
+        *child_arc.lock().unwrap_or_else(|e| e.into_inner()) = None;
 
         // shell-done is emitted AFTER all shell-out events are flushed
         app.emit("shell-done", ShellDone { exit_code }).ok();
