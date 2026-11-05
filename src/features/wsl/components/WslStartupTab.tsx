@@ -179,7 +179,6 @@ export default function WslStartupTab({ distros, onReload, onGoToConf }: {
     }
   }, [selected])
 
-  // Explicit start: boot for real and refresh the shared list so every view syncs.
   const startDistro = async () => {
     setStarting(true); setError(null)
     try {
@@ -193,8 +192,7 @@ export default function WslStartupTab({ distros, onReload, onGoToConf }: {
   }
 
   useEffect(() => { setData(null); setError(null); setQuery(''); setFilter('all') }, [selected])
-  // Load services only for a running, non-transitioning distro - the probe would
-  // otherwise boot a distro that's being stopped.
+  // Load only for a running, non-transitioning distro: the probe would otherwise boot one being stopped.
   useEffect(() => { if (running && selected !== busyDistro) load() }, [running, busyDistro, selected, load])
 
   const confirmToggle = async () => {

@@ -3,19 +3,8 @@ import clsx from 'clsx'
 import { X } from 'lucide-react'
 import ModalShell from '../../../components/ModalShell'
 
-/**
- * Shared modal shell for the WSL dialogs (confirm + form flavours).
- *
- * Dismissible by default. This used to be opt-in via a `closable` prop, and six
- * of the ten call sites did not pass it - so Escape on "Restart WSL?" reached
- * `ModalShell`'s `cancel` handler, which called `preventDefault()` and then an
- * undefined callback. The keypress was swallowed and the dialog sat there,
- * which reads as a frozen app to anyone navigating by keyboard.
- *
- * `blocking` is the exception, and it means one specific thing: an operation is
- * already running behind this dialog and closing it would strand the run. Every
- * pre-flight confirmation is dismissible, because nothing has happened yet.
- */
+/** Shared modal shell for the WSL dialogs. Dismissible by default. `blocking` means an operation
+ *  is already running behind the dialog and closing it would strand the run. */
 export function Modal({ icon, iconWarning, iconDanger, title, onClose, blocking, returnFocusRef, children }: {
   icon: React.ReactNode
   iconWarning?: boolean
@@ -47,14 +36,8 @@ export function Modal({ icon, iconWarning, iconDanger, title, onClose, blocking,
   )
 }
 
-/**
- * Labelled form row used inside the dialogs.
- *
- * Several fields hold a path input *and* a Browse button, so the label cannot
- * wrap its control the way a single-input field would: clicking the label would
- * then activate the button. The row is a named group instead, and each control
- * carries its own `aria-label` at the call site.
- */
+/** Labelled form row. A field can hold a path input and a Browse button, so the label cannot wrap
+ *  its control: clicking it would activate the button. Each control has its own `aria-label`. */
 export function Field({ label, children }: { label: string; children: React.ReactNode }) {
   const id = useId()
   return (

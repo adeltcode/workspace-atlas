@@ -31,8 +31,8 @@ export default function CodeOverlayEditor({
     if (ta) onScrollTop?.(ta.scrollTop)
   }
 
-  // Restore the scroll position handed in from the previous mode before paint,
-  // so toggling read-only ⇄ edit keeps the user at the same place in the file.
+  // Restore the scroll position before paint, so toggling read-only and edit keeps the user at the
+  // same place in the file.
   useLayoutEffect(() => {
     const ta = taRef.current
     if (!ta) return

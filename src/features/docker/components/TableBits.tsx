@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { ChevronUp, ChevronDown, Trash2 } from 'lucide-react'
 import clsx from 'clsx'
 
-/** Clickable, sort-aware table header cell shared by the list tabs. */
 export function SortHeader<K extends string>({ label, col, sortKey, sortDir, onSort, children }: {
   label: string; col: K; sortKey: K; sortDir: 'asc' | 'desc'
   onSort: (k: K) => void
@@ -16,8 +15,7 @@ export function SortHeader<K extends string>({ label, col, sortKey, sortDir, onS
       onClick={() => onSort(col)}
       aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
     >
-      {/* The header cell itself cannot take focus, so the control inside it does.
-          Sorting was mouse-only before this. */}
+      {/* The header cell cannot take focus, so the control inside it does. */}
       <div
         className="th-sort-inner"
         role="button"

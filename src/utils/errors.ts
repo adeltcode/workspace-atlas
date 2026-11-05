@@ -1,14 +1,5 @@
-/* The frontend half of the typed error.
- *
- * `src-tauri/src/error.rs` classifies every command failure into a kind, a
- * plain sentence and a recovery hint. This file is what turns that JSON back
- * into something a `catch` block can use.
- *
- * The important detail is `toString`. Eighty-eight call sites in this app were
- * written as `setError(String(e))`, and they keep working unchanged: `String()`
- * on an AppError returns the sentence on its own, with no `Error:` prefix and
- * no `[object Object]`. Surfaces that want the hint, the raw detail or a
- * recovery button reach for the fields instead. */
+/* The frontend half of `src-tauri/src/error.rs`. `toString` returns the sentence alone, so `String(e)`
+ * call sites keep working, with no `Error:` prefix. */
 
 import { invoke as tauriInvoke } from '@tauri-apps/api/core'
 
@@ -50,13 +41,8 @@ function isPayload(v: unknown): v is { kind: ErrorKind; message: string; hint?: 
     && typeof (v as { kind?: unknown }).kind === 'string'
 }
 
-/**
- * Normalise anything a `catch` can receive.
- *
- * The structured payload is the expected case. The rest are real: a Tauri-level
- * failure (an unregistered command, a serialisation fault) rejects with a bare
- * string, and a bug in our own frontend code throws a plain `Error`.
- */
+/** Normalizes anything a `catch` can receive. Besides the structured payload, a Tauri-level failure
+ *  rejects with a bare string and a frontend bug throws a plain `Error`. */
 export function toAppError(e: unknown): AppError {
   if (e instanceof AppError) return e
   if (isPayload(e)) return new AppError(e.kind, e.message, e.hint, e.detail, e.recovery_path, e.action)
@@ -65,13 +51,8 @@ export function toAppError(e: unknown): AppError {
   return new AppError('unknown', text || 'The operation failed without reporting a reason.')
 }
 
-/**
- * The single entry point to the Rust backend.
- *
- * Every `api.ts` imports `invoke` from here rather than from Tauri directly, so
- * there is one place where a rejection becomes an `AppError` and no call site
- * has to remember to normalise.
- */
+/** The single entry point to the Rust backend. Every `api.ts` imports `invoke` from here, so there
+ *  is one place where a rejection becomes an `AppError`. */
 export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   try {
     return await tauriInvoke<T>(cmd, args)

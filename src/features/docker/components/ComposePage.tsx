@@ -8,8 +8,6 @@ import { openUrl } from '@tauri-apps/plugin-opener'
 import { emptyMeta, type ComposeProject, type DockerContainer, type ContainerStats, type AppProjectMeta } from '../types'
 import { bytesToHuman, composeStatusLabel, hostPorts } from '../../../utils/format'
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
 interface Props {
   projects:       ComposeProject[]
   containers:     DockerContainer[]
@@ -20,8 +18,6 @@ interface Props {
   onLifecycle:    (project: ComposeProject, action: 'up' | 'down' | 'restart') => Promise<void>
   lifecycleRunning: { project: string; action: string } | null
 }
-
-// ── Health Score ──────────────────────────────────────────────────────────────
 
 interface HealthResult {
   score:    number
@@ -73,8 +69,6 @@ function healthColor(score: number) {
   return 'health--bad'
 }
 
-// ── Port conflict detection ───────────────────────────────────────────────────
-
 function findPortConflicts(containers: DockerContainer[]): Set<string> {
   const portToProjects = new Map<string, string[]>()
   for (const c of containers) {
@@ -91,8 +85,6 @@ function findPortConflicts(containers: DockerContainer[]): Set<string> {
   }
   return conflicts
 }
-
-// ── Stats strip ───────────────────────────────────────────────────────────────
 
 function StatsStrip({ projects, containers }: { projects: ComposeProject[]; containers: DockerContainer[] }) {
   const dots     = projects.map(p => composeStatusLabel(p.status).dot)
@@ -150,8 +142,6 @@ function StatsStrip({ projects, containers }: { projects: ComposeProject[]; cont
   )
 }
 
-// ── Project card ──────────────────────────────────────────────────────────────
-
 interface CardProps {
   project:          ComposeProject
   containers:       DockerContainer[]
@@ -171,7 +161,6 @@ function ProjectCard({
   const projectContainers = containers.filter(c => c.compose_project === project.name)
   const health = calcHealth(project.name, containers)
 
-  // Aggregate resource usage
   const projectStats = containerStats.filter(s =>
     projectContainers.some(c => c.name === s.name)
   )
@@ -179,7 +168,6 @@ function ProjectCard({
   const totalMemB   = projectStats.reduce((a, s) => a + s.mem_used_bytes, 0)
   const hasStats    = projectStats.length > 0
 
-  // Exposed ports from running containers
   const ports = [...new Set(
     projectContainers
       .filter(c => c.state === 'running' && c.ports)
@@ -190,7 +178,6 @@ function ProjectCard({
 
   return (
     <div className={clsx('compose-project-card', health.score === 0 && 'compose-project-card--stopped')}>
-      {/* ── Card header ── */}
       <div className="compose-card-header">
         <button className="compose-card-title-btn" onClick={onSelect}>
           <span className="compose-card-name">{project.name}</span>
@@ -205,7 +192,6 @@ function ProjectCard({
         </button>
       </div>
 
-      {/* ── Health row ── */}
       <div className="compose-card-health-row">
         <div className={clsx('compose-card-health-score', healthColor(health.score))}>
           {health.score}%
@@ -231,7 +217,6 @@ function ProjectCard({
         </span>
       </div>
 
-      {/* ── Resources + tags ── */}
       <div className="compose-card-meta-row">
         {hasStats && (
           <span className="compose-card-resources">
@@ -251,7 +236,6 @@ function ProjectCard({
         )}
       </div>
 
-      {/* ── Port chips ── */}
       {ports.length > 0 && (
         <div className="compose-card-ports">
           {ports.map(port => (
@@ -269,7 +253,6 @@ function ProjectCard({
         </div>
       )}
 
-      {/* ── Lifecycle buttons ── */}
       <div className="compose-card-actions">
         <button
           className="compose-card-btn compose-card-btn--up"
@@ -311,15 +294,12 @@ function ProjectCard({
   )
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
-
 export default function ComposePage({
   projects, containers, containerStats,
   metadata, onMetaChange, onSelectProject, onLifecycle, lifecycleRunning,
 }: Props) {
   const conflictPorts = useMemo(() => findPortConflicts(containers), [containers])
 
-  // Sort: favorites first, then by name
   const sorted = useMemo(() => [...projects].sort((a, b) => {
     const af = metadata[a.name]?.favorite ?? false
     const bf = metadata[b.name]?.favorite ?? false

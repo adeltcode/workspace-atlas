@@ -7,7 +7,6 @@ import type { WslDistro, ShellProfile } from '../types'
 import { Modal } from './Dialog'
 import { Panel, Button } from '../../../components/ui'
 
-/** Format a duration given in seconds as ms or s. */
 function fmtSecs(s: number): string {
   const ms = s * 1000
   return ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${Math.round(ms)} ms`
@@ -35,15 +34,12 @@ export default function WslPerformanceTab({ distros, onReload }: {
   const [profile, setProfile]     = useState<ShellProfile | null>(null)
   const [profileErr, setProfileErr] = useState<string | null>(null)
 
-  // Reset transient results when the distro changes (history is persisted, so it
-  // is read fresh from the store).
   useEffect(() => { setProfile(null); setProfileErr(null); setBenchErr(null) }, [selected])
 
   const history = benchmarks[selected] ?? []
 
-  // Benchmark and profile both leave the distro running (and the benchmark first
-  // terminates it), so they mark it busy to keep other views' probes off it during
-  // the run, then refresh the shared list so every view reflects the new state.
+  // Benchmark and profile leave the distro running, so they mark it busy to keep other views' probes
+  // off it, then refresh the shared list so every view reflects the new state.
   const runBenchmark = async () => {
     if (useAppStore.getState().wslBusyDistro) return
     setConfirmBench(false)
@@ -91,7 +87,6 @@ export default function WslPerformanceTab({ distros, onReload }: {
   return (
     <div className="wsl-perf">
       <div className="wsl-perf-cols">
-        {/* ── Cold-boot benchmark ──────────────────────────────────────── */}
         <Panel>
           <div className="panel-head">
             <Timer size={14} className="wsl-perf-head-icon" />
@@ -130,7 +125,6 @@ export default function WslPerformanceTab({ distros, onReload }: {
           )}
         </Panel>
 
-        {/* ── Shell startup profiler ───────────────────────────────────── */}
         <Panel>
           <div className="panel-head">
             <Gauge size={14} className="wsl-perf-head-icon" />

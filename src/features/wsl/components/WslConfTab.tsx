@@ -21,7 +21,6 @@ export default function WslConfTab({ distros, runningNames, onAfterShutdown }: {
   const backupDir    = useAppStore(s => s.backupDir)
   const setBackupDir = useAppStore(s => s.setBackupDir)
   const setWslView   = useAppStore(s => s.setWslView)
-  // The active distro is the global selection (switched from the view-header).
   const distro       = useAppStore(s => s.wslSelectedDistro) ?? ''
 
   useEffect(() => {
@@ -29,9 +28,8 @@ export default function WslConfTab({ distros, runningNames, onAfterShutdown }: {
   }, [backupDir, setBackupDir])
 
   const backend = useMemo<IniBackend>(() => ({
-    // Reading /etc/wsl.conf boots a stopped distro; the cheap running-state poll in
-    // WslView reflects that in the shared list within a few seconds, so we don't
-    // pay a full reload (with its loading flicker) on every config open here.
+    // Reading /etc/wsl.conf boots a stopped distro. WslView's running-state poll picks that up within
+    // a few seconds, so no full reload is needed on every config open.
     load:          () => api.readWslConf(distro),
     save:          (content) => api.writeWslConf(distro, content),
     listBackups:   () => api.wslConfListBackups(distro, backupDir),

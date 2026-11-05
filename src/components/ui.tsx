@@ -1,17 +1,9 @@
-/* The component vocabulary.
- *
- * Before this file existed the app had 38 `*-btn` class families, 12 empty-state
- * families, 8 search inputs using 4 different verbs, and two entirely different
- * renderings of "this module's prerequisite is missing". Every module now draws
- * from here. If a module needs something this file does not have, it belongs
- * here, not in that module. */
+/* If a module needs something this file does not have, it belongs here, not in that module. */
 import { Search, X, ChevronRight, AlertTriangle } from 'lucide-react'
 import clsx from 'clsx'
 import CommandOutput from './CommandOutput'
 import { toAppError } from '../utils/errors'
 import ModalShell from './ModalShell'
-
-// ── Button ───────────────────────────────────────────────────────────────────
 
 type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   /** `danger` is the solid confirm inside a dialog; `danger-outline` is the
@@ -36,10 +28,6 @@ export function Button({ variant = 'default', size = 'md', icon, className, ...r
     />
   )
 }
-
-// ── Search field ─────────────────────────────────────────────────────────────
-// One verb. The app used to say "Filter by...", "Search by...", "Find a..." and
-// "Search..." in different modules for the identical control.
 
 export function SearchField({ value, onChange, placeholder, label, className }: {
   value: string
@@ -71,8 +59,6 @@ export function SearchField({ value, onChange, placeholder, label, className }: 
   )
 }
 
-// ── Tag ──────────────────────────────────────────────────────────────────────
-
 export function Tag({ tone = 'neutral', children, className }: {
   tone?: 'neutral' | 'ok' | 'warn' | 'danger' | 'accent'
   children: React.ReactNode
@@ -82,9 +68,6 @@ export function Tag({ tone = 'neutral', children, className }: {
     <span className={clsx('tag', tone !== 'neutral' && `tag--${tone}`, className)}>{children}</span>
   )
 }
-
-// ── Empty state ──────────────────────────────────────────────────────────────
-// Teaches the surface. "Nothing here" is not an acceptable empty state.
 
 export function EmptyState({ icon: Icon, title, description, actions }: {
   icon?: React.ElementType
@@ -102,14 +85,11 @@ export function EmptyState({ icon: Icon, title, description, actions }: {
   )
 }
 
-// ── Prerequisite notice ──────────────────────────────────────────────────────
-// Docker missing and WSL missing are the same state and now read the same way.
-
 export function Prerequisite({ title, description, steps, command, actions }: {
   title: string
   description: string
   steps?: string[]
-  /** The command that installs it, shown because the user could have typed it. */
+  /** The command that installs it. */
   command?: string
   actions?: React.ReactNode
 }) {
@@ -127,10 +107,6 @@ export function Prerequisite({ title, description, steps, command, actions }: {
     </div>
   )
 }
-
-// ── Sheet header ─────────────────────────────────────────────────────────────
-// Replaces four different view-header treatments, and adds the breadcrumb the
-// app never had.
 
 export interface Crumb { label: string; onClick?: () => void }
 
@@ -167,13 +143,9 @@ export function SheetHead({ crumbs, title, subtitle, status, actions }: {
   )
 }
 
-// ── Keycap ───────────────────────────────────────────────────────────────────
-
 export function Kbd({ children }: { children: React.ReactNode }) {
   return <kbd className="kbd">{children}</kbd>
 }
-
-// ── Section heading ──────────────────────────────────────────────────────────
 
 export function SectionHead({ title, meta, actions }: {
   title: string
@@ -190,12 +162,6 @@ export function SectionHead({ title, meta, actions }: {
     </div>
   )
 }
-
-// ── Stat card ────────────────────────────────────────────────────────────────
-// One number, stated. The Overview and the Docker summary used to draw the same
-// thing two ways - `metric-card` with a meter and `hero-tile` without - so a
-// count of containers looked like a different kind of fact from a percentage of
-// memory. It is the same kind of fact.
 
 export function StatCard({ label, value, unit, sub, pct, tone, onClick, ariaLabel }: {
   label: string
@@ -245,15 +211,9 @@ export function StatCard({ label, value, unit, sub, pct, tone, onClick, ariaLabe
     : <div className="stat">{body}</div>
 }
 
-/** The row stat cards sit in. Fills the column at any width, which the old
- *  fixed six-column grid did not once the tile count dropped to three. */
 export function StatRow({ children }: { children: React.ReactNode }) {
   return <div className="stat-row">{children}</div>
 }
-
-// ── Panel ────────────────────────────────────────────────────────────────────
-// A bordered group with an optional head. Replaces `overview-section`,
-// `rowlist` and four hand-rolled card treatments.
 
 export function Panel({ title, meta, actions, onOpen, children, className }: {
   /** Omit for a plain bordered group with no head. */
@@ -292,14 +252,8 @@ export function Panel({ title, meta, actions, onOpen, children, className }: {
   )
 }
 
-// ── Error banner ─────────────────────────────────────────────────────────────
-// Thirteen copies of this markup existed, three of them with different padding.
-//
-// An error that names the problem and stops is half an error. Pass `error` (the
-// caught value) instead of a string and the banner draws what the backend
-// classified: the sentence, the recovery hint, and the raw Windows or Docker
-// text behind a disclosure - hidden by default because it is evidence, not the
-// message, but present because this app does not hide what actually happened.
+// Pass `error` (the caught value) rather than a string, and the banner draws the sentence, the
+// recovery hint, and the raw Windows or Docker text behind a disclosure.
 
 export function ErrorBanner({ title, error, action, className, detailLabel = 'What Windows reported', children }: {
   /** Names the operation that failed: "Could not remove the volume". */
@@ -311,7 +265,7 @@ export function ErrorBanner({ title, error, action, className, detailLabel = 'Wh
   /** `error-banner--flush` where the surrounding layout owns the spacing. */
   className?: string
   detailLabel?: string
-  /** Legacy plain-text body, used when there is no `error` to unpack. */
+  /** Plain-text body, used when there is no `error` to unpack. */
   children?: React.ReactNode
 }) {
   const e = error === undefined ? null : toAppError(error)
@@ -342,27 +296,15 @@ export function ErrorBanner({ title, error, action, className, detailLabel = 'Wh
   )
 }
 
-// ── Destructive confirmation ─────────────────────────────────────────────────
-/**
- * The dialog a bulk destructive action opens.
- *
- * `docker volume prune -f` and `docker rm` across a selection used to run
- * straight off a toolbar click. The per-row remove had a two-click arm, so the
- * action that destroyed one volume was harder to trigger than the action that
- * destroyed seven - the exact inversion PRODUCT.md's second principle forbids.
- *
- * Four things, in the order the user needs them: what is about to happen, what
- * it costs, the command that will run, and the list of objects by name. The
- * escape hatch sits on the left, away from the confirm, because it is a
- * different decision rather than a softer version of the same one.
- */
+/** The dialog a bulk destructive action opens. The escape path sits on the left, away from
+ *  the confirm, because it is a different decision. */
 export function ConfirmDestructive({
   title, consequence, command, items, summary, confirmLabel, onConfirm, onCancel, busy, escape,
 }: {
   title: string
   /** What is lost. Concrete, not "this cannot be undone" alone. */
   consequence: React.ReactNode
-  /** The exact shell line, shown because the user could have typed it. */
+  /** The exact shell line. */
   command: string
   items: { name: string; meta?: string }[]
   /** Counts and totals: "7 volumes · 2.4 GB". */
@@ -413,15 +355,10 @@ export function ConfirmDestructive({
   )
 }
 
-// ── Toolbar ──────────────────────────────────────────────────────────────────
-// The row above a table: search, filters, count. One height, one gap.
-
 export function Toolbar({ children, className }: { children: React.ReactNode; className?: string }) {
   return <div className={clsx('toolbar', className)}>{children}</div>
 }
 
-/** Segmented filter group. Was `ctr-state-filter` in three modules and a loose
- *  row of pill buttons in two others. */
 export function Segmented({ label, children }: { label: string; children: React.ReactNode }) {
   return <div className="segmented" role="group" aria-label={label}>{children}</div>
 }
@@ -446,16 +383,8 @@ export function SegmentedItem({ active, count, onClick, title, children }: {
   )
 }
 
-// ── Tabs ─────────────────────────────────────────────────────────────────────
-// The app had four tab strips built from plain buttons and a CSS `.active`
-// class, so a screen reader announced them as an unlabelled row of buttons with
-// no selected state and no way to arrow between them. These two carry the
-// semantics; each strip keeps its own class, so this changes what the strip
-// says, not how it looks.
-
-/** `role="tablist"` with arrow-key traversal. Selection follows focus, which is
- *  the WAI-ARIA automatic-activation pattern and is correct here because every
- *  panel in this app is cheap to switch to. */
+/** Selection follows focus, the WAI-ARIA automatic-activation pattern. That suits this app
+ *  because every panel is cheap to switch to. */
 export function TabList({ label, className, onClick, children }: {
   label: string
   className?: string
@@ -465,8 +394,6 @@ export function TabList({ label, className, onClick, children }: {
 }) {
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return
-    // Reading the tabs out of the DOM beats threading a ref array through every
-    // call site, and no strip in this app is more than four tabs long.
     const tabs = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]:not([disabled])'))
     const i = tabs.indexOf(document.activeElement as HTMLButtonElement)
     if (i === -1) return

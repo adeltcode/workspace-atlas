@@ -9,9 +9,8 @@ export const SOURCE_IDS = [
   'registry', 'store',
 ]
 
-/** Scan the given package managers concurrently. One result per source, in the
- *  backend's own order; a manager that is not installed comes back
- *  `installed: false` rather than as an error. */
+/** Scan concurrently. One result per source, in the backend's own order. A manager that is not
+ *  installed comes back `installed: false`, not as an error. */
 export const pkgScan = (sources: string[] = SOURCE_IDS) =>
   invoke<SourceResult[]>('pkg_scan', { sources })
 
@@ -20,9 +19,8 @@ export const pkgScan = (sources: string[] = SOURCE_IDS) =>
 export const pkgCheckUpdates = () =>
   invoke<SourceUpdates[]>('pkg_check_updates')
 
-/** Upgrade one package. Resolves when the manager exits; its output streams to
- *  the terminal meanwhile. Resolves to the `pip check` lines that name the
- *  package (pip only). */
+/** Resolves when the manager exits, with the `pip check` lines that name the package (pip only).
+ *  Its output streams to the terminal meanwhile. */
 export const pkgUpgrade = (source: string, id: string) =>
   invoke<string[]>('pkg_upgrade', { source, id })
 

@@ -25,8 +25,6 @@ export default function Titlebar() {
         <span className="titlebar-title">Workspace Atlas</span>
       </div>
 
-      {/* Global search sits here rather than behind a keystroke. The shortcut is
-          an accelerator; the control is the affordance. */}
       <button className="tb-search" onClick={() => useAppStore.getState().setIndexOpen(true)}>
         <Search size={13} />
         <span className="tb-search-label">Search distros, images, containers, commands</span>

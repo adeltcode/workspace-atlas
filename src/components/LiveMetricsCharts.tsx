@@ -3,10 +3,6 @@ import clsx from 'clsx'
 import { useAppStore } from '../store/appStore'
 import { bytesToHuman } from '../utils/format'
 
-// Shared live CPU% / memory chart pair with hover tooltips and a legend that
-// toggles series. Extracted from the Docker overview so the WSL dashboard can
-// render the identical visualization for distros.
-
 export interface LiveSeriesInput {
   name: string
   cpu: number[]

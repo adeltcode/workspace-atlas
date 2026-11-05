@@ -19,13 +19,10 @@ import ComposeDockerfileViewer, { DockerfileLine } from './ComposeDockerfileView
 import CodeOverlayEditor from './CodeOverlayEditor'
 import { ErrorBanner } from '../../../components/ui'
 
-// ── YAML syntax highlighter ───────────────────────────────────────────────────
-
 // Matches: optional-ip:hostPort:containerPort[/proto]
 const PORT_RE = /^(?:[\d.]+:)?(\d+):\d+(?:\/(?:tcp|udp))?$/
 
-// Label a detected file relative to the compose project dir, so nested files
-// like ./nginx/Dockerfile and ./php/Dockerfile are distinguishable in the tabs.
+// Relative to the compose project dir, so ./nginx/Dockerfile and ./php/Dockerfile stay distinguishable.
 function relLabel(path: string, baseDir: string): string {
   const np = path.replace(/\\/g, '/')
   const nb = baseDir.replace(/\\/g, '/').replace(/\/$/, '')
@@ -33,7 +30,6 @@ function relLabel(path: string, baseDir: string): string {
   return np.split('/').pop() ?? path
 }
 
-// Directory holding a path, and that directory's lowercased leaf name.
 function dirOf(p: string): string {
   const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'))
   return i >= 0 ? p.slice(0, i) : ''
@@ -42,8 +38,7 @@ function dirNameOf(p: string): string {
   return dirOf(p).replace(/\\/g, '/').replace(/\/+$/, '').split('/').pop()?.toLowerCase() ?? ''
 }
 
-// The sidebar file menu for a project: its compose config files followed by the
-// already-filtered detected extras (referenced Dockerfiles and .env files).
+// Compose config files first, then the detected extras, which must already be filtered.
 type FileNav = { path: string; label: string; kind: 'compose' | 'dockerfile' | 'env' }
 function buildFileNav(project: ComposeProject, extras: DetectedFile[]): FileNav[] {
   const baseDir = dirOf(project.config_files[0] ?? '')
@@ -59,7 +54,6 @@ function buildFileNav(project: ComposeProject, extras: DetectedFile[]): FileNav[
 
 const EMPTY_FILES: DetectedFile[] = []
 
-// Host ports published by the running containers in a project (deduped, in order)
 function runningHostPorts(containers: DockerContainer[]): string[] {
   return [...new Set(containers.filter(c => c.state === 'running' && c.ports).flatMap(c => hostPorts(c.ports)))]
 }
@@ -81,7 +75,6 @@ function renderYamlValue(
     return <><span className="yaml-value">{v}</span><span className="yaml-comment">{c}</span></>
   }
 
-  // Strip outer quotes for pattern matching
   const stripped = trimmed.replace(/^['"]|['"]$/g, '')
 
   // Clickable port mapping: "3000:3000", "127.0.0.1:8080:80/tcp"
@@ -216,8 +209,6 @@ function YamlViewer({
   )
 }
 
-// ── Dockerfile reference parsing (match detected files to the compose file) ──
-
 // Resolve a build context + dockerfile into a normalized project-relative path,
 // e.g. context "." + dockerfile "./nginx/Dockerfile" → "nginx/dockerfile".
 function refRelFrom(context: string, dockerfile: string): string {
@@ -233,7 +224,6 @@ function refRelFrom(context: string, dockerfile: string): string {
   return parts.join('/').toLowerCase()
 }
 
-// Extract the Dockerfiles a compose file actually builds, as project-relative refs.
 function parseDockerfileRefs(yaml: string): string[] {
   const lines = yaml.split('\n')
   const clean = (s: string) => s.replace(/\s+#.*$/, '').trim().replace(/^['"]|['"]$/g, '')
@@ -264,9 +254,8 @@ function parseDockerfileRefs(yaml: string): string[] {
   return refs
 }
 
-// Does a detected Dockerfile path correspond to one of the compose refs?
-// Anchors on the project dir name so a bare "Dockerfile" ref matches the root
-// one rather than a nested nginx/Dockerfile. Format-agnostic (suffix compare).
+// Anchors on the project dir name, so a bare "Dockerfile" ref matches the root one rather than
+// a nested nginx/Dockerfile.
 function dockerfileMatchesRefs(path: string, refRels: string[], dirName: string): boolean {
   const np = path.replace(/\\/g, '/').toLowerCase()
   return refRels.some(rel => {
@@ -276,9 +265,6 @@ function dockerfileMatchesRefs(path: string, refRels: string[], dirName: string)
   })
 }
 
-// Editable YAML with live syntax highlighting (highlighted layer behind a
-// transparent textarea - see CodeOverlayEditor). Keeps the view ⇄ edit
-// transition visually seamless.
 function YamlEditor({ value, onChange, initialScrollTop, onScrollTop }: {
   value: string; onChange: (v: string) => void
   initialScrollTop?: number; onScrollTop?: (top: number) => void
@@ -294,8 +280,6 @@ function YamlEditor({ value, onChange, initialScrollTop, onScrollTop }: {
     />
   )
 }
-
-// ── Path origin detection ─────────────────────────────────────────────────────
 
 type PathOrigin = 'windows' | 'wsl-mount' | 'wsl'
 
@@ -320,8 +304,6 @@ function PathOriginLine({ path }: { path: string }) {
   )
 }
 
-// ── Compose lifecycle actions ─────────────────────────────────────────────────
-
 const LIFECYCLE_ACTIONS = [
   { id: 'up',      Icon: Play,      label: 'Up',      title: 'docker compose up -d',         color: 'success' },
   { id: 'down',    Icon: Square,    label: 'Down',    title: 'docker compose down',           color: 'danger'  },
@@ -330,10 +312,6 @@ const LIFECYCLE_ACTIONS = [
 ] as const
 
 type LifecycleAction = typeof LIFECYCLE_ACTIONS[number]['id']
-
-// ── Service table ─────────────────────────────────────────────────────────────
-
-// ── Inspect drawer ────────────────────────────────────────────────────────────
 
 function InspectDrawer({ container, onClose }: { container: DockerContainer; onClose: () => void }) {
   const ports = hostPorts(container.ports)
@@ -372,8 +350,6 @@ function InspectDrawer({ container, onClose }: { container: DockerContainer; onC
   )
 }
 
-// ── Wipe confirmation modal ───────────────────────────────────────────────────
-
 function WipeConfirmModal({ projectName, onConfirm, onCancel, running }: {
   projectName: string; onConfirm: () => void; onCancel: () => void; running: boolean
 }) {
@@ -407,8 +383,6 @@ function WipeConfirmModal({ projectName, onConfirm, onCancel, running }: {
     </ModalShell>
   )
 }
-
-// ── Service cards (sidebar, replaces table in project view) ───────────────────
 
 interface ServiceCardsProps {
   containers:      DockerContainer[]
@@ -456,8 +430,6 @@ function ServiceCards({ containers, serviceAction, onServiceAction, onOpenLogs, 
   )
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
-
 interface ComposeTabProps {
   refreshTick?:   number
   containers:     DockerContainer[]
@@ -470,10 +442,8 @@ export default function ComposeTab({
 }: ComposeTabProps) {
   const backupDir = useAppStore(s => s.backupDir)
 
-  // ── View mode: 'main' = overview page, 'project' = file detail ───────────
   const [viewMode, setViewMode] = useState<'main' | 'project'>('main')
 
-  // ── Metadata ─────────────────────────────────────────────────────────────
   const [metadata, setMetadata] = useState<Record<string, AppProjectMeta>>({})
 
   const [projects, setProjects]           = useState<ComposeProject[]>([])
@@ -490,57 +460,42 @@ export default function ComposeTab({
   const [backingUp, setBackingUp]           = useState(false)
   const [backupMsg, setBackupMsg]           = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null)
 
-  // Lifecycle controls
   const [lifecycleRunning, setLifecycleRunning] = useState<LifecycleAction | null>(null)
-  // For the main page: track which project + action is running
   const [cardLifecycle, setCardLifecycle] = useState<{ project: string; action: string } | null>(null)
 
-  // ── Inline editor ─────────────────────────────────────────────────────────
   const [editing, setEditMode]     = useState(false)
   const storedDraft = useAppStore(s => s.editorDrafts[activeFile])
   const [editSaving, setEditSaving] = useState(false)
-  // Last scroll position per file, so toggling read-only ⇄ edit (and switching
-  // between files) keeps the user at the same place in the document.
   const scrollByFile = useRef<Record<string, number>>({})
   const rememberScroll = (top: number) => { scrollByFile.current[activeFile] = top }
 
-  // ── Per-service controls ──────────────────────────────────────────────────
   const [serviceAction, setServiceAction] = useState<{ service: string; action: string } | null>(null)
   const [inspectContainer, setInspectContainer] = useState<DockerContainer | null>(null)
 
-  // ── Volume wipe ───────────────────────────────────────────────────────────
   const [downDropOpen, setDownDropOpen]     = useState(false)
   const [wipeConfirmOpen, setWipeConfirmOpen] = useState(false)
   const [wipeRunning, setWipeRunning]         = useState(false)
 
-  // (legacy .env accordion state removed - .env is now a first-class tab)
-
-  // ── Detected extra project files (Dockerfiles, .env), filtered to those the
-  //    compose file references and cached per project. Built once and preloaded
-  //    so the sidebar file menu is instant and never flickers as content loads.
+  // Detected Dockerfiles and .env files the compose file references, cached per project. Preloaded
+  // so the sidebar file menu never flickers as content loads.
   const [filesByProject, setFilesByProject] = useState<Record<string, DetectedFile[]>>({})
   // Projects whose detection is in flight, so the preload and a user-select
   // never run detection for the same project at once.
   const detectingRef = useRef<Set<string>>(new Set())
-  // Cache of loaded file contents keyed by path
   const [fileContents, setFileContents] = useState<Record<string, string>>({})
 
-  // ── Open in IDE ───────────────────────────────────────────────────────────
   const preferredEditor = useAppStore(s => s.preferredEditor)
   const setPreferredEditor = useAppStore(s => s.setPreferredEditor)
   const [idePickerOpen, setIdePickerOpen] = useState(false)
   const [detectedEditors, setDetectedEditors] = useState<EditorInfo[]>([])
 
-  // ── Metadata panel ────────────────────────────────────────────────────────
   const [metaPanelOpen, setMetaPanelOpen] = useState(false)
   const [metaTagInput, setMetaTagInput]   = useState('')
 
-  // ── Config validator ──────────────────────────────────────────────────────
   const [validatorOpen,    setValidatorOpen]    = useState(false)
   const [validatorRunning, setValidatorRunning] = useState(false)
   const [validatorResult,  setValidatorResult]  = useState<{ yaml?: string; error?: string } | null>(null)
 
-  // ── Logs - routed to the bottom Terminal panel's "Logs" tab ────────────────
   const composeLogContext = useAppStore(s => s.composeLogContext)
   const terminalTab       = useAppStore(s => s.terminalTab)
 
@@ -554,8 +509,6 @@ export default function ComposeTab({
     })
   }
 
-  // ── Computed ──────────────────────────────────────────────────────────────
-
   const projectDir = useMemo(() => {
     if (!activeFile) return ''
     const i = Math.max(activeFile.lastIndexOf('/'), activeFile.lastIndexOf('\\'))
@@ -567,7 +520,6 @@ export default function ComposeTab({
     [containers, selected]
   )
 
-  // Project-level status summary shown in the detail header
   const runningCount = projectContainers.filter(c => c.state === 'running').length
   const totalCount   = projectContainers.length
   const projState: 'none' | 'running' | 'partial' | 'stopped' =
@@ -577,15 +529,11 @@ export default function ComposeTab({
     : 'partial'
   const headerPorts = useMemo(() => runningHostPorts(projectContainers).slice(0, 6), [projectContainers])
 
-  // Directory holding the compose file - used to label nested project files
   const composeBaseDir = useMemo(() => dirOf(selected?.config_files[0] ?? ''), [selected])
   const composeDirName = useMemo(() => dirNameOf(selected?.config_files[0] ?? ''), [selected])
 
-  // The selected project's referenced Dockerfiles / .env files, straight from
-  // the preloaded cache - stable, so the sidebar menu never flickers.
   const visibleProjectFiles = filesByProject[selected?.name ?? ''] ?? EMPTY_FILES
 
-  // Open the Dockerfile referenced on a `dockerfile:` line as a tab
   const handleOpenDockerfileRef = (raw: string) => {
     const v = raw.replace(/\s+#.*$/, '').trim().replace(/^['"]|['"]$/g, '')
     if (!v) return
@@ -597,7 +545,7 @@ export default function ComposeTab({
       setActiveFile(match.path); setEditMode(false); loadExtraFile(match.path)
       return
     }
-    // Fallback - resolve relative to the compose dir (preserve case) and open
+    // Fallback: resolve relative to the compose dir, preserving case.
     if (!composeBaseDir || !selected) return
     const sep = composeBaseDir.includes('\\') ? '\\' : '/'
     const abs = `${composeBaseDir.replace(/[/\\]+$/, '')}${sep}${v.replace(/^\.\//, '').replace(/\//g, sep)}`
@@ -609,13 +557,9 @@ export default function ComposeTab({
     setActiveFile(abs); setEditMode(false); loadExtraFile(abs)
   }
 
-  // ── Sidebar file menu integration (files live in the sidebar, not as tabs) ──
-
   const composeFileSelect = useAppStore(s => s.composeFileSelect)
 
-  // Open a file by path - handles both config files and detected extra files.
-  // Re-selecting the active file is a no-op unless it failed to load, in which
-  // case clicking it again retries.
+  // Re-selecting the active file is a no-op unless it failed to load. Then clicking it again retries.
   const openFile = (path: string) => {
     if (!path || (path === activeFile && !fileError)) return
     setActiveFile(path)
@@ -625,7 +569,6 @@ export default function ComposeTab({
     else loadExtraFile(path)
   }
 
-  // Publish the active project's files so the sidebar can render them as a menu
   useEffect(() => {
     if (viewMode !== 'project' || !selected) {
       useAppStore.getState().setComposeFilesNav([])
@@ -634,21 +577,15 @@ export default function ComposeTab({
     useAppStore.getState().setComposeFilesNav(buildFileNav(selected, visibleProjectFiles))
   }, [viewMode, selected, visibleProjectFiles])
 
-  // Publish which file is active so the sidebar can highlight it
   useEffect(() => {
     useAppStore.getState().setComposeActiveFilePath(viewMode === 'project' ? (activeFile || null) : null)
   }, [viewMode, activeFile])
 
-  // React to a sidebar file click
   useEffect(() => {
     if (!composeFileSelect) return
     useAppStore.getState().setComposeFileSelect(null)
     openFile(composeFileSelect)
   }, [composeFileSelect]) // eslint-disable-line
-
-  // (envFilePath no longer used - .env is now a detected first-class tab)
-
-  // ── File type from active file path ──────────────────────────────────────
 
   const fileType = useMemo((): 'compose' | 'env' | 'dockerfile' => {
     const name = activeFile.split('/').pop()?.split('\\').pop() ?? ''
@@ -657,11 +594,8 @@ export default function ComposeTab({
     return 'compose'
   }, [activeFile])
 
-  // ── Project file detection (cached + preloaded) ──────────────────────────
-  // Detect a project's extra files and filter to the Dockerfiles its compose
-  // file references, then cache the result. Skips work if already cached. On
-  // failure (e.g. WSL busy) it leaves the entry uncached so a later select
-  // retries, rather than caching an empty menu.
+  // On failure (e.g. WSL busy) the entry stays uncached, so a later select retries rather than
+  // caching an empty menu.
   const ensureProjectFiles = async (project: ComposeProject, force = false) => {
     if (detectingRef.current.has(project.name)) return
     if (!force && filesByProject[project.name] !== undefined) return
@@ -684,15 +618,12 @@ export default function ComposeTab({
     }
   }
 
-  // ── Load projects ─────────────────────────────────────────────────────────
-
   const loadProjects = async () => {
     setLoading(true); setError(null)
     try {
       const live = await api.dockerComposeLs()
-      // Remember the live projects, then re-add any remembered project that is
-      // currently down (gone from `docker compose ls`) as a stopped entry, so
-      // the user can still see and start it.
+      // A project that is down drops out of `docker compose ls`, so re-add remembered ones as stopped
+      // entries the user can still see and start.
       useAppStore.getState().rememberComposeProjects(
         live.map(p => ({ name: p.name, config_files: p.config_files }))
       )
@@ -708,9 +639,7 @@ export default function ComposeTab({
 
   useEffect(() => { loadProjects() }, [refreshTick]) // eslint-disable-line
 
-  // Preload every project's file menu so opening one shows its Dockerfiles and
-  // .env files instantly. Done one project at a time so we never spawn a burst
-  // of concurrent `wsl` reads (which can fail, especially during WSL cold-start).
+  // One project at a time: a burst of concurrent `wsl` reads can fail, especially during WSL cold-start.
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -722,18 +651,13 @@ export default function ComposeTab({
     return () => { cancelled = true }
   }, [projects]) // eslint-disable-line
 
-  // ── Load metadata once on mount ──────────────────────────────────────────
-
   useEffect(() => {
     api.metadataLoad().then(setMetadata).catch(() => {})
   }, [])
 
-  // Detect editors in PATH once on mount
   useEffect(() => {
     api.detectEditors().then(setDetectedEditors).catch(() => {})
   }, [])
-
-  // ── React to "go to overview" signal from sidebar ────────────────────────
 
   const composeShowOverview = useAppStore(s => s.composeShowOverview)
 
@@ -745,17 +669,13 @@ export default function ComposeTab({
     useAppStore.getState().setComposeActiveProject(null)
   }, [composeShowOverview])
 
-  // ── Sync compose project list to sidebar nav ─────────────────────────────
-
   useEffect(() => {
     useAppStore.getState().setComposeProjectsNav(
       projects.map(p => ({ name: p.name, status: p.status }))
     )
   }, [projects])
 
-  // ── React to composePreselect from sidebar or overview panel ─────────────
-  // Runs on initial project load AND whenever composePreselect changes so that
-  // sidebar clicks work even when the compose tab is already mounted.
+  // Also runs when composePreselect changes, so sidebar clicks work while the compose tab is mounted.
 
   const composePreselect = useAppStore(s => s.composePreselect)
 
@@ -765,17 +685,13 @@ export default function ComposeTab({
       useAppStore.getState().setComposePreselect(null)
       const target = projects.find(p => p.name === composePreselect)
       if (target) selectProject(target)
-      // Don't auto-select first project on initial load - show overview instead
     }
   }, [projects, composePreselect]) // eslint-disable-line
-
-  // ── Project selection ─────────────────────────────────────────────────────
 
   const selectProject = (project: ComposeProject) => {
     setViewMode('project')
     useAppStore.getState().setComposeActiveProject(project.name)
-    // Re-selecting the project that's already open must not tear down and reload
-    // content that is already on screen - that re-render is the visible flicker.
+    // Re-selecting the open project must not reload content already on screen: that causes a visible flicker.
     if (selected?.name === project.name) return
 
     // Publish the new project's file menu in the same render as setSelected, from
@@ -787,16 +703,15 @@ export default function ComposeTab({
     setBackupMsg(null)
     setEditMode(false)
     setInspectContainer(null)
-    useAppStore.getState().closeComposeLogs() // drop stale logs from the previous project
+    useAppStore.getState().closeComposeLogs()
     setValidatorOpen(false)
     setMetaPanelOpen(false)
     setFileContents({})
-    ensureProjectFiles(project) // refresh the cache if this project was not preloaded
+    ensureProjectFiles(project)
     const first = project.config_files[0] ?? ''
     setActiveFile(first)
     if (first) loadFile(first)
     if (backupDir) loadComposeBackups(project.name)
-    // Record recent_opened in metadata
     const now = new Date().toISOString()
     const current = metadata[project.name] ?? emptyMeta()
     const updated = { ...current, recent_opened: now }
@@ -809,7 +724,6 @@ export default function ComposeTab({
     api.metadataSaveProject(name, meta).catch(() => {})
   }
 
-  // Drop a stopped project from the remembered list and return to the overview.
   const handleForgetProject = () => {
     if (!selected) return
     useAppStore.getState().forgetComposeProject(selected.name)
@@ -817,8 +731,6 @@ export default function ComposeTab({
     setViewMode('main')
     loadProjects()
   }
-
-  // ── Extra file loader (Dockerfiles, .env tabs) ────────────────────────────
 
   const loadExtraFile = async (path: string) => {
     if (fileContents[path] !== undefined) return
@@ -830,8 +742,6 @@ export default function ComposeTab({
     }
   }
 
-  // ── Open in IDE ───────────────────────────────────────────────────────────
-
   const handleOpenInIde = async () => {
     if (!activeFile) return
     if (preferredEditor) {
@@ -839,7 +749,6 @@ export default function ComposeTab({
         useAppStore.getState().addTerminalLine(`  ✗ ${String(e)}`, 'error')
       )
     } else {
-      // Show picker on first use
       if (detectedEditors.length === 0) {
         await api.detectEditors().then(setDetectedEditors).catch(() => {})
       }
@@ -857,8 +766,6 @@ export default function ComposeTab({
     }
   }
 
-  // ── Config validator ──────────────────────────────────────────────────────
-
   const handleValidate = async () => {
     if (!activeFile || validatorRunning) return
     setValidatorRunning(true)
@@ -874,10 +781,7 @@ export default function ComposeTab({
     }
   }
 
-  // ── Startup time tracking ─────────────────────────────────────────────────
-
   const recordStartupTime = async (projectName: string, startMs: number) => {
-    // Poll until all containers for project are running (max 5 min)
     const deadline = Date.now() + 5 * 60 * 1000
     while (Date.now() < deadline) {
       await new Promise(r => setTimeout(r, 1500))
@@ -896,9 +800,6 @@ export default function ComposeTab({
     }
   }
 
-  // ── Inline editor (handles compose + Dockerfile; .env edits live in its tab) ─
-
-  // Content being edited: compose uses fileContent; other text files use the cache.
   const editableContent = fileType === 'compose' ? (fileContent ?? '') : (fileContents[activeFile] ?? '')
   const fileLoaded      = fileType === 'compose' ? fileContent !== null : fileContents[activeFile] !== undefined
   const isEditableType  = fileType === 'compose' || fileType === 'dockerfile'
@@ -923,8 +824,7 @@ export default function ComposeTab({
     if (!activeFile || editSaving) return
     setEditSaving(true)
     try {
-      // Re-add the trailing newline that was dropped for editing, if the file
-      // had one, so saving doesn't strip the file's final newline.
+      // Re-add the trailing newline dropped for editing, if the file had one.
       const toWrite = editableContent.endsWith('\n') ? editDraft + '\n' : editDraft
       await api.writeFileContent(activeFile, toWrite)
       useAppStore.getState().clearEditorDraft(activeFile, editDraft)
@@ -943,8 +843,6 @@ export default function ComposeTab({
       setEditSaving(false)
     }
   }
-
-  // ── Per-service controls ──────────────────────────────────────────────────
 
   const handleServiceAction = async (service: string, action: 'up' | 'stop' | 'restart') => {
     if (!activeFile || serviceAction) return
@@ -977,8 +875,6 @@ export default function ComposeTab({
     }
   }
 
-  // ── Volume wipe ───────────────────────────────────────────────────────────
-
   const handleWipeDown = async () => {
     if (!activeFile || wipeRunning) return
     setWipeRunning(true)
@@ -1010,8 +906,6 @@ export default function ComposeTab({
     finally { setFileLoading(false) }
   }
 
-  // ── YAML callbacks ────────────────────────────────────────────────────────
-
   const handleOpenPort = (port: string) => {
     openUrl(`http://localhost:${port}`).catch(() => {})
   }
@@ -1022,8 +916,6 @@ export default function ComposeTab({
     const abs = `${projectDir}${sep}${rel.replace(/^\.\//, '').replace(/^\.\.\//, '../')}`
     revealItemInDir(abs).catch(() => {})
   }
-
-  // ── Lifecycle controls ────────────────────────────────────────────────────
 
   const runComposeAction = async (action: LifecycleAction) => {
     if (!activeFile || lifecycleRunning) return
@@ -1044,7 +936,6 @@ export default function ComposeTab({
     try {
       await api.dockerComposeAction(activeFile, action)
       useAppStore.getState().addTerminalLine('─── Done ───', 'success')
-      // Kick off startup time tracking for Up/Rebuild actions
       if ((action === 'up' || action === 'rebuild') && selected) {
         recordStartupTime(selected.name, startMs)
       }
@@ -1053,7 +944,6 @@ export default function ComposeTab({
     } finally {
       unlistenLog()
       setLifecycleRunning(null)
-      // Refresh project list and container states to reflect updated status
       onRefresh?.()
       loadProjects().then(() => {
         if (selected) {
@@ -1066,8 +956,6 @@ export default function ComposeTab({
       })
     }
   }
-
-  // ── Backup history ────────────────────────────────────────────────────────
 
   const loadComposeBackups = async (projectName: string) => {
     if (!backupDir) { setComposeBackups([]); return }
@@ -1089,8 +977,6 @@ export default function ComposeTab({
 
   const fileBackups = composeBackups.filter(e => !activeFile || e.original_path === activeFile)
 
-  // ── Backup ────────────────────────────────────────────────────────────────
-
   const runBackup = async () => {
     if (!selected || !backupDir) return
     setBackingUp(true)
@@ -1110,8 +996,6 @@ export default function ComposeTab({
       setBackupMsg({ type: 'error', text: String(e) })
     } finally { setBackingUp(false) }
   }
-
-  // ── Card-level lifecycle (from main page cards) ──────────────────────────
 
   const runCardLifecycle = async (project: ComposeProject, action: 'up' | 'down' | 'restart') => {
     if (cardLifecycle) return
@@ -1141,15 +1025,12 @@ export default function ComposeTab({
     }
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
-
   return (
     <div className="compose-tab">
       {error && (
         <ErrorBanner className="error-banner--bleed" error={error} />
       )}
 
-      {/* ── Main overview page ───────────────────────────────────────────── */}
       {viewMode === 'main' && !loading && (
         <ComposePage
           projects={projects}
@@ -1168,11 +1049,9 @@ export default function ComposeTab({
         </div>
       )}
 
-      {/* ── Project detail view ───────────────────────────────────────────── */}
       {viewMode === 'project' && selected && (
         <div className="compose-viewer">
 
-          {/* ── Top bar: project identity + ports + lifecycle ── */}
           <div className="compose-project-topbar">
             <button
               className="compose-back-btn compose-back-btn--icon"
@@ -1252,13 +1131,10 @@ export default function ComposeTab({
             </div>
           </div>
 
-          {/* ── Two-column layout ── */}
           <div className="compose-project-layout">
 
-            {/* ── LEFT: File editor ── */}
             <div className="compose-project-left">
 
-              {/* Active-file label + edit controls (files are picked in the sidebar) */}
               <div className="compose-left-header">
                 <div className="compose-active-file" title={activeFile}>
                   {fileType === 'dockerfile'
@@ -1298,7 +1174,6 @@ export default function ComposeTab({
                 </div>
               </div>
 
-              {/* File content */}
               <div className="compose-viewer-body">
                 {fileLoading && <div className="compose-viewer-state">Loading file…</div>}
                 {fileError && <div className="compose-viewer-state compose-viewer-error"><AlertCircle size={14} />{fileError}</div>}
@@ -1330,10 +1205,8 @@ export default function ComposeTab({
               </div>
             </div>
 
-            {/* ── RIGHT: Sidebar ── */}
             <div className="compose-project-right">
 
-              {/* Services */}
               {projectContainers.length > 0 && (
                 <div className="compose-right-section">
                   <div className="compose-right-section-title">
@@ -1351,7 +1224,6 @@ export default function ComposeTab({
                 </div>
               )}
 
-              {/* Actions */}
               <div className="compose-right-section">
                 <div className="compose-right-section-title">Actions</div>
                 <div className="compose-sidebar-tools">
@@ -1396,7 +1268,6 @@ export default function ComposeTab({
                 </div>
               </div>
 
-              {/* Validator - inline in sidebar */}
               {validatorOpen && (
                 <div className="compose-sidebar-panel">
                   <div className="compose-sidebar-panel-header">
@@ -1425,7 +1296,6 @@ export default function ComposeTab({
                 </div>
               )}
 
-              {/* Metadata - inline in sidebar */}
               {metaPanelOpen && selected && (() => {
                 const meta = metadata[selected.name] ?? emptyMeta()
                 const saveMeta = (patch: Partial<AppProjectMeta>) => handleMetaChange(selected.name, { ...meta, ...patch })
@@ -1484,7 +1354,6 @@ export default function ComposeTab({
                 )
               })()}
 
-              {/* Backup - inline in sidebar */}
               {backupOpen && (
                 <div className="compose-sidebar-panel">
                   <div className="compose-sidebar-panel-header">
@@ -1530,12 +1399,10 @@ export default function ComposeTab({
         </div>
       )}
 
-            {/* ── Inspect drawer ──────────────────────────────────────────────────── */}
       {inspectContainer && (
         <InspectDrawer container={inspectContainer} onClose={() => setInspectContainer(null)} />
       )}
 
-      {/* ── Wipe confirmation modal ──────────────────────────────────────────── */}
       {wipeConfirmOpen && selected && (
         <WipeConfirmModal
           projectName={selected.name}
@@ -1545,7 +1412,6 @@ export default function ComposeTab({
         />
       )}
 
-      {/* ── IDE picker modal ─────────────────────────────────────────────────── */}
       {idePickerOpen && (
         <ModalShell className="compose-modal-backdrop" label="Open in Editor" onClose={() => setIdePickerOpen(false)}>
           <div className="compose-modal-box" style={{ maxWidth: 340 }}>

@@ -1,6 +1,5 @@
-// Minimal, comment-preserving INI helpers for .wslconfig. The raw file text is
-// the single source of truth; the form reads values from it and writes surgical
-// edits back, so comments, ordering, and unknown keys are all preserved.
+// INI helpers for .wslconfig. The raw file text is the source of truth and the form writes surgical
+// edits back, so comments, ordering, and unknown keys are preserved.
 
 // 'text' covers everything that renders as a free-form input (numbers, sizes, paths).
 export type FieldType = 'bool' | 'enum' | 'text'
@@ -123,7 +122,6 @@ function lineKey(line: string): string | null {
   return m ? m[1].toLowerCase() : null
 }
 
-/** Read a key's value within a section, or undefined if unset. */
 export function getIniValue(text: string, section: string, key: string): string | undefined {
   const sec = section.toLowerCase()
   const k = key.toLowerCase()
@@ -138,10 +136,8 @@ export function getIniValue(text: string, section: string, key: string): string 
   return undefined
 }
 
-/**
- * Set (or, when value is empty, remove) a key within a section, preserving every
- * other line. Creates the section if needed. Returns the new text.
- */
+/** Set a key, or remove it when value is empty, preserving every other line. Creates the section
+ *  if needed. */
 export function setIniValue(text: string, section: string, key: string, value: string): string {
   const sec = section.toLowerCase()
   const k = key.toLowerCase()
@@ -164,17 +160,14 @@ export function setIniValue(text: string, section: string, key: string, value: s
   }
   if (cur === sec && secEnd === -1) secEnd = lines.length
 
-  // Key already present: replace or remove it.
   if (keyIdx >= 0) {
     if (want === '') lines.splice(keyIdx, 1)
     else lines[keyIdx] = `${key}=${want}`
     return lines.join('\n')
   }
 
-  // Unsetting a key that isn't there is a no-op.
   if (want === '') return text
 
-  // Section exists, key absent: insert after the section's last non-blank line.
   if (secStart >= 0) {
     let at = secEnd
     while (at > secStart && lines[at - 1].trim() === '') at--
@@ -182,7 +175,6 @@ export function setIniValue(text: string, section: string, key: string, value: s
     return lines.join('\n')
   }
 
-  // Section missing: append a new block.
   const base = text.replace(/\s*$/, '')
   const block = `[${section}]\n${key}=${want}\n`
   return base === '' ? block : `${base}\n\n${block}`

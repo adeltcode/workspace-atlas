@@ -8,7 +8,7 @@ export interface DiskInfo {
 }
 
 export interface SystemMetrics {
-  /** Global CPU usage since the previous poll (0–100). */
+  /** Global CPU usage since the previous poll (0 to 100). */
   cpu_pct: number
   /** Number of logical CPUs. */
   cpu_count: number

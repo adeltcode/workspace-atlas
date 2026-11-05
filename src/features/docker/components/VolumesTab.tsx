@@ -21,8 +21,6 @@ interface VolumeProgress {
   error?:    string
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 function fmtVolName(name: string): { display: string; full?: string } {
   if (/^[a-f0-9]{48,}$/i.test(name))
     return { display: name.slice(0, 12) + '…', full: name }
@@ -33,13 +31,9 @@ function truncFilename(name: string, max = 30): string {
   return name.length <= max ? name : name.slice(0, max - 1) + '…'
 }
 
-// ── Inline progress bar ───────────────────────────────────────────────────────
-
 function ProgressBar({ p }: { p: VolumeProgress }) {
   return (
     <div className="vol-progress-wrap vol-progress-wrap--inline">
-      {/* The bar used to communicate through `transform` alone, which is nothing
-          at all to a screen reader. */}
       <div
         className="vol-progress-track"
         role="progressbar"
@@ -70,8 +64,6 @@ function ProgressBar({ p }: { p: VolumeProgress }) {
   )
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
-
 export default function VolumesTab({
   volumes,
   loading,
@@ -100,27 +92,21 @@ export default function VolumesTab({
   // recovery hint and the raw Docker text the backend classified.
   const [actionError, setActionError] = useState<unknown>(null)
 
-  // Expand / collapse inline backup panel
   const [expandedVol, setExpandedVol]       = useState<string | null>(null)
   const [volBackups, setVolBackups]         = useState<Record<string, VolumeBackupEntry[]>>({})
   const [loadingBackup, setLoadingBackup]   = useState<string | null>(null)
 
-  // Bulk selection
   const [selectedVols, setSelectedVols]     = useState<Set<string>>(new Set())
 
-  // Per-volume backup progress
   const [volProgress, setVolProgress]       = useState<Record<string, VolumeProgress>>({})
   const [backingUpSet, setBackingUpSet]     = useState<Set<string>>(new Set())
 
-  // Restore / delete confirm
   const [confirmRestore, setConfirmRestore] = useState<VolumeBackupEntry | null>(null)
   const [confirmDelete, setConfirmDelete]   = useState<VolumeBackupEntry | null>(null)
   const [isRestoring, setIsRestoring]       = useState(false)
   const [isDeletingEntry, setIsDeletingEntry] = useState<string | null>(null)
 
   const { backupDir, setActiveView } = useAppStore()
-
-  // ── Backup list loader ────────────────────────────────────────────────────
 
   const loadBackupsForVol = async (name: string) => {
     if (!backupDir) { setVolBackups(prev => ({ ...prev, [name]: [] })); return }
@@ -134,16 +120,12 @@ export default function VolumesTab({
     } finally { setLoadingBackup(null) }
   }
 
-  // ── Toggle expand (name click) ────────────────────────────────────────────
-
   const toggleVolBackups = async (name: string) => {
     if (expandedVol === name) { setExpandedVol(null); return }
     setExpandedVol(name)
     if (volBackups[name] !== undefined) return
     await loadBackupsForVol(name)
   }
-
-  // ── Backup action ─────────────────────────────────────────────────────────
 
   const doBackup = async (name: string) => {
     if (backingUpSet.has(name)) return
@@ -189,8 +171,6 @@ export default function VolumesTab({
     }
   }
 
-  // ── Restore action ────────────────────────────────────────────────────────
-
   const doRestore = async (entry: VolumeBackupEntry) => {
     setConfirmRestore(null)
     setIsRestoring(true)
@@ -208,8 +188,6 @@ export default function VolumesTab({
     finally { unlisten(); setIsRestoring(false) }
   }
 
-  // ── Delete backup entry ───────────────────────────────────────────────────
-
   const doDeleteEntry = async (entry: VolumeBackupEntry) => {
     if (!backupDir) return
     setConfirmDelete(null)
@@ -224,8 +202,6 @@ export default function VolumesTab({
       useAppStore.getState().addTerminalLine(`  ✗ ${String(e)}`, 'error')
     } finally { setIsDeletingEntry(null) }
   }
-
-  // ── Volume remove ─────────────────────────────────────────────────────────
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
@@ -244,7 +220,6 @@ export default function VolumesTab({
   const unusedCount = unusedVols.length
   const unusedBytes = useMemo(() => unusedVols.reduce((n, v) => n + v.size_bytes, 0), [unusedVols])
 
-  // Bulk selection helpers (after filtered is defined)
   const toggleVolSelect    = (name: string) => setSelectedVols(prev => { const s = new Set(prev); s.has(name) ? s.delete(name) : s.add(name); return s })
   const allVolSelected     = selectedVols.size > 0 && selectedVols.size === filtered.length
   const someVolSelected    = selectedVols.size > 0 && selectedVols.size < filtered.length
@@ -255,8 +230,7 @@ export default function VolumesTab({
     setSelectedVols(new Set())
   }
 
-  /** The safe path out of the prune dialog. Backups stream their own progress
-   *  into the rows, so the dialog closes rather than sitting over the evidence. */
+  /** Backups stream progress into the rows, so the dialog closes rather than cover them. */
   const backupUnusedFirst = async () => {
     if (!backupDir) { setConfirmPrune(false); setActiveView('settings'); return }
     setConfirmPrune(false)
@@ -307,7 +281,6 @@ export default function VolumesTab({
 
   return (
     <div className="img-tab">
-      {/* ── Toolbar (bulk controls live here - no layout shift) ────── */}
       <div className="img-toolbar">
         <SearchField
           value={search}
@@ -396,10 +369,8 @@ export default function VolumesTab({
 
               return (
                 <Fragment key={v.name}>
-                  {/* ── Volume row - entire row is clickable ──────────────── */}
-                  {/* The row stays clickable, but the disclosure it drives now
-                      also exists as a real control in the name cell: a row is
-                      not focusable and takes no Enter key. */}
+                  {/* A row takes no focus or Enter key, so the disclosure it drives is also a real control in the
+                     name cell. */}
                   <tr
                     className={clsx('img-row img-row--clickable', isExpanded && 'img-row--expanded', isSelected && 'row-selected')}
                     onClick={() => toggleVolBackups(v.name)}
@@ -451,21 +422,17 @@ export default function VolumesTab({
                     </td>
                   </tr>
 
-                  {/* ── Inline backup panel ────────────────────────────────── */}
                   {isExpanded && (
                     <tr className="vol-backup-expand-row">
                       <td colSpan={6} className="vol-backup-expand-td" id={`vol-backups-${v.name}`}>
                         <div className="vol-backup-panel">
 
-                          {/* Progress during backup */}
                           {vp && <ProgressBar p={vp} />}
 
-                          {/* Loading spinner */}
                           {loadingBackup === v.name && !vp && (
                             <span className="vol-backup-state">Loading backups…</span>
                           )}
 
-                          {/* No backup dir - link to settings */}
                           {!backupDir && (
                             <div className="vol-backup-state vol-backup-no-dir">
                               No backup directory configured.{' '}
@@ -476,12 +443,10 @@ export default function VolumesTab({
                             </div>
                           )}
 
-                          {/* Empty */}
                           {backupDir && !vp && loadingBackup !== v.name && entries.length === 0 && (
                             <span className="vol-backup-state">No backups yet - click Backup to create the first one.</span>
                           )}
 
-                          {/* Backup list */}
                           {entries.length > 0 && (
                             <ul className="vol-backup-list">
                               {entries.map(entry => {

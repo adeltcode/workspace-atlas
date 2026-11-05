@@ -39,10 +39,8 @@ export default function WslHome({ distros, loading, onReload }: {
   const [filter, setFilter] = useState<StateFilter>('all')
   const [activityDetail, setActivityDetail] = useState<ActivityEntry | null>(null)
 
-  // .wslconfig caps for the limits panel (machine-wide).
   const [limits, setLimits] = useState<{ memory?: string; processors?: string; swap?: string }>({})
 
-  // ── Import dialog ──────────────────────────────────────────────────────────
   const [showImport, setShowImport] = useState(false)
   const [importTar, setImportTar]   = useState('')
   const [importName, setImportName] = useState('')
@@ -50,30 +48,21 @@ export default function WslHome({ distros, loading, onReload }: {
   const [importing, setImporting]   = useState(false)
   const [importErr, setImportErr]   = useState<string | null>(null)
 
-  // ── Per-distro extras (packages, uptime, disk usage) ────────────────────────
   const [extras, setExtras]             = useState<Record<string, DistroExtras>>({})
   const [extrasBusy, setExtrasBusy]     = useState<Set<string>>(() => new Set())
   const [extrasFailed, setExtrasFailed] = useState<Set<string>>(() => new Set())
 
-  // ── Lifecycle ────────────────────────────────────────────────────────────
-  // Two concerns, deliberately separate:
-  //  • `busyAction` (local) drives this dashboard's button-disable + "Working…"
-  //    labels - only dashboard-initiated start/stop/restart.
-  //  • `wslBusyDistro` (store) tells in-distro pollers everywhere to skip a distro
-  //    that's transitioning (here and on the distro/perf pages) so a probe can't
-  //    reboot it. Set by every op that boots/stops a distro, not just dashboard
-  //    ones - which is why it must not gate the dashboard's buttons.
+  // `busyAction` drives only this dashboard's buttons. `wslBusyDistro` (store) tells pollers to skip a
+  // distro in transition; every op that boots or stops one sets it, so it must not gate these buttons.
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const busyDistro    = useAppStore(s => s.wslBusyDistro)
   const setBusyDistro = useAppStore(s => s.setWslBusyDistro)
   const [lifecycle, setLifecycle]   = useState<Lifecycle | null>(null)
 
-  // ── Live monitoring (per running distro, 10 s) + per-drive disk stats ──────
   const theme = useAppStore(s => s.theme)
   const [statHistory, setStatHistory] = useState<Map<string, { cpu: number[]; mem: number[] }>>(() => new Map())
   const [drives, setDrives] = useState<Record<string, DiskStats>>({})
 
-  // Header "Import distro" button opens the dialog via the store flag.
   useEffect(() => {
     if (importOpen) { setImportErr(null); setShowImport(true); setImportOpen(false) }
   }, [importOpen, setImportOpen])
@@ -101,18 +90,16 @@ export default function WslHome({ distros, loading, onReload }: {
     }
   }, [])
 
-  // Auto-scan running distros once; never boot a stopped one silently. Skip the
-  // distro mid-action: when it's being stopped the list can still show it as
-  // running for a moment, and a scan would boot it straight back up.
+  // Never boot a stopped distro silently. Skip the one mid-action: while it stops, the list can still
+  // show it as running, and a scan would boot it straight back up.
   useEffect(() => {
     for (const d of distros) {
       if (d.running && d.name !== busyDistro && !extras[d.name] && !extrasBusy.has(d.name) && !extrasFailed.has(d.name)) loadExtras(d.name)
     }
   }, [distros, extras, extrasBusy, extrasFailed, loadExtras, busyDistro])
 
-  // Poll live CPU/memory for every running distro. The probe runs a command
-  // inside the distro, so it would reboot one that's mid-stop - exclude the busy
-  // distro from the poll set. The probe itself takes ~1 s (jiffies delta).
+  // The probe runs a command inside the distro, so it would reboot one that is mid-stop: leave the
+  // busy distro out of the poll set. The probe itself takes about 1 s (jiffies delta).
   const runningKey = distros.filter(d => d.running && d.name !== busyDistro).map(d => d.name).join('|')
   const poll = useCallback(async () => {
     const running = runningKey ? runningKey.split('|') : []
@@ -141,7 +128,6 @@ export default function WslHome({ distros, loading, onReload }: {
   }, [runningKey, poll])
   useVisiblePoll(poll, 10_000, !!runningKey)
 
-  // Capacity of every drive that hosts a VHD, for the Docker-style disk bars.
   const driveLetters = [...new Set(distros.filter(d => d.vhd_path).map(d => d.vhd_path.slice(0, 1).toUpperCase()))].join('|')
   useEffect(() => {
     if (!driveLetters) return
@@ -153,12 +139,9 @@ export default function WslHome({ distros, loading, onReload }: {
   }, [driveLetters])
 
   const busy = busyAction !== null || busyDistro !== null
-  // Shared re-entry guard for the lifecycle/import ops (blocks a same-frame
-  // double-click before the disabled state has rendered).
   const op = useAsyncAction()
 
-  // Explicit navigation: opening a card IS allowed to change the active distro.
-  // Card action buttons never touch the selection (decoupling contract).
+  // Opening a card may change the active distro. Card action buttons never touch the selection.
   const openDistro = (name: string) => { setSelected(name); setWslView('distro') }
 
   const openTerminal = (d: WslDistro) => {
@@ -207,7 +190,6 @@ export default function WslHome({ distros, loading, onReload }: {
     } finally { setBusyAction(null); setBusyDistro(null) }
   })
 
-  // ── Derived ───────────────────────────────────────────────────────────────
   const totalVhd   = distros.reduce((s, d) => s + d.vhd_size_bytes, 0)
   const scanned    = distros.filter(d => extras[d.name] && extras[d.name].disk_used_bytes > 0 && d.vhd_size_bytes > 0)
   const reclaimable = scanned.reduce((s, d) => s + Math.max(0, d.vhd_size_bytes - extras[d.name].disk_used_bytes), 0)
@@ -232,7 +214,6 @@ export default function WslHome({ distros, loading, onReload }: {
     [distros, statHistory, colorOf],
   )
 
-  // VHD-bearing distros grouped by drive letter for the stacked bars.
   const driveGroups = useMemo(() => {
     const groups = new Map<string, WslDistro[]>()
     for (const d of distros) {
@@ -267,7 +248,6 @@ export default function WslHome({ distros, loading, onReload }: {
 
   return (
     <div className="wsl-home">
-      {/* ── Search + filter ─────────────────────────────────────────── */}
       <Toolbar>
         <SearchField
           value={query}
@@ -284,7 +264,6 @@ export default function WslHome({ distros, loading, onReload }: {
         </Segmented>
       </Toolbar>
 
-      {/* ── Distro cards ────────────────────────────────────────────── */}
       {filtered.length === 0 ? (
         <EmptyState
           title="No distributions match"
@@ -314,7 +293,6 @@ export default function WslHome({ distros, loading, onReload }: {
         </div>
       )}
 
-      {/* ── Live resource monitoring (Docker-style charts) ──────────── */}
       <div className="wsl-bpanel wsl-home-panel">
         <div className="wsl-bpanel-head">
           <Activity size={13} /><span>Resource monitoring</span>
@@ -324,8 +302,8 @@ export default function WslHome({ distros, loading, onReload }: {
         </div>
         {monItems.length === 0 ? (
           distros.some(d => d.running) ? (
-            // Running distros exist but the first sample (~1s probe) hasn't landed -
-            // show a chart-shaped skeleton rather than a misleading "no data" notice.
+            // The first sample (about 1 s) has not landed yet, so show a skeleton rather than a misleading
+            // "no data" notice.
             <div className="wsl-mon-skeleton">
               <div className="sk-box wsl-mon-sk" />
               <div className="sk-box wsl-mon-sk" />
@@ -341,7 +319,6 @@ export default function WslHome({ distros, loading, onReload }: {
         )}
       </div>
 
-      {/* ── Disk usage (Docker-style drive bars) ────────────────────── */}
       {driveGroups.length > 0 && (
         <div className="wsl-bpanel wsl-home-panel">
           <div className="wsl-bpanel-head"><HardDrive size={13} /><span>Disk usage</span></div>
@@ -405,7 +382,6 @@ export default function WslHome({ distros, loading, onReload }: {
                 </div>
               )
             })}
-            {/* Key for the two neutral bar segments. */}
             <div className="disk-legend-row disk-legend-row--key">
               <span className="disk-legend-dot disk-legend-dot--other" />
               <span className="disk-legend-label">Other apps &amp; system</span>
@@ -428,7 +404,6 @@ export default function WslHome({ distros, loading, onReload }: {
         </div>
       )}
 
-      {/* ── Activity + limits ───────────────────────────────────────── */}
       <div className="wsl-home-bottom">
         <div className="wsl-bpanel">
           <div className="wsl-bpanel-head"><History size={13} /><span>Recent WSL activity</span></div>
@@ -467,7 +442,6 @@ export default function WslHome({ distros, loading, onReload }: {
         </div>
       </div>
 
-      {/* ── Modals ──────────────────────────────────────────────────── */}
       {lifecycle && (
         <Modal
           icon={lifecycle.action === 'stop' ? <Square size={16} /> : <RotateCw size={16} />} iconWarning
@@ -517,10 +491,6 @@ export default function WslHome({ distros, loading, onReload }: {
     </div>
   )
 }
-
-// ── Distro card ───────────────────────────────────────────────────────────────
-// Lean by design: lifecycle + terminal only. Management actions (files, export,
-// clone, migrate, optimize) live on the distribution's own page.
 
 function DistroCard({
   d, x, scanning, scanFailed, busy, busyAction,

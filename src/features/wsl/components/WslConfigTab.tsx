@@ -22,7 +22,6 @@ export default function WslConfigTab({ runningNames, onAfterShutdown }: {
   const backupDir    = useAppStore(s => s.backupDir)
   const setBackupDir = useAppStore(s => s.setBackupDir)
 
-  // Ensure a backup directory exists (mirrors the Docker backup default).
   useEffect(() => {
     if (!backupDir) getDefaultBackupDir().then(setBackupDir).catch(() => {})
   }, [backupDir, setBackupDir])

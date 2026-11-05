@@ -3,8 +3,7 @@ import { useAppStore } from '../../store/appStore'
 import * as api from './api'
 import type { DockerStatus, DockerSystemDf, DockerImage, DockerContainer, DockerVolume } from './types'
 
-/** Re-use cached data if it's younger than this. */
-const CACHE_TTL = 2 * 60 * 1000 // 2 minutes
+const CACHE_TTL = 2 * 60 * 1000
 
 const CMD_CHECK = 'docker version --format "{{.Server.Version}}"'
 const CMD_DF    = 'docker system df'
@@ -33,7 +32,6 @@ export function useDockerData() {
   const fetchData = useCallback(async (force = false) => {
     const { dockerCache, setDockerCache, addTerminalLine } = useAppStore.getState()
 
-    // Use cache if fresh and not forced
     if (!force && dockerCache && isCacheFresh(dockerCache.fetchedAt)) {
       setStatus(dockerCache.status)
       setDf(dockerCache.df)
@@ -104,13 +102,8 @@ export function useDockerData() {
     }
   }, []) // eslint-disable-line
 
-  /** Force a fresh fetch of all Docker data. */
   const refresh = useCallback(() => fetchData(true), [fetchData])
 
-  /**
-   * Refresh only the containers list - used after a single container
-   * start/stop/remove so we don't reload images, volumes, and df.
-   */
   const refreshContainers = useCallback(async () => {
     const { addTerminalLine } = useAppStore.getState()
     addTerminalLine(`$ ${CMD_CTRS}`, 'cmd')
@@ -118,9 +111,8 @@ export function useDockerData() {
       const ctrData = await api.dockerContainers()
       addTerminalLine(`  ✓ ${ctrData.length} container(s)`, 'success')
       setContainers(ctrData)
-      // Keep cache in sync so the next full refresh doesn't undo this.
-      // Preserve the original fetchedAt - only containers were refreshed, so the
-      // freshness window for images/df/volumes must not be extended.
+      // Preserve fetchedAt: only containers were refreshed, so the freshness window for images, df and
+      // volumes must not be extended.
       const st = useAppStore.getState()
       if (st.dockerCache) {
         st.setDockerCache({ ...st.dockerCache, containers: ctrData })
@@ -130,10 +122,6 @@ export function useDockerData() {
     }
   }, []) // eslint-disable-line - setContainers is stable (from useState)
 
-  /**
-   * Refresh only the volumes list - used after a single volume remove/prune
-   * so we don't reload everything else.
-   */
   const refreshVolumes = useCallback(async () => {
     const { addTerminalLine } = useAppStore.getState()
     addTerminalLine(`$ ${CMD_VOLS}`, 'cmd')
@@ -141,7 +129,7 @@ export function useDockerData() {
       const volData = await api.dockerVolumes()
       addTerminalLine(`  ✓ ${volData.length} volume(s)`, 'success')
       setVolumes(volData)
-      // Preserve the original fetchedAt - only volumes were refreshed here.
+      // Preserve fetchedAt: only volumes were refreshed here.
       const st = useAppStore.getState()
       if (st.dockerCache) {
         st.setDockerCache({ ...st.dockerCache, volumes: volData })

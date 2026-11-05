@@ -11,8 +11,6 @@ type SortKey    = 'name' | 'image' | 'state' | 'created_since'
 type SortDir    = 'asc' | 'desc'
 type StateFilter = 'all' | 'running' | 'stopped'
 
-// ── Port chip parser ──────────────────────────────────────────────────────────
-
 interface PortMapping { host: string; container: string; proto: string }
 
 function parsePorts(raw: string): PortMapping[] {
@@ -46,8 +44,6 @@ function PortChips({ raw }: { raw: string }) {
     </div>
   )
 }
-
-// ── Log viewer ────────────────────────────────────────────────────────────────
 
 function LogViewer({ id, name, onClose }: { id: string; name: string; onClose: () => void }) {
   const [lines, setLines]     = useState<string[]>([])
@@ -145,8 +141,6 @@ function StateBadge({ state, sub }: { state: string; sub?: string }) {
   )
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
-
 export default function ContainersTab({
   containers,
   loading,
@@ -164,7 +158,6 @@ export default function ContainersTab({
   const [actionError, setActionError] = useState<string | null>(null)
   const [logsId, setLogsId]           = useState<string | null>(null)
 
-  // Bulk selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkBusy, setBulkBusy]       = useState(false)
   const [confirmRemove, setConfirmRemove] = useState(false)
@@ -188,8 +181,6 @@ export default function ContainersTab({
         return sortDir === 'asc' ? cmp : -cmp
       })
   }, [containers, sortKey, sortDir, search, stateFilter])
-
-  // ── Bulk helpers ──────────────────────────────────────────────────────────
 
   const toggleSelect    = (id: string) => setSelectedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
   const allSelected     = selectedIds.size > 0 && selectedIds.size === filtered.length
@@ -248,8 +239,6 @@ export default function ContainersTab({
     setSelectedIds(new Set()); onRefresh(); setBulkBusy(false)
   }
 
-  // ── Per-row action ────────────────────────────────────────────────────────
-
   const doAction = async (id: string, action: 'start' | 'stop' | 'remove') => {
     setBusy(id); setActionError(null)
     const { addTerminalLine } = useAppStore.getState()
@@ -279,7 +268,6 @@ export default function ContainersTab({
 
   return (
     <div className="img-tab">
-      {/* ── Toolbar (bulk controls live here - no layout shift) ────── */}
       <div className="img-toolbar">
         <SearchField
           value={search}
@@ -330,7 +318,6 @@ export default function ContainersTab({
         <ErrorBanner className="error-banner--flush" error={actionError} />
       )}
 
-      {/* ── Table ─────────────────────────────────────────────────── */}
       <div className="img-table-wrap">
         <table className="img-table">
           <thead>
@@ -362,7 +349,6 @@ export default function ContainersTab({
 
               return (
                 <React.Fragment key={c.id}>
-                  {/* ── Container row - full row clickable for logs ── */}
                   <tr
                     className={clsx('img-row img-row--clickable', showLogs && 'row-logs-open', isSelected && 'row-selected')}
                     onClick={() => setLogsId(showLogs ? null : c.id)}
@@ -414,7 +400,6 @@ export default function ContainersTab({
                     </td>
                   </tr>
 
-                  {/* ── Inline log viewer ─────────────────────────── */}
                   {showLogs && (
                     <tr className="log-viewer-row" id={`container-logs-${c.id}`}>
                       <td colSpan={7} className="log-viewer-cell">

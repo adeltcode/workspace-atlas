@@ -12,7 +12,7 @@ type SortDir = 'asc' | 'desc'
 export default function ImagesTab({ images, loading }: { images: DockerImage[]; loading: boolean }) {
   const { dockerKeepList, addToKeepList, removeFromKeepList } = useAppStore()
 
-  // Consume a pre-filter set by the overview cleanup panel (ephemeral, one-shot)
+  // Consumes a one-shot pre-filter set by the Overview cleanup panel.
   const [imageFilter, setImageFilter] = useState<'dangling' | 'unused-tagged' | null>(() => {
     const s = useAppStore.getState()
     const f = s.imagesFilter

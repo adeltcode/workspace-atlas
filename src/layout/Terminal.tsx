@@ -17,13 +17,11 @@ export default function Terminal() {
   const { terminalLines, terminalOpen, clearTerminal, toggleTerminal, setTerminalOpen } =
     useAppStore()
 
-  // ── Terminal tabs: shell vs. compose logs ───────────────────────────────────
   const terminalTab       = useAppStore(s => s.terminalTab)
   const setTerminalTab    = useAppStore(s => s.setTerminalTab)
   const composeLogContext = useAppStore(s => s.composeLogContext)
   const closeComposeLogs  = useAppStore(s => s.closeComposeLogs)
 
-  // Fall back to the shell tab if the logs context has been cleared
   const activeTab: 'shell' | 'logs' =
     terminalTab === 'logs' && composeLogContext ? 'logs' : 'shell'
 
@@ -34,22 +32,19 @@ export default function Terminal() {
   const [history, setHistory] = useState<string[]>([])
   const [outputExpanded, setOutputExpanded] = useState(false)
 
-  // Use refs for values that must be read live inside async callbacks or
-  // event handlers - avoids stale-closure double-submit and history bugs.
+  // Refs for values read live inside async callbacks or event handlers: they avoid stale-closure
+  // double-submit and history bugs.
   const histIdxRef = useRef(-1)
   const runningRef = useRef(false)
 
-  // Separate state just for rendering the busy UI
   const [running, setRunning] = useState(false)
 
-  // ── Auto-scroll ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (terminalOpen && bodyRef.current) {
       bodyRef.current.scrollTop = bodyRef.current.scrollHeight
     }
   }, [terminalLines, terminalOpen])
 
-  // ── Focus input when terminal opens ─────────────────────────────────────────
   useEffect(() => {
     if (terminalOpen) {
       const t = setTimeout(() => inputRef.current?.focus(), 80)
@@ -57,9 +52,8 @@ export default function Terminal() {
     }
   }, [terminalOpen])
 
-  // ── Stream shell stdout/stderr ───────────────────────────────────────────────
-  // Lines are buffered for one frame (16 ms) and flushed in a single store
-  // update so rapid output doesn't trigger a re-render per line.
+  // Buffered for one frame (16 ms) and flushed in one store update, so rapid output does not trigger
+  // a re-render per line.
   useEffect(() => {
     let cancelled   = false
     let unlistenFn: (() => void) | null = null
@@ -88,7 +82,6 @@ export default function Terminal() {
     }
   }, [])
 
-  // ── Handle process completion ────────────────────────────────────────────────
   // shell-done is emitted by Rust AFTER all stdout/stderr lines are flushed,
   // so appending the exit line here is always in the correct order.
   useEffect(() => {
@@ -116,13 +109,11 @@ export default function Terminal() {
     }
   }, [])
 
-  // ── Kill running command ─────────────────────────────────────────────────────
   const killCommand = useCallback(async () => {
     try { await invoke('shell_kill') }
     catch { /* ignore - process may have already exited */ }
   }, [])
 
-  // ── Submit command ───────────────────────────────────────────────────────────
   const submit = useCallback(async () => {
     const cmd = input.trim()
     // Read from ref - not the closure-captured boolean - so rapid Enter presses
@@ -152,7 +143,6 @@ export default function Terminal() {
     }
   }, [input, terminalOpen, setTerminalOpen])
 
-  // ── Keyboard handling ────────────────────────────────────────────────────────
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       submit()
@@ -169,8 +159,7 @@ export default function Terminal() {
     }
   }
 
-  // Ctrl+C at the panel level - only fires kill when nothing is selected
-  // (so Ctrl+C still works as "copy" when the user has text highlighted)
+  // Only kills when nothing is selected, so Ctrl+C still copies highlighted text.
   const handlePanelKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (running && e.ctrlKey && e.key === 'c' && !window.getSelection()?.toString()) {
       e.preventDefault()
@@ -178,13 +167,11 @@ export default function Terminal() {
     }
   }
 
-  // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <div
       className={clsx('terminal-panel', terminalOpen && 'open')}
       onKeyDown={handlePanelKeyDown}
     >
-      {/* Header: tab bar + controls */}
       <div className="terminal-header">
         <TabList label="Terminal panel" className="terminal-tabs" onClick={e => e.stopPropagation()}>
           <Tab
@@ -224,7 +211,6 @@ export default function Terminal() {
           )}
         </TabList>
 
-        {/* Empty strip - click to expand / collapse the panel */}
         <div className="terminal-header-grip" onClick={toggleTerminal} />
 
         <div className="terminal-header-right" onClick={e => e.stopPropagation()}>
@@ -262,7 +248,7 @@ export default function Terminal() {
 
       {terminalOpen && (
         <>
-          {/* Shell tab - hidden (not unmounted) while the logs tab is active */}
+          {/* Hidden, not unmounted, while the logs tab is active. */}
           <div
             className="terminal-shell"
             style={{ display: activeTab === 'shell' ? 'flex' : 'none' }}
@@ -270,7 +256,6 @@ export default function Terminal() {
             role="tabpanel"
             aria-label="Terminal"
           >
-            {/* Output - user-select: text so lines can be selected and copied */}
             <div className="terminal-body" ref={bodyRef} tabIndex={0} aria-label="Terminal output">
               {terminalLines.length === 0
                 ? (

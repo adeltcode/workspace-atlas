@@ -25,9 +25,8 @@ interface PruneResult {
   command: string
 }
 
-/** Total bytes Docker is holding, summed across its four object classes.
- *  Returns null when the engine will not answer, so the result panel can say
- *  it does not know rather than print a confident zero. */
+/** Total bytes Docker is holding across its four object classes. Null when the engine does not
+ *  answer, so the result panel does not print a false zero. */
 async function measureDockerBytes(): Promise<number | null> {
   try {
     const df = await dockerSystemDf()
@@ -82,9 +81,7 @@ export default function PruneTab({ onDone }: { onDone: () => void }) {
     const command   = preview.command
     addTerminalLine(`─── Prune Level ${selectedLevel} - executing ───`, 'info')
 
-    // PRODUCT.md makes before/after numbers a hard constraint for anything that
-    // changes disk usage. `docker system df` is the same source the Overview
-    // reads, so the figure here and the figure there cannot disagree.
+    // `docker system df` is what the Overview reads, so this figure and the Overview's cannot disagree.
     const before = await measureDockerBytes()
 
     const unlistenLog = await listen<string>('docker-log', (e) => {

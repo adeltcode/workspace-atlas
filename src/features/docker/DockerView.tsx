@@ -17,8 +17,6 @@ import PruneTab       from './components/PruneTab'
 import LogTab         from './components/LogTab'
 import { SheetHead, Prerequisite, Button, ErrorBanner } from '../../components/ui'
 
-// ── Tab subtitles ──────────────────────────────────────────────────────────────
-
 const TAB_SUBTITLES: Partial<Record<DockerTab, string>> = {
   overview:   'Disk usage at a glance across images, containers, volumes, and build cache',
   images:     'Browse, filter, and pin Docker images',
@@ -32,8 +30,6 @@ const TAB_SUBTITLES: Partial<Record<DockerTab, string>> = {
 
 const FILLING_TABS = new Set<DockerTab>(['images', 'containers', 'volumes', 'networks', 'compose'])
 
-// ── Component ──────────────────────────────────────────────────────────────────
-
 export default function DockerView() {
   const dockerTab     = useAppStore(s => s.dockerTab)
   const setActiveView = useAppStore(s => s.setActiveView)
@@ -44,9 +40,8 @@ export default function DockerView() {
 
   const online = status?.available ?? false
 
-  // ── Container stats - polled every 5 s whenever Docker is online ─────────────
-  // Kept here (not in OverviewTab) so history accumulates from the moment Docker
-  // is detected as running, regardless of which tab is active.
+  // Kept here, not in OverviewTab, so history accumulates from the moment Docker is detected as
+  // running, whichever tab is active.
   const [containerStats, setContainerStats] = useState<ContainerStats[]>([])
   const [statsLoading,   setStatsLoading]   = useState(true)
   const [statsError,     setStatsError]     = useState<string | null>(null)
@@ -80,18 +75,15 @@ export default function DockerView() {
     if (!online) { setStatsLoading(false); setContainerStats([]); setStatHistory(new Map()); return }
     setStatsLoading(true)
     setStatsError(null)
-    // Do not reset statHistory here - the history updater already evicts departed
-    // containers, so accumulated sparkline data survives a manual Refresh cleanly.
-    // History is only wiped in the !online branch above (engine went offline).
+    // Do not reset statHistory here: the updater already evicts departed containers, so sparklines
+    // survive a manual Refresh. History is only wiped in the !online branch above.
     pollStats()
   }, [online, composeTick]) // eslint-disable-line
 
-  // Poll only while the engine is up and the window is actually on screen.
   useVisiblePoll(pollStats, 5000, online)
 
   const subtitle = TAB_SUBTITLES[dockerTab] ?? ''
 
-  // Ctrl+R / Cmd+R → Refresh
   const handleRefresh = useCallback(() => {
     refresh(); setComposeTick(t => t + 1)
   }, [refresh])
@@ -101,8 +93,8 @@ export default function DockerView() {
     setStartError(null)
     try {
       await api.launchDockerDesktop()
-      // Docker Desktop takes ~30–60 s to start; auto-refresh after 8 s so the
-      // user sees progress without having to click Refresh manually.
+      // Docker Desktop takes about 30 to 60 s to start. Refresh after 8 s so the user sees progress
+      // without clicking Refresh.
       setTimeout(() => { refresh(); setStarting(false) }, 8000)
     } catch (e) {
       setStartError(String(e))
@@ -120,7 +112,6 @@ export default function DockerView() {
     return () => window.removeEventListener('keydown', onKey)
   }, [handleRefresh])
 
-  // ── Sync badges to store for sidebar nav ────────────────────────────────────
   useEffect(() => {
     const running = containers.filter(c => c.state === 'running').length
     const unused  = volumes.filter(v => !v.in_use).length
@@ -135,17 +126,13 @@ export default function DockerView() {
     })
   }, [images.length, containers, volumes])
 
-  // A table section scrolls its own table under a pinned header row, and the
-  // compose page sizes its columns with flexbox; both need a body that fills
-  // rather than scrolls. Everything else scrolls as one column.
+  // Table sections and the compose page need a body that fills rather than scrolls. Everything else
+  // scrolls as one column.
   const fills = FILLING_TABS.has(dockerTab)
 
   return (
     <div className="view-container docker-view">
 
-      {/* The eight sections live in the rail, and only in the rail. They were
-          briefly in both places at once, which put the same eight controls on
-          screen twice. */}
       <div className="page-head">
       <SheetHead
         crumbs={[
@@ -174,7 +161,6 @@ export default function DockerView() {
       </div>
 
       <div className={clsx(fills ? 'page-fill' : 'page-scroll', 'docker-tab-content')}>
-      {/* ── Error / offline states ───────────────────────────────────── */}
       {error && <ErrorBanner>{error}</ErrorBanner>}
 
       {!loading && status && !online && status.state === 'not_installed' && (
@@ -224,7 +210,6 @@ export default function DockerView() {
         />
       )}
 
-      {/* ── Tab content ──────────────────────────────────────────────── */}
       {(online || loading) && (
         <>
           {dockerTab === 'overview'   && <OverviewTab df={df} containers={containers} images={images} volumes={volumes} status={status} loading={loading} refreshTick={composeTick} onRefresh={refresh} containerStats={containerStats} statsLoading={statsLoading} statsError={statsError} statHistory={statHistory} onPollStats={pollStats} />}

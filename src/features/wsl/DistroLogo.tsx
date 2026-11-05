@@ -1,11 +1,8 @@
 import { useMemo } from 'react'
 import clsx from 'clsx'
 
-// Official distribution marks. Each `path` is the single-path glyph from Simple
-// Icons (simpleicons.org, CC0), drawn in white on the distro's brand colour.
-// Matched by substring against the catalog identifier (case-insensitive); the
+// Each `path` is a glyph from Simple Icons (simpleicons.org, CC0). Keys match by substring and the
 // first match wins, so more specific keys must come first (opensuse before suse).
-// Distros without a mark fall back to a lettered avatar in a hashed colour.
 type Brand = { keys: string[]; color: string; path: string }
 
 const BRANDS: Brand[] = [
@@ -65,9 +62,7 @@ function initials(label: string): string {
   return (word.slice(0, 2) || '?').toUpperCase()
 }
 
-/** Square brand badge for a distro: the official logo when recognised, else a
- *  lettered avatar. `name` is matched for branding; `label` (if given) supplies
- *  the fallback initials. */
+/** `name` picks the logo. `label`, if given, supplies the fallback initials. */
 export function DistroLogo({ name, label, size = 38, dimmed, className }: {
   name: string
   label?: string

@@ -11,7 +11,7 @@ import { SearchField, EmptyState, Button, ErrorBanner } from '../../../component
 function fmtDate(raw: string): string {
   if (!raw) return '-'
   const d = new Date(raw)
-  if (isNaN(d.getTime())) return raw   // fallback: return as-is
+  if (isNaN(d.getTime())) return raw
   const diffMs  = Date.now() - d.getTime()
   const diffMin = Math.floor(diffMs / 60_000)
   if (diffMin < 60)   return diffMin <= 1 ? 'just now' : `${diffMin}m ago`

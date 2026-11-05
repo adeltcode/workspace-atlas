@@ -8,9 +8,8 @@ import { exportConfig, importConfig } from '../features/config/api'
 
 const STORAGE_KEY = 'workspace-atlas-v1'
 
-// Persisted keys that are NOT configuration: transient navigation and local
-// history. Stripped from config export/import so importing settings never yanks
-// the user to another view or overwrites their run history.
+// Persisted keys that are not configuration. Stripped from export and import, so an import never
+// moves the user to another view or overwrites their run history.
 const NON_CONFIG_KEYS = ['activeView', 'dockerTab', 'dockerLogs', 'activityLog']
 
 /** Return the persisted blob with non-config keys removed, or null if unparseable. */
@@ -136,9 +135,8 @@ export default function SettingsView() {
     }
     if (!contents) return // cancelled
     try {
-      // Sanitize first: rejects junk, and strips navigation/history so an import
-      // can't yank the user to another view or replace local run history. Missing
-      // keys are kept at their current values by zustand's merge-on-rehydrate.
+      // Rejects junk and strips navigation and history. Missing keys keep their current values through
+      // zustand's merge-on-rehydrate.
       const sanitized = stripNonConfig(contents)
       if (!sanitized) {
         throw new Error('Not a valid Workspace Atlas configuration file')
@@ -177,7 +175,6 @@ export default function SettingsView() {
 
       <div className="page-scroll settings-body">
 
-        {/* ── Backup Location ─────────────────────────────────────────────── */}
         <div className="settings-card">
           <div className="settings-card-header">
             <HardDriveDownload size={15} className="settings-card-icon" />
@@ -223,7 +220,6 @@ export default function SettingsView() {
             </p>
           )}
 
-          {/* Status message */}
           {statusMsg && (
             <div
               className={`settings-status settings-status--${statusMsg.type}`}
@@ -233,7 +229,6 @@ export default function SettingsView() {
             </div>
           )}
 
-          {/* Transfer prompt */}
           {pendingDir && (
             <div className="settings-transfer-card">
               <div className="settings-transfer-header">
@@ -267,7 +262,6 @@ export default function SettingsView() {
           )}
         </div>
 
-        {/* ── Configuration ─────────────────────────────────────────────────── */}
         <div className="settings-card">
           <div className="settings-card-header">
             <HardDriveDownload size={15} className="settings-card-icon" />
@@ -291,7 +285,6 @@ export default function SettingsView() {
           </div>
         </div>
 
-        {/* ── About ────────────────────────────────────────────────────────── */}
         <div className="settings-card">
           <div className="settings-card-header">
             <Info size={15} className="settings-card-icon" style={{ color: 'var(--color-text-secondary)' }} />

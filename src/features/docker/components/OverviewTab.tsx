@@ -54,8 +54,6 @@ function buildTotalRow(df: DockerSystemDf): DiskUsageRow {
   }
 }
 
-// ── New helpers ───────────────────────────────────────────────────────────────
-
 function projectContainerNames(projectName: string, containers: DockerContainer[], allProjectNames: string[]): string[] {
   const p1 = `${projectName}-`, p2 = `${projectName}_`
   return containers
@@ -85,8 +83,6 @@ function extractHostPort(mapping: string): string {
   return exposed ? exposed[1] : ''
 }
 
-// ── Skeletons ─────────────────────────────────────────────────────────────────
-
 function HeroSkeleton() {
   return (
     <StatRow>
@@ -100,8 +96,6 @@ function HeroSkeleton() {
     </StatRow>
   )
 }
-
-// ── Cleanup row ───────────────────────────────────────────────────────────────
 
 type CleanupItem = { id: string; label: string; sublabel?: string; size?: string | null }
 
@@ -203,8 +197,6 @@ function CleanupRow({
   )
 }
 
-// ── Project Card ──────────────────────────────────────────────────────────────
-
 function ProjectCard({
   project, containers, containerStats, allProjectNames, onOpen,
 }: {
@@ -259,8 +251,6 @@ function ProjectCard({
   )
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
-
 export default function OverviewTab({
   df,
   containers,
@@ -292,7 +282,6 @@ export default function OverviewTab({
 }) {
   const { setDockerTab, setImagesFilter, setVolumesFilter, setComposePreselect, backupDir } = useAppStore()
 
-  // ── Compose projects ──────────────────────────────────────────────────────
   const [composeProjects, setComposeProjects] = useState<ComposeProject[]>([])
   const [composeLoading,  setComposeLoading]  = useState(true)
 
@@ -307,7 +296,6 @@ export default function OverviewTab({
 
   const [resourceView, setResourceView] = useState<'top' | 'all'>('all')
 
-  // ── Disk stats ────────────────────────────────────────────────────────────
   const [dockerDiskStats, setDockerDiskStats] = useState<DiskStats | null>(null)
   const [backupDiskStats, setBackupDiskStats] = useState<DiskStats | null>(null)
   const [backupBytes,     setBackupBytes]     = useState(0)
@@ -331,8 +319,6 @@ export default function OverviewTab({
     topMem: [...containerStats].sort((a, b) => b.mem_used_bytes - a.mem_used_bytes).slice(0, 3),
   }), [containerStats])
 
-  // Series for the shared live charts: history when available, else the
-  // current sample as a single point.
   const liveItems = useMemo(
     () => [...containerStats]
       .sort((a, b) => b.cpu_pct - a.cpu_pct)
@@ -344,7 +330,6 @@ export default function OverviewTab({
     [containerStats, statHistory],
   )
 
-  // ── Hero counts ───────────────────────────────────────────────────────────
   const runningCtrs = containers.filter(c => c.state === 'running').length
   const pausedCtrs  = containers.filter(c => c.state === 'paused').length
   const stoppedCtrs = containers.length - runningCtrs - pausedCtrs
@@ -363,13 +348,11 @@ export default function OverviewTab({
   const issueCount       = restarting.length + dead.length
   const allProjectNames  = useMemo(() => composeProjects.map(p => p.name), [composeProjects])
 
-  // ── Disk totals ───────────────────────────────────────────────────────────
   const patchedDf = df ? { ...df, containers: buildContainersRow(df.containers, containers) } : null
   const totalRow  = patchedDf ? buildTotalRow(patchedDf) : null
   const totalFree = totalRow ? parseReclaimSize(totalRow.reclaimable) : null
   const hasFree   = totalFree != null && parseSizeBytes(totalFree) > 0
 
-  // ── Cleanup data ──────────────────────────────────────────────────────────
   const trueDangling  = images.filter(i => !i.in_use && i.repository === '<none>')
   const unusedTagged  = images.filter(i => !i.in_use && i.repository !== '<none>')
   const stale         = containers.filter(c => c.stopped_days >= STALE_DAYS)
@@ -393,11 +376,6 @@ export default function OverviewTab({
   return (
     <div className="overview-tab">
 
-      {/* ── 1. Workspace Summary ─────────────────────────────────────── */}
-      {/* Three facts, not six. Engine state is already in the page header,
-          project counts are already on the Active projects heading below, and
-          an "Issues: None" tile reports nothing, so it only appears when there
-          is actually something wrong. */}
       {loading ? <HeroSkeleton /> : (
         <StatRow>
           <StatCard
@@ -453,7 +431,6 @@ export default function OverviewTab({
         </div>
       )}
 
-      {/* ── 2. Active Projects ───────────────────────────────────────── */}
       <SectionHead
         title="Active projects"
         meta={composeLoading ? '…' : `${runningProjects} running · ${composeProjects.length} total`}
@@ -490,7 +467,6 @@ export default function OverviewTab({
         )}
       </Panel>
 
-      {/* ── 3. Resource Monitoring ───────────────────────────────────── */}
       <SectionHead
         title="Resource monitoring"
         actions={
@@ -573,7 +549,6 @@ export default function OverviewTab({
         )}
       </Panel>
 
-      {/* ── 4. Disk Usage ────────────────────────────────────────────── */}
       {(() => {
         if (!patchedDf) return !loading ? (
           <div className="overview-empty">No disk data available. Is Docker running?</div>
@@ -721,7 +696,6 @@ export default function OverviewTab({
         )
       })()}
 
-      {/* ── 5. Cleanup Opportunities ─────────────────────────────────── */}
       <SectionHead
         title="Cleanup opportunities"
         meta={!loading && totalFreeBytes > 0 ? `~${bytesToHuman(totalFreeBytes)} freeable` : undefined}

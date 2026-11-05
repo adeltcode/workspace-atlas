@@ -1,9 +1,3 @@
-/* The index of the bound volume.
- *
- * A user whose disk is full used to have to visit Docker Images, Docker Volumes,
- * the WSL dashboard and every distro page in turn, because the app had eight
- * separate filter boxes and nothing that searched across modules. This searches
- * every module, every section, and every live object on the machine at once. */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Box, HardDrive, Package, LayoutDashboard, Settings, Layers, Database, Network, Trash2, ScrollText, CornerDownLeft } from 'lucide-react'
 import clsx from 'clsx'
@@ -29,8 +23,7 @@ type SearchData = Pick<DockerCache, 'images' | 'containers' | 'volumes'> & {
   distros: WslDistroNav[]
 }
 
-/* Subsequence match, ranked so that a prefix beats a word start, which beats a
- * scattered match. Enough for a few thousand rows and no dependency. */
+/* Subsequence match. A prefix beats a word start, which beats a scattered match. */
 function score(needle: string, hay: string): number {
   if (!needle) return 1
   const h = hay.toLowerCase()
@@ -38,7 +31,6 @@ function score(needle: string, hay: string): number {
   const at = h.indexOf(n)
   if (at === 0) return 1000
   if (at > 0) return 800 - at + (/[\s\-_/:.]/.test(h[at - 1]) ? 100 : 0)
-  // scattered subsequence
   let i = 0
   for (const ch of h) { if (ch === n[i]) i++; if (i === n.length) break }
   return i === n.length ? 100 : 0
@@ -98,7 +90,6 @@ export default function CommandIndex() {
   const items = useMemo<Item[]>(() => {
     const out: Item[] = []
 
-    // Places
     out.push(
       { id: 'v:dash', label: 'Overview', where: 'Module', section: 'Places', icon: LayoutDashboard, run: go('dashboard') },
       { id: 'v:set',  label: 'Settings',   where: 'Module', section: 'Places', icon: Settings,        run: go('settings') },
@@ -119,7 +110,6 @@ export default function CommandIndex() {
       { id: 'w:conf', label: '.wslconfig',     where: 'WSL', section: 'Places', icon: HardDrive, run: goWsl('wslconfig') },
     )
 
-    // Live objects on this machine
     for (const d of live?.distros ?? distros) {
       out.push({
         id: `distro:${d.name}`, label: d.name,
@@ -165,7 +155,6 @@ export default function CommandIndex() {
   useEffect(() => { setCursor(0) }, [query, results.length])
   useEffect(() => { if (open) { setQuery(''); setCursor(0); inputRef.current?.focus() } }, [open])
 
-  // Keep the highlighted row in view while arrowing through a long list.
   useEffect(() => {
     listRef.current?.querySelector('.index-row--active')?.scrollIntoView({ block: 'nearest' })
   }, [cursor])
@@ -191,8 +180,6 @@ export default function CommandIndex() {
   })
 
   return (
-    // ModalShell is a native <dialog>, so focus moves in, stays trapped, returns
-    // to the trigger on close, and Escape works without hand-rolling any of it.
     <ModalShell className="index-scrim" label="Search everything" onClose={() => setOpen(false)}>
       <div className="index-panel" onKeyDown={onKeyDown} onClick={e => e.stopPropagation()}>
         <div className="index-search">

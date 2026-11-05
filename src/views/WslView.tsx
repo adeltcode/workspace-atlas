@@ -28,7 +28,6 @@ export default function WslView() {
   const runningCnt = distros.filter(d => d.running).length
   const selectedDistro = distros.find(d => d.name === selected)
 
-  // Publish the distro list + badge to the store for the sidebar nav.
   useEffect(() => {
     useAppStore.getState().setWslDistrosNav(
       distros.map(d => ({ name: d.name, running: d.running, is_default: d.is_default })),
@@ -49,7 +48,6 @@ export default function WslView() {
     }
   }, [distros, selected, setSelected])
 
-  // Ctrl+R / Cmd+R → Refresh
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'r' && !e.shiftKey) {
@@ -60,12 +58,8 @@ export default function WslView() {
     return () => window.removeEventListener('keydown', onKey)
   }, [reload])
 
-  // Keep the distro list live without the heavy registry/VHD scan on every tick:
-  //  • a cheap running-state poll every 5s catches start/stop (the common case),
-  //  • a full silent refresh on sub-view navigation + window focus catches distros
-  //    added/removed outside the app.
-  // The initial mount is skipped - useWslData already did the full load - so we
-  // don't double-fetch on open.
+  // A cheap 5 s running-state poll catches start and stop; a full silent refresh on navigation and
+  // focus catches distros added or removed outside the app. Mount is skipped: useWslData already loaded.
   const didMount = useRef(false)
   useEffect(() => {
     if (!available) return
@@ -97,9 +91,6 @@ export default function WslView() {
         ]}
         title={wslView === 'distro' && selected ? selected : 'WSL'}
         subtitle={subtitle}
-        /* On a distro page the header describes that distro, not the module: the
-           distro count, the default marker and the switcher were all repeating
-           what the rail already shows, next to a name the page repeated too. */
         status={
           wslView === 'distro' && selectedDistro ? (
             <span className="pill">

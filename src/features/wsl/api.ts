@@ -58,7 +58,6 @@ export const wslconfigBackup       = (backupDir: string) => invoke<WslConfigBack
 export const wslconfigListBackups  = (backupDir: string) => invoke<WslConfigBackup[]>('wslconfig_list_backups', { backupDir })
 export const wslconfigRestore      = (backupPath: string) => invoke<string>('wslconfig_restore', { backupPath })
 
-// /etc/wsl.conf (per-distro)
 export const readWslConf  = (distro: string) => invoke<WslConfig>('read_wsl_conf', { distro })
 export const writeWslConf = (distro: string, content: string) => invoke<void>('write_wsl_conf', { distro, content })
 export const wslConfBackup       = (distro: string, backupDir: string) => invoke<WslConfigBackup>('wsl_conf_backup', { distro, backupDir })
@@ -78,5 +77,4 @@ export const wslImportDistro = (name: string, installDir: string, tarPath: strin
 export const pickTarFile  = () => invoke<string | null>('pick_tar_file')
 export const pickDirectory = () => invoke<string | null>('pick_directory')
 
-/** Reveal a path in Windows Explorer. Reuses the generic backend command. */
 export { revealPath } from '../docker/api'
