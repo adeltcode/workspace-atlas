@@ -73,6 +73,13 @@ Every disk or Docker operation prints the real command it runs, so you can check
 - **Upgrade**: upgrade winget, npm, pip, and Chocolatey packages one at a time
 - **Uninstall**: remove winget, pip, and npm packages and VS Code extensions. First, Atlas shows what depends on the package, which commands you'd lose, whether it's running, and how to reinstall it. Core tools such as Git and Python ask you to type the ID to confirm
 
+### Tools
+
+- **Ports**: see what is listening on each TCP port, on Windows, in Docker containers, and in running WSL distros, and whether other devices can reach it. Close a stuck program after you confirm
+- **File locks**: when Windows won't let you delete or move something, see which program holds that file or folder, and close it after you confirm
+
+Atlas won't close Windows, Docker, or WSL's own programs, or anything that needs administrator rights.
+
 ### General
 
 - **Overview**: live CPU, memory, and disk use for the whole machine, plus recent activity across the app
@@ -237,6 +244,7 @@ src/                      React frontend
   features/docker/        Docker module (api, hooks, types, components)
   features/wsl/           WSL module
   features/packages/      Packages module
+  features/holders/       Ports and File locks pages
   features/system/        Machine metrics
   features/config/        Settings export and import
   layout/                 Titlebar, Sidebar, MainPanel, Terminal
@@ -248,6 +256,7 @@ src-tauri/src/
   wsl_migration.rs        Moving a distro to another drive
   wsl_migration_acl.rs    Permissions on backup and destination folders
   packages.rs             Package scans, upgrades, uninstall
+  holders.rs              Which programs hold a port or file, and closing them
   system.rs               Host CPU, RAM, and disk via sysinfo
   shell.rs                Command execution and streamed output events
   config.rs               Settings export and import
