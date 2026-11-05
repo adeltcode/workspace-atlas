@@ -27,7 +27,7 @@ pub enum ErrorKind {
     NotFound,
     /// The drive has no room for the result.
     DiskFull,
-    /// The Docker engine is not answering.
+    /// The Docker engine is not responding.
     DockerDown,
     /// WSL is missing, stopped, or has no distros.
     WslDown,
@@ -154,30 +154,30 @@ pub fn classify(raw: &str) -> AtlasError {
 
     if has(&["cancelled by the user", "canceled by the user", "operation was canceled", "administrator access was cancelled", "requires elevation", "os error 740", "the operation was cancelled by the user"]) {
         return AtlasError::new(ErrorKind::Elevation, "Administrator approval was not given.")
-            .hint("Windows needs elevated rights for this one. Run it again and approve the prompt.")
+            .hint("This needs administrator rights. Run it again and approve the prompt.")
             .detail(raw);
     }
 
     if has(&["access is denied", "permission denied", "permissiondenied", "os error 5", "not authorized", "access to the path"]) {
         return AtlasError::new(ErrorKind::Permission, "Windows denied access.")
-            .hint("Something is holding the file, or the path sits outside your account's reach. Stop the distro or container that uses it and try again.")
+            .hint("A program may have the file open, or your account may not have access to the path. Stop the distro or container that uses it, then try again.")
             .detail(raw);
     }
 
     if has(&["being used by another process", "os error 32", "sharing violation", "resource busy", "is currently in use", "device or resource busy", "text file busy", "os error 33"]) {
         return AtlasError::new(ErrorKind::Busy, "The file is open in another program.")
-            .hint("A running distro or container is the usual holder. Stop it, then try again.")
+            .hint("This is usually a running distro or container. Stop it, then try again.")
             .detail(raw);
     }
 
     if has(&["no space left", "not enough space", "os error 112", "insufficient disk space", "disk full", "no space available"]) {
-        return AtlasError::new(ErrorKind::DiskFull, "The drive ran out of room.")
-            .hint("Free some space and try again. Docker's own reclaimable space is on the Prune page.")
+        return AtlasError::new(ErrorKind::DiskFull, "The drive is out of space.")
+            .hint("Free some space and try again. The Prune page shows what Docker can reclaim.")
             .detail(raw);
     }
 
     if has(&["cannot connect to the docker daemon", "is the docker daemon running", "error during connect", "docker_engine", "docker daemon is not running"]) {
-        return AtlasError::new(ErrorKind::DockerDown, "The Docker engine is not answering.")
+        return AtlasError::new(ErrorKind::DockerDown, "The Docker engine is not responding.")
             .hint("Start Docker Desktop and wait for it to finish starting, then try again.")
             .detail(raw);
     }
@@ -189,19 +189,19 @@ pub fn classify(raw: &str) -> AtlasError {
     }
 
     if has(&["is not a registered distribution", "cannot find the file", "cannot find the path", "os error 2", "os error 3", "no such file", "not found", "does not exist"]) {
-        return AtlasError::new(ErrorKind::NotFound, "It is not there any more.")
-            .hint("Refresh to pick up the current state. Something else may have removed it.")
+        return AtlasError::new(ErrorKind::NotFound, "The item could not be found.")
+            .hint("Refresh to see the current state. It may have been removed outside Atlas.")
             .detail(raw);
     }
 
     if has(&["could not resolve", "dns", "connection refused", "network is unreachable", "os error 10054", "os error 10060", "os error 11001", "certificate", "tls", "connection reset"]) {
-        return AtlasError::new(ErrorKind::Network, "The download did not complete.")
-            .hint("Check the connection and try again. This is the only step in the app that needs the network.")
+        return AtlasError::new(ErrorKind::Network, "A network request failed.")
+            .hint("Check your internet connection and try again.")
             .detail(raw);
     }
 
     if has(&["timed out", "timeout", "deadline exceeded"]) {
-        return AtlasError::new(ErrorKind::Timeout, "The operation ran past its time limit.")
+        return AtlasError::new(ErrorKind::Timeout, "The operation timed out.")
             .hint("It may still be finishing in the background. Refresh before starting it again.")
             .detail(raw);
     }

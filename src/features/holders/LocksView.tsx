@@ -50,7 +50,7 @@ export default function LocksView() {
     const next = reports && await scan(reports.map(r => r.path))
     const stillHeld = next?.some(r => r.holders.some(h => h.process.pid === closed.process.pid))
     setResult(stillHeld
-      ? { tone: 'warn', text: `${closed.process.name} is still holding this` }
+      ? { tone: 'warn', text: `${closed.process.name} is still using this` }
       : { tone: 'ok', text: `Closed ${closed.process.name}` })
   }
 
@@ -63,7 +63,7 @@ export default function LocksView() {
             { label: 'File locks' },
           ]}
           title="File locks"
-          subtitle="See which programs hold a file or folder when Windows will not let you delete or move it."
+          subtitle="See which programs are using a file or folder when Windows will not let you delete or move it."
         />
       </div>
 
@@ -89,10 +89,10 @@ export default function LocksView() {
                 />
               </div>
               <Button type="submit" variant="primary" disabled={scanning || !path.trim()}>
-                {scanning ? 'Checking…' : 'Find holders'}
+                {scanning ? 'Checking…' : 'Check'}
               </Button>
-              <Button type="button" disabled={scanning} onClick={() => pick(api.pickAnyFile)}><File size={12} /> File</Button>
-              <Button type="button" disabled={scanning} onClick={() => pick(pickDirectory)}><FolderOpen size={12} /> Folder</Button>
+              <Button type="button" disabled={scanning} onClick={() => pick(api.pickAnyFile)}><File size={12} /> Choose file…</Button>
+              <Button type="button" disabled={scanning} onClick={() => pick(pickDirectory)}><FolderOpen size={12} /> Choose folder…</Button>
               <span role="status">{result && <Tag tone={result.tone}>{result.text}</Tag>}</span>
             </Toolbar>
           </form>
@@ -111,14 +111,14 @@ export default function LocksView() {
               <p className="holder-summary">{checkedSummary(reports)}</p>
               {reports.some(r => !r.complete) && (
                 <ErrorBanner className="error-banner--flush" title="This check is not complete">
-                  Windows took too long to answer, so a holder could be missing from this list.
+                  Windows took too long to answer, so a program could be missing from this list.
                 </ErrorBanner>
               )}
 
               {reports.every(r => r.holders.length === 0) ? (
                 <EmptyState
-                  title="Windows reports no holders"
-                  description="If a delete still fails, the program may have let go already, so try again. Windows may not report every holder."
+                  title="Windows reports no programs using this"
+                  description="If a delete still fails, try again, because the program may have released it by now. Windows may not report every program."
                 />
               ) : (
                 <div className="img-table-wrap">
@@ -128,8 +128,8 @@ export default function LocksView() {
                         {reports.length > 1 && <th className="img-th">Item</th>}
                         <th className="img-th">Program</th>
                         <th className="img-th">PID</th>
-                        <th className="img-th">Why it holds this</th>
-                        <th className="img-th holder-actions">Action</th>
+                        <th className="img-th">Reason</th>
+                        <th className="img-th holder-actions">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -143,7 +143,7 @@ export default function LocksView() {
                           return (
                             <tr key={report.path} className="img-row">
                               {item}
-                              <td className="img-td img-age" colSpan={4}>Windows reports no holders</td>
+                              <td className="img-td img-age" colSpan={4}>Windows reports no programs using this</td>
                             </tr>
                           )
                         }
@@ -159,7 +159,7 @@ export default function LocksView() {
                             <td className="img-td holder-actions">
                               <HolderAction
                                 process={h.process}
-                                holds={`holding ${report.path}`}
+                                holds={`using ${report.path}`}
                                 onClose={() => { setError(null); setResult(null); setClosing({ holder: h, path: report.path }) }}
                               />
                             </td>
@@ -178,7 +178,7 @@ export default function LocksView() {
       {closing && (
         <CloseProgramDialog
           process={closing.holder.process}
-          holds={`Holds ${closing.path}`}
+          holds={`Using ${closing.path}`}
           onClosed={() => afterClose(closing.holder)}
           onFailed={e => { setClosing(null); setError(e) }}
           onCancel={() => setClosing(null)}

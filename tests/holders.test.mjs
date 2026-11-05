@@ -142,6 +142,6 @@ test('a file-in-use error offers the File locks page, and other errors do not', 
     '../utils/errors': { toAppError: e => e },
   })
   const render = kind => renderToStaticMarkup(createElement(ui.ErrorBanner, { error: { kind, message: 'Failed' } }))
-  assert.match(render('busy'), /See what holds it/)
-  assert.doesNotMatch(render('permission'), /See what holds it/)
+  assert.match(render('busy'), /Open File locks/)
+  assert.doesNotMatch(render('permission'), /Open File locks/)
 })

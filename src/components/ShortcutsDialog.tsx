@@ -3,12 +3,12 @@ import ModalShell from './ModalShell'
 import { Button, Kbd } from './ui'
 
 const SHORTCUTS: Array<{ keys: string[]; desc: string }> = [
-  { keys: ['Ctrl', 'K'], desc: 'Search everything: modules, distros, images, containers, volumes' },
-  { keys: ['Ctrl', 'R'], desc: 'Refresh the current module' },
-  { keys: ['Ctrl', '`'], desc: 'Show or hide the command pane' },
-  { keys: ['↑', '↓'],    desc: 'Move through results, or through command history in the pane' },
+  { keys: ['Ctrl', 'K'], desc: 'Search everything: pages, distros, images, containers, volumes' },
+  { keys: ['Ctrl', 'R'], desc: 'Refresh the current page (Docker, WSL, Packages)' },
+  { keys: ['Ctrl', '`'], desc: 'Show or hide the terminal panel' },
+  { keys: ['↑', '↓'],    desc: 'Move through results, or through command history in the terminal' },
   { keys: ['Enter'],     desc: 'Open the highlighted result' },
-  { keys: ['Esc'],       desc: 'Close the index, a dialog, or a menu' },
+  { keys: ['Esc'],       desc: 'Close search, a dialog, or a menu' },
 ]
 
 export default function ShortcutsDialog() {
@@ -19,8 +19,7 @@ export default function ShortcutsDialog() {
   return (
     <ModalShell className="modal-overlay" label="Keyboard shortcuts" onClose={() => setOpen(false)}>
       <div className="modal" style={{ maxWidth: 460 }} onClick={e => e.stopPropagation()}>
-        <h2 className="prereq-title">Keyboard</h2>
-        <p className="prereq-desc">Everything here works from anywhere in the app.</p>
+        <h2 className="prereq-title">Keyboard shortcuts</h2>
         <div className="shortcut-list">
           {SHORTCUTS.map(s => (
             <div key={s.desc} className="shortcut-row">

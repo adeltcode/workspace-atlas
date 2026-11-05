@@ -39,14 +39,14 @@ export default function WslConfTab({ distros, runningNames, onAfterShutdown }: {
   }), [distro, backupDir])
 
   if (distros.length === 0) {
-    return <p className="empty-state" style={{ marginTop: 24 }}>No distributions found.</p>
+    return <p className="empty-state" style={{ marginTop: 24 }}>No distros found.</p>
   }
 
   return (
     <div className="wslconf">
       <p className="wslconf-context">
         Editing <code>/etc/wsl.conf</code> inside <strong>{distro}</strong> (writes as root). Switch distro from
-        the header. Machine-wide settings live in{' '}
+        the sidebar. Machine-wide settings live in{' '}
         <button className="wsl-link" onClick={() => setWslView('wslconfig')}>.wslconfig</button>.
       </p>
       {distro && (

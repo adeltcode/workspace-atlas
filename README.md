@@ -5,8 +5,7 @@
 <h1 align="center">Workspace Atlas</h1>
 
 <p align="center">
-  <strong>Your dev environment, mapped and managed.</strong><br>
-  A Windows app for managing Docker, WSL2, and installed packages in one place.
+  A Windows app for managing Docker, WSL 2, packages, ports, file locks, and Windows Sandbox.
 </p>
 
 <p align="center">
@@ -32,7 +31,7 @@
 
 ---
 
-Workspace Atlas is a desktop app for keeping a Windows dev machine in order. Use it to clean up Docker, manage WSL distros, and keep track of installed packages, instead of juggling separate scripts and commands.
+Workspace Atlas is a desktop app for keeping a Windows dev machine in order. Use it to clean up Docker, manage WSL distros, and keep track of installed packages, instead of running separate scripts and commands.
 
 Every disk or Docker operation prints the real command it runs, so you can check it or copy it. No telemetry, no account.
 
@@ -53,8 +52,8 @@ Every disk or Docker operation prints the real command it runs, so you can check
 | Level | Removes |
 | --- | --- |
 | 1 Safe | Dangling images |
-| 2 Deep | All unused images not on your keep-list |
-| 3 Nuclear | Stopped containers, unused images not on your keep-list, unused volumes, and all build cache |
+| 2 Deep | All unused images that are not pinned |
+| 3 Nuclear | Stopped containers, unused images that are not pinned, unused volumes, and all build cache |
 
 ### WSL
 
@@ -71,7 +70,7 @@ Every disk or Docker operation prints the real command it runs, so you can check
 - **Sources**: winget, Chocolatey, Scoop, global npm and pnpm, pip, pipx, uv tools, conda envs, Cargo, Rust toolchains, Ruby gems, .NET tools, .NET SDKs, .NET runtimes, PowerShell, VS Code, VS Code Insiders, Cursor, VSCodium, installed apps, and the Microsoft Store
 - **Updates**: winget updates appear after every scan. **Check for updates** also covers npm, pip, and Chocolatey, and needs an internet connection
 - **Upgrade**: upgrade winget, npm, pip, and Chocolatey packages one at a time
-- **Uninstall**: remove winget, pip, and npm packages and VS Code extensions. First, Atlas shows what depends on the package, which commands you'd lose, whether it's running, and how to reinstall it. Core tools such as Git and Python ask you to type the ID to confirm
+- **Uninstall**: remove winget, pip, and npm packages and VS Code extensions. First, Atlas shows what depends on the package, which commands you'd lose, whether it's running, and how to reinstall it. Removing a core tool such as Git or Python requires typing its ID to confirm
 
 ### Windows Sandbox
 
@@ -81,23 +80,23 @@ Every disk or Docker operation prints the real command it runs, so you can check
 
 ### Tools
 
-- **Ports**: see what is listening on each TCP port, on Windows, in Docker containers, and in running WSL distros, and whether other devices can reach it. Close a stuck program after you confirm. The table can be sorted, resized, and given more columns: when the port started listening, command line, working folder, memory, the program that started it, addresses, and file path
-- **File locks**: when Windows won't let you delete or move something, drag it onto the page to see which program holds it, and close that program after you confirm. You can drag several files and folders at once, or paste a path or browse to one
+- **Ports**: see what is listening on each TCP port, on Windows, in Docker containers, and in running WSL distros, and whether other devices can reach it. Close a stuck program after you confirm. You can sort and resize the table, and add columns for when the port started listening, the command line, working folder, memory, the program that started it, addresses, and file path
+- **File locks**: when Windows won't let you delete or move something, drag it onto the page to see which program is using it, and close that program after you confirm. You can drag several files and folders at once, or paste a path or browse to one
 
 Atlas won't close Windows, Docker, or WSL's own programs, or anything that needs administrator rights.
 
 ### General
 
 - **Overview**: live CPU, memory, and disk use for the whole machine, plus recent activity across the app
-- **Command pane**: a built-in terminal that shows each command as it runs. You can type your own commands there too
-- **Search**: `Ctrl+K` finds modules, distros, images, containers, and volumes
+- **Terminal panel**: a built-in terminal that shows each command as it runs. You can type your own commands there too
+- **Search**: `Ctrl+K` finds pages, distros, images, containers, and volumes
 - **Settings**: choose the backup folder, and export or import your configuration
 
 | Shortcut | Action |
 | --- | --- |
 | `Ctrl+K` | Search everything |
-| `Ctrl+R` | Refresh the current module |
-| `` Ctrl+` `` | Show or hide the command pane |
+| `Ctrl+R` | Refresh the current page |
+| `` Ctrl+` `` | Show or hide the terminal panel |
 | `↑` `↓` | Move through results, or through command history in the pane |
 | `Enter` | Open the highlighted result |
 | `Esc` | Close search, a dialog, or a menu |
@@ -136,8 +135,8 @@ Atlas doesn't update itself. To get a new version, download and run its installe
 - Every operation that touches disk or Docker prints the real, copy-pasteable command in the built-in terminal.
 - Prune shows a dry-run estimate first, then before and after numbers.
 - You have to type a confirmation for the riskiest actions: Nuclear prune, deleting a distro, and uninstalling a core tool.
-- Keep-listed images are never pruned.
-- Atlas runs without administrator rights. Windows asks for your approval only when an operation needs them: VHD compact, Chocolatey upgrades, and pip when its folder is admin-only.
+- Pinned images are never pruned.
+- Atlas runs without administrator rights. Windows asks for your approval only when an operation needs them: compacting a VHD, upgrading Chocolatey packages, and running pip when its folder is admin-only.
 - Atlas only goes online when you ask it to: downloading distro images, checking for updates, and upgrading packages.
 
 ## Moving a distro to another drive
@@ -153,17 +152,17 @@ Atlas can move a distro's disk to another drive. It backs up the disk first, ver
 - Quit Docker Desktop. Docker Desktop's own distros must be moved through Docker Desktop.
 - Finish active Atlas operations, including terminal commands and Compose log streams. Atlas refuses conflicting operations until the move finishes.
 - Close terminals, editors, and other tools that could restart the distro during the move.
-- Choose a folder on a local drive, or pick a drive root to get a suggested `WSL\<distro>` folder. Use storage with Windows file permissions and without NTFS compression or file encryption.
+- Choose a folder on a local drive, or pick a drive root to get a suggested `WSL\<distro>` folder. The drive must support Windows file permissions, and the folder must not use NTFS compression or file encryption.
 
 **Review screen**
 
 Atlas checks the destination and free space, then lists everything blocking the move on one screen. From there you can update WSL, quit Docker Desktop, choose another destination, or inspect an active terminal task.
 
-- Updates and workload shutdowns ask for confirmation first, then Atlas checks the requirements again.
+- Atlas asks for confirmation before it updates WSL or stops Docker Desktop or WSL, then checks the requirements again.
 - New folders are created only when you confirm.
 - The move itself has its own confirmation.
 
-Expand **Commands and Windows responses** to see the commands, exit codes, and both output streams. Atlas checks WSL compatibility from the commands WSL advertises, because `wsl --help` can return a nonzero exit code even when the required commands are available.
+Expand **Commands and Windows responses** to see the commands, exit codes, and both output streams. Atlas checks compatibility from the commands `wsl --help` lists, not its exit code, which can be nonzero even when the required commands are available.
 
 **During the move**
 
@@ -171,13 +170,13 @@ Expand **Commands and Windows responses** to see the commands, exit codes, and b
 2. It checks free space.
 3. It exports a VHD backup and verifies it byte by byte.
 4. It moves the registered disk.
-5. It checks that the distro boots with a writable root filesystem and default-user home directory.
+5. It checks that the distro boots, and that its root filesystem and the default user's home folder are writable.
 
-Backup and destination permissions are restricted to your Windows account, SYSTEM, and administrators.
+Only your Windows account, SYSTEM, and administrators can access the backup and destination.
 
 **Backup files**
 
-A separate backup folder beside the destination holds `backup.vhdx` and `RECOVERY.txt`. `BACKUP-COMPLETE.txt` appears only after the export and byte verification finish. Keep these files until you've checked your files and applications.
+A separate backup folder beside the destination holds `backup.vhdx` and `RECOVERY.txt`. `BACKUP-COMPLETE.txt` appears only after the export and byte verification finish. Keep them until you've checked your files and applications.
 
 **What gets moved**
 

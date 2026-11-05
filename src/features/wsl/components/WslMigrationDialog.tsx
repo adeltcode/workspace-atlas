@@ -19,7 +19,7 @@ const PHASES: { id: MigrationProgress['phase']; label: string }[] = [
   { id: 'backing-up', label: 'Back up disk' },
   { id: 'verifying-backup', label: 'Verify backup' },
   { id: 'moving', label: 'Move disk' },
-  { id: 'checking', label: 'Check distribution' },
+  { id: 'checking', label: 'Check distro' },
 ]
 
 const REPAIR_LABELS: Record<MigrationRepair, string> = {
@@ -31,7 +31,7 @@ const REPAIR_NOTICES: Record<MigrationRepair, string> = {
   'update-wsl': 'Save your WSL work first. Windows may ask for administrator approval to update WSL.',
   'update-wsl-web': 'Save your WSL work first. This downloads the WSL update directly when Microsoft Store access is unavailable.',
   'stop-docker': 'This stops Docker Desktop and its running containers. Save container work before continuing.',
-  'stop-wsl': 'This stops every WSL session immediately. Save work in all distributions and close WSL terminals and editors first.',
+  'stop-wsl': 'This stops every WSL session immediately. Save work in all distros and close WSL terminals and editors first.',
 }
 
 const REPAIR_COMMANDS: Record<MigrationRepair, string> = {
@@ -114,7 +114,7 @@ export default function WslMigrationDialog({ distro, onClose, onReload, onComple
       const failure = toAppError(e)
       setError(failure)
       setPlan(null)
-      addActivity({ module: 'wsl', action: `Moved ${distro.name}`, outcome: 'failure', detail: `${failure.message}\n${failure.hint ?? ''}\n${failure.detail ?? ''}\n${failure.recoveryPath ?? ''}` })
+      addActivity({ module: 'wsl', action: `Move ${distro.name}`, outcome: 'failure', detail: `${failure.message}\n${failure.hint ?? ''}\n${failure.detail ?? ''}\n${failure.recoveryPath ?? ''}` })
     } finally {
       unlisten?.()
       outputUnlisten?.()
@@ -183,7 +183,7 @@ export default function WslMigrationDialog({ distro, onClose, onReload, onComple
     if (action === 'update-wsl' || action === 'update-wsl-web' || action === 'stop-docker' || action === 'stop-wsl') {
       return <button className="btn-secondary" disabled={busy} onClick={() => setRepairConfirmation(action)}>{REPAIR_LABELS[action]}</button>
     }
-    const label = action === 'open-docker' ? 'Open Docker Desktop' : action === 'show-terminal' ? 'Show active terminal' : action === 'refresh-distros' ? 'Refresh distributions' : action === 'conversion-guide' ? 'WSL 2 conversion guide' : 'Open WSL troubleshooting'
+    const label = action === 'open-docker' ? 'Open Docker Desktop' : action === 'show-terminal' ? 'Show active terminal' : action === 'refresh-distros' ? 'Refresh distros' : action === 'conversion-guide' ? 'WSL 2 conversion guide' : 'Open WSL troubleshooting'
     return <button className="btn-secondary" disabled={busy} onClick={() => helpAction(action)}>{label}</button>
   }
 
@@ -210,7 +210,7 @@ export default function WslMigrationDialog({ distro, onClose, onReload, onComple
           <>
             <p className="modal-body">The disk was moved and checked. Your backup is ready if you need it.</p>
             <div className="wsl-migration-location"><span>New location</span><code>{result.destination}</code></div>
-            <p className="wsl-migration-note">Check your files and apps before deleting the backup. Other WSL distributions remain stopped.</p>
+            <p className="wsl-migration-note">Check your files and apps before deleting the backup. Other WSL distros remain stopped.</p>
             <details className="wsl-migration-details">
               <summary>Backup and recovery</summary>
               <code>{result.backup_path}</code>
@@ -220,7 +220,7 @@ export default function WslMigrationDialog({ distro, onClose, onReload, onComple
         ) : move.pending ? (
           <div role="status" aria-live="polite" aria-busy="true">
             <p className="modal-body">Keep Atlas open until the move finishes.</p>
-            <ol className="wsl-migration-progress" aria-label="Migration progress">
+            <ol className="wsl-migration-progress" aria-label="Move progress">
               {PHASES.map((item, index) => (
                 <li key={item.id} className={index === activePhase ? 'is-current' : index < activePhase ? 'is-complete' : ''}
                   aria-current={index === activePhase ? 'step' : undefined}>
@@ -237,7 +237,7 @@ export default function WslMigrationDialog({ distro, onClose, onReload, onComple
           } />
         ) : plan ? (
           <>
-            <p className="modal-body" ref={reviewRef} tabIndex={-1}>{blockers.length > 0 ? 'Finish the checks below before moving.' : 'Review the move, then confirm when your work is saved.'}</p>
+            <p className="modal-body" ref={reviewRef} tabIndex={-1}>{blockers.length > 0 ? 'Fix the problems below before moving.' : 'Review the move, then confirm when your work is saved.'}</p>
             <div className="wsl-migration-location"><span>Move to</span><code>{plan.destination}</code>
               {plan.create_directory && <small>This folder will be created when you confirm.</small>}
             </div>
@@ -250,14 +250,14 @@ export default function WslMigrationDialog({ distro, onClose, onReload, onComple
               </div>
             </div>}
             {blockers.length === 0 && <details className="wsl-migration-details"><summary>What happens to my files?</summary>
-              <p>Atlas backs up and checks the disk before moving it. Your Linux files, settings, and distribution name stay the same.</p>
+              <p>Atlas backs up and checks the disk before moving it. Your Linux files, settings, and distro name stay the same.</p>
               <p>The backup and recovery guide are kept beside the new folder. Windows-mounted files and Docker Desktop data are stored separately.</p>
-              <p>{distro.running ? 'This distribution restarts for a final check. Other distributions remain stopped.' : 'This distribution is stopped again after a final check. Other distributions remain stopped.'}</p>
+              <p>{distro.running ? 'This distro restarts for a final check. Other distros remain stopped.' : 'This distro is stopped again after a final check. Other distros remain stopped.'}</p>
             </details>}
           </>
         ) : (
           <>
-            <p className="modal-body">Choose where to store the distribution. Atlas keeps a backup before moving it.</p>
+            <p className="modal-body">Choose where to store the distro. Atlas keeps a backup before moving it.</p>
             <form id="wsl-migration-location" onSubmit={event => { event.preventDefault(); review() }}>
               <Field label="Destination folder">
                 <div className="wsl-import-row">
@@ -283,7 +283,7 @@ export default function WslMigrationDialog({ distro, onClose, onReload, onComple
           {plan && !result && !move.pending && !repairConfirmation && <button className="btn-secondary modal-actions-escape" onClick={() => { setPlan(null); setError(null); setBlockers([]) }}>Back</button>}
           <button className="btn-secondary" onClick={onClose} disabled={busy}>{result || error?.recoveryPath ? 'Close' : 'Cancel'}</button>
           {!result && !error?.recoveryPath && !move.pending && !repairConfirmation && (plan && blockers.length === 0 ? (
-            <button key="confirm-move" className="btn-filled btn-filled--accent" onClick={runMigrate} disabled={busy || busyDistro !== null}><ArrowRightLeft size={13} /> {plan.create_directory ? 'Create folder and move' : 'Move distribution'}</button>
+            <button key="confirm-move" className="btn-filled btn-filled--accent" onClick={runMigrate} disabled={busy || busyDistro !== null}><ArrowRightLeft size={13} /> {plan.create_directory ? 'Create folder and move' : 'Move distro'}</button>
           ) : (
             <button key="review-location" type={plan ? 'button' : 'submit'} form={plan ? undefined : 'wsl-migration-location'} onClick={plan ? review : undefined} className="btn-filled btn-filled--accent" disabled={busy || busyDistro !== null || !directory.trim()}>{check.pending ? 'Checking…' : error || blockers.length > 0 ? 'Check again' : 'Continue'}</button>
           ))}

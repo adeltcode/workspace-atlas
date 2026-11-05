@@ -55,7 +55,7 @@ export default function ImagesTab({ images, loading }: { images: DockerImage[]; 
     <EmptyState
       icon={Layers}
       title="No images on this engine"
-      description="Nothing has been pulled or built yet. Pull one with docker pull, or start a compose project and its images appear here."
+      description="Nothing has been pulled or built yet. Pull one with docker pull, or start a Compose project and its images appear here."
     />
   )
 
@@ -80,7 +80,7 @@ export default function ImagesTab({ images, loading }: { images: DockerImage[]; 
         />
         <div className="age-filter">
           <span className="age-label">
-            Age ≤ {maxAge >= 3650 ? 'any' : maxAge >= 365 ? `${Math.round(maxAge / 365)}y` : `${maxAge}d`}
+            {maxAge >= 3650 ? 'Any age' : `Age ≤ ${maxAge >= 365 ? `${Math.round(maxAge / 365)}y` : `${maxAge}d`}`}
           </span>
           <input type="range" min={1} max={3650} aria-label="Maximum image age in days" value={maxAge} onChange={e => setMaxAge(Number(e.target.value))} className="age-slider" />
         </div>
@@ -122,7 +122,7 @@ export default function ImagesTab({ images, loading }: { images: DockerImage[]; 
                     <button
                       className={clsx('pin-btn', pinned && 'pinned')}
                       onClick={() => pinned ? removeFromKeepList(img.id) : addToKeepList(img.id)}
-                      title={pinned ? 'Unpin from keep-list' : 'Pin - never prune this image'}
+                      title={pinned ? 'Unpin this image' : 'Pin this image so it is never pruned'}
                     >
                       {pinned ? <PinOff size={13} /> : <Pin size={13} />}
                     </button>
@@ -137,7 +137,7 @@ export default function ImagesTab({ images, loading }: { images: DockerImage[]; 
       {dockerKeepList.length > 0 && (
         <div className="keeplist-notice">
           <Pin size={12} />
-          {dockerKeepList.length} image{dockerKeepList.length !== 1 ? 's' : ''} pinned - never pruned
+          {dockerKeepList.length} image{dockerKeepList.length !== 1 ? 's' : ''} pinned and never pruned
         </div>
       )}
     </div>

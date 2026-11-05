@@ -19,7 +19,7 @@ impl MigrationState {
             let _guard = self.0.try_read().map_err(|_| {
                 AtlasError::new(
                     ErrorKind::Busy,
-                    "Wait for the WSL disk operation to finish.",
+                    "Wait for the current WSL disk operation to finish.",
                 )
             })?;
             operation()
@@ -124,10 +124,10 @@ pub fn source_distro<'a>(
     distros: &'a [WslDistro],
 ) -> Result<&'a WslDistro, AtlasError> {
     if name.starts_with('-') || name.chars().any(char::is_control) {
-        return Err(AtlasError::invalid("Choose a registered distribution."));
+        return Err(AtlasError::invalid("Choose a registered distro."));
     }
     let distro = distros.iter().find(|d| d.name == name).ok_or_else(|| {
-        AtlasError::invalid("The distribution is no longer registered.")
+        AtlasError::invalid("The distro is no longer registered.")
             .hint("Refresh the list to load its current location.")
             .action(RecoveryAction::RefreshDistros)
     })?;
@@ -138,20 +138,20 @@ pub fn source_distro<'a>(
         );
     }
     if distro.version == 1 {
-        return Err(AtlasError::invalid("Convert this distribution to WSL 2 first.")
+        return Err(AtlasError::invalid("Convert this distro to WSL 2 first.")
             .hint("WSL 1 does not have a virtual disk to move. Back up your files before converting.")
             .action(RecoveryAction::ConversionGuide));
     }
     if distro.version != 2 {
         return Err(AtlasError::invalid(
-            "Windows could not determine this distribution's WSL version.",
+            "Windows could not determine this distro's WSL version.",
         )
-        .hint("Refresh the distribution list before checking the move again.")
+        .hint("Refresh the distro list before checking the move again.")
         .action(RecoveryAction::RefreshDistros));
     }
     if distro.vhd_path.is_empty() {
         return Err(AtlasError::invalid(
-            "The distribution's virtual disk is missing. Repair it before migrating.",
+            "The distro's virtual disk is missing. Repair it before moving the distro.",
         )
         .hint("Refresh to check its current location. Keep any existing disk files.")
         .action(RecoveryAction::RefreshDistros));
@@ -173,7 +173,7 @@ pub fn source_distro<'a>(
         return Err(
             AtlasError::invalid("The source disk is empty or is not a file.")
                 .hint(
-                    "Refresh the distribution list and check the existing disk before continuing.",
+                    "Refresh the distro list and check the existing disk before continuing.",
                 )
                 .detail(format!(
                     "Source disk: {}\nReported size: {} bytes",
@@ -198,7 +198,7 @@ fn require_empty(path: &Path) -> Result<(), AtlasError> {
 pub fn destination(input: &Path, distros: &[WslDistro]) -> Result<PathBuf, AtlasError> {
     if !input.is_absolute() {
         return Err(AtlasError::invalid(
-            "Choose an absolute destination folder on a local drive.",
+            "Enter the full path of a folder on a local drive.",
         ));
     }
     #[cfg(windows)]
@@ -220,7 +220,7 @@ pub fn destination(input: &Path, distros: &[WslDistro]) -> Result<PathBuf, Atlas
         if let std::path::Component::Normal(name) = part {
             if !valid_folder_name(&name.to_string_lossy()) {
                 return Err(AtlasError::invalid(
-                    "Use a folder name without reserved names or characters.",
+                    "This folder name is reserved or contains characters Windows does not allow.",
                 ));
             }
         }
@@ -253,9 +253,9 @@ pub fn destination(input: &Path, distros: &[WslDistro]) -> Result<PathBuf, Atlas
             || base_key.starts_with(&key)
         {
             return Err(
-                AtlasError::invalid("Choose a folder outside existing distributions.")
+                AtlasError::invalid("Choose a folder outside existing distros.")
                     .hint(
-                        "The disk and its backup must stay separate from registered distributions.",
+                        "The disk and its backup must stay separate from registered distros.",
                     )
                     .action(RecoveryAction::ChooseFolder),
             );
@@ -428,13 +428,13 @@ fn is_local_path(path: &Path) -> bool {
 fn required_space(size: u64, copies: u64) -> Result<u64, AtlasError> {
     size.checked_mul(copies)
         .and_then(|n| n.checked_add(SPACE_RESERVE))
-        .ok_or_else(|| AtlasError::invalid("The virtual disk size could not be estimated safely."))
+        .ok_or_else(|| AtlasError::invalid("Could not work out how much space the move needs."))
 }
 
 fn check_space(available: u64, required: u64) -> Result<(), AtlasError> {
     if available < required {
-        return Err(AtlasError::new(ErrorKind::DiskFull, "The destination does not have enough free space for migration.")
-            .hint(format!("Free at least {:.1} GiB for the disk, retained backup, and working space. {:.1} GiB is available.",
+        return Err(AtlasError::new(ErrorKind::DiskFull, "The destination does not have enough free space for the move.")
+            .hint(format!("The move needs {:.1} GiB for the disk, its backup, and working space. {:.1} GiB is available.",
                 required as f64 / 1073741824.0, available as f64 / 1073741824.0)));
     }
     Ok(())
@@ -468,7 +468,7 @@ fn available_space(path: &Path) -> Result<u64, AtlasError> {
     };
     if success == 0 {
         return Err(AtlasError::invalid(
-            "Could not read free space on the destination drive. Migration was stopped.",
+            "Could not read free space on the destination drive. The move was stopped.",
         )
         .detail(std::io::Error::last_os_error().to_string()));
     }
@@ -477,7 +477,7 @@ fn available_space(path: &Path) -> Result<u64, AtlasError> {
 
 #[cfg(not(windows))]
 fn available_space(_: &Path) -> Result<u64, AtlasError> {
-    Err(AtlasError::invalid("WSL migration requires Windows."))
+    Err(AtlasError::invalid("Moving a WSL distro requires Windows."))
 }
 
 fn save_new(path: &Path, text: &str) -> Result<(), AtlasError> {
@@ -495,10 +495,10 @@ fn recovery_guide(source: &WslDistro, dest: &Path, backup_dir: &Path, backup: &P
         "atlas-recovered-{}",
         suffix.trim_start_matches("atlas-migration-backup-")
     );
-    format!("WSL migration recovery\n\nDistribution: {}\nOriginal folder: {}\nDestination: {}\nBackup: {}\n\n\
-        Save your work and keep other tools from starting this distribution during migration.\n\
-        If the app closes, wait for its WSL command to finish before retrying. Do not delete either disk or unregister any distribution.\n\n\
-        If the disk stays locked after stopping this distribution, save work in ALL distributions and quit Docker Desktop.\n\
+    format!("Recovery guide: moving a WSL distro\n\nDistro: {}\nOriginal folder: {}\nDestination: {}\nBackup: {}\n\n\
+        Save your work and keep other tools from starting this distro during the move.\n\
+        If the app closes, wait for its WSL command to finish before retrying. Do not delete either disk or unregister any distro.\n\n\
+        If the disk stays locked after stopping this distro, save work in ALL distros and quit Docker Desktop.\n\
         Then run the following command before retrying. It stops ALL WSL workloads:\n\
         wsl --shutdown\n\n\
         The backup is usable only when BACKUP-COMPLETE.txt exists beside this guide.\n\
@@ -507,15 +507,15 @@ fn recovery_guide(source: &WslDistro, dest: &Path, backup_dir: &Path, backup: &P
         wsl --list --verbose\n\
         Get-ChildItem 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Lxss' | ForEach-Object {{ Get-ItemProperty -LiteralPath $_.PSPath }} | Select-Object DistributionName, BasePath, VhdFileName\n\n\
         If the disk moved but boot failed, preserve both folders and inspect the reported WSL error.\n\
-        If moving back is appropriate, use Atlas migration again and select the original empty folder.\n\
-        Atlas must establish private destination permissions before moving the disk back. A raw cross-drive move can inherit broad permissions.\n\n\
-        Restore a completed backup as a separate distribution, without deleting the current one:\n\
+        If you decide to move it back, use Atlas to move it again and select the original folder, which must be empty.\n\
+        Atlas restricts the destination's permissions before it moves the disk back. A manual move to another drive can inherit broader permissions.\n\n\
+        Restore a completed backup as a separate distro, without deleting the current one:\n\
         wsl --import {} {} {} --vhd --version 2\n\
         wsl -d {} -u root --cd / -- true\n\n\
-        If that recovery name or folder already exists, choose a new name and empty folder. Never unregister an existing distribution to make room.\n\
+        If that recovery name or folder already exists, choose a new name and empty folder. Never unregister an existing distro to make room.\n\
         An imported backup may log in as root. Set its default user after confirming the correct Linux username.\n\
-        If this was your default distribution, make the recovered copy default only after verifying your files.\n\
-        The recovered copy has a new distribution name. Enable Docker Desktop WSL integration for that name after recovery.\n\
+        If this was your default distro, make the recovered copy default only after verifying your files.\n\
+        The recovered copy has a new distro name. Enable Docker Desktop WSL integration for that name after recovery.\n\
         Update Windows Terminal profiles, editor connections, and any \\\\wsl.localhost paths that should use the recovered copy.\n\
         Docker Desktop images, containers, and named volumes are stored separately and are not included in this backup.\n\
         Windows files mounted under /mnt are also outside this backup. Keep their own backups and mount configuration.\n\
@@ -530,7 +530,7 @@ fn recovery_error(mut error: AtlasError, guide: &Path) -> AtlasError {
     let next_step = error.hint.unwrap_or_default();
     error.hint = Some(
         format!(
-            "{} Keep the migration files and check the recovery guide before retrying.",
+            "{} Keep all files from the move and follow the recovery guide before retrying.",
             next_step
         )
         .trim()
@@ -681,7 +681,7 @@ fn migrate_with_backup(
     progress("stopping");
     log("$ wsl --shutdown".to_string());
     run(&["--shutdown"])
-        .map_err(|e| at_step(e, "WSL could not shut down. The disk was not moved"))?;
+        .map_err(|e| at_step(e, "WSL could not shut down. The disk was not moved."))?;
     let source_guard = wait_for_disk_release(Path::new(&source.vhd_path), Duration::from_secs(5))?;
     #[cfg(windows)]
     crate::wsl_migration_acl::secure_disk_handle(&source_guard)?;
@@ -693,17 +693,17 @@ fn migrate_with_backup(
         quote(&backup_text)
     ));
     run(&["--export", &source.name, &backup_text, "--vhd"])
-        .map_err(|e| at_step(e, "Backup export failed; the disk was not moved"))?;
+        .map_err(|e| at_step(e, "The backup export failed. The disk was not moved."))?;
     if !backup.is_file() || fs::metadata(backup)?.len() == 0 {
         return Err(AtlasError::invalid(
-            "WSL did not produce a nonempty backup. The disk was not moved.",
+            "WSL produced an empty backup, or none at all. The disk was not moved.",
         ));
     }
     log("$ wsl --shutdown".to_string());
     run(&["--shutdown"]).map_err(|e| {
         at_step(
             e,
-            "WSL could not shut down after backup. The disk was not moved",
+            "WSL could not shut down after the backup. The disk was not moved.",
         )
     })?;
     let verification_guard =
@@ -729,7 +729,7 @@ fn migrate_with_backup(
         || current.is_default != source.is_default
     {
         return Err(AtlasError::invalid(
-            "The registered distribution changed during backup. The disk was not moved.",
+            "The registered distro changed during backup. The disk was not moved.",
         ));
     }
     if path_key(&destination(dest, &distros)?) != path_key(dest) {
@@ -753,7 +753,7 @@ fn migrate_with_backup(
     run(&["--manage", &source.name, "--move", &dest_text]).map_err(|e| {
         at_step(
             e,
-            "WSL's move command failed; the registered location may have changed",
+            "WSL's move command failed. The registered location may have changed.",
         )
     })?;
 
@@ -795,7 +795,7 @@ fn migrate_with_backup(
     .map_err(|e| {
         at_step(
             e,
-            "The disk moved, but the filesystem or user write check failed",
+            "The disk moved, but the check of the root filesystem and home folder failed.",
         )
     })?;
     if !source.running {
@@ -803,12 +803,12 @@ fn migrate_with_backup(
         run(&["--terminate", &source.name]).map_err(|e| {
             at_step(
                 e,
-                "Migration and boot succeeded, but the distribution could not be stopped",
+                "The move and boot check succeeded, but the distro could not be stopped.",
             )
         })?;
     }
     log(format!(
-        "# Migration and boot verified. Backup kept at {}",
+        "# Move and boot verified. Backup kept at {}",
         backup_text
     ));
     Ok(())
@@ -1047,7 +1047,7 @@ mod tests {
         assert_private_permissions(&backup.join("backup.vhdx"));
         assert!(backup.join("BACKUP-COMPLETE.txt").is_file());
         let guide = fs::read_to_string(backup.join("RECOVERY.txt")).unwrap();
-        assert!(guide.contains("use Atlas migration again"));
+        assert!(guide.contains("use Atlas to move it again"));
         assert!(!guide.contains("wsl --manage"));
     }
 

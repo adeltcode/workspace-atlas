@@ -18,7 +18,7 @@ const COLUMNS: TableColumn<SortKey>[] = [
   // The defaults that start visible add up to 930, which fits the table at a
   // 1280px window. Name takes whatever is left over.
   { key: 'name',      label: 'Name',      width: 180, sort: 'name' },
-  { key: 'id',        label: 'Id',        width: 150, hideable: true },
+  { key: 'id',        label: 'ID',        width: 150, hideable: true },
   { key: 'version',   label: 'Version',   width: 100, sort: 'version', hideable: true },
   { key: 'available', label: 'Available', width: 180, hideable: true },
   { key: 'updated',   label: 'Updated',   width: 96, sort: 'updated', hideable: true },
@@ -329,7 +329,7 @@ export default function PackagesView() {
     }
     const fresh = await rescanSource(p.source)
     const gone = fresh !== null && !fresh.some(x => x.id === p.id && x.version === p.version)
-    if (gone) setDone(`Removed ${nameWithVersion(p)}`)
+    if (gone) setDone(`Uninstalled ${nameWithVersion(p)}`)
     if (missingReqs.length) setBroken({ title: `Removing ${p.name} left packages missing a requirement`, lines: missingReqs })
     addActivity({
       module: 'packages',
@@ -406,7 +406,7 @@ export default function PackagesView() {
       ))}
 
       {jobError && (
-        <ErrorBanner title={jobError.title} error={jobError.error} detailLabel="What the tool reported" />
+        <ErrorBanner title={jobError.title} error={jobError.error} />
       )}
 
       {broken && <ErrorBanner title={broken.title}>{broken.lines.join(' ')}</ErrorBanner>}
@@ -445,10 +445,10 @@ export default function PackagesView() {
             </button>
 
             <span role="status">
-              {checking && <Tag tone="accent">Checking for updates, output in the terminal</Tag>}
+              {checking && <Tag tone="accent">Checking for updates (see terminal)</Tag>}
               {job && (
                 <Tag tone="accent">
-                  {job.kind === 'upgrade' ? 'Upgrading' : 'Uninstalling'} {job.pkg.name}, see the terminal
+                  {job.kind === 'upgrade' ? 'Upgrading' : 'Uninstalling'} {job.pkg.name} (see terminal)
                 </Tag>
               )}
               {done && <Tag tone="ok">{done}</Tag>}
@@ -543,7 +543,7 @@ export default function PackagesView() {
                             disabled={job !== null}
                             aria-label={`Uninstall ${nameWithVersion(p)}`}
                           >
-                            {isJob('uninstall', p) ? 'Removing…' : 'Uninstall'}
+                            {isJob('uninstall', p) ? 'Uninstalling…' : 'Uninstall'}
                           </Button>
                         )}
                       </td>
@@ -678,7 +678,7 @@ function UninstallReview({ pkg, sourceLabel, check, pinned, installs, confirmTex
         <span className="cmd-block-label">Exact command</span>
         <code className="cmd-block-code">{check.command}</code>
       </div>
-      <p className="wsl-estimate-note">To put it back later: <code>{check.reinstall_command}</code></p>
+      <p className="wsl-estimate-note">To reinstall later: <code>{check.reinstall_command}</code></p>
       {check.core && (
         <>
           <label className="wsl-import-label" htmlFor="pkg-uninstall-confirm" style={{ marginTop: 12 }}>

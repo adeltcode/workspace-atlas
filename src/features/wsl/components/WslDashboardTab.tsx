@@ -26,8 +26,8 @@ const TIP = {
   cpu:     'Load average ÷ logical cores. 100% means the run queue equals the core count.',
   mem:     'Used vs total RAM in the distro’s VM. Linux uses free RAM as cache, so “available” already accounts for reclaimable cache.',
   swap:    'WSL2’s on-disk swap file for the whole VM. Linux pages memory out here when RAM fills up.',
-  disk:    'Used / total of the ext4 root filesystem inside the distro - not the .vhdx file size on Windows, and not your Windows drive.',
-  init:    'systemd is PID 1. “degraded” means systemd is up but one or more units failed to start - the distro still works.',
+  disk:    'Used / total of the ext4 root filesystem inside the distro. This is not the .vhdx file size on Windows or your Windows drive.',
+  init:    'systemd is PID 1. “degraded” means systemd is up but one or more units failed to start. The distro still works.',
   zombies: 'Defunct Linux processes that exited but were not reaped by their parent. A few are normal; many point to a buggy parent process.',
   net:     'Interface and DNS are refreshed live every 10s. The traffic figures are cumulative totals since the distro booted, not a live rate.',
   limits:  '“Actual” is what the running VM has now. “Cap” is the limit set in %USERPROFILE%\\.wslconfig - “none” means WSL chose the default.',
@@ -170,7 +170,7 @@ export default function WslDashboardTab({ distros, onReload }: {
   useVisiblePoll(load, POLL_MS, shouldPoll)
 
   if (distros.length === 0) {
-    return <p className="empty-state" style={{ marginTop: 8 }}>No distributions found.</p>
+    return <p className="empty-state" style={{ marginTop: 8 }}>No distros found.</p>
   }
 
   const memUsedKb  = metrics ? metrics.mem_total_kb - metrics.mem_available_kb : 0
@@ -189,11 +189,11 @@ export default function WslDashboardTab({ distros, onReload }: {
         <div className="offline-card">
           <p className="offline-title">{selected} is stopped</p>
           <p className="offline-desc">
-            Start it to load live metrics. Nothing runs until you choose to.
+            Start it to see live metrics.
           </p>
           {error && <p className="wsl-opt-error" style={{ margin: '0 0 12px' }}>{error}</p>}
           <button className="btn-filled btn-filled--accent" onClick={startDistro} disabled={starting}>
-            <Play size={13} /> {starting ? 'Starting…' : 'Start distribution'}
+            <Play size={13} /> {starting ? 'Starting…' : 'Start distro'}
           </button>
         </div>
       )}
@@ -208,7 +208,7 @@ export default function WslDashboardTab({ distros, onReload }: {
         <>
           <div className="wsl-dash-rm">
             <div className="wsl-dash-section-head">
-              <span className="wsl-dash-section-label">Resource Monitoring</span>
+              <span className="wsl-dash-section-label">Resource monitoring</span>
               <span className="wsl-live-pill" style={{ marginLeft: 'auto' }}><span className="wsl-live-dot" />Live · every 10s</span>
             </div>
 

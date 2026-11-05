@@ -29,7 +29,7 @@ export const HOLD_REASON: Record<HoldReason, string> = {
   'open-file': 'Has a file open',
   'folder-open': 'Has a folder open or is working in it',
   'loaded-file': 'Has a file loaded',
-  'running-from-here': 'Running from this folder',
+  'running-from-here': 'Running from this location',
 }
 
 /** The last part of a path, which is enough to tell dropped items apart in a table. */
@@ -41,7 +41,7 @@ export function checkedSummary(reports: LockReport[]): string {
     ? `Checked ${reports[0].path}${hasFolder ? ' and everything inside it' : ''}.`
     : `Checked ${reports.length} items${hasFolder ? ', including everything inside the folders' : ''}.`
   return hasFolder
-    ? `${checked} A program running as administrator only shows up when you check the exact file it holds.`
+    ? `${checked} A program running as administrator only shows up when you check the exact file it is using.`
     : checked
 }
 

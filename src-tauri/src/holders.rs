@@ -727,7 +727,7 @@ fn open_files_inside(keys: &[String]) -> std::io::Result<Vec<BTreeMap<u32, PathB
         .iter()
         .find(|e| e.pid == own_pid && e.handle == probe.as_raw_handle() as usize)
         .map(|e| e.object_type)
-        .ok_or_else(|| std::io::Error::other("Windows did not list this app's own file."))?;
+        .ok_or_else(|| std::io::Error::other("Could not read the list of open files from Windows."))?;
 
     let mut processes: BTreeMap<u32, Option<OwnedHandle>> = BTreeMap::new();
     let mut found = vec![BTreeMap::new(); keys.len()];
@@ -813,7 +813,7 @@ fn lock_target(raw_path: &str) -> Result<LockTarget, AtlasError> {
     let is_folder = std::fs::symlink_metadata(&root)
         .map_err(|_| {
             AtlasError::new(ErrorKind::NotFound, format!("Nothing exists at {}.", path))
-                .hint("Check the path, or pick the file or folder with Browse.")
+                .hint("Check the path, or use Choose file or Choose folder.")
         })?
         .is_dir();
     let real_path = std::fs::canonicalize(&root).unwrap_or_else(|_| root.clone());

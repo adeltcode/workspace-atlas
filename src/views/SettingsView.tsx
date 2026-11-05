@@ -66,7 +66,7 @@ export default function SettingsView() {
       } catch { /* no existing */ }
     }
     commitDirChange(newDir)
-    setStatusMsg({ type: 'success', text: `Backup directory updated to ${newDir}` })
+    setStatusMsg({ type: 'success', text: `Backup folder changed to ${newDir}` })
   }
 
   const commitDirChange = (newDir: string) => {
@@ -94,7 +94,7 @@ export default function SettingsView() {
     if (!pendingDir) return
     if (!shouldTransfer) {
       commitDirChange(pendingDir)
-      setStatusMsg({ type: 'info', text: 'Directory changed. Existing backups were not moved.' })
+      setStatusMsg({ type: 'info', text: 'Folder changed. Existing backups were not moved.' })
       return
     }
     setTransferring(true)
@@ -105,7 +105,7 @@ export default function SettingsView() {
         + (result.old_dir_removed ? ' Previous folder removed.' : ' Previous folder kept.')
       setStatusMsg({ type: 'success', text: msg })
     } catch (e) {
-      setStatusMsg({ type: 'error', text: `Transfer failed: ${String(e)}` })
+      setStatusMsg({ type: 'error', text: `Move failed: ${String(e)}` })
       setPendingDir(null)
     } finally { setTransferring(false) }
   }
@@ -154,9 +154,9 @@ export default function SettingsView() {
     setRefreshing(true)
     try {
       const count = await api.dockerListBackups(backupDir)
-      setStatusMsg({ type: 'info', text: `${count.length} backup${count.length !== 1 ? 's' : ''} found in directory.` })
+      setStatusMsg({ type: 'info', text: `${count.length} backup${count.length !== 1 ? 's' : ''} found in this folder.` })
     } catch {
-      setStatusMsg({ type: 'error', text: 'Could not read backup directory.' })
+      setStatusMsg({ type: 'error', text: 'Could not read the backup folder.' })
     } finally { setRefreshing(false) }
   }
 
@@ -179,10 +179,10 @@ export default function SettingsView() {
           <div className="settings-card-header">
             <HardDriveDownload size={15} className="settings-card-icon" />
             <div>
-              <h2 className="settings-card-title">Backup Location</h2>
+              <h2 className="settings-card-title">Backup location</h2>
               <p className="settings-card-desc">
-                The root directory where volume and compose backups are stored.
-                Atlas automatically creates <code>docker/volumes/</code> and <code>docker/compose/</code> subdirectories.
+                The folder where volume and Compose backups are stored.
+                Atlas automatically creates <code>docker/volumes/</code> and <code>docker/compose/</code> subfolders.
               </p>
             </div>
           </div>
@@ -192,12 +192,12 @@ export default function SettingsView() {
               <Folder size={13} className="settings-dir-icon" />
               <input
                 className="settings-dir-input"
-                aria-label="Backup directory path"
+                aria-label="Backup folder path"
                 value={dirInput}
                 onChange={e => { setDirInput(e.target.value); setPendingDir(null); setStatusMsg(null) }}
                 onBlur={handleApplyDir}
                 onKeyDown={e => e.key === 'Enter' && handleApplyDir()}
-                placeholder="No backup directory configured…"
+                placeholder="No backup folder set"
                 spellCheck={false}
               />
             </div>
@@ -208,7 +208,7 @@ export default function SettingsView() {
               className="settings-dir-refresh"
               onClick={handleRefresh}
               disabled={!backupDir || refreshing}
-              title="Check backup directory"
+              title="Check backup folder"
             >
               <RefreshCw size={12} className={refreshing ? 'spin' : ''} />
             </button>
@@ -235,7 +235,7 @@ export default function SettingsView() {
                 <MoveRight size={14} className="settings-transfer-icon" />
                 <div className="settings-transfer-body">
                   <span className="settings-transfer-title">
-                    {existingCount} backup{existingCount !== 1 ? 's' : ''} found in current directory
+                    {existingCount} backup{existingCount !== 1 ? 's' : ''} found in the current folder
                   </span>
                   <span className="settings-transfer-sub">
                     Move them to <code>{pendingDir}</code> before switching?
@@ -249,7 +249,7 @@ export default function SettingsView() {
                   disabled={transferring}
                 >
                   <MoveRight size={12} />
-                  {transferring ? 'Moving…' : 'Transfer & Switch'}
+                  {transferring ? 'Moving…' : 'Move and switch'}
                 </button>
                 <button className="btn-ghost" onClick={() => handleTransfer(false)} disabled={transferring}>
                   Switch without moving
@@ -268,8 +268,8 @@ export default function SettingsView() {
             <div>
               <h2 className="settings-card-title">Configuration</h2>
               <p className="settings-card-desc">
-                Export all Atlas preferences (backup location, keep-list, editor, activity log)
-                to a single portable file, and re-import it on another machine.
+                Export your Atlas preferences (backup location, pinned images, editor)
+                to one file, and import it on another machine.
               </p>
             </div>
           </div>
@@ -314,7 +314,7 @@ export default function SettingsView() {
               <span className="settings-about-label">Privacy</span>
               <span className="settings-about-value settings-about-privacy">
                 <Shield size={12} />
-                Offline apart from what you start - no telemetry, no account
+                Only goes online for actions you start. No telemetry, no account.
               </span>
             </div>
           </div>

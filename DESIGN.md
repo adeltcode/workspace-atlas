@@ -426,7 +426,7 @@ Shows an error with `role="alert"`. A `busy` error also gets a button that opens
 | `title` | Names the operation that failed, such as "Could not remove the volume". |
 | `error` | The caught error. Supplies the message, the recovery hint, and the raw error text. |
 | `action` | A recovery control, such as a retry button. |
-| `detailLabel` | The label for the raw error text, which starts collapsed. Defaults to "What Windows reported". |
+| `detailLabel` | The label for the raw error text, which starts collapsed. Defaults to "Details". |
 
 ### EmptyState
 

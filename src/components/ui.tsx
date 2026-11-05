@@ -256,7 +256,7 @@ export function Panel({ title, meta, actions, onOpen, children, className }: {
 // Pass `error` (the caught value) rather than a string, and the banner draws the sentence, the
 // recovery hint, and the raw Windows or Docker text behind a disclosure.
 
-export function ErrorBanner({ title, error, action, className, detailLabel = 'What Windows reported', children }: {
+export function ErrorBanner({ title, error, action, className, detailLabel = 'Details', children }: {
   /** Names the operation that failed: "Could not remove the volume". */
   title?: string
   /** The caught value. Supplies the sentence, the hint and the raw detail. */
@@ -294,7 +294,7 @@ export function ErrorBanner({ title, error, action, className, detailLabel = 'Wh
         {(action || e?.kind === 'busy') && (
           <div className="error-actions">
             {action}
-            {e?.kind === 'busy' && <Button size="sm" onClick={() => useAppStore.getState().setActiveView('locks')}>See what holds it</Button>}
+            {e?.kind === 'busy' && <Button size="sm" onClick={() => useAppStore.getState().setActiveView('locks')}>Open File locks</Button>}
           </div>
         )}
       </div>

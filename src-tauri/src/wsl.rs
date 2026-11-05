@@ -188,13 +188,13 @@ pub async fn wslconfig_backup(
         let existing = list_wslconfig_backups_sync(&backup_dir);
         if let Some(latest) = existing.first() {
             if std::fs::read_to_string(&latest.path).ok().as_deref() == Some(content.as_str()) {
-                emit_line(&app, format!("# .wslconfig unchanged - keeping {}", latest.filename), false);
+                emit_line(&app, format!("# .wslconfig has not changed since backup {}", latest.filename), false);
                 return Ok(latest.clone());
             }
         }
 
         let dir = wslconfig_backup_dir(&backup_dir);
-        std::fs::create_dir_all(&dir).map_err(|e| format!("Cannot create backup dir: {}", e))?;
+        std::fs::create_dir_all(&dir).map_err(|e| format!("Could not create the backup folder: {}", e))?;
 
         let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
         let filename = format!("wslconfig_{}.conf", ts);
@@ -278,7 +278,7 @@ fn tee_wsl_conf(distro: &str, content: &str) -> Result<(), AtlasError> {
         .spawn()
         .map_err(|e| format!("Failed to write wsl.conf: {}", e))?;
     if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(content.as_bytes()).map_err(|e| format!("Write error: {}", e))?;
+        stdin.write_all(content.as_bytes()).map_err(|e| format!("Could not write wsl.conf: {}", e))?;
     }
     let out = child.wait_with_output().map_err(|e| e.to_string())?;
     if out.status.success() {
@@ -366,13 +366,13 @@ pub async fn wsl_conf_backup(
         let existing = list_wslconf_backups_sync(&backup_dir, &distro);
         if let Some(latest) = existing.first() {
             if std::fs::read_to_string(&latest.path).ok().as_deref() == Some(content.as_str()) {
-                emit_line(&app, format!("# wsl.conf unchanged - keeping {}", latest.filename), false);
+                emit_line(&app, format!("# wsl.conf has not changed since backup {}", latest.filename), false);
                 return Ok(latest.clone());
             }
         }
 
         let dir = wslconf_backup_dir(&backup_dir);
-        std::fs::create_dir_all(&dir).map_err(|e| format!("Cannot create backup dir: {}", e))?;
+        std::fs::create_dir_all(&dir).map_err(|e| format!("Could not create the backup folder: {}", e))?;
         let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
         let filename = format!("{}_{}.conf", safe_name(&distro), ts);
         let path = format!("{}/{}", dir, filename);
@@ -539,7 +539,7 @@ pub async fn wsl_optimize_vhd(
         let uses_optimize_vhd = has_optimize_vhd();
         let script = optimize_script(uses_optimize_vhd, &vhd_path, &log_path.to_string_lossy());
 
-        emit_line(&app, "# Windows asks for administrator approval. Its prompt names Windows PowerShell, from Microsoft, and lists these commands.", false);
+        emit_line(&app, "# Windows will ask for administrator approval. The prompt shows Windows PowerShell, from Microsoft, and lists these commands.", false);
         emit_line(&app, "$ wsl --shutdown", false);
         emit_line(&app, if uses_optimize_vhd {
             format!("$ Optimize-VHD -Path \"{}\" -Mode Full", vhd_path)
@@ -550,12 +550,12 @@ pub async fn wsl_optimize_vhd(
         let output = hidden("powershell")
             .args(["-NoProfile", "-NonInteractive", "-Command", &elevation_command(&script)])
             .output()
-            .map_err(|e| format!("Failed to request elevation: {}", e))?;
+            .map_err(|e| format!("Could not ask Windows for administrator approval: {}", e))?;
 
         if output.status.code() == Some(1223) {
             emit_line(&app, "  ✗ administrator approval was not given", true);
             return Err(AtlasError::new(ErrorKind::Elevation, "Administrator approval was not given, so nothing was changed.")
-                .hint("Compacting a VHD is a disk-level operation and Windows requires elevation for it. Run it again and approve the prompt."));
+                .hint("Windows requires administrator rights to compact a VHD. Run it again and approve the prompt."));
         }
 
         let report = std::fs::read(&log_path).map(|bytes| decode_wsl_output(&bytes)).unwrap_or_default();
@@ -676,7 +676,7 @@ pub async fn wsl_import_distro(
 ) -> Result<(), AtlasError> {
     migration.inner().clone().run_operation(move || {
         std::fs::create_dir_all(&install_dir)
-            .map_err(|e| format!("Cannot create install directory: {}", e))?;
+            .map_err(|e| format!("Could not create the install folder: {}", e))?;
 
         emit_line(&app, format!("$ wsl --import {} \"{}\" \"{}\"", name, install_dir, tar_path), false);
 
@@ -781,7 +781,7 @@ pub async fn wsl_install_catalog(app: tauri::AppHandle) -> Result<Vec<CatalogDis
         if list.is_empty() {
             return Err("The distro catalog was empty or in an unexpected format.".to_string().into());
         }
-        emit_line(&app, format!("  ✓ {} distro(s) in catalog", list.len()), false);
+        emit_line(&app, format!("  ✓ {} distro{} in catalog", list.len(), if list.len() == 1 { "" } else { "s" }), false);
         Ok(list)
     })
     .await
@@ -888,8 +888,8 @@ pub async fn wsl_install_download(
             return Err(AtlasError::invalid("That catalog entry has an invalid distro name, so nothing was installed."));
         }
         if !url.starts_with("https://") {
-            return Err(AtlasError::invalid("That catalog entry points at a plain HTTP address, so the download was refused.")
-                .hint("This is a safety stop, not a network fault. Report the catalog entry rather than retrying."));
+            return Err(AtlasError::invalid("That catalog entry does not use HTTPS, so the download was refused.")
+                .hint("This is a security check, not a network problem. Report the catalog entry instead of retrying."));
         }
 
         let dir = if install_dir.trim().is_empty() {
@@ -934,7 +934,7 @@ pub async fn wsl_install_download(
             };
             if let Err(e) = file.write_all(&buf[..n]) {
                 std::fs::remove_file(&tmp).ok();
-                return Err(format!("Cannot write download: {}", e).into());
+                return Err(format!("Could not save the download: {}", e).into());
             }
             downloaded += n as u64;
 
@@ -959,7 +959,7 @@ pub async fn wsl_install_download(
             let actual = sha256_of(&tmp_str)?;
             if !actual.eq_ignore_ascii_case(&sha256) {
                 std::fs::remove_file(&tmp).ok();
-                let msg = "Checksum mismatch - the download may be corrupted. Nothing was installed.".to_string();
+                let msg = "The checksum does not match, so the download may be corrupted. Nothing was installed.".to_string();
                 emit_line(&app, format!("  ✗ {}", msg), true);
                 return Err(msg.into());
             }
@@ -970,7 +970,7 @@ pub async fn wsl_install_download(
         emit_progress(&app, InstallProgress { phase: "importing".into(), downloaded, total: downloaded, bytes_per_sec: 0, percent: 100.0 });
         if let Err(e) = std::fs::create_dir_all(&dir) {
             std::fs::remove_file(&tmp).ok();
-            return Err(format!("Cannot create install directory: {}", e).into());
+            return Err(format!("Could not create the install folder: {}", e).into());
         }
         // `wsl --import` switches off the distro's first-run setup, so it is only the
         // fallback for WSL builds too old to have `--install --from-file`.
@@ -1091,7 +1091,7 @@ pub(crate) fn run_in_distro_as(
     let out = match limit {
         None => child.wait_with_output().map_err(|e| e.to_string())?,
         Some(limit) => output_within(child, limit).map_err(|e| e.to_string())?.ok_or_else(|| {
-            AtlasError::new(ErrorKind::Timeout, format!("{} did not answer within {} seconds.", distro, limit.as_secs()))
+            AtlasError::new(ErrorKind::Timeout, format!("{} did not respond within {} seconds.", distro, limit.as_secs()))
                 .hint("The distro may be frozen. Restart it from the WSL page, then try again.")
         })?,
     };
@@ -1099,7 +1099,7 @@ pub(crate) fn run_in_distro_as(
         Ok(String::from_utf8_lossy(&out.stdout).to_string())
     } else {
         let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
-        Err(if err.is_empty() { "Command failed inside distro".to_string().into() } else { err.into() })
+        Err(if err.is_empty() { "The command failed inside the distro.".to_string().into() } else { err.into() })
     }
 }
 
@@ -1324,7 +1324,7 @@ fn run_wsl(args: &[&str]) -> Result<(), AtlasError> {
     } else {
         err
     };
-    Err(if err.is_empty() { "wsl command failed".to_string().into() } else { err.into() })
+    Err(if err.is_empty() { "The wsl command failed without reporting a reason.".to_string().into() } else { err.into() })
 }
 
 /// Whether `wsl -l --running -q` currently lists the distro. Used to confirm a
@@ -1599,7 +1599,7 @@ pub async fn wsl_clone_distro(
 ) -> Result<(), AtlasError> {
     migration.inner().clone().run_operation(move || {
         std::fs::create_dir_all(&install_dir)
-            .map_err(|e| format!("Cannot create install directory: {}", e))?;
+            .map_err(|e| format!("Could not create the install folder: {}", e))?;
 
         // Capture the source's default user before terminating it, so the clone
         // logs in as the same user rather than root.
@@ -1690,8 +1690,8 @@ fn migration_capabilities(output: &std::process::Output) -> Result<(), AtlasErro
     if !help.contains("--manage") || !help.contains("--move") { missing.push("direct disk moves (--manage --move)"); }
     if !export.contains("--vhd") && !(export.contains("--format") && export.contains("vhd")) { missing.push("virtual disk backups (--export with VHD output)"); }
     if !missing.is_empty() {
-        return Err(AtlasError::invalid("Update WSL to enable the required migration commands.")
-            .hint(format!("This installation does not list {}. Atlas needs these to keep a verified backup and move the disk without removing the distribution.", missing.join(" and ")))
+        return Err(AtlasError::invalid("Update WSL to get the commands needed to move a distro.")
+            .hint(format!("This installation does not list {}. Atlas needs these to keep a verified backup and move the disk without removing the distro.", missing.join(" and ")))
             .action(RecoveryAction::UpdateWsl));
     }
     Ok(())
@@ -1728,7 +1728,7 @@ fn migration_repair_error(action: &MigrationRepair, output: &std::process::Outpu
     let (message, hint, recovery) = match action {
         MigrationRepair::StopDocker => ("Docker Desktop could not quit automatically.", "Open Docker Desktop and choose Quit from its tray menu, then check again.", RecoveryAction::OpenDocker),
         MigrationRepair::StopWsl => ("WSL could not shut down.", "Close WSL terminals and editors, then retry. The Windows response is below.", RecoveryAction::StopWsl),
-        _ if matches!(error.kind, ErrorKind::Permission | ErrorKind::Elevation | ErrorKind::Cancelled) => ("Windows did not approve the WSL update.", "Approve the Windows prompt when retrying, or use the administrator instructions in the update guide.", RecoveryAction::WslHelp),
+        _ if matches!(error.kind, ErrorKind::Permission | ErrorKind::Elevation | ErrorKind::Cancelled) => ("The WSL update was not approved.", "Approve the Windows prompt when retrying, or use the administrator instructions in the update guide.", RecoveryAction::WslHelp),
         MigrationRepair::UpdateWslWeb => ("The direct WSL download did not finish.", "Check the Windows response and the troubleshooting guide for network or installation issues.", RecoveryAction::WslHelp),
         _ => ("The WSL update did not finish.", "Check the Windows response. If Microsoft Store access failed, try the web download.", RecoveryAction::UpdateWslWeb),
     };
@@ -1745,7 +1745,7 @@ fn acquire_migration_lock(gate: &std::sync::RwLock<()>) -> Result<std::sync::RwL
             Err(std::sync::TryLockError::WouldBlock) if std::time::Instant::now() < deadline => std::thread::sleep(std::time::Duration::from_millis(100)),
             Err(_) => return Err(AtlasError::new(ErrorKind::Busy, "Finish the active Atlas operation first.")
                 .hint("Open the terminal to finish a command or close its Compose log stream.")
-                .detail("An Atlas operation still holds the disk safety lock. No WSL shutdown or migration command has started.")
+                .detail("An Atlas operation still holds the disk safety lock. No WSL shutdown or move command has started.")
                 .action(RecoveryAction::ShowTerminal)),
         }
     }
@@ -1800,9 +1800,9 @@ pub async fn wsl_plan_migration(
         }
         let distros = match read_distros() {
             Ok(distros) => distros,
-            Err(error) => { result.blockers.push(AtlasError::new(error.kind, "Windows could not read the distribution list.")
+            Err(error) => { result.blockers.push(AtlasError::new(error.kind, "Windows could not read the distro list.")
                 .hint("Refresh the list after checking the Windows response.").action(RecoveryAction::RefreshDistros)
-                .detail(format!("Read WSL registrations and running distributions:\n{}\n{}", error.message, error.detail.unwrap_or_default()))); return Ok(result); }
+                .detail(format!("Read WSL registrations and running distros:\n{}\n{}", error.message, error.detail.unwrap_or_default()))); return Ok(result); }
         };
         let source = match crate::wsl_migration::source_distro(&distro, &distros) {
             Ok(source) => source,
@@ -1882,10 +1882,10 @@ fn registered_distro_names() -> Vec<String> {
 ///    `wsl.exe` (a leading `-`, for instance, would be read there as a flag).
 fn check_unregister(distro: &str, confirm: &str, registered: &[String]) -> Result<(), AtlasError> {
     if confirm.trim() != distro {
-        return Err(AtlasError::invalid("The typed name does not match the distribution, so nothing was deleted."));
+        return Err(AtlasError::invalid("The typed name does not match the distro, so nothing was deleted."));
     }
     if !registered.iter().any(|n| n == distro) {
-        return Err(AtlasError::new(ErrorKind::NotFound, format!("{} is not a registered distribution.", distro))
+        return Err(AtlasError::new(ErrorKind::NotFound, format!("{} is not a registered distro.", distro))
             .hint("Refresh the distro list. It may have been unregistered from another window or a terminal."));
     }
     Ok(())
@@ -1903,7 +1903,7 @@ pub async fn wsl_unregister_distro(
     migration.inner().clone().run_operation(move || {
         check_unregister(&distro, &confirm, &registered_distro_names())?;
 
-        emit_line(&app, format!("# Deleting {}: destroys its disk and every file in it, with no undo", distro), false);
+        emit_line(&app, format!("# Deleting {} removes its disk and every file in it. This cannot be undone.", distro), false);
         emit_line(&app, format!("$ wsl --terminate {}", distro), false);
         run_wsl(&["--terminate", &distro]).ok(); // already stopped is fine
 
@@ -2134,7 +2134,7 @@ pub async fn wsl_benchmark_boot(
 ) -> Result<BenchmarkResult, AtlasError> {
     use std::time::{Duration, Instant};
     migration.inner().clone().run_operation(move || {
-        emit_line(&app, format!("# Cold-boot benchmark - terminating {} first", distro), false);
+        emit_line(&app, format!("# Cold-boot benchmark: stopping {} first", distro), false);
         emit_line(&app, format!("$ wsl --terminate {}", distro), false);
         run_wsl(&["--terminate", &distro]).ok(); // already-stopped is fine
 
@@ -2181,14 +2181,14 @@ pub struct ShellProfile {
 /// Fixed optimization suggestion for a detected slow startup item.
 fn suggestion_for(tool: &str) -> String {
     match tool {
-        "nvm" => "nvm sourcing nvm.sh eagerly adds 100ms+ - lazy-load it so node/npm/nvm load it on first use.",
+        "nvm" => "Sourcing nvm.sh at startup adds 100 ms or more. Change it to lazy-load on first use of node, npm, or nvm.",
         "conda" => "Disable base auto-activation (`conda config --set auto_activate_base false`) or lazy-init conda.",
-        "pyenv" => "Defer pyenv: use `pyenv init - --no-rehash` and keep virtualenv-init off the hot path.",
+        "pyenv" => "Use `pyenv init - --no-rehash`, and do not run virtualenv-init at every shell start.",
         "rbenv" => "Use `rbenv init - --no-rehash` to skip the rehash on every shell start.",
-        "oh-my-zsh" => "Trim oh-my-zsh plugins and theme - each plugin adds measurable startup cost.",
-        "sdkman" => "SDKMAN sources a large init script - lazy-load it on first `sdk` use.",
+        "oh-my-zsh" => "Use fewer oh-my-zsh plugins and a lighter theme. Each plugin adds to startup time.",
+        "sdkman" => "SDKMAN runs a large init script at startup. Load it the first time you use `sdk`.",
         "nodenv" => "Use `nodenv init - --no-rehash` to cut the per-shell rehash cost.",
-        _ => "Review this item - it runs on every shell startup.",
+        _ => "Review this item. It runs every time a shell starts.",
     }
     .to_string()
 }
@@ -2319,7 +2319,7 @@ pub async fn wsl_list_distros(app: tauri::AppHandle, silent: bool) -> Result<Vec
             emit_line(&app, "$ wsl -l --running", false);
         }
         let distros = read_distros()?;
-        if !silent { emit_line(&app, format!("  ✓ {} distro(s)", distros.len()), false); }
+        if !silent { emit_line(&app, format!("  ✓ {} distro{}", distros.len(), if distros.len() == 1 { "" } else { "s" }), false); }
         Ok(distros)
     })
     .await
@@ -2339,7 +2339,7 @@ $keys=@(Get-ChildItem -LiteralPath $lxss)
 if($keys.Count -eq 0){'[]';exit 0}
 $default=(Get-ItemProperty -LiteralPath $lxss).DefaultDistribution
 $running=@(wsl.exe -l --running -q | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-if($LASTEXITCODE -ne 0){throw 'WSL could not report the running distribution list.'}
+if($LASTEXITCODE -ne 0){throw 'WSL could not report which distros are running.'}
 $list=@()
 foreach($k in $keys){
   $p=Get-ItemProperty -LiteralPath $k.PSPath
@@ -2369,7 +2369,7 @@ $list | ConvertTo-Json -Compress -Depth 3
     let out = hidden("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", script])
         .output()
-        .map_err(|e| format!("powershell: {}", e))?;
+        .map_err(|e| format!("Could not run PowerShell to list distros: {}", e))?;
 
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).trim().to_string().into());
@@ -2447,7 +2447,7 @@ mod tests {
         assert!(matches!(error.action, Some(RecoveryAction::UpdateWsl)));
         let hint = error.hint.unwrap();
         assert!(hint.contains("--manage --move"));
-        assert!(hint.contains("without removing the distribution"));
+        assert!(hint.contains("without removing the distro"));
         let broken = migration_capabilities(&migration_output("", "Access is denied.", 5)).unwrap_err();
         assert!(matches!(broken.action, Some(RecoveryAction::WslHelp)));
     }

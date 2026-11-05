@@ -159,7 +159,7 @@ export default function IniConfigEditor({
       addActivity({ module: 'wsl', action: `Edited ${label}`, outcome: 'success' })
       setStatus({ type: 'success', text: 'Saved. Restart WSL to apply changes.' })
     } catch (e) {
-      addActivity({ module: 'wsl', action: `Edited ${label}`, outcome: 'failure', detail: String(e) })
+      addActivity({ module: 'wsl', action: `Edit ${label}`, outcome: 'failure', detail: String(e) })
       setStatus({ type: 'error', text: String(e) })
     } finally {
       setSaving(false)
@@ -177,7 +177,7 @@ export default function IniConfigEditor({
       setStatus({ type: 'success', text: `Backed up as ${entry.filename}` })
       await loadBackups()
     } catch (e) {
-      addActivity({ module: 'wsl', action: `Backed up ${label}`, outcome: 'failure', detail: String(e) })
+      addActivity({ module: 'wsl', action: `Back up ${label}`, outcome: 'failure', detail: String(e) })
       setStatus({ type: 'error', text: String(e) })
     } finally {
       setBacking(false)
@@ -195,7 +195,7 @@ export default function IniConfigEditor({
       addActivity({ module: 'wsl', action: `Restored ${label}`, outcome: 'success' })
       setStatus({ type: 'success', text: 'Restored. Restart WSL to apply changes.' })
     } catch (e) {
-      addActivity({ module: 'wsl', action: `Restored ${label}`, outcome: 'failure', detail: String(e) })
+      addActivity({ module: 'wsl', action: `Restore ${label}`, outcome: 'failure', detail: String(e) })
       setStatus({ type: 'error', text: String(e) })
     }
   }
@@ -212,9 +212,9 @@ export default function IniConfigEditor({
     addTerminalLine('$ wsl --shutdown', 'cmd')
     try {
       await wslShutdown()
-      addTerminalLine('  ✓ all distributions stopped', 'success')
+      addTerminalLine('  ✓ all distros stopped', 'success')
       addActivity({ module: 'wsl', action: 'WSL shutdown', outcome: 'success' })
-      setStatus({ type: 'success', text: 'WSL restarted - changes are now applied.' })
+      setStatus({ type: 'success', text: 'WSL shut down. Changes apply the next time a distro starts.' })
       onAfterShutdown()
     } catch (e) {
       addTerminalLine(`  ✗ ${String(e)}`, 'error')
@@ -240,7 +240,7 @@ export default function IniConfigEditor({
   return (
     <div className="wslcfg">
       <div className="wslcfg-bar">
-        <button className="wsl-distro-path wslcfg-path" onClick={() => revealPath(path).catch(() => {})} title="Reveal in Explorer">
+        <button className="wsl-distro-path wslcfg-path" onClick={() => revealPath(path).catch(() => {})} title="Show in Explorer">
           <FolderOpen size={12} />
           <span className="wsl-distro-path-text">{path}</span>
         </button>
@@ -258,7 +258,7 @@ export default function IniConfigEditor({
           </Tab>
         </TabList>
         <button className="btn-secondary" onClick={backup} disabled={backing} title={`Snapshot the current ${label} (saves first)`}>
-          <Archive size={13} /> {backing ? 'Backing up…' : 'Backup'}
+          <Archive size={13} /> {backing ? 'Backing up…' : 'Back up'}
         </button>
       </div>
 
@@ -328,7 +328,7 @@ export default function IniConfigEditor({
           <RotateCcw size={12} /> Reset
         </button>
         <button className="btn-secondary wslcfg-restart-btn" onClick={() => setConfirmRestart(true)} disabled={restarting}>
-          <Power size={13} /> {restarting ? 'Restarting…' : 'Restart WSL to apply'}
+          <Power size={13} /> {restarting ? 'Shutting down…' : 'Shut down WSL to apply'}
         </button>
       </div>
 
@@ -341,7 +341,7 @@ export default function IniConfigEditor({
           <span className="wslcfg-backups-count">{backups.length}</span>
         </div>
         {backups.length === 0 ? (
-          <p className="wslcfg-backups-empty">No backups yet. Click Backup to snapshot the current config.</p>
+          <p className="wslcfg-backups-empty">No backups yet. Click Back up to save a copy of the current config.</p>
         ) : (
           <ul className="wslcfg-backups-list">
             {backups.map(b => (
@@ -361,12 +361,12 @@ export default function IniConfigEditor({
       </div>
 
       {confirmRestart && (
-        <Modal icon={<AlertTriangle size={16} />} iconWarning title="Restart WSL?" onClose={() => setConfirmRestart(false)}>
+        <Modal icon={<AlertTriangle size={16} />} iconWarning title="Shut down WSL?" onClose={() => setConfirmRestart(false)}>
           <p className="modal-body">
-            <code>wsl --shutdown</code> stops every running distribution immediately.
+            <code>wsl --shutdown</code> stops every running distro immediately.
             {runningNames.length > 0
               ? <> Currently running: <strong>{runningNames.join(', ')}</strong>. Unsaved work inside them will be lost.</>
-              : ' No distributions appear to be running.'}
+              : ' No distros appear to be running.'}
           </p>
           <div className="modal-actions">
             <button className="btn-secondary" onClick={() => setConfirmRestart(false)}>Cancel</button>

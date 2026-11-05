@@ -53,7 +53,7 @@ fn run_wsb(args: &[&str], limit: Duration) -> Result<String, AtlasError> {
         .spawn()
         .map_err(|e| if e.kind() == std::io::ErrorKind::NotFound { wsb_missing() } else { e.into() })?;
     let Some(output) = output_within(child, limit)? else {
-        return Err(AtlasError::new(ErrorKind::Timeout, "Windows Sandbox did not answer in time.")
+        return Err(AtlasError::new(ErrorKind::Timeout, "Windows Sandbox did not respond in time.")
             .hint("Refresh to see whether it finished."));
     };
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -61,7 +61,7 @@ fn run_wsb(args: &[&str], limit: Duration) -> Result<String, AtlasError> {
         return Ok(stdout);
     }
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let message = if !stderr.is_empty() { stderr } else if !stdout.is_empty() { stdout } else { "Windows Sandbox failed without saying why.".to_string() };
+    let message = if !stderr.is_empty() { stderr } else if !stdout.is_empty() { stdout } else { "Windows Sandbox failed without reporting a reason.".to_string() };
     Err(AtlasError::new(ErrorKind::Unknown, message))
 }
 

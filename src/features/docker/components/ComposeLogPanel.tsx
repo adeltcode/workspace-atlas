@@ -100,7 +100,7 @@ export default function ComposeLogPanel({ project, containers, configFile, initi
   return (
     <div className="log-panel">
       <div className="log-panel-header">
-        <span className="log-panel-title">Logs - {project.name}</span>
+        <span className="log-panel-title">Logs: {project.name}</span>
 
         <div className="log-panel-chips">
           {services.map(svc => (
@@ -165,7 +165,7 @@ export default function ComposeLogPanel({ project, containers, configFile, initi
         })}
         {paused && bufferRef.current.length > 0 && (
           <div className="log-paused-badge">
-            {bufferRef.current.length} lines buffered - click Resume to show
+            {bufferRef.current.length} lines buffered. Click Resume to show them.
           </div>
         )}
       </div>
