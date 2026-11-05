@@ -3,6 +3,7 @@ mod error;
 mod docker;
 mod holders;
 mod packages;
+mod sandbox;
 mod shell;
 mod system;
 mod wsl;
@@ -82,6 +83,10 @@ pub fn run() {
             holders::locks_find,
             holders::process_close,
             holders::pick_any_file,
+            sandbox::sandbox_status,
+            sandbox::sandbox_start,
+            sandbox::sandbox_stop,
+            sandbox::sandbox_open_window,
             shell::shell_run,
             shell::shell_kill,
             system::get_system_metrics,

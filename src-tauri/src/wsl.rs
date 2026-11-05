@@ -6,7 +6,7 @@ use crate::docker::bytes_to_human;
 use crate::shell::{hidden, ShellOut};
 use crate::error::{AtlasError, ErrorKind, RecoveryAction};
 
-fn emit_line(app: &tauri::AppHandle, text: impl Into<String>, stderr: bool) {
+pub(crate) fn emit_line(app: &tauri::AppHandle, text: impl Into<String>, stderr: bool) {
     app.emit("shell-out", ShellOut { text: text.into(), stderr }).ok();
 }
 
