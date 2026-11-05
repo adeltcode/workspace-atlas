@@ -54,20 +54,8 @@ function buildTotalRow(df: DockerSystemDf): DiskUsageRow {
   }
 }
 
-function projectContainerNames(projectName: string, containers: DockerContainer[], allProjectNames: string[]): string[] {
-  const p1 = `${projectName}-`, p2 = `${projectName}_`
-  return containers
-    .filter(c => {
-      if (!c.name.startsWith(p1) && !c.name.startsWith(p2)) return false
-      // Exclude containers that belong to a longer-named sibling project
-      // e.g. container "web-debug-db-1" matches prefix "web-" but actually belongs to "web-debug"
-      return !allProjectNames.some(
-        other => other !== projectName &&
-          other.length > projectName.length &&
-          (c.name.startsWith(`${other}-`) || c.name.startsWith(`${other}_`))
-      )
-    })
-    .map(c => c.name)
+function projectContainerNames(projectName: string, containers: DockerContainer[]): string[] {
+  return containers.filter(c => c.compose_project === projectName).map(c => c.name)
 }
 
 function sumProjectStat(names: string[], stats: ContainerStats[], get: (s: ContainerStats) => number): number {
@@ -198,16 +186,15 @@ function CleanupRow({
 }
 
 function ProjectCard({
-  project, containers, containerStats, allProjectNames, onOpen,
+  project, containers, containerStats, onOpen,
 }: {
   project:         ComposeProject
   containers:      DockerContainer[]
   containerStats:  ContainerStats[]
-  allProjectNames: string[]
   onOpen:          () => void
 }) {
   const { text, dot, running, total } = composeStatusLabel(project.status)
-  const names   = projectContainerNames(project.name, containers, allProjectNames)
+  const names   = projectContainerNames(project.name, containers)
   const memUsed = sumProjectStat(names, containerStats, s => s.mem_used_bytes)
   const cpuUsed = sumProjectStat(names, containerStats, s => s.cpu_pct)
   const ports = [...new Set(
@@ -346,7 +333,6 @@ export default function OverviewTab({
     [composeProjects],
   )
   const issueCount       = restarting.length + dead.length
-  const allProjectNames  = useMemo(() => composeProjects.map(p => p.name), [composeProjects])
 
   const patchedDf = df ? { ...df, containers: buildContainersRow(df.containers, containers) } : null
   const totalRow  = patchedDf ? buildTotalRow(patchedDf) : null
@@ -459,7 +445,6 @@ export default function OverviewTab({
                 project={p}
                 containers={containers}
                 containerStats={containerStats}
-                allProjectNames={allProjectNames}
                 onOpen={() => { setComposePreselect(p.name); setDockerTab('compose') }}
               />
             ))}
