@@ -21,10 +21,11 @@ export interface SandboxOptions extends SandboxSwitches {
   /** Null leaves the amount to Windows. */
   memory_mb: number | null
   /** A file to copy in and open as soon as the sandbox is ready. */
-  try_file: string | null
+  open_file: string | null
 }
 
 export const sandboxStatus = () => invoke<SandboxStatus>('sandbox_status')
 export const sandboxStart = (options: SandboxOptions) => invoke<string>('sandbox_start', { options })
 export const sandboxStop = (id: string) => invoke<void>('sandbox_stop', { id })
 export const sandboxOpenWindow = (id: string) => invoke<void>('sandbox_open_window', { id })
+export const sandboxOpenFile = (id: string, file: string) => invoke<void>('sandbox_open_file', { id, file })

@@ -87,6 +87,7 @@ pub fn run() {
             sandbox::sandbox_start,
             sandbox::sandbox_stop,
             sandbox::sandbox_open_window,
+            sandbox::sandbox_open_file,
             shell::shell_run,
             shell::shell_kill,
             system::get_system_metrics,

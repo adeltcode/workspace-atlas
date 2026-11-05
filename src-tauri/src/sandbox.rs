@@ -1,8 +1,9 @@
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
+use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
 
 use crate::error::{AtlasError, ErrorKind};
 use crate::shell::hidden;
@@ -12,9 +13,14 @@ use crate::wsl_migration::quote;
 const LIST_TIME_LIMIT: Duration = Duration::from_secs(15);
 const START_TIME_LIMIT: Duration = Duration::from_secs(300);
 const STOP_TIME_LIMIT: Duration = Duration::from_secs(60);
+const SHARE_TIME_LIMIT: Duration = Duration::from_secs(30);
+const EXEC_TIME_LIMIT: Duration = Duration::from_secs(20);
+const LOGON_TIME_LIMIT: Duration = Duration::from_secs(60);
+const NOT_LOGGED_ON_YET: &str = "0x80070520";
 const MEMORY_CHOICES_MB: [u32; 3] = [4096, 8192, 16384];
-const TRY_FOLDER_INSIDE: &str = r"C:\Users\WDAGUtilityAccount\Desktop\Try this file";
+const DESKTOP_INSIDE: &str = r"C:\Users\WDAGUtilityAccount\Desktop";
 const OPENS_BY_ITSELF: [&str; 4] = ["exe", "msi", "bat", "cmd"];
+const WINDOW_PROGRAM: &str = "WindowsSandboxRemoteSession.exe";
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
 pub struct SandboxStatus {
@@ -36,7 +42,7 @@ pub struct SandboxOptions {
     /// None leaves the amount to Windows.
     pub memory_mb: Option<u32>,
     /// A file to copy in and open as soon as the sandbox is ready.
-    pub try_file: Option<String>,
+    pub open_file: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -80,11 +86,11 @@ fn run_wsb(args: &[&str], limit: Duration) -> Result<String, AtlasError> {
 fn command_line(args: &[&str]) -> String {
     let mut line = String::from("$ wsb");
     for arg in args {
-        // Only the config needs quotes, and PowerShell needs them for its < > & characters.
-        if arg.starts_with('<') {
-            line.push_str(&format!(" {}", quote(arg)));
-        } else {
+        // PowerShell needs quotes around spaces and its own < > & characters.
+        if arg.chars().all(|c| c.is_ascii_alphanumeric() || "-_.:\\".contains(c)) {
             line.push_str(&format!(" {}", arg));
+        } else {
+            line.push_str(&format!(" {}", quote(arg)));
         }
     }
     line
@@ -113,10 +119,18 @@ fn mapped_folder(host: &str, inside: Option<&str>, read_only: bool) -> String {
     format!("<MappedFolder><HostFolder>{}</HostFolder>{}<ReadOnly>{}</ReadOnly></MappedFolder>", xml_escape(host), inside, read_only)
 }
 
+/// Each opened file has its own folder on the sandbox desktop: Shared file, Shared file 2, and so on.
+fn shared_folder_inside(number: u32) -> String {
+    match number {
+        1 => format!(r"{}\Shared file", DESKTOP_INSIDE),
+        _ => format!(r"{}\Shared file {}", DESKTOP_INSIDE, number),
+    }
+}
+
 /// The quotes are safe because a Windows file name cannot contain one.
 /// Other file types may have no app inside, so the folder opens with the file selected instead.
-fn open_command(name: &str) -> String {
-    let inside = format!(r"{}\{}", TRY_FOLDER_INSIDE, name);
+fn open_command(folder_inside: &str, name: &str) -> String {
+    let inside = format!(r"{}\{}", folder_inside, name);
     let extension = Path::new(name).extension().and_then(|e| e.to_str()).unwrap_or_default();
     if OPENS_BY_ITSELF.iter().any(|e| e.eq_ignore_ascii_case(extension)) {
         format!(r#"explorer.exe "{}""#, inside)
@@ -126,16 +140,17 @@ fn open_command(name: &str) -> String {
 }
 
 /// Every switch is written out because the Windows defaults share the microphone, clipboard, and graphics card.
-fn build_config(options: &SandboxOptions, try_copy: Option<&Path>) -> String {
+fn build_config(options: &SandboxOptions, open_copy: Option<&Path>) -> String {
+    let inside = shared_folder_inside(1);
     let shared = options.folder.as_deref().map(|path| mapped_folder(path, None, !options.writable));
-    let try_share = try_copy
+    let copy_share = open_copy
         .and_then(Path::parent)
-        .map(|folder| mapped_folder(&folder.to_string_lossy(), Some(TRY_FOLDER_INSIDE), true));
-    let folders: String = shared.into_iter().chain(try_share).collect();
+        .map(|folder| mapped_folder(&folder.to_string_lossy(), Some(&inside), true));
+    let folders: String = shared.into_iter().chain(copy_share).collect();
     let mapped = if folders.is_empty() { String::new() } else { format!("<MappedFolders>{}</MappedFolders>", folders) };
-    let logon = try_copy
+    let logon = open_copy
         .and_then(Path::file_name)
-        .map(|name| format!("<LogonCommand><Command>{}</Command></LogonCommand>", xml_escape(&open_command(&name.to_string_lossy()))))
+        .map(|name| format!("<LogonCommand><Command>{}</Command></LogonCommand>", xml_escape(&open_command(&inside, &name.to_string_lossy()))))
         .unwrap_or_default();
     let memory = options.memory_mb.map(|mb| format!("<MemoryInMB>{}</MemoryInMB>", mb)).unwrap_or_default();
     format!(
@@ -152,7 +167,7 @@ fn build_config(options: &SandboxOptions, try_copy: Option<&Path>) -> String {
     )
 }
 
-fn check_try_file(raw: &str) -> Result<(), AtlasError> {
+fn check_open_file(raw: &str) -> Result<(), AtlasError> {
     let path = Path::new(raw);
     if path.is_dir() {
         return Err(AtlasError::invalid("That is a folder. Choose one file, or use Share a folder."));
@@ -163,46 +178,46 @@ fn check_try_file(raw: &str) -> Result<(), AtlasError> {
     Err(AtlasError::new(ErrorKind::NotFound, format!("The file {} does not exist.", raw)).hint("Choose the file again."))
 }
 
-fn try_folder() -> PathBuf {
-    std::env::temp_dir().join("workspace-atlas-sandbox-try")
+fn copies_folder() -> PathBuf {
+    std::env::temp_dir().join("workspace-atlas-sandbox-file")
+}
+
+fn next_copy_number(copies: &Path) -> u32 {
+    let mut number = 1;
+    while copies.join(number.to_string()).exists() {
+        number += 1;
+    }
+    number
 }
 
 /// Only a copy is shared, because a program can read every other file in a shared folder, even a read-only one.
-fn copy_into_empty_folder(file: &str, folder: &Path) -> Result<PathBuf, AtlasError> {
+fn copy_into_new_folder(file: &str, folder: &Path) -> Result<PathBuf, AtlasError> {
     let failed = |e: std::io::Error| AtlasError::new(ErrorKind::Unknown, format!("Could not copy {}: {}", file, e));
     let name = Path::new(file).file_name().ok_or_else(|| AtlasError::invalid("That is not a file."))?;
-    if folder.exists() {
-        std::fs::remove_dir_all(folder).map_err(failed)?;
-    }
     std::fs::create_dir_all(folder).map_err(failed)?;
     let copy = folder.join(name);
     std::fs::copy(file, &copy).map_err(failed)?;
     Ok(copy)
 }
 
-fn copy_logged(app: &tauri::AppHandle, file: &str) -> Result<PathBuf, AtlasError> {
-    let folder = try_folder();
-    let folder_text = quote(&folder.to_string_lossy());
-    if folder.exists() {
-        emit_line(app, format!("$ Remove-Item -LiteralPath {} -Recurse -Force", folder_text), false);
-    }
-    emit_line(app, format!("$ Copy-Item -LiteralPath {} -Destination (New-Item -ItemType Directory {})", quote(file), folder_text), false);
-    let copied = copy_into_empty_folder(file, &folder);
+fn copy_logged(app: &tauri::AppHandle, file: &str, folder: &Path) -> Result<PathBuf, AtlasError> {
+    emit_line(app, format!("$ Copy-Item -LiteralPath {} -Destination (New-Item -ItemType Directory {})", quote(file), quote(&folder.to_string_lossy())), false);
+    let copied = copy_into_new_folder(file, folder);
     if let Err(e) = &copied {
         emit_line(app, format!("  ✗ {}", e), true);
     }
     copied
 }
 
-/// A copy that cannot be deleted now is cleared on the next try, so this never fails the stop.
-fn delete_try_copy(app: &tauri::AppHandle) {
-    let folder = try_folder();
-    if !folder.exists() {
+/// A copy that cannot be deleted now is tried again on the next start or stop, so this never fails either one.
+fn delete_copies(app: &tauri::AppHandle) {
+    let copies = copies_folder();
+    if !copies.exists() {
         return;
     }
-    emit_line(app, format!("$ Remove-Item -LiteralPath {} -Recurse -Force", quote(&folder.to_string_lossy())), false);
-    if let Err(e) = std::fs::remove_dir_all(&folder) {
-        emit_line(app, format!("  ✗ Could not delete the copy: {}", e), true);
+    emit_line(app, format!("$ Remove-Item -LiteralPath {} -Recurse -Force", quote(&copies.to_string_lossy())), false);
+    if let Err(e) = std::fs::remove_dir_all(&copies) {
+        emit_line(app, format!("  ✗ Could not delete the copies: {}", e), true);
     }
 }
 
@@ -254,14 +269,17 @@ fn start(app: &tauri::AppHandle, options: &SandboxOptions) -> Result<String, Atl
         check_folder(folder)?;
     }
     check_memory(options.memory_mb)?;
-    let try_copy = match &options.try_file {
-        Some(file) => {
-            check_try_file(file)?;
-            Some(copy_logged(app, file)?)
-        }
-        None => None,
-    };
-    let config = build_config(options, try_copy.as_deref());
+    if let Some(file) = &options.open_file {
+        check_open_file(file)?;
+    }
+    delete_copies(app);
+    let copies = copies_folder();
+    let open_copy = options
+        .open_file
+        .as_deref()
+        .map(|file| copy_logged(app, file, &copies.join(next_copy_number(&copies).to_string())))
+        .transpose()?;
+    let config = build_config(options, open_copy.as_deref());
     let id = parse_started(&run_logged(app, &["start", "--raw", "--config", &config], START_TIME_LIMIT)?)?;
     emit_line(app, format!("  ✓ Started {}", id), false);
     Ok(id)
@@ -271,7 +289,7 @@ fn stop(app: &tauri::AppHandle, id: &str) -> Result<(), AtlasError> {
     check_id(id)?;
     run_logged(app, &["stop", "--id", id], STOP_TIME_LIMIT)?;
     emit_line(app, format!("  ✓ Stopped {}", id), false);
-    delete_try_copy(app);
+    delete_copies(app);
     Ok(())
 }
 
@@ -284,6 +302,55 @@ fn open_window(id: &str) -> Result<(), AtlasError> {
         .stderr(Stdio::null())
         .spawn()
         .map_err(|e| if e.kind() == std::io::ErrorKind::NotFound { wsb_missing() } else { e.into() })?;
+    Ok(())
+}
+
+/// Windows runs one sandbox at a time, so any window program belongs to the running sandbox.
+fn window_is_open() -> bool {
+    let mut system = System::new();
+    system.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
+    let open = system.processes_by_exact_name(WINDOW_PROGRAM.as_ref()).next().is_some();
+    open
+}
+
+/// wsb refuses with this code until the sandbox has logged on, a few seconds after its first window opens.
+fn run_once_logged_on(args: &[&str]) -> Result<String, AtlasError> {
+    let waited = Instant::now();
+    loop {
+        match run_wsb(args, EXEC_TIME_LIMIT) {
+            Err(e) if e.to_string().contains(NOT_LOGGED_ON_YET) && waited.elapsed() < LOGON_TIME_LIMIT => {
+                std::thread::sleep(Duration::from_secs(2));
+            }
+            result => return result,
+        }
+    }
+}
+
+fn open_in_running(app: &tauri::AppHandle, id: &str, file: &str) -> Result<(), AtlasError> {
+    check_id(id)?;
+    check_open_file(file)?;
+    let copies = copies_folder();
+    let number = next_copy_number(&copies);
+    let folder = copies.join(number.to_string());
+    let copy = copy_logged(app, file, &folder)?;
+    let inside = shared_folder_inside(number);
+    run_logged(app, &["share", "--id", id, "--host-path", &folder.to_string_lossy(), "--sandbox-path", &inside], SHARE_TIME_LIMIT)?;
+
+    // Without a window the file would open out of sight, and a second connect would open a second window.
+    if !window_is_open() {
+        emit_line(app, command_line(&["connect", "--id", id]), false);
+        open_window(id)?;
+    }
+
+    let name = copy.file_name().unwrap_or_default().to_string_lossy();
+    let command = open_command(&inside, &name);
+    let args = ["exec", "--id", id, "-r", "ExistingLogin", "-c", &command];
+    emit_line(app, command_line(&args), false);
+    if let Err(e) = run_once_logged_on(&args) {
+        emit_line(app, format!("  ✗ {}", e), true);
+        return Err(e);
+    }
+    emit_line(app, format!("  ✓ Opened {}", name), false);
     Ok(())
 }
 
@@ -316,6 +383,11 @@ pub async fn sandbox_open_window(app: tauri::AppHandle, id: String) -> Result<()
     .await
 }
 
+#[tauri::command]
+pub async fn sandbox_open_file(app: tauri::AppHandle, id: String, file: String) -> Result<(), AtlasError> {
+    in_background(move || open_in_running(&app, &id, &file)).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -331,7 +403,7 @@ mod tests {
             printers: false,
             graphics: false,
             memory_mb: None,
-            try_file: None,
+            open_file: None,
         }
     }
 
@@ -385,53 +457,61 @@ mod tests {
 
     #[test]
     fn programs_open_by_themselves_and_other_files_are_only_shown() {
+        let inside = shared_folder_inside(1);
         for name in ["setup.exe", "SETUP.EXE", "tool.msi", "run.bat", "run.cmd"] {
-            assert_eq!(open_command(name), format!(r#"explorer.exe "{}\{}""#, TRY_FOLDER_INSIDE, name));
+            assert_eq!(open_command(&inside, name), format!(r#"explorer.exe "{}\{}""#, inside, name));
         }
         for name in ["notes.txt", "script.ps1", "archive.zip", "no extension", "fake.exe.txt"] {
-            assert_eq!(open_command(name), format!(r#"explorer.exe /select,"{}\{}""#, TRY_FOLDER_INSIDE, name));
+            assert_eq!(open_command(&inside, name), format!(r#"explorer.exe /select,"{}\{}""#, inside, name));
         }
     }
 
     #[test]
-    fn a_tried_file_is_shared_read_only_and_opened_at_logon() {
-        let config = build_config(&all_off(), Some(Path::new(r"C:\Temp\try\R&D setup.exe")));
+    fn each_opened_file_has_its_own_folder_on_the_sandbox_desktop() {
+        assert_eq!(shared_folder_inside(1), r"C:\Users\WDAGUtilityAccount\Desktop\Shared file");
+        assert_eq!(shared_folder_inside(2), r"C:\Users\WDAGUtilityAccount\Desktop\Shared file 2");
+    }
+
+    #[test]
+    fn a_file_opened_at_start_is_shared_read_only_and_opened_at_logon() {
+        let inside = shared_folder_inside(1);
+        let config = build_config(&all_off(), Some(Path::new(r"C:\Temp\copies\1\R&D setup.exe")));
         assert!(config.contains(&format!(
-            r"<MappedFolders><MappedFolder><HostFolder>C:\Temp\try</HostFolder><SandboxFolder>{}</SandboxFolder><ReadOnly>true</ReadOnly></MappedFolder></MappedFolders>",
-            TRY_FOLDER_INSIDE,
+            r"<MappedFolders><MappedFolder><HostFolder>C:\Temp\copies\1</HostFolder><SandboxFolder>{}</SandboxFolder><ReadOnly>true</ReadOnly></MappedFolder></MappedFolders>",
+            inside,
         )), "{}", config);
-        assert!(config.contains(&format!(r#"<LogonCommand><Command>explorer.exe "{}\R&amp;D setup.exe"</Command></LogonCommand>"#, TRY_FOLDER_INSIDE)), "{}", config);
+        assert!(config.contains(&format!(r#"<LogonCommand><Command>explorer.exe "{}\R&amp;D setup.exe"</Command></LogonCommand>"#, inside)), "{}", config);
         assert!(!build_config(&all_off(), None).contains("LogonCommand"));
     }
 
     #[test]
-    fn a_tried_file_does_not_replace_a_shared_folder_or_make_it_writable() {
+    fn an_opened_file_does_not_replace_a_shared_folder_or_make_it_writable() {
         let options = SandboxOptions { folder: Some(r"C:\Dev".to_string()), ..all_off() };
-        let config = build_config(&options, Some(Path::new(r"C:\Temp\try\setup.exe")));
+        let config = build_config(&options, Some(Path::new(r"C:\Temp\copies\1\setup.exe")));
         assert_eq!(config.matches("<MappedFolder>").count(), 2, "{}", config);
         assert_eq!(config.matches("<ReadOnly>true</ReadOnly>").count(), 2, "{}", config);
     }
 
     #[test]
-    fn only_a_real_file_can_be_tried() {
-        let folder = std::env::temp_dir().join(format!("atlas-try-check-{}", std::process::id()));
+    fn only_a_real_file_can_be_opened() {
+        let folder = std::env::temp_dir().join(format!("atlas-open-check-{}", std::process::id()));
         std::fs::create_dir_all(&folder).unwrap();
         let file = folder.join("real.txt");
         std::fs::write(&file, "x").unwrap();
 
-        assert!(check_try_file(file.to_str().unwrap()).is_ok());
-        assert_eq!(check_try_file(folder.to_str().unwrap()).unwrap_err().kind, ErrorKind::Invalid);
+        assert!(check_open_file(file.to_str().unwrap()).is_ok());
+        assert_eq!(check_open_file(folder.to_str().unwrap()).unwrap_err().kind, ErrorKind::Invalid);
         for bad in ["real.txt", r"C:\no\such\file.exe", ""] {
-            assert_eq!(check_try_file(bad).unwrap_err().kind, ErrorKind::NotFound, "{}", bad);
+            assert_eq!(check_open_file(bad).unwrap_err().kind, ErrorKind::NotFound, "{}", bad);
         }
         std::fs::remove_dir_all(&folder).unwrap();
     }
 
     #[test]
-    fn the_copy_folder_holds_only_the_tried_file_even_after_a_read_only_one() {
-        let root = std::env::temp_dir().join(format!("atlas-try-copy-{}", std::process::id()));
+    fn each_copy_gets_a_new_folder_with_only_that_file_and_read_only_copies_can_be_deleted() {
+        let root = std::env::temp_dir().join(format!("atlas-open-copy-{}", std::process::id()));
         let source = root.join("source");
-        let folder = root.join("copy");
+        let copies = root.join("copies");
         std::fs::create_dir_all(&source).unwrap();
         let first = source.join("first.exe");
         let second = source.join("R&D's (1).exe");
@@ -442,12 +522,17 @@ mod tests {
         read_only.set_readonly(true);
         std::fs::set_permissions(&first, read_only).unwrap();
 
-        copy_into_empty_folder(first.to_str().unwrap(), &folder).unwrap();
-        let copy = copy_into_empty_folder(second.to_str().unwrap(), &folder).unwrap();
+        assert_eq!(next_copy_number(&copies), 1);
+        copy_into_new_folder(first.to_str().unwrap(), &copies.join("1")).unwrap();
+        assert_eq!(next_copy_number(&copies), 2);
+        let copy = copy_into_new_folder(second.to_str().unwrap(), &copies.join("2")).unwrap();
+        assert_eq!(next_copy_number(&copies), 3);
 
-        let names: Vec<_> = std::fs::read_dir(&folder).unwrap().map(|e| e.unwrap().file_name()).collect();
+        let names: Vec<_> = std::fs::read_dir(copies.join("2")).unwrap().map(|e| e.unwrap().file_name()).collect();
         assert_eq!(names, vec!["R&D's (1).exe"]);
         assert_eq!(std::fs::read_to_string(copy).unwrap(), "2");
+        std::fs::remove_dir_all(&copies).unwrap();
+        assert_eq!(next_copy_number(&copies), 1);
 
         let mut writable = std::fs::metadata(&first).unwrap().permissions();
         #[allow(clippy::permissions_set_readonly_false)]
@@ -471,7 +556,7 @@ mod tests {
 
     #[test]
     fn options_are_read_from_what_the_page_sends() {
-        let json = r#"{"networking":false,"folder":null,"writable":false,"microphone":true,"camera":false,"clipboard":false,"printers":false,"graphics":false,"memory_mb":null,"try_file":null}"#;
+        let json = r#"{"networking":false,"folder":null,"writable":false,"microphone":true,"camera":false,"clipboard":false,"printers":false,"graphics":false,"memory_mb":null,"open_file":null}"#;
         let options: SandboxOptions = serde_json::from_str(json).unwrap();
         assert!(options.microphone && !options.camera);
         assert_eq!(options.memory_mb, None);
@@ -483,6 +568,10 @@ mod tests {
         assert_eq!(
             command_line(&["start", "--raw", "--config", r"<Configuration><HostFolder>C:\Bob's</HostFolder></Configuration>"]),
             r"$ wsb start --raw --config '<Configuration><HostFolder>C:\Bob''s</HostFolder></Configuration>'",
+        );
+        assert_eq!(
+            command_line(&["share", "--id", "abc-1", "--host-path", r"C:\Temp\1", "--sandbox-path", r"C:\Desktop\Shared file"]),
+            r"$ wsb share --id abc-1 --host-path C:\Temp\1 --sandbox-path 'C:\Desktop\Shared file'",
         );
     }
 
@@ -538,39 +627,115 @@ mod tests {
         std::fs::remove_dir_all(&folder).unwrap();
     }
 
-    /// Boots a real sandbox that runs a copied script, which lists what it can see into a shared folder.
+    /// A script that lists what it can see into a file in the shared results folder.
+    fn write_listing_script(path: &Path, results_name: &str, listing: &str) {
+        std::fs::write(path, format!("dir /b \"%~dp0\" > \"%USERPROFILE%\\Desktop\\{}\\{}\"\r\n", results_name, listing)).unwrap();
+    }
+
+    fn read_when_written(path: &Path) -> std::io::Result<String> {
+        let waited = Instant::now();
+        while !path.exists() && waited.elapsed() < Duration::from_secs(60) {
+            std::thread::sleep(Duration::from_secs(1));
+        }
+        std::thread::sleep(Duration::from_secs(1));
+        std::fs::read_to_string(path)
+    }
+
+    /// Boots a real sandbox that runs a copied script at logon.
     #[test]
     #[ignore]
-    fn real_sandbox_runs_a_tried_file_that_sees_only_itself() {
-        let root = std::env::temp_dir().join("atlas sandbox try test");
+    fn real_sandbox_runs_an_opened_file_that_sees_only_itself() {
+        let root = std::env::temp_dir().join("atlas sandbox open test");
         let source = root.join("source");
-        let results = root.join("atlas try results");
-        let copy_folder = root.join("copy");
+        let results = root.join("atlas open results");
         std::fs::create_dir_all(&source).unwrap();
         std::fs::create_dir_all(&results).unwrap();
         std::fs::write(source.join("beside me.txt"), "private").unwrap();
-        let script = source.join("try me (1).cmd");
-        std::fs::write(&script, "dir /b \"%~dp0\" > \"%USERPROFILE%\\Desktop\\atlas try results\\seen.txt\"\r\n").unwrap();
+        let script = source.join("open me (1).cmd");
+        write_listing_script(&script, "atlas open results", "seen.txt");
 
-        let copy = copy_into_empty_folder(script.to_str().unwrap(), &copy_folder).unwrap();
+        let copy = copy_into_new_folder(script.to_str().unwrap(), &root.join("copy")).unwrap();
         let options = SandboxOptions { folder: results.to_str().map(String::from), writable: true, ..all_off() };
         let config = build_config(&options, Some(&copy));
         let id = parse_started(&run_wsb(&["start", "--raw", "--config", &config], START_TIME_LIMIT).unwrap()).unwrap();
         let opened = open_window(&id);
 
-        let seen = results.join("seen.txt");
-        let waited = std::time::Instant::now();
-        while !seen.exists() && waited.elapsed() < Duration::from_secs(60) {
-            std::thread::sleep(Duration::from_secs(1));
-        }
-        std::thread::sleep(Duration::from_secs(1));
-        let listed = std::fs::read_to_string(&seen);
+        let listed = read_when_written(&results.join("seen.txt"));
         let stopped = run_wsb(&["stop", "--id", &id], STOP_TIME_LIMIT);
         let cleared = std::fs::remove_dir_all(&root);
 
         opened.unwrap();
         stopped.unwrap();
-        assert_eq!(listed.unwrap().trim(), "try me (1).cmd");
+        assert_eq!(listed.unwrap().trim(), "open me (1).cmd");
+        cleared.unwrap();
+    }
+
+    /// Opens one file with the window open and one after closing it. Closes only windows of its own sandbox,
+    /// because it refuses to run while another sandbox is running.
+    #[test]
+    #[ignore]
+    fn real_sandbox_opens_files_while_running_even_after_its_window_closes() {
+        assert!(status().unwrap().running.is_empty(), "stop the running sandbox first");
+
+        let root = std::env::temp_dir().join("atlas sandbox running test");
+        let source = root.join("source");
+        let results = root.join("atlas running results");
+        let copies = root.join("copies");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::create_dir_all(&results).unwrap();
+        std::fs::write(source.join("beside me.txt"), "private").unwrap();
+        let first = source.join("first (1).cmd");
+        let second = source.join("second & last.cmd");
+        write_listing_script(&first, "atlas running results", "first.txt");
+        write_listing_script(&second, "atlas running results", "second.txt");
+
+        let options = SandboxOptions { folder: results.to_str().map(String::from), writable: true, ..all_off() };
+        let config = build_config(&options, None);
+        let id = parse_started(&run_wsb(&["start", "--raw", "--config", &config], START_TIME_LIMIT).unwrap()).unwrap();
+        let opened = open_window(&id);
+
+        let open_copy = |number: u32, file: &Path| -> Result<(), AtlasError> {
+            let folder = copies.join(number.to_string());
+            let copy = copy_into_new_folder(file.to_str().unwrap(), &folder)?;
+            let inside = shared_folder_inside(number);
+            run_wsb(&["share", "--id", &id, "--host-path", folder.to_str().unwrap(), "--sandbox-path", &inside], SHARE_TIME_LIMIT)?;
+            if !window_is_open() {
+                open_window(&id)?;
+            }
+            let command = open_command(&inside, &copy.file_name().unwrap().to_string_lossy());
+            run_once_logged_on(&["exec", "--id", &id, "-r", "ExistingLogin", "-c", &command]).map(|_| ())
+        };
+
+        let first_opened = open_copy(1, &first);
+        let first_listed = read_when_written(&results.join("first.txt"));
+        let open_before_closing = window_is_open();
+
+        let closing = hidden("taskkill").args(["/IM", WINDOW_PROGRAM]).stdout(Stdio::null()).stderr(Stdio::null()).status();
+        let waited = Instant::now();
+        while window_is_open() && waited.elapsed() < Duration::from_secs(15) {
+            std::thread::sleep(Duration::from_secs(1));
+        }
+        let open_after_closing = window_is_open();
+        let running_after_closing = status().map(|s| s.running.contains(&id));
+
+        let second_opened = open_copy(2, &second);
+        let second_listed = read_when_written(&results.join("second.txt"));
+        let open_after_second = window_is_open();
+
+        let stopped = run_wsb(&["stop", "--id", &id], STOP_TIME_LIMIT);
+        let cleared = std::fs::remove_dir_all(&root);
+
+        opened.unwrap();
+        first_opened.unwrap();
+        assert_eq!(first_listed.unwrap().trim(), "first (1).cmd");
+        assert!(open_before_closing);
+        closing.unwrap();
+        assert!(!open_after_closing);
+        assert!(running_after_closing.unwrap());
+        second_opened.unwrap();
+        assert_eq!(second_listed.unwrap().trim(), "second & last.cmd");
+        assert!(open_after_second);
+        stopped.unwrap();
         cleared.unwrap();
     }
 }

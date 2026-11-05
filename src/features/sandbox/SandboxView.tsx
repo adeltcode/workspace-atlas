@@ -35,6 +35,8 @@ export default function SandboxView() {
   const [writable, setWritable] = useState(false)
   const [stopTarget, setStopTarget] = useState<string | null>(null)
   const [stopBusy, setStopBusy] = useState(false)
+  const [replaceRunning, setReplaceRunning] = useState(false)
+  const [openedFile, setOpenedFile] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     loading.current = true
@@ -65,16 +67,17 @@ export default function SandboxView() {
     return api.sandboxOpenWindow(id).catch(setActionError)
   }
 
-  const start = async (tryFile: string | null = null) => {
+  const start = async (openFile: string | null = null) => {
     const { setSandboxStarting, addActivity } = useAppStore.getState()
     const sharing = folder ? `${writable ? 'Can change' : 'Read-only'}: ${folder}` : 'No shared folder'
     const alsoOn = SWITCHES.filter(s => switches[s.key]).map(s => s.key).join(', ') || 'nothing'
     const memory = memoryGb ? `${memoryGb} GB` : 'Windows default'
-    const detail = `${tryFile ? `Tried: ${tryFile}. ` : ''}Network ${networking ? 'on' : 'off'}. ${sharing}. Also on: ${alsoOn}. Memory: ${memory}`
+    const detail = `${openFile ? `Opened: ${openFile}. ` : ''}Network ${networking ? 'on' : 'off'}. ${sharing}. Also on: ${alsoOn}. Memory: ${memory}`
     setActionError(null)
+    setOpenedFile(null)
     setSandboxStarting(true)
     try {
-      const id = await api.sandboxStart({ networking, folder, writable, ...switches, memory_mb: memoryGb && memoryGb * 1024, try_file: tryFile })
+      const id = await api.sandboxStart({ networking, folder, writable, ...switches, memory_mb: memoryGb && memoryGb * 1024, open_file: openFile })
       addActivity({ module: 'system', action: 'Start sandbox', outcome: 'success', detail })
       await openWindow(id)
     } catch (e) {
@@ -86,34 +89,77 @@ export default function SandboxView() {
     }
   }
 
-  const chooseTryFile = async () => {
-    const picked = await pickAnyFile()
-    if (picked) start(picked)
+  const stopLogged = async (id: string) => {
+    const { addActivity } = useAppStore.getState()
+    try {
+      await api.sandboxStop(id)
+      addActivity({ module: 'system', action: 'Stop sandbox', outcome: 'success', detail: id })
+      return true
+    } catch (e) {
+      setActionError(e)
+      addActivity({ module: 'system', action: 'Stop sandbox', outcome: 'failure', detail: `${id}: ${String(e)}` })
+      return false
+    }
   }
 
-  const dropTryFile = (paths: string[]) => {
-    if (paths.length === 1) start(paths[0])
+  const openInRunning = async (id: string, file: string) => {
+    const { addActivity } = useAppStore.getState()
+    try {
+      await api.sandboxOpenFile(id, file)
+      setOpenedFile(file)
+      addActivity({ module: 'system', action: 'Open file in sandbox', outcome: 'success', detail: `${file} in ${id}` })
+    } catch (e) {
+      setActionError(e)
+      addActivity({ module: 'system', action: 'Open file in sandbox', outcome: 'failure', detail: `${file} in ${id}: ${String(e)}` })
+    }
+  }
+
+  const openFile = async (file: string) => {
+    const { setSandboxStarting } = useAppStore.getState()
+    setActionError(null)
+    setOpenedFile(null)
+    setSandboxStarting(true)
+    let startNew = false
+    try {
+      // Asked again here because the list on the page can be up to 10 seconds old.
+      const { running: [current] } = await api.sandboxStatus()
+      if (current && !replaceRunning) await openInRunning(current, file)
+      else startNew = !current || await stopLogged(current)
+    } catch (e) {
+      setActionError(e)
+    }
+    if (startNew) return start(file)
+    setSandboxStarting(false)
+    load()
+  }
+
+  const chooseFile = async () => {
+    const picked = await pickAnyFile()
+    if (picked) openFile(picked)
+  }
+
+  const dropFile = (paths: string[]) => {
+    if (paths.length === 1) openFile(paths[0])
     else setActionError('Drop one file at a time.')
   }
 
   const stop = async (id: string) => {
-    const { addActivity } = useAppStore.getState()
     setActionError(null)
+    setOpenedFile(null)
     setStopBusy(true)
-    try {
-      await api.sandboxStop(id)
-      addActivity({ module: 'system', action: 'Stop sandbox', outcome: 'success', detail: id })
-    } catch (e) {
-      setActionError(e)
-      addActivity({ module: 'system', action: 'Stop sandbox', outcome: 'failure', detail: `${id}: ${String(e)}` })
-    } finally {
-      setStopBusy(false)
-      setStopTarget(null)
-      load()
-    }
+    await stopLogged(id)
+    setStopBusy(false)
+    setStopTarget(null)
+    load()
   }
 
   const running = status?.running ?? []
+  const dropLabel = running.length === 0
+    ? 'Drop to open it in a new sandbox'
+    : replaceRunning ? 'Drop to replace the running sandbox' : 'Drop to open it in the running sandbox'
+  const openHelp = running.length > 0 && !replaceRunning
+    ? 'Windows runs one sandbox at a time. Drop a file on this panel, or choose one, and a copy opens in the running sandbox. It keeps the settings it started with, and programs already inside can reach the copy.'
+    : 'Or drop a file on this panel. A copy opens in a new sandbox with these settings. Programs start by themselves, and other files appear in a folder.'
 
   return (
     <div className="view-container">
@@ -150,7 +196,7 @@ export default function SandboxView() {
 
         {status?.available && (
           <>
-            <FileDropZone label="Drop to open it in a new sandbox" disabled={starting || running.length > 0} onDrop={dropTryFile}>
+            <FileDropZone label={dropLabel} disabled={starting} onDrop={dropFile}>
               <Panel title="New sandbox">
                 <div className="panel-body sandbox-form">
                   <label className="sandbox-option">
@@ -199,15 +245,26 @@ export default function SandboxView() {
                     </label>
                   )}
 
+                  {running.length > 0 && (
+                    <label className="sandbox-option">
+                      <input type="checkbox" checked={replaceRunning} onChange={e => setReplaceRunning(e.target.checked)} />
+                      <span>
+                        Replace the running sandbox
+                        <span className="sandbox-help">A file you open stops the running sandbox, deletes everything inside it, and starts a new one.</span>
+                      </span>
+                    </label>
+                  )}
+
                   <div className="sandbox-start">
                     <Button variant="primary" disabled={starting || running.length > 0} onClick={() => start()}>
-                      {starting ? 'Starting…' : 'Start sandbox'}
+                      {starting && running.length === 0 ? 'Starting…' : 'Start sandbox'}
                     </Button>
-                    <Button disabled={starting || running.length > 0} onClick={chooseTryFile}><File size={12} /> Try a file…</Button>
+                    <Button disabled={starting} onClick={chooseFile}>
+                      <File size={12} /> {starting && running.length > 0 ? 'Opening…' : 'Open a file…'}
+                    </Button>
                   </div>
-                  {running.length > 0
-                    ? <span className="sandbox-help">Windows runs one sandbox at a time. Stop this one to start another.</span>
-                    : <span className="sandbox-help">Or drop a file on this panel. A copy opens in a new sandbox with these settings. Programs start by themselves, and other files appear in a folder.</span>}
+                  <span className="sandbox-help">{openHelp}</span>
+                  {openedFile && running.length > 0 && <span className="sandbox-help" role="status">Opened {openedFile.split(/[\\/]/).pop()} in the running sandbox.</span>}
                 </div>
               </Panel>
             </FileDropZone>
