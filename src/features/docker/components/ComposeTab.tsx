@@ -353,6 +353,7 @@ function InspectDrawer({ container, onClose }: { container: DockerContainer; onC
 function WipeConfirmModal({ projectName, onConfirm, onCancel, running }: {
   projectName: string; onConfirm: () => void; onCancel: () => void; running: boolean
 }) {
+  const [confirmText, setConfirmText] = useState('')
   return (
     // Not dismissable while the wipe is running: closing mid-run would hide a
     // destructive operation the user can no longer follow.
@@ -367,13 +368,24 @@ function WipeConfirmModal({ projectName, onConfirm, onCancel, running }: {
         <p className="compose-modal-body">
           This permanently deletes all named volumes for this project - including database
           data - and runs <code>docker compose down -v</code>. This cannot be undone.
+          Type <strong>{projectName}</strong> to confirm.
         </p>
+        <input
+          className="modal-input"
+          type="text"
+          aria-label={`Type ${projectName} to confirm`}
+          placeholder={projectName}
+          spellCheck={false}
+          value={confirmText}
+          onChange={e => setConfirmText(e.target.value)}
+          disabled={running}
+        />
         <div className="compose-modal-actions">
           <button className="btn-refresh" onClick={onCancel} disabled={running}>Cancel</button>
           <button
             className="compose-modal-btn-danger"
             onClick={onConfirm}
-            disabled={running}
+            disabled={running || confirmText.trim() !== projectName}
           >
             {running ? <RotateCcw size={11} className="spin" /> : <Trash2 size={11} />}
             {running ? 'Running…' : 'Wipe & Down'}
@@ -790,7 +802,8 @@ export default function ComposeTab({
         const projectCtrs = ctrs.filter(c => c.compose_project === projectName)
         if (projectCtrs.length > 0 && projectCtrs.every(c => c.state === 'running')) {
           const elapsed = Date.now() - startMs
-          const currentMeta = metadata[projectName] ?? emptyMeta()
+          // Read what is saved now: tags or notes may have changed during this wait.
+          const currentMeta = (await api.metadataLoad())[projectName] ?? emptyMeta()
           const updated = { ...currentMeta, startup_times: [...(currentMeta.startup_times ?? []).slice(-9), elapsed] }
           setMetadata(prev => ({ ...prev, [projectName]: updated }))
           api.metadataSaveProject(projectName, updated).catch(() => {})

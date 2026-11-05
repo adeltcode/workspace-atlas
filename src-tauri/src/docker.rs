@@ -1462,6 +1462,19 @@ pub async fn docker_compose_service_action(
     }).await
 }
 
+/// Docker limits object names to `[a-zA-Z0-9][a-zA-Z0-9_.-]*`. Check that here: these
+/// names reach a PowerShell command line and `--volume` specs, where a path mounts a host folder.
+fn validate_docker_name(name: &str) -> Result<(), AtlasError> {
+    let mut chars = name.chars();
+    let valid = chars.next().is_some_and(|c| c.is_ascii_alphanumeric())
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'));
+    if valid {
+        Ok(())
+    } else {
+        Err(AtlasError::invalid(format!("\"{}\" is not a valid Docker name.", name)))
+    }
+}
+
 /// Open an interactive shell inside a running container in a new system terminal window.
 /// Tries `sh`; the user can switch shells manually if needed.
 #[tauri::command]
@@ -1469,6 +1482,7 @@ pub async fn open_container_shell(
     migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
     container_name: String,
 ) -> Result<(), AtlasError> {
+    validate_docker_name(&container_name)?;
     migration.inner().clone().run_operation(move || {
         let docker_cmd = format!("docker exec -it {} sh", container_name);
 
@@ -1763,6 +1777,7 @@ pub async fn docker_volume_backup(
     volume_name: String,
     backup_dir: String,
 ) -> Result<String, AtlasError> {
+    validate_docker_name(&volume_name)?;
     migration.inner().clone().run_operation(move || {
         use std::fs;
         use std::time::{SystemTime, UNIX_EPOCH};
@@ -1884,6 +1899,23 @@ pub async fn docker_volume_backup(
     }).await
 }
 
+// `find -mindepth 1 -delete` empties the volume but keeps its directory, including hidden
+// files and nested folders. The filename arrives as `$1`, never as script text, so a file
+// named `a;touch b.tar.gz` cannot run anything.
+const RESTORE_SCRIPT: &str = "find /target -mindepth 1 -delete && tar xzf \"/backup/$1\" -C /target";
+
+fn restore_args(volume: &str, backup_dir: &str, filename: &str) -> Vec<String> {
+    [
+        "run", "--rm",
+        "--volume", &format!("{}:/target", volume),
+        "--volume", &format!("{}:/backup:ro", backup_dir),
+        "alpine",
+        "sh", "-c", RESTORE_SCRIPT, "sh", filename,
+    ]
+    .map(String::from)
+    .to_vec()
+}
+
 /// Restore a volume from a previously created `.tar.gz` archive.
 /// Clears existing volume data before extracting.
 #[tauri::command]
@@ -1893,6 +1925,7 @@ pub async fn docker_volume_restore(
     volume_name: String,
     backup_file: String,
 ) -> Result<(), AtlasError> {
+    validate_docker_name(&volume_name)?;
     migration.inner().clone().run_operation(move || {
         let vol = &volume_name;
 
@@ -1961,26 +1994,16 @@ pub async fn docker_volume_restore(
             return Err(err.into());
         }
 
-        // `find -mindepth 1 -delete` removes all content without removing the
-        // directory itself, handling hidden files and nested dirs correctly.
-        let restore_cmd = format!(
-            "find /target -mindepth 1 -delete && tar xzf /backup/{} -C /target",
-            filename
-        );
+        // Windows PowerShell drops bare `"` when it calls a native program, so the
+        // shown command escapes them.
         let docker_cmd = format!(
-            "docker run --rm --volume {}:/target --volume {}:/backup:ro alpine sh -c \"{}\"",
-            vol, backup_dir, restore_cmd
+            "docker run --rm --volume {}:/target --volume {}:/backup:ro alpine sh -c '{}' sh '{}'",
+            vol, backup_dir, RESTORE_SCRIPT.replace('"', "\\\""), filename.replace('\'', "''")
         );
         emit_bp(&app, vol, "Restoring data…", 45, false, None, None, Some(docker_cmd));
 
         let output = hidden("docker")
-            .args([
-                "run", "--rm",
-                "--volume", &format!("{}:/target", vol),
-                "--volume", &format!("{}:/backup:ro", backup_dir),
-                "alpine",
-                "sh", "-c", &restore_cmd,
-            ])
+            .args(restore_args(vol, &backup_dir, &filename))
             .output()
             .map_err(|e| format!("Failed to run docker: {}", e))?;
 
@@ -2663,7 +2686,8 @@ pub async fn compose_logs_watch(
 ) -> Result<(), AtlasError> {
     // Kill any previous stream
     {
-        let mut guard = state.0.lock().unwrap();
+        // A poisoned lock still holds a usable handle, and one panic must not break logs for good.
+        let mut guard = state.0.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(ref mut child) = *guard { child.kill().ok(); }
         *guard = None;
     }
@@ -2682,7 +2706,7 @@ pub async fn compose_logs_watch(
         let stderr = child.stderr.take();
 
         // Store child so compose_logs_stop can kill it
-        *child_arc.lock().unwrap() = Some(child);
+        *child_arc.lock().unwrap_or_else(|e| e.into_inner()) = Some(child);
 
         // Merge stdout + stderr into one channel via a shared sender
         let (tx, rx) = std::sync::mpsc::channel::<String>();
@@ -2742,7 +2766,7 @@ pub async fn compose_logs_watch(
 pub async fn compose_logs_stop(
     state: tauri::State<'_, ComposeLogState>,
 ) -> Result<(), AtlasError> {
-    let mut guard = state.0.lock().unwrap();
+    let mut guard = state.0.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(ref mut child) = *guard { child.kill().ok(); }
     *guard = None;
     Ok(())
@@ -2755,6 +2779,26 @@ pub async fn compose_logs_stop(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn docker_names_reject_anything_docker_would_not_allow() {
+        for good in ["a", "web", "my_app-db.1", "9f3c2a"] {
+            assert!(validate_docker_name(good).is_ok(), "{good}");
+        }
+        for bad in ["", "-x", ".x", "_x", "a b", "a;calc", "$(calc)", "C:/Users", "/etc", "..", "a:b", "a\nb", "é"] {
+            assert!(validate_docker_name(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn restore_keeps_the_filename_out_of_the_script() {
+        let filename = "a;touch pwned;$(calc).tar.gz";
+        let args = restore_args("data", "C:/backups", filename);
+        assert_eq!(args.last().unwrap(), filename);
+        let script = &args[args.iter().position(|a| a == "-c").unwrap() + 1];
+        assert_eq!(script, RESTORE_SCRIPT);
+        assert!(!script.contains("pwned"));
+    }
 
     #[test]
     fn bytes_to_human_picks_the_right_scale() {
