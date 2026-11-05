@@ -252,7 +252,7 @@ tests/                    Node tests that check the frontend source
 
 ## Project status
 
-Version 1.0.0 is the first release. A few code paths haven't been tested on a real system yet, and the [release notes](https://github.com/adeltcode/workspace-atlas/releases/tag/v1.0.0) list them.
+Workspace Atlas is new: 1.0.0 was the first release. Two Optimize cases haven't been tested on a real system yet: Windows Home, which uses `diskpart`, and a disk that is still in use.
 
 ## Contributing
 
