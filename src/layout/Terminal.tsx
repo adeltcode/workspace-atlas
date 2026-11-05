@@ -199,7 +199,7 @@ export default function Terminal() {
               title={`Logs - ${composeLogContext.project.name} (Delete to close)`}
             >
               <ScrollText size={12} />
-              <span className="terminal-tab-label">Logs - {composeLogContext.project.name}</span>
+              <span className="terminal-tab-label">Logs: {composeLogContext.project.name}</span>
               <span
                 className="terminal-tab-close"
                 onClick={e => { e.stopPropagation(); closeComposeLogs() }}
@@ -218,8 +218,8 @@ export default function Terminal() {
             <button
               className="terminal-btn terminal-kill-btn"
               onClick={killCommand}
-              title="Kill running command (Ctrl+C)"
-              aria-label="Kill running command"
+              title="Stop running command (Ctrl+C)"
+              aria-label="Stop running command"
             >
               <Square size={10} />
             </button>

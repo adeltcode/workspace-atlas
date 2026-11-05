@@ -104,7 +104,7 @@ pub async fn shell_run(
                 let mut guard = child_arc.lock().unwrap_or_else(|e| e.into_inner());
                 guard
                     .as_mut()
-                    .ok_or_else(|| "process handle lost".to_string())?
+                    .ok_or_else(|| "Workspace Atlas lost track of the running command.".to_string())?
                     .try_wait()
                     .map_err(|e| e.to_string())
             }; // lock released here
@@ -134,7 +134,7 @@ pub async fn shell_run(
 /// Interrupt the currently running shell command.
 #[tauri::command]
 pub async fn shell_kill(state: tauri::State<'_, ShellState>) -> Result<(), AtlasError> {
-    let mut guard = state.0.lock().map_err(|_| "state lock poisoned".to_string())?;
+    let mut guard = state.0.lock().map_err(|_| "Could not stop the command because of an internal error.".to_string())?;
     if let Some(ref mut child) = *guard {
         // Ignore errors - process may have already exited between the check and the kill
         child.kill().ok();

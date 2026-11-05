@@ -107,7 +107,7 @@ pub struct DockerNetwork {
 #[derive(serde::Serialize, Clone, Debug)]
 pub struct ContainerStats {
     pub name: String,
-    /// CPU usage percent (0–100+; multi-core can exceed 100).
+    /// CPU usage percent (0 to 100+, because multi-core can exceed 100).
     pub cpu_pct: f64,
     /// Memory used by the container, in bytes.
     pub mem_used_bytes: u64,
@@ -285,7 +285,7 @@ fn read_via_wsl(path: &str, max_bytes: usize) -> Result<Vec<u8>, AtlasError> {
         .args(["cat", path])
         .output()
         .map_err(|e| format!(
-            "WSL is not available - cannot read '{}': {}",
+            "WSL is not available, so '{}' could not be read: {}",
             path, e
         ))?;
 
@@ -299,7 +299,7 @@ fn read_via_wsl(path: &str, max_bytes: usize) -> Result<Vec<u8>, AtlasError> {
 
     if output.stdout.len() > max_bytes {
         return Err(format!(
-            "File too large ({} KB) - only files under {} KB are shown inline",
+            "This file is too large to show ({} KB). The limit is {} KB.",
             output.stdout.len() / 1024,
             max_bytes / 1024
         ).into());
@@ -424,7 +424,7 @@ fn parse_system_df(output: &str) -> Result<DockerSystemDf, AtlasError> {
     let parse_row = |line: &str| -> Result<DiskUsageRow, AtlasError> {
         let cols = split_df_line(line);
         if cols.len() < 5 {
-            return Err(format!("Cannot parse row: {:?}", line).into());
+            return Err(format!("Could not read a row of the docker system df output: {:?}", line).into());
         }
         Ok(DiskUsageRow {
             r#type: cols[0].clone(),
@@ -498,7 +498,7 @@ fn get_all_images_sync() -> Result<Vec<DockerImage>, AtlasError> {
             continue;
         }
         let v: serde_json::Value =
-            serde_json::from_str(line).map_err(|e| format!("JSON parse error: {}", e))?;
+            serde_json::from_str(line).map_err(|e| format!("Could not read the image list from Docker: {}", e))?;
 
         let id = v["ID"].as_str().unwrap_or("").to_string();
         let repository = v["Repository"].as_str().unwrap_or("<none>").to_string();
@@ -640,7 +640,7 @@ fn get_networks_sync() -> Result<Vec<DockerNetwork>, AtlasError> {
         let line = line.trim();
         if line.is_empty() { continue; }
         let v: serde_json::Value = serde_json::from_str(line)
-            .map_err(|e| format!("JSON parse error: {}", e))?;
+            .map_err(|e| format!("Could not read the network list from Docker: {}", e))?;
 
         let internal = v["Internal"].as_str().unwrap_or("false")
             .eq_ignore_ascii_case("true");
@@ -674,7 +674,7 @@ fn run_streaming(app: &tauri::AppHandle, mut cmd: Command, tag_stderr: bool) -> 
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("Failed to start: {}", e))?;
+        .map_err(|e| format!("Could not start the Docker command: {}", e))?;
 
     let stdout_app = app.clone();
     let stdout_handle = child.stdout.take().map(|out| {
@@ -737,7 +737,7 @@ pub async fn docker_check(
                     available: false,
                     version: None,
                     error: Some(if err.is_empty() {
-                        "Docker daemon is not running".to_string()
+                        "The Docker engine is not running.".to_string()
                     } else {
                         err
                     }),
@@ -756,14 +756,14 @@ pub async fn docker_check(
                 DockerStatus {
                     available: false,
                     version: None,
-                    error: Some(format!("docker not found: {}", e)),
+                    error: Some(format!("The docker command was not found: {}", e)),
                     state: if found_elsewhere { "stopped" } else { "not_installed" }.to_string(),
                 }
             }
             Err(e) => DockerStatus {
                 available: false,
                 version: None,
-                error: Some(format!("docker not found: {}", e)),
+                error: Some(format!("Could not run the docker command: {}", e)),
                 state: "stopped".to_string(),
             },
         })
@@ -792,8 +792,8 @@ pub async fn launch_docker_desktop(
             }
         }
 
-        Err(AtlasError::new(ErrorKind::DockerDown, "Docker Desktop is not installed where this app looks for it.")
-            .hint("Launch it from the Start Menu once. If it is installed elsewhere, starting it by hand is enough - this app only needs the engine running."))
+        Err(AtlasError::new(ErrorKind::DockerDown, "Docker Desktop was not found in its usual install folders.")
+            .hint("Start it from the Start menu. Atlas only needs the Docker engine running."))
     }).await
 }
 
@@ -1026,7 +1026,7 @@ fn get_containers_sync() -> Result<Vec<DockerContainer>, AtlasError> {
             continue;
         }
         let v: serde_json::Value =
-            serde_json::from_str(line).map_err(|e| format!("JSON parse error: {}", e))?;
+            serde_json::from_str(line).map_err(|e| format!("Could not read the container list from Docker: {}", e))?;
 
         // Names can be comma-separated; take the first and strip any leading slash
         let raw_name = v["Names"].as_str().unwrap_or("").to_string();
@@ -1094,7 +1094,7 @@ fn get_volumes_sync() -> Result<Vec<DockerVolume>, AtlasError> {
         let line = line.trim();
         if line.is_empty() { continue; }
         let v: serde_json::Value =
-            serde_json::from_str(line).map_err(|e| format!("JSON parse error: {}", e))?;
+            serde_json::from_str(line).map_err(|e| format!("Could not read the volume list from Docker: {}", e))?;
 
         let name = v["Name"].as_str().unwrap_or("").to_string();
 
@@ -1156,8 +1156,8 @@ pub async fn docker_volumes(
         let (mut volumes, sizes) = std::thread::scope(|scope| {
             let volumes = scope.spawn(get_volumes_sync);
             let sizes = scope.spawn(get_volume_sizes_sync);
-            let volumes = volumes.join().map_err(|_| AtlasError::invalid("Volume listing failed."))??;
-            let sizes = sizes.join().map_err(|_| AtlasError::invalid("Volume sizing failed."))?;
+            let volumes = volumes.join().map_err(|_| AtlasError::invalid("Could not list volumes."))??;
+            let sizes = sizes.join().map_err(|_| AtlasError::invalid("Could not measure volume sizes."))?;
             Ok::<_, AtlasError>((volumes, sizes))
         })?;
         for vol in &mut volumes {
@@ -1193,7 +1193,7 @@ pub async fn docker_container_action(
             "start"  => "start",
             "stop"   => "stop",
             "remove" => "rm",
-            _ => return Err(AtlasError::invalid(format!("\"{}\" is not a container action this app performs.", action))),
+            _ => return Err(AtlasError::invalid(format!("Unknown container action: \"{}\".", action))),
         };
         docker_run_ok(&[sub, &id])
     }).await
@@ -1362,7 +1362,7 @@ pub async fn docker_compose_ls(
         }
 
         let raw: Vec<serde_json::Value> = serde_json::from_str(trimmed)
-            .map_err(|e| format!("JSON parse error: {}", e))?;
+            .map_err(|e| format!("Could not read the Compose project list from Docker: {}", e))?;
 
         Ok(raw
             .iter()
@@ -1404,7 +1404,7 @@ pub async fn docker_compose_action(
             "down-volumes" => &["down", "-v"],
             "restart"      => &["restart"],
             "rebuild"      => &["up", "-d", "--build"],
-            other          => return Err(AtlasError::invalid(format!("\"{}\" is not a compose action this app performs.", other))),
+            other          => return Err(AtlasError::invalid(format!("Unknown Compose action: \"{}\".", other))),
         };
 
         // Display the command as it will actually run
@@ -1439,7 +1439,7 @@ pub async fn docker_compose_service_action(
             "up"      => &["up", "-d"],
             "stop"    => &["stop"],
             "restart" => &["restart"],
-            other     => return Err(AtlasError::invalid(format!("\"{}\" is not a service action this app performs.", other))),
+            other     => return Err(AtlasError::invalid(format!("Unknown service action: \"{}\".", other))),
         };
 
         // Build final arg list: base_args + [service]
@@ -1511,11 +1511,11 @@ pub async fn write_file_content(
     migration.inner().clone().run_operation(move || {
         if is_windows_absolute(&path) {
             Ok(std::fs::write(&path, content.as_bytes())
-                .map_err(|e| format!("Write error: {}", e))?)
+                .map_err(|e| format!("Could not write '{}': {}", path, e))?)
 
         } else if let Some(win_path) = wsl_mount_to_windows(&path) {
             Ok(std::fs::write(&win_path, content.as_bytes())
-                .map_err(|e| format!("Write error: {}", e))?)
+                .map_err(|e| format!("Could not write '{}': {}", win_path, e))?)
 
         } else {
             // Pure WSL path - pipe content through `wsl tee`
@@ -1526,16 +1526,16 @@ pub async fn write_file_content(
                 .stdout(Stdio::null())
                 .stderr(Stdio::piped())
                 .spawn()
-                .map_err(|e| format!("WSL write failed: {}", e))?;
+                .map_err(|e| format!("Could not start WSL to write '{}': {}", path, e))?;
 
             if let Some(mut stdin) = child.stdin.take() {
                 stdin.write_all(content.as_bytes())
-                    .map_err(|e| format!("Write error: {}", e))?;
+                    .map_err(|e| format!("Could not write '{}': {}", path, e))?;
             }
 
             let status = child.wait().map_err(|e| e.to_string())?;
             if !status.success() {
-                return Err(format!("WSL write exited with status {}", status).into());
+                return Err(format!("Could not write '{}' in WSL ({}).", path, status).into());
             }
             Ok(())
         }
@@ -1647,7 +1647,7 @@ pub async fn get_disk_stats(
         let output = hidden("powershell")
             .args(["-NoProfile", "-NonInteractive", "-Command", &script])
             .output()
-            .map_err(|e| format!("powershell: {}", e))?;
+            .map_err(|e| format!("Could not run PowerShell to read disk space: {}", e))?;
 
         let out = String::from_utf8_lossy(&output.stdout);
         let parts: Vec<u64> = out
@@ -1658,7 +1658,7 @@ pub async fn get_disk_stats(
             .collect();
 
         if parts.len() < 2 {
-            return Err(format!("unexpected powershell output: {:?}", out.trim()).into());
+            return Err(format!("Could not read the drive's size from PowerShell: {:?}", out.trim()).into());
         }
 
         Ok(DiskStats {
@@ -1713,11 +1713,11 @@ pub async fn read_file_content(
                 .map_err(|e| format!("Cannot access '{}': {}", path, e))?;
             if meta.len() > MAX_BYTES as u64 {
                 return Err(format!(
-                    "File too large ({} KB) - only files under 512 KB are shown inline",
+                    "This file is too large to show ({} KB). The limit is 512 KB.",
                     meta.len() / 1024
                 ).into());
             }
-            std::fs::read(&path).map_err(|e| format!("Read error: {}", e))?
+            std::fs::read(&path).map_err(|e| format!("Could not read '{}': {}", path, e))?
 
         } else if let Some(win_path) = wsl_mount_to_windows(&path) {
             // ── /mnt/c/ → C:\ ───────────────────────────────────────────────
@@ -1725,11 +1725,11 @@ pub async fn read_file_content(
                 .map_err(|e| format!("Cannot access '{}': {}", win_path, e))?;
             if meta.len() > MAX_BYTES as u64 {
                 return Err(format!(
-                    "File too large ({} KB) - only files under 512 KB are shown inline",
+                    "This file is too large to show ({} KB). The limit is 512 KB.",
                     meta.len() / 1024
                 ).into());
             }
-            std::fs::read(&win_path).map_err(|e| format!("Read error: {}", e))?
+            std::fs::read(&win_path).map_err(|e| format!("Could not read '{}': {}", win_path, e))?
 
         } else {
             // ── Pure WSL path (/home/…, /root/…, etc.) ──────────────────────
@@ -1737,7 +1737,7 @@ pub async fn read_file_content(
         };
 
         Ok(String::from_utf8(bytes)
-            .map_err(|_| "File contains non-UTF-8 characters and cannot be displayed".to_string())?)
+            .map_err(|_| "This file is not UTF-8 text, so it cannot be displayed.".to_string())?)
     }).await
 }
 
@@ -1784,7 +1784,7 @@ pub async fn docker_volume_backup(
 
         let volumes_dir = docker_volumes_dir(&backup_dir);
         fs::create_dir_all(&volumes_dir)
-            .map_err(|e| format!("Cannot create backup directory: {}", e))?;
+            .map_err(|e| format!("Could not create the backup folder: {}", e))?;
 
         let ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -1797,7 +1797,7 @@ pub async fn docker_volume_backup(
 
         let vol = &volume_name;
 
-        emit_bp(&app, vol, "Checking alpine image…", 5, false, None, None,
+        emit_bp(&app, vol, "Checking for the alpine image…", 5, false, None, None,
             Some("docker image inspect alpine --format {{.Id}}".to_string()));
 
         let alpine_ok = hidden("docker")
@@ -1807,7 +1807,7 @@ pub async fn docker_volume_backup(
             .unwrap_or(false);
 
         if !alpine_ok {
-            emit_bp(&app, vol, "Pulling alpine image (one-time setup)…", 10, false, None, None,
+            emit_bp(&app, vol, "Pulling the alpine image…", 10, false, None, None,
                 Some("docker pull alpine".to_string()));
             let pull = hidden("docker")
                 .args(["pull", "alpine"])
@@ -1827,7 +1827,7 @@ pub async fn docker_volume_backup(
         if !running.is_empty() {
             let pause_cmd = format!("docker pause {}", running.join(" "));
             emit_bp(&app, vol,
-                &format!("Pausing {} container(s) for consistent snapshot…", running.len()),
+                &format!("Pausing {} container{} for a consistent backup…", running.len(), if running.len() == 1 { "" } else { "s" }),
                 30, false, None, None, Some(pause_cmd));
 
             for id in &running {
@@ -1841,7 +1841,7 @@ pub async fn docker_volume_backup(
             let skipped = running.len() - paused.len();
             if skipped > 0 {
                 emit_bp(&app, vol,
-                    &format!("{} container(s) could not be paused - backup continues", skipped),
+                    &format!("Could not pause {} container{}. The backup will continue.", skipped, if skipped == 1 { "" } else { "s" }),
                     35, false, None, None, None);
             }
         }
@@ -1894,7 +1894,7 @@ pub async fn docker_volume_backup(
         });
         write_manifest(&backup_dir, &manifest).ok();
 
-        emit_bp(&app, vol, &format!("Done - saved as '{}'", filename), 100, true, None, Some(filename.clone()), None);
+        emit_bp(&app, vol, &format!("Saved as '{}'", filename), 100, true, None, Some(filename.clone()), None);
         Ok(filename)
     }).await
 }
@@ -1931,7 +1931,7 @@ pub async fn docker_volume_restore(
 
         let src_path = std::path::Path::new(&backup_file);
         if !src_path.exists() {
-            return Err(AtlasError::new(ErrorKind::NotFound, format!("The backup file is gone: {}", backup_file))
+            return Err(AtlasError::new(ErrorKind::NotFound, format!("The backup file no longer exists: {}", backup_file))
                 .hint("Refresh the backup list. The file may have been moved or deleted outside the app."));
         }
 
@@ -1958,7 +1958,7 @@ pub async fn docker_volume_restore(
         if !running.is_empty() {
             let stop_cmd = format!("docker stop {}", running.join(" "));
             emit_bp(&app, vol,
-                &format!("Stopping {} container(s) before restore…", running.len()),
+                &format!("Stopping {} container{} before restore…", running.len(), if running.len() == 1 { "" } else { "s" }),
                 15, false, None, None, Some(stop_cmd));
 
             for id in &running {
@@ -1971,7 +1971,7 @@ pub async fn docker_volume_restore(
                     stopped.push(id.clone());
                 } else {
                     emit_bp(&app, vol,
-                        &format!("Warning: could not stop '{}' - restore continues", id),
+                        &format!("Could not stop '{}'. The restore will continue.", id),
                         18, false, None, None, None);
                 }
             }
@@ -2022,7 +2022,7 @@ pub async fn docker_volume_restore(
             return Err(err.into());
         }
 
-        emit_bp(&app, vol, &format!("Restore complete - '{}' is ready", vol), 100, true, None, None, None);
+        emit_bp(&app, vol, &format!("Restore complete. '{}' is ready.", vol), 100, true, None, None, None);
         Ok(())
     }).await
 }
@@ -2048,7 +2048,7 @@ pub async fn docker_backup_compose(
 
         let compose_dir = docker_compose_dir(&backup_dir);
         fs::create_dir_all(&compose_dir)
-            .map_err(|e| format!("Cannot create compose backup dir: {}", e))?;
+            .map_err(|e| format!("Could not create the Compose backup folder: {}", e))?;
 
         let ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -2368,7 +2368,7 @@ fn metadata_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, AtlasErro
     use tauri::Manager;
     let mut path = app.path()
         .app_data_dir()
-        .map_err(|e| format!("Cannot resolve app data dir: {}", e))?;
+        .map_err(|e| format!("Could not find the app data folder: {}", e))?;
     path.push("compose_metadata.json");
     Ok(path)
 }
@@ -2637,7 +2637,7 @@ pub async fn reveal_path(
         // surface a spawn failure.
         Ok(c.spawn()
             .map(|_| ())
-            .map_err(|e| format!("Failed to reveal '{}': {}", win, e))?)
+            .map_err(|e| format!("Could not show '{}' in File Explorer: {}", win, e))?)
     }).await
 }
 
@@ -2659,7 +2659,7 @@ pub async fn docker_compose_config(
 
         if output.status.success() {
             Ok(String::from_utf8(output.stdout)
-                .map_err(|_| "Output contains non-UTF8 characters".to_string())?)
+                .map_err(|_| "docker compose config returned text that is not valid UTF-8.".to_string())?)
         } else {
             Err(String::from_utf8_lossy(&output.stderr).trim().to_string().into())
         }

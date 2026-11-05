@@ -23,6 +23,8 @@ const WSL_PROCESSES: &[&str] = &[
 ];
 
 const SCAN_TIME_LIMIT: Duration = Duration::from_secs(20);
+/// Each path costs about 100 ms before the scan starts, and a folder covers any number of files.
+const MAX_LOCK_TARGETS: usize = 100;
 /// Docker and each distro are asked on every refresh, so one that is stuck cannot hold up the list.
 const SOURCE_TIME_LIMIT: Duration = Duration::from_secs(5);
 
@@ -575,9 +577,26 @@ fn path_key(path: &Path) -> String {
     text.strip_prefix(r"\\?\").unwrap_or(&text).trim_end_matches('\\').to_lowercase()
 }
 
+/// Takes the text from `path_key`, because working it out is the slow part of comparing paths.
+fn key_is_inside(candidate: &str, folder: &str) -> bool {
+    candidate.strip_prefix(folder).is_some_and(|rest| rest.is_empty() || rest.starts_with('\\'))
+}
+
+#[cfg(test)]
 fn is_inside(candidate: &Path, folder: &Path) -> bool {
-    let (candidate, folder) = (path_key(candidate), path_key(folder));
-    candidate == folder || candidate.starts_with(&format!("{}\\", folder))
+    key_is_inside(&path_key(candidate), &path_key(folder))
+}
+
+/// Records `path` under each target it is inside. A scan calls this for every open file and loaded
+/// module on the PC, so `keys` is worked out once and the cost does not grow with the targets.
+#[cfg(windows)]
+fn note_holder(found: &mut [BTreeMap<u32, PathBuf>], keys: &[String], pid: u32, path: &Path) {
+    let candidate = path_key(path);
+    for (held, key) in found.iter_mut().zip(keys) {
+        if key_is_inside(&candidate, key) {
+            held.entry(pid).or_insert_with(|| path.to_path_buf());
+        }
+    }
 }
 
 /// Which programs have exactly this file or folder open, leaving out this app. This sees programs
@@ -695,7 +714,7 @@ fn disk_file_path(handle: windows_sys::Win32::Foundation::HANDLE) -> Option<Path
 /// Every file handle on the PC is checked once, so the size of the folder does not matter. Programs
 /// running as administrator cannot be read this way.
 #[cfg(windows)]
-fn open_files_inside(root: &Path) -> std::io::Result<BTreeMap<u32, PathBuf>> {
+fn open_files_inside(keys: &[String]) -> std::io::Result<Vec<BTreeMap<u32, PathBuf>>> {
     use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
     use windows_sys::Win32::Foundation::{DuplicateHandle, DUPLICATE_SAME_ACCESS};
     use windows_sys::Win32::System::Threading::{GetCurrentProcess, PROCESS_DUP_HANDLE};
@@ -708,13 +727,13 @@ fn open_files_inside(root: &Path) -> std::io::Result<BTreeMap<u32, PathBuf>> {
         .iter()
         .find(|e| e.pid == own_pid && e.handle == probe.as_raw_handle() as usize)
         .map(|e| e.object_type)
-        .ok_or_else(|| std::io::Error::other("Windows did not list this app's own file."))?;
+        .ok_or_else(|| std::io::Error::other("Could not read the list of open files from Windows."))?;
 
     let mut processes: BTreeMap<u32, Option<OwnedHandle>> = BTreeMap::new();
-    let mut found = BTreeMap::new();
+    let mut found = vec![BTreeMap::new(); keys.len()];
     for entry in entries.iter().filter(|e| e.object_type == file_type && e.pid != own_pid && e.pid > 4) {
         let pid = entry.pid as u32;
-        if found.contains_key(&pid) {
+        if found.iter().all(|held: &BTreeMap<u32, PathBuf>| held.contains_key(&pid)) {
             continue;
         }
         let Some(process) = processes.entry(pid).or_insert_with(|| open_process(pid, PROCESS_DUP_HANDLE)) else {
@@ -728,8 +747,8 @@ fn open_files_inside(root: &Path) -> std::io::Result<BTreeMap<u32, PathBuf>> {
             continue;
         }
         let copy = unsafe { OwnedHandle::from_raw_handle(copy) };
-        if let Some(path) = disk_file_path(copy.as_raw_handle()).filter(|path| is_inside(path, root)) {
-            found.insert(pid, path);
+        if let Some(path) = disk_file_path(copy.as_raw_handle()) {
+            note_holder(&mut found, keys, pid, &path);
         }
     }
     Ok(found)
@@ -737,14 +756,14 @@ fn open_files_inside(root: &Path) -> std::io::Result<BTreeMap<u32, PathBuf>> {
 
 /// A loaded DLL or native addon stays locked with no file handle open, such as a `.node` file.
 #[cfg(windows)]
-fn modules_inside(root: &Path, pids: impl Iterator<Item = u32>) -> BTreeMap<u32, PathBuf> {
+fn modules_inside(keys: &[String], pids: impl Iterator<Item = u32>) -> Vec<BTreeMap<u32, PathBuf>> {
     use std::os::windows::ffi::OsStringExt;
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Foundation::HMODULE;
     use windows_sys::Win32::System::ProcessStatus::{EnumProcessModulesEx, GetModuleFileNameExW, LIST_MODULES_ALL};
     use windows_sys::Win32::System::Threading::{PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
 
-    let mut found = BTreeMap::new();
+    let mut found = vec![BTreeMap::new(); keys.len()];
     for pid in pids.filter(|pid| *pid != std::process::id()) {
         let Some(process) = open_process(pid, PROCESS_QUERY_INFORMATION | PROCESS_VM_READ) else {
             continue;
@@ -767,89 +786,130 @@ fn modules_inside(root: &Path, pids: impl Iterator<Item = u32>) -> BTreeMap<u32,
         let mut name = [0u16; 1024];
         for module in modules {
             let length = unsafe { GetModuleFileNameExW(process.as_raw_handle(), module, name.as_mut_ptr(), name.len() as u32) } as usize;
-            let path = PathBuf::from(std::ffi::OsString::from_wide(&name[..length]));
-            if length > 0 && is_inside(&path, root) {
-                found.insert(pid, path);
-                break;
+            if length == 0 {
+                continue;
             }
+            let path = PathBuf::from(std::ffi::OsString::from_wide(&name[..length]));
+            note_holder(&mut found, keys, pid, &path);
         }
     }
     found
 }
 
-fn find_locks(raw_path: &str, time_limit: Duration) -> Result<LockReport, AtlasError> {
-    let cleaned = clean_path(raw_path);
-    if cleaned.is_empty() {
+struct LockTarget {
+    path: String,
+    root: PathBuf,
+    /// Windows reports real paths, so a path through a junction has to be compared by where it leads.
+    real_path: PathBuf,
+    is_folder: bool,
+}
+
+fn lock_target(raw_path: &str) -> Result<LockTarget, AtlasError> {
+    let path = clean_path(raw_path);
+    if path.is_empty() {
         return Err(AtlasError::invalid("Enter a file or folder to check."));
     }
-    let root = PathBuf::from(cleaned);
+    let root = PathBuf::from(path);
     let is_folder = std::fs::symlink_metadata(&root)
         .map_err(|_| {
-            AtlasError::new(ErrorKind::NotFound, format!("Nothing exists at {}.", cleaned))
-                .hint("Check the path, or pick the file or folder with Browse.")
+            AtlasError::new(ErrorKind::NotFound, format!("Nothing exists at {}.", path))
+                .hint("Check the path, or use Choose file or Choose folder.")
         })?
         .is_dir();
-    // Windows reports real paths, so a path through a junction has to be compared by where it leads.
-    let target = std::fs::canonicalize(&root).unwrap_or_else(|_| root.clone());
+    let real_path = std::fs::canonicalize(&root).unwrap_or_else(|_| root.clone());
+    Ok(LockTarget { path: path.to_string(), root, real_path, is_folder })
+}
 
-    let exact_reason = if is_folder { HoldReason::FolderOpen } else { HoldReason::OpenFile };
-    let mut found: BTreeMap<u32, (HoldReason, Option<PathBuf>)> = programs_using(&root)?
-        .into_iter()
-        .map(|pid| (pid, (exact_reason, None)))
-        .collect();
+/// One report per path, in the same order. All of them share one scan of the open files, which is the
+/// slow part, so each extra path mainly adds the 100 ms that `programs_using` costs.
+fn find_locks(raw_paths: &[String], time_limit: Duration) -> Result<Vec<LockReport>, AtlasError> {
+    if raw_paths.is_empty() {
+        return Err(AtlasError::invalid("Enter a file or folder to check."));
+    }
+    if raw_paths.len() > MAX_LOCK_TARGETS {
+        return Err(AtlasError::invalid(format!("Check up to {} items at a time.", MAX_LOCK_TARGETS))
+            .hint("To check more, drop the folder that contains them."));
+    }
+    let targets = raw_paths.iter().map(|raw| lock_target(raw)).collect::<Result<Vec<_>, _>>()?;
+
+    let mut found: Vec<BTreeMap<u32, (HoldReason, Option<PathBuf>)>> = Vec::with_capacity(targets.len());
+    for target in &targets {
+        let exact_reason = if target.is_folder { HoldReason::FolderOpen } else { HoldReason::OpenFile };
+        found.push(programs_using(&target.root)?.into_iter().map(|pid| (pid, (exact_reason, None))).collect());
+    }
 
     let system = process_snapshot();
+    let keys: Vec<String> = targets.iter().map(|target| path_key(&target.real_path)).collect();
 
-    // On its own thread: an open file's name can take long to read, and the page must not wait for it.
+    // On its own thread: an open file's name or a program's module list can take many seconds to read,
+    // and the page must not wait for it. They report separately, so a slow module list cannot lose the
+    // open files already found.
     #[cfg(windows)]
     let complete = {
-        let (send, receive) = std::sync::mpsc::channel();
-        let worker_target = target.clone();
+        let (send_files, files) = std::sync::mpsc::channel();
+        let (send_modules, modules) = std::sync::mpsc::channel();
+        let worker_keys = keys.clone();
         let pids: Vec<u32> = system.processes().keys().map(|pid| pid.as_u32()).collect();
         std::thread::spawn(move || {
-            let files = open_files_inside(&worker_target);
-            let modules = modules_inside(&worker_target, pids.into_iter());
-            send.send((files, modules)).ok();
+            send_files.send(open_files_inside(&worker_keys)).ok();
+            send_modules.send(modules_inside(&worker_keys, pids.into_iter())).ok();
         });
-        match receive.recv_timeout(time_limit) {
-            Ok((files, modules)) => {
-                for (pid, path) in files.map_err(|e| e.to_string())? {
+        let deadline = std::time::Instant::now() + time_limit;
+        let time_left = || deadline.saturating_duration_since(std::time::Instant::now());
+        let mut complete = false;
+        if let Ok(files) = files.recv_timeout(time_left()) {
+            for (held, files) in found.iter_mut().zip(files.map_err(|e| e.to_string())?) {
+                for (pid, path) in files {
                     let reason = if path.is_dir() { HoldReason::FolderOpen } else { HoldReason::OpenFile };
-                    found.insert(pid, (reason, Some(path)));
+                    held.insert(pid, (reason, Some(path)));
                 }
-                for (pid, path) in modules {
-                    found.entry(pid).or_insert((HoldReason::LoadedFile, Some(path)));
-                }
-                true
             }
-            Err(_) => false,
+            if let Ok(modules) = modules.recv_timeout(time_left()) {
+                for (held, modules) in found.iter_mut().zip(modules) {
+                    for (pid, path) in modules {
+                        held.entry(pid).or_insert((HoldReason::LoadedFile, Some(path)));
+                    }
+                }
+                complete = true;
+            }
         }
+        complete
     };
     #[cfg(not(windows))]
-    let complete = { let _ = (&target, time_limit); false };
+    let complete = { let _ = time_limit; false };
 
     for (pid, process) in system.processes() {
-        if pid.as_u32() != std::process::id() && process.exe().is_some_and(|exe| is_inside(exe, &target)) {
-            found.insert(pid.as_u32(), (HoldReason::RunningFromHere, process.exe().map(Path::to_path_buf)));
+        let Some(exe) = process.exe().filter(|_| pid.as_u32() != std::process::id()) else {
+            continue;
+        };
+        let candidate = path_key(exe);
+        for (held, key) in found.iter_mut().zip(&keys) {
+            if key_is_inside(&candidate, key) {
+                held.insert(pid.as_u32(), (HoldReason::RunningFromHere, Some(exe.to_path_buf())));
+            }
         }
     }
 
-    Ok(LockReport {
-        path: cleaned.to_string(),
-        is_folder,
-        complete,
-        holders: found
-            .into_iter()
-            .map(|(pid, (reason, held))| LockHolder {
-                process: describe(&system, pid),
-                reason,
-                example: held.filter(|_| is_folder).map(|path| {
-                    let text = path.to_string_lossy().to_string();
-                    text.strip_prefix(r"\\?\").map(str::to_string).unwrap_or(text)
-                }),
-            })
-            .collect(),
-    })
+    Ok(targets
+        .into_iter()
+        .zip(found)
+        .map(|(target, held)| LockReport {
+            complete,
+            holders: held
+                .into_iter()
+                .map(|(pid, (reason, example))| LockHolder {
+                    process: describe(&system, pid),
+                    reason,
+                    example: example.filter(|_| target.is_folder).map(|path| {
+                        let text = path.to_string_lossy().to_string();
+                        text.strip_prefix(r"\\?\").map(str::to_string).unwrap_or(text)
+                    }),
+                })
+                .collect(),
+            path: target.path,
+            is_folder: target.is_folder,
+        })
+        .collect())
 }
 
 /// The webview's word is not enough: this checks the live process again right before closing it.
@@ -918,10 +978,10 @@ pub async fn ports_list(
     migration.inner().clone().run_operation(list_ports).await
 }
 
-/// Which programs hold a file, or anything inside a folder.
+/// Which programs hold each file, or anything inside each folder.
 #[tauri::command]
-pub async fn locks_find(path: String) -> Result<LockReport, AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || find_locks(&path, SCAN_TIME_LIMIT))
+pub async fn locks_find(paths: Vec<String>) -> Result<Vec<LockReport>, AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || find_locks(&paths, SCAN_TIME_LIMIT))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -1133,19 +1193,35 @@ mod tests {
         assert_eq!(listeners[1].since, None);
     }
 
+    /// These tests check what a scan finds, not how fast it is, and a busy PC can pass the real limit.
+    const TEST_TIME_LIMIT: Duration = Duration::from_secs(180);
+
+    fn find_one(path: &str, time_limit: Duration) -> Result<LockReport, AtlasError> {
+        find_locks(&[path.to_string()], time_limit).map(|mut reports| reports.remove(0))
+    }
+
     #[test]
     fn a_check_that_runs_out_of_time_says_so() {
         let folder = temp_folder("late");
-        let report = find_locks(folder.to_str().unwrap(), Duration::ZERO).unwrap();
+        let report = find_one(folder.to_str().unwrap(), Duration::ZERO).unwrap();
         assert!(!report.complete);
         std::fs::remove_dir_all(folder).unwrap();
     }
 
     #[test]
     fn a_missing_path_says_so() {
-        let error = find_locks(r"C:\no\such\folder\for\this\test", SCAN_TIME_LIMIT).unwrap_err();
+        let error = find_one(r"C:\no\such\folder\for\this\test", SCAN_TIME_LIMIT).unwrap_err();
         assert_eq!(error.kind, ErrorKind::NotFound);
-        assert_eq!(find_locks("  \"\" ", SCAN_TIME_LIMIT).unwrap_err().kind, ErrorKind::Invalid);
+        assert_eq!(find_one("  \"\" ", SCAN_TIME_LIMIT).unwrap_err().kind, ErrorKind::Invalid);
+    }
+
+    #[test]
+    fn the_number_of_paths_is_limited() {
+        assert_eq!(find_locks(&[], SCAN_TIME_LIMIT).unwrap_err().kind, ErrorKind::Invalid);
+        let too_many = vec![r"C:\a".to_string(); MAX_LOCK_TARGETS + 1];
+        let error = find_locks(&too_many, SCAN_TIME_LIMIT).unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Invalid);
+        assert!(error.message.contains("100"), "{}", error.message);
     }
 
     #[cfg(windows)]
@@ -1178,12 +1254,12 @@ mod tests {
         std::fs::write(folder.join("free.txt"), "x").unwrap();
 
         let own = std::fs::File::open(&file).unwrap();
-        let unheld = find_locks(file.to_str().unwrap(), SCAN_TIME_LIMIT).unwrap();
+        let unheld = find_one(file.to_str().unwrap(), TEST_TIME_LIMIT).unwrap();
         assert!(unheld.complete);
         assert!(unheld.holders.is_empty(), "this app's own handles do not count");
         drop(own);
 
-        let script = format!("$f = [IO.File]::Open('{}', 'Open', 'Read', 'None'); Start-Sleep -Seconds 30", file.display());
+        let script = format!("$f = [IO.File]::Open('{}', 'Open', 'Read', 'None'); Start-Sleep -Seconds 600", file.display());
         let mut child = hidden("powershell")
             .args(["-NoProfile", "-NonInteractive", "-Command", &script])
             .spawn()
@@ -1195,17 +1271,26 @@ mod tests {
         }
         assert!(held(), "the helper took the file");
 
-        let single = find_locks(file.to_str().unwrap(), SCAN_TIME_LIMIT).unwrap();
+        let single = find_one(file.to_str().unwrap(), TEST_TIME_LIMIT).unwrap();
         assert!(!single.is_folder);
         let holder = single.holders.iter().find(|h| h.process.pid == child.id()).expect("holder found");
         assert_eq!(holder.reason, HoldReason::OpenFile);
         assert_eq!(holder.process.name.to_lowercase(), "powershell.exe");
 
-        let whole = find_locks(folder.to_str().unwrap(), SCAN_TIME_LIMIT).unwrap();
+        let whole = find_one(folder.to_str().unwrap(), TEST_TIME_LIMIT).unwrap();
         assert!(whole.is_folder && whole.complete);
         let holder = whole.holders.iter().find(|h| h.process.pid == child.id()).expect("holder found");
         assert_eq!(holder.reason, HoldReason::OpenFile);
         assert!(holder.example.as_deref().unwrap().to_lowercase().ends_with("held.txt"));
+
+        let free = folder.join("free.txt");
+        let paths = [free.display().to_string(), file.display().to_string(), folder.display().to_string()];
+        let reports = find_locks(&paths, TEST_TIME_LIMIT).unwrap();
+        assert_eq!(reports.iter().map(|r| r.path.as_str()).collect::<Vec<_>>(), paths.iter().map(String::as_str).collect::<Vec<_>>());
+        let holds = |report: &LockReport| report.holders.iter().any(|h| h.process.pid == child.id());
+        assert!(!holds(&reports[0]), "the free file has no holder");
+        assert!(holds(&reports[1]), "the held file has its holder");
+        assert!(holds(&reports[2]), "the folder has the same holder");
 
         child.kill().unwrap();
         child.wait().unwrap();
@@ -1223,7 +1308,7 @@ mod tests {
             .spawn()
             .unwrap();
         std::thread::sleep(Duration::from_millis(500));
-        let report = find_locks(folder.to_str().unwrap(), SCAN_TIME_LIMIT).unwrap();
+        let report = find_one(folder.to_str().unwrap(), TEST_TIME_LIMIT).unwrap();
         let holder = report.holders.iter().find(|h| h.process.pid == child.id()).expect("holder found");
         assert_eq!(holder.reason, HoldReason::FolderOpen);
         child.kill().unwrap();

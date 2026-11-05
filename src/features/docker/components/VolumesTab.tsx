@@ -275,7 +275,7 @@ export default function VolumesTab({
     <EmptyState
       icon={Database}
       title="No volumes on this engine"
-      description="Volumes hold the data your containers keep between restarts. One appears here as soon as a container or compose project creates it."
+      description="Volumes hold the data your containers keep between restarts. One appears here as soon as a container or Compose project creates it."
     />
   )
 
@@ -315,10 +315,10 @@ export default function VolumesTab({
               className="toolbar-bulk-btn toolbar-bulk-btn--success"
               onClick={bulkBackup}
               disabled={backingUpSet.size > 0}
-              title="Backup selected volumes"
+              title="Back up selected volumes"
             >
               <HardDriveDownload size={11} />
-              Backup {selectedVols.size}
+              Back up {selectedVols.size}
             </button>
             <button
               className="toolbar-bulk-btn toolbar-bulk-btn--ghost"
@@ -408,10 +408,10 @@ export default function VolumesTab({
                         className={clsx('ctr-action-btn ctr-action-btn--labeled ctr-action-start', isBackingUp && 'loading')}
                         onClick={() => doBackup(v.name)}
                         disabled={isBackingUp}
-                        title={!backupDir ? 'Configure backup directory in Settings' : `Back up '${v.name}'`}
+                        title={!backupDir ? 'Set a backup folder in Settings' : `Back up '${v.name}'`}
                       >
                         <HardDriveDownload size={12} />
-                        {isBackingUp ? 'Backing up…' : 'Backup'}
+                        {isBackingUp ? 'Backing up…' : 'Back up'}
                       </button>
                       <ConfirmRemoveButton
                         onConfirm={() => doRemove(v.name)}
@@ -435,7 +435,7 @@ export default function VolumesTab({
 
                           {!backupDir && (
                             <div className="vol-backup-state vol-backup-no-dir">
-                              No backup directory configured.{' '}
+                              No backup folder set.{' '}
                               <button className="vol-backup-settings-link" onClick={() => setActiveView('settings')}>
                                 Open Settings
                               </button>{' '}
@@ -444,7 +444,7 @@ export default function VolumesTab({
                           )}
 
                           {backupDir && !vp && loadingBackup !== v.name && entries.length === 0 && (
-                            <span className="vol-backup-state">No backups yet - click Backup to create the first one.</span>
+                            <span className="vol-backup-state">No backups yet. Click Back up to create the first one.</span>
                           )}
 
                           {entries.length > 0 && (
@@ -466,7 +466,7 @@ export default function VolumesTab({
                                       </div>
                                     ) : isConfD ? (
                                       <div className="backup-inline-confirm">
-                                        <span className="backup-confirm-text backup-confirm-text--danger">Delete this archive permanently?</span>
+                                        <span className="backup-confirm-text backup-confirm-text--danger">Delete this backup permanently?</span>
                                         <div className="backup-confirm-actions">
                                           <button className="btn-filled btn-filled--danger btn-sm" onClick={() => doDeleteEntry(entry)} disabled={isDeletingEntry === entry.filename}>
                                             <Trash2 size={11} /> Delete
@@ -487,7 +487,7 @@ export default function VolumesTab({
                                           <button
                                             className="ctr-action-btn"
                                             onClick={() => revealItemInDir(entry.path).catch(() => {})}
-                                            title="Open file location"
+                                            title="Show in Explorer"
                                             aria-label={`Open the folder holding ${entry.filename}`}
                                           >
                                             <FolderOpen size={12} />
@@ -534,9 +534,9 @@ export default function VolumesTab({
           title={`Remove ${unusedCount} unused volume${unusedCount === 1 ? '' : 's'}?`}
           consequence={
             <>
-              A volume is where a container keeps the data it is supposed to survive a
-              restart: a database, an upload directory, a cache it paid to build. Removing
-              it deletes that data from this machine, and nothing here can bring it back.
+              Volumes hold data that containers keep across restarts, such as databases,
+              uploads, and caches. Removing them deletes that data from this machine, and
+              nothing here can bring it back.
             </>
           }
           command="docker volume prune -f"

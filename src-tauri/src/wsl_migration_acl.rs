@@ -127,7 +127,7 @@ fn open_path(path: &Path, directory: bool, change_permissions: bool) -> Result<F
     let file = options.open(path)?;
     if file.metadata()?.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
         return Err(AtlasError::invalid(
-            "The migration folder or disk was replaced by a link. Refresh before retrying.",
+            "The folder or disk was replaced by a link. Refresh before retrying.",
         ));
     }
     Ok(file)
@@ -184,8 +184,8 @@ fn require_trusted_owner(file: &File, user: &str) -> Result<(), AtlasError> {
     let _descriptor = LocalMemory(descriptor);
     let owner = sid_text(owner)?;
     if owner != user && owner != "S-1-5-18" && owner != "S-1-5-32-544" {
-        return Err(AtlasError::new(ErrorKind::Permission, "The migration folder or disk is owned by another Windows account.")
-            .hint("Choose an empty folder owned by your Windows account. Migration does not take ownership of other users' files."));
+        return Err(AtlasError::new(ErrorKind::Permission, "The folder or disk is owned by another Windows account.")
+            .hint("Choose an empty folder owned by your Windows account. Atlas does not take ownership of other users' files."));
     }
     Ok(())
 }
@@ -203,7 +203,7 @@ fn apply_private_permissions(file: &File, user: &str) -> Result<(), AtlasError> 
     }
     if present == 0 || acl.is_null() {
         return Err(AtlasError::invalid(
-            "Could not establish private migration permissions.",
+            "Could not set private permissions for the move.",
         ));
     }
     let error = unsafe {

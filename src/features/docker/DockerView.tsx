@@ -23,9 +23,9 @@ const TAB_SUBTITLES: Partial<Record<DockerTab, string>> = {
   containers: 'Monitor and control running and stopped containers',
   volumes:    'Inspect volumes, back up and restore data',
   networks:   'View and remove custom Docker networks',
-  compose:    'Inspect and back up compose project configuration files',
+  compose:    'Inspect and back up Compose project configuration files',
   prune:      'Free disk space by removing unused images and stopped containers',
-  log:        'View recent Docker and Atlas activity',
+  log:        'View past prune runs',
 }
 
 const FILLING_TABS = new Set<DockerTab>(['images', 'containers', 'volumes', 'networks', 'compose'])
@@ -166,7 +166,7 @@ export default function DockerView() {
       {!loading && status && !online && status.state === 'not_installed' && (
         <Prerequisite
           title="Docker is not installed"
-          description="This module needs Docker Desktop. It is a separate download from Docker, and the rest of Workspace Atlas keeps working without it."
+          description="This page needs Docker Desktop. It is a separate download, and the rest of Workspace Atlas keeps working without it."
           steps={[
             'Download Docker Desktop for Windows from docker.com',
             'Run the installer and follow the on-screen instructions',

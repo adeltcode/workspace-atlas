@@ -319,8 +319,8 @@ export default function ComposePage({
     return (
       <div className="compose-page-empty">
         <Clock size={32} className="compose-page-empty-icon" />
-        <p className="compose-page-empty-text">No compose projects found.</p>
-        <p className="compose-page-empty-sub">Run <code>docker compose up</code> in a project directory to get started.</p>
+        <p className="compose-page-empty-text">No Compose projects found.</p>
+        <p className="compose-page-empty-sub">Run <code>docker compose up</code> in a project folder to get started.</p>
       </div>
     )
   }
@@ -357,7 +357,7 @@ export default function ComposePage({
 
       <section className="compose-page-section">
         {favorites.length > 0 && (
-          <h3 className="compose-page-section-title">All Projects</h3>
+          <h3 className="compose-page-section-title">All projects</h3>
         )}
         <div className="compose-card-grid">
           {rest.map(p => (

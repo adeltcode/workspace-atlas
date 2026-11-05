@@ -103,7 +103,7 @@ export const WSLCONF_SECTIONS: WslSection[] = [
     name: 'user',
     title: '[user]',
     fields: [
-      { key: 'default', label: 'Default user', type: 'text', hint: 'User to log in as by default', placeholder: 'e.g. patrick' },
+      { key: 'default', label: 'Default user', type: 'text', hint: 'User to log in as by default', placeholder: 'e.g. dev' },
     ],
   },
 ]

@@ -91,10 +91,10 @@ export default function CommandIndex() {
     const out: Item[] = []
 
     out.push(
-      { id: 'v:dash', label: 'Overview', where: 'Module', section: 'Places', icon: LayoutDashboard, run: go('dashboard') },
-      { id: 'v:set',  label: 'Settings',   where: 'Module', section: 'Places', icon: Settings,        run: go('settings') },
-      { id: 'v:pkg',  label: 'Packages',   where: 'Module', section: 'Places', icon: Package,         run: go('packages') },
-      { id: 'v:sbx',  label: 'Windows Sandbox', where: 'Module', section: 'Places', icon: FlaskConical, run: go('sandbox') },
+      { id: 'v:dash', label: 'Overview', where: 'Page', section: 'Places', icon: LayoutDashboard, run: go('dashboard') },
+      { id: 'v:set',  label: 'Settings',   where: 'Page', section: 'Places', icon: Settings,        run: go('settings') },
+      { id: 'v:pkg',  label: 'Packages',   where: 'Page', section: 'Places', icon: Package,         run: go('packages') },
+      { id: 'v:sbx',  label: 'Windows Sandbox', where: 'Page', section: 'Places', icon: FlaskConical, run: go('sandbox') },
       { id: 'v:port', label: 'Ports',      where: 'Tools',  section: 'Places', icon: Plug,            run: go('ports') },
       { id: 'v:lock', label: 'File locks', where: 'Tools',  section: 'Places', icon: Lock,            run: go('locks') },
     )
@@ -191,7 +191,7 @@ export default function CommandIndex() {
             className="index-search-input"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search modules, distros, images, containers, volumes…"
+            placeholder="Search pages, distros, images, containers, volumes…"
             aria-label="Search everything"
             spellCheck={false}
             autoComplete="off"

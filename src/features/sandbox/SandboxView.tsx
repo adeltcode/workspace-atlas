@@ -168,7 +168,7 @@ export default function SandboxView() {
                   <thead>
                     <tr>
                       <th className="img-th">Sandbox ID</th>
-                      <th className="img-th holder-actions">Action</th>
+                      <th className="img-th holder-actions">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -177,7 +177,7 @@ export default function SandboxView() {
                         <td className="img-td img-id">{id}</td>
                         <td className="img-td">
                           <div className="sandbox-actions">
-                            <Button size="sm" onClick={() => openWindow(id)} aria-label={`Open the window of sandbox ${id}`}>
+                            <Button size="sm" onClick={() => openWindow(id)} aria-label={`Open window for sandbox ${id}`}>
                               <AppWindow size={12} /> Open window
                             </Button>
                             <Button size="sm" variant="danger-outline" onClick={() => { setActionError(null); setStopTarget(id) }} aria-label={`Stop sandbox ${id}`}>

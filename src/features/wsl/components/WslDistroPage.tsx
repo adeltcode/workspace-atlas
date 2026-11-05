@@ -85,7 +85,7 @@ export default function WslDistroPage({ distros, onReload }: {
   }, [d?.name, d?.running, busyDistro])
 
   if (!d) {
-    return <p className="empty-state" style={{ marginTop: 8 }}>Select a distribution from the sidebar.</p>
+    return <p className="empty-state" style={{ marginTop: 8 }}>Select a distro from the sidebar.</p>
   }
 
   const openTerminal = () => {
@@ -103,7 +103,7 @@ export default function WslDistroPage({ distros, onReload }: {
       }
     } catch (e) {
       setStatus({ kind: 'err', text: String(e) })
-      addActivity({ module: 'wsl', action: `Exported ${d.name}`, outcome: 'failure', detail: String(e) })
+      addActivity({ module: 'wsl', action: `Export ${d.name}`, outcome: 'failure', detail: String(e) })
     } finally { setBusyOp(null) }
   })
 
@@ -121,7 +121,7 @@ export default function WslDistroPage({ distros, onReload }: {
     } catch (e) {
       const error = toAppError(e)
       setStatus({ kind: 'err', text: error.message, error })
-      addActivity({ module: 'wsl', action: `Optimized ${d.name}`, outcome: 'failure', detail: `${error.message}\n${error.hint ?? ''}\n${error.detail ?? ''}` })
+      addActivity({ module: 'wsl', action: `Optimize ${d.name}`, outcome: 'failure', detail: `${error.message}\n${error.hint ?? ''}\n${error.detail ?? ''}` })
     } finally {
       try { await onReload() }
       finally { setBusyOp(null); setBusyDistro(null) }
@@ -140,7 +140,7 @@ export default function WslDistroPage({ distros, onReload }: {
       onReload()
     } catch (e) {
       setCloneErr(String(e))
-      addActivity({ module: 'wsl', action: `Cloned ${d.name}`, outcome: 'failure', detail: String(e) })
+      addActivity({ module: 'wsl', action: `Clone ${d.name}`, outcome: 'failure', detail: String(e) })
     } finally { setBusyOp(null); setBusyDistro(null) }
   })
 
@@ -161,7 +161,7 @@ export default function WslDistroPage({ distros, onReload }: {
       onReload()
     } catch (e) {
       setDeleteErr(String(e))
-      addActivity({ module: 'wsl', action: `Deleted ${d.name}`, outcome: 'failure', detail: String(e) })
+      addActivity({ module: 'wsl', action: `Delete ${d.name}`, outcome: 'failure', detail: String(e) })
     } finally { setBusyOp(null) }
   })
 
@@ -188,7 +188,7 @@ export default function WslDistroPage({ distros, onReload }: {
               disabled={busy}
               aria-haspopup="menu"
               aria-expanded={manageOpen}
-              title="Export, clone, migrate, or optimize this distro"
+              title="Export, clone, move, or optimize this distro"
             >
               <SlidersHorizontal size={13} /> {busy ? 'Working…' : 'Manage'}
               <ChevronDown size={13} className={clsx('wsl-menu-caret', manageOpen && 'wsl-menu-caret--open')} />
@@ -267,7 +267,7 @@ export default function WslDistroPage({ distros, onReload }: {
         <Modal icon={<ShieldAlert size={16} />} iconWarning title={`Optimize ${d.name}?`} onClose={() => setConfirmOpt(false)} returnFocusRef={manageButtonRef}>
           <p className="modal-body">
             This compacts <code>ext4.vhdx</code> to reclaim unused space. It shuts down
-            <strong> all WSL distributions</strong> and requires <strong>administrator approval</strong>.
+            <strong> all WSL distros</strong> and requires <strong>administrator approval</strong>.
           </p>
           <p className="modal-body">
             Windows then asks you to approve <strong>Windows PowerShell</strong>, from Microsoft.
@@ -276,7 +276,7 @@ export default function WslDistroPage({ distros, onReload }: {
           <code className="wsl-migration-command">wsl.exe --shutdown; Start-Sleep 3</code>
           <code className="wsl-migration-command">Optimize-VHD -Path '{d.vhd_path}' -Mode Full</code>
           <p className="wsl-estimate-note">
-            Errors go to a temporary file so Atlas can show them. Windows without Optimize-VHD runs diskpart's <code>compact vdisk</code> instead.
+            Errors go to a temporary file so Atlas can show them. If Optimize-VHD is not available, this runs diskpart's <code>compact vdisk</code> instead.
           </p>
           {extras && extras.disk_used_bytes > 0 ? (
             <div className="wsl-estimate">
@@ -335,15 +335,15 @@ export default function WslDistroPage({ distros, onReload }: {
         >
           <p className="modal-body">
             This runs <code>wsl --unregister {d.name}</code>, which permanently destroys the
-            distribution and <strong>every file inside it</strong>. There is no undo and no backup.
-            {d.is_default && <> This is also your <strong>default distribution</strong>.</>}
+            distro and <strong>every file inside it</strong>. There is no undo and no backup.
+            {d.is_default && <> This is also your <strong>default distro</strong>.</>}
           </p>
           <div className="wsl-estimate">
             <div className="wsl-estimate-row"><span>Disk freed</span><strong>{bytesToHuman(d.vhd_size_bytes)}</strong></div>
             <div className="wsl-estimate-row"><span>Install folder deleted</span><strong className="wsl-estimate-path">{d.base_path}</strong></div>
           </div>
           <p className="wsl-estimate-note">
-            Keeping a copy? Cancel and run <strong>Manage → Export to .tar</strong> first.
+            To keep a copy, cancel and use <strong>Manage → Export to .tar</strong> first.
           </p>
           <label className="wsl-import-label" htmlFor="wsl-delete-confirm" style={{ marginTop: 12 }}>
             Type <strong>{d.name}</strong> to confirm

@@ -140,7 +140,7 @@ export default function Dashboard() {
         {activityLog.length === 0 ? (
           <EmptyState
             title="Nothing recorded yet"
-            description="Every operation this app performs is listed here with its outcome, and the exact command it ran appears in the command pane below."
+            description="Every operation this app runs is listed here with its outcome, and the exact command appears in the terminal panel below."
             actions={
               <>
                 <Button onClick={() => setActiveView('docker')}>Open Docker</Button>

@@ -17,7 +17,7 @@ pub struct DiskInfo {
 
 #[derive(serde::Serialize, Clone)]
 pub struct SystemMetrics {
-    /// Global CPU usage since the previous poll (0–100).
+    /// Global CPU usage since the previous poll (0 to 100).
     pub cpu_pct: f32,
     /// Number of logical CPUs.
     pub cpu_count: usize,
@@ -33,7 +33,7 @@ pub async fn get_system_metrics(
     state: tauri::State<'_, SysState>,
 ) -> Result<SystemMetrics, AtlasError> {
     let (cpu_pct, cpu_count, mem_used_bytes, mem_total_bytes) = {
-        let mut sys = state.0.lock().map_err(|_| "system state poisoned".to_string())?;
+        let mut sys = state.0.lock().map_err(|_| "Could not read system metrics because of an internal error.".to_string())?;
         sys.refresh_cpu_usage();
         sys.refresh_memory();
         (sys.global_cpu_usage(), sys.cpus().len(), sys.used_memory(), sys.total_memory())

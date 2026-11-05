@@ -214,7 +214,7 @@ export default function Sidebar() {
       <div className="rail-foot rail-group">
         <button className="rail-item" onClick={() => setShortcutsOpen(true)}>
           <span className="rail-icon"><Keyboard size={15} /></span>
-          <span className="rail-label">Keyboard</span>
+          <span className="rail-label">Shortcuts</span>
         </button>
       </div>
     </nav>

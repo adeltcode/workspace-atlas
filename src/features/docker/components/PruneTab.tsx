@@ -10,9 +10,9 @@ import { bytesToHuman, parseSizeBytes } from '../../../utils/format'
 import type { PrunePreview, LogEntry } from '../types'
 
 const LEVELS = [
-  { level: 1 as const, icon: Shield, label: 'Safe',    sublabel: 'Dangling images only',  desc: 'Removes untagged images with no containers. Zero risk.',                                 color: 'success' },
-  { level: 2 as const, icon: Layers, label: 'Deep',    sublabel: 'All unused images',      desc: 'Removes every unused image not in your keep-list.',                                     color: 'warning' },
-  { level: 3 as const, icon: Zap,    label: 'Nuclear', sublabel: 'Full system cleanup',    desc: 'Containers, images, volumes, build cache - keep-list respected.',                       color: 'danger'  },
+  { level: 1 as const, icon: Shield, label: 'Safe',    sublabel: 'Dangling images only',  desc: 'Removes untagged images with no containers.',                                 color: 'success' },
+  { level: 2 as const, icon: Layers, label: 'Deep',    sublabel: 'All unused images',      desc: 'Removes every unused image except pinned ones.',                                     color: 'warning' },
+  { level: 3 as const, icon: Zap,    label: 'Nuclear', sublabel: 'Full system cleanup',    desc: 'Removes stopped containers, unused images and volumes, and build cache. Keeps pinned images.',                       color: 'danger'  },
 ] as const
 
 type PruneState = 'idle' | 'previewing' | 'confirming' | 'running' | 'done'
@@ -53,7 +53,7 @@ export default function PruneTab({ onDone }: { onDone: () => void }) {
     setPreview(null)
     setPreviewError(null)
     setResult(null)
-    addTerminalLine(`$ docker prune --dry-run --level ${selectedLevel}`, 'cmd')
+    addTerminalLine(`Previewing prune level ${selectedLevel}`, 'info')
     try {
       const p = await dockerPrunePreview(selectedLevel, dockerKeepList)
       setPreview(p)
@@ -79,7 +79,7 @@ export default function PruneTab({ onDone }: { onDone: () => void }) {
     const lines: string[] = []
     const startTime = Date.now()
     const command   = preview.command
-    addTerminalLine(`─── Prune Level ${selectedLevel} - executing ───`, 'info')
+    addTerminalLine(`─── Running prune level ${selectedLevel} ───`, 'info')
 
     // `docker system df` is what the Overview reads, so this figure and the Overview's cannot disagree.
     const before = await measureDockerBytes()
@@ -164,13 +164,13 @@ export default function PruneTab({ onDone }: { onDone: () => void }) {
         </button>
         {canExecute && (
           <button className={clsx('btn-filled', `btn-filled--${LEVELS[selectedLevel - 1].color}`)} onClick={handleExecute}>
-            <Play size={13} />Execute Level {selectedLevel}
+            <Play size={13} />Run level {selectedLevel}
           </button>
         )}
         {(preview || previewError != null || result) && (
           <button className="btn-ghost" onClick={reset} disabled={running}><RotateCcw size={12} />Reset</button>
         )}
-        {running && <span className="prune-running-notice">Running - see Terminal panel below</span>}
+        {running && <span className="prune-running-notice">Running. See the terminal panel below.</span>}
       </div>
 
       {previewError != null && (
@@ -203,7 +203,7 @@ export default function PruneTab({ onDone }: { onDone: () => void }) {
             </p>
           )}
           <div className="cmd-block">
-            <span className="cmd-block-label">What ran</span>
+            <span className="cmd-block-label">Exact command</span>
             <code className="cmd-block-code">{result.command}</code>
           </div>
         </div>
@@ -212,7 +212,7 @@ export default function PruneTab({ onDone }: { onDone: () => void }) {
       {preview && pruneState !== 'running' && pruneState !== 'done' && (
         <div className="prune-preview">
           <div className="prune-preview-header">
-            <span className="prune-preview-title">Dry-run Preview</span>
+            <span className="prune-preview-title">Dry-run preview</span>
             {preview.reclaim_bytes > 0
               ? <span className="prune-reclaim">~{preview.reclaim_size} reclaimable</span>
               : <span className="prune-reclaim-zero">Nothing to remove</span>}
@@ -226,7 +226,7 @@ export default function PruneTab({ onDone }: { onDone: () => void }) {
               <p className="prune-image-list-heading">{preview.image_names.length} image{preview.image_names.length !== 1 ? 's' : ''} to remove</p>
               <ul>{preview.image_names.map(name => <li key={name} className="prune-image-item">{name}</li>)}</ul>
             </div>
-          ) : <p className="prune-nothing">No images match this level - nothing to remove.</p>}
+          ) : <p className="prune-nothing">No images match this level, so there is nothing to remove.</p>}
           {preview.level === 3 && (preview.container_count > 0 || preview.volume_count > 0) && (
             <div className="prune-extras">
               <AlertTriangle size={11} className="prune-extras-icon" />
@@ -239,21 +239,21 @@ export default function PruneTab({ onDone }: { onDone: () => void }) {
       )}
 
       {pruneState === 'confirming' && (
-        <ModalShell className="modal-overlay" label="Nuclear Prune - Confirm" onClose={() => { setPruneState('idle'); setConfirmText('') }}>
+        <ModalShell className="modal-overlay" label="Run Nuclear prune?" onClose={() => { setPruneState('idle'); setConfirmText('') }}>
           <div className="modal">
             <div className="modal-header">
               <div className="modal-icon-wrap danger"><Zap size={16} /></div>
-              <h2 className="modal-title">Nuclear Prune - Confirm</h2>
+              <h2 className="modal-title">Run Nuclear prune?</h2>
             </div>
             <p className="modal-body">
-              This removes stopped containers, all unused images outside your keep-list,
+              This removes stopped containers, all unused images except pinned ones,
               all unused volumes, and all build cache.
               Type <strong>I understand</strong> to proceed.
             </p>
             <input ref={confirmRef} className="modal-input" type="text" aria-label='Type "I understand" to confirm' placeholder='Type "I understand"' value={confirmText} onChange={e => setConfirmText(e.target.value)} />
             <div className="modal-actions">
               <button className="btn-secondary" onClick={() => { setPruneState('idle'); setConfirmText('') }}>Cancel</button>
-              <button className="btn-filled btn-filled--danger" disabled={confirmText !== 'I understand'} onClick={runPrune}>Execute Nuclear Prune</button>
+              <button className="btn-filled btn-filled--danger" disabled={confirmText !== 'I understand'} onClick={runPrune}>Run Nuclear prune</button>
             </div>
           </div>
         </ModalShell>

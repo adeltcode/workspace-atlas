@@ -27,7 +27,7 @@ export default function Titlebar() {
 
       <button className="tb-search" onClick={() => useAppStore.getState().setIndexOpen(true)}>
         <Search size={13} />
-        <span className="tb-search-label">Search distros, images, containers, commands</span>
+        <span className="tb-search-label">Search distros, images, containers, volumes</span>
         <kbd className="kbd">Ctrl</kbd>
         <kbd className="kbd">K</kbd>
       </button>
@@ -36,7 +36,7 @@ export default function Titlebar() {
 
       <div className="titlebar-controls">
         <button className="titlebar-btn theme-btn" onClick={toggleTheme}
-          title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}>
+          title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}>
           {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
         </button>
         <button className="titlebar-btn" onClick={() => win.minimize()} title="Minimize">

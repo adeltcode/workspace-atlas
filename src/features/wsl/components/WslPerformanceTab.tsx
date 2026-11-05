@@ -77,7 +77,7 @@ export default function WslPerformanceTab({ distros, onReload }: {
   }
 
   if (distros.length === 0) {
-    return <p className="empty-state" style={{ marginTop: 24 }}>No distributions found.</p>
+    return <p className="empty-state" style={{ marginTop: 24 }}>No distros found.</p>
   }
 
   const maxBoot = Math.max(1, ...history.map(h => h.boot_ms))

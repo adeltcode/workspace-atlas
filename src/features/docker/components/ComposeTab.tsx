@@ -342,7 +342,7 @@ function InspectDrawer({ container, onClose }: { container: DockerContainer; onC
           </>}
           <dt>Container</dt>
           <dd title={container.name}>{container.name}</dd>
-          <dt>Running for</dt>
+          <dt>Created</dt>
           <dd>{container.created_since}</dd>
         </dl>
       </div>
@@ -366,8 +366,8 @@ function WipeConfirmModal({ projectName, onConfirm, onCancel, running }: {
       <div className="compose-modal-box">
         <h3 className="compose-modal-title">Wipe volumes for "{projectName}"?</h3>
         <p className="compose-modal-body">
-          This permanently deletes all named volumes for this project - including database
-          data - and runs <code>docker compose down -v</code>. This cannot be undone.
+          This permanently deletes all named volumes for this project, including database
+          data, and runs <code>docker compose down -v</code>. This cannot be undone.
           Type <strong>{projectName}</strong> to confirm.
         </p>
         <input
@@ -388,7 +388,7 @@ function WipeConfirmModal({ projectName, onConfirm, onCancel, running }: {
             disabled={running || confirmText.trim() !== projectName}
           >
             {running ? <RotateCcw size={11} className="spin" /> : <Trash2 size={11} />}
-            {running ? 'Running…' : 'Wipe & Down'}
+            {running ? 'Running…' : 'Down and wipe volumes'}
           </button>
         </div>
       </div>
@@ -999,7 +999,7 @@ export default function ComposeTab({
       const saved = await api.dockerBackupCompose(selected.name, selected.config_files, backupDir)
       if (saved.length === 0) {
         addTerminalLine(`  → already up to date`, 'info')
-        setBackupMsg({ type: 'info', text: 'Already up to date - no changes to back up' })
+        setBackupMsg({ type: 'info', text: 'Already up to date. There are no changes to back up.' })
       } else {
         setBackupMsg({ type: 'success', text: `${saved.length} file${saved.length !== 1 ? 's' : ''} backed up` })
         await loadComposeBackups(selected.name)
@@ -1123,7 +1123,7 @@ export default function ComposeTab({
                         <div className="compose-split-dropdown">
                           <button className="compose-split-dropdown-item compose-split-dropdown-item--danger"
                             onClick={() => { setDownDropOpen(false); setWipeConfirmOpen(true) }}>
-                            <Trash2 size={11} /> Down + Wipe Volumes
+                            <Trash2 size={11} /> Down and wipe volumes
                           </button>
                         </div>
                       )}
@@ -1177,12 +1177,12 @@ export default function ComposeTab({
                   <button className="compose-edit-btn compose-open-ide-btn" onClick={handleOpenInIde} disabled={!activeFile}
                     title={preferredEditor ? `Open in ${preferredEditor.name}` : 'Open in editor'}>
                     <OpenIdeIcon size={11} />
-                    {preferredEditor ? preferredEditor.name : 'Open in'}
+                    {preferredEditor ? preferredEditor.name : 'Open in editor'}
                   </button>
                   <button className="compose-edit-btn" onClick={() => activeFile &&
                       api.revealPath(activeFile).catch(e => useAppStore.getState().addTerminalLine(`  ✗ ${String(e)}`, 'error'))}
-                    disabled={!activeFile} title="Open file location in Explorer">
-                    <FolderOpen size={11} /> Reveal
+                    disabled={!activeFile} title="Show in Explorer">
+                    <FolderOpen size={11} /> Show in Explorer
                   </button>
                 </div>
               </div>
@@ -1251,7 +1251,7 @@ export default function ComposeTab({
                   <button className={clsx('compose-sidebar-tool-btn', validatorOpen && 'active')}
                     onClick={handleValidate} disabled={validatorRunning || !activeFile} title="Run docker compose config">
                     <CheckCircle size={13} className={validatorRunning ? 'spin' : ''} />
-                    <span className="compose-sidebar-tool-label">Validate Config</span>
+                    <span className="compose-sidebar-tool-label">Validate config</span>
                   </button>
                   <button className={clsx('compose-sidebar-tool-btn', metaPanelOpen && 'active')}
                     onClick={() => setMetaPanelOpen(o => !o)} title="Project metadata">
@@ -1323,7 +1323,7 @@ export default function ComposeTab({
                         <span className="compose-meta-label">Favorite</span>
                         <button className={clsx('compose-meta-favorite-btn', meta.favorite && 'active')}
                           onClick={() => saveMeta({ favorite: !meta.favorite })}>
-                          {meta.favorite ? '★ Starred' : '☆ Star this project'}
+                          {meta.favorite ? '★ Favorite' : '☆ Add to favorites'}
                         </button>
                       </div>
                       <div className="compose-meta-row compose-meta-row--col">
@@ -1349,7 +1349,7 @@ export default function ComposeTab({
                       <div className="compose-meta-row compose-meta-row--col">
                         <span className="compose-meta-label">Notes</span>
                         <textarea className="compose-meta-notes" value={meta.note}
-                          placeholder="Admin URLs, credentials hints, context…"
+                          placeholder="Admin URLs, setup notes, context…"
                           onChange={e => saveMeta({ note: e.target.value })} rows={4} />
                       </div>
                       {meta.startup_times && meta.startup_times.length > 0 && (
@@ -1375,7 +1375,7 @@ export default function ComposeTab({
                       {backupMsg && <span className={clsx('compose-toolbar-status', backupMsg.type)} style={{ fontSize: 10.5 }}>{backupMsg.text}</span>}
                       <button className="compose-run-backup-btn" onClick={runBackup} disabled={backingUp || !backupDir || !selected}>
                         <Download size={11} className={backingUp ? 'spin' : ''} />
-                        {backingUp ? 'Backing up…' : 'Run Backup'}
+                        {backingUp ? 'Backing up…' : 'Back up now'}
                       </button>
                     </div>
                   </div>
@@ -1392,7 +1392,7 @@ export default function ComposeTab({
                                 <span className="compose-backup-entry-file" title={entry.filename}>{entry.filename}</span>
                                 <div className="compose-backup-entry-actions">
                                   <button className="ctr-action-btn" onClick={() => revealItemInDir(entry.path).catch(() => {})}
-                                    title="Open file location" aria-label={`Open the folder holding ${entry.filename}`}><FolderOpen size={12} /></button>
+                                    title="Show in Explorer" aria-label={`Open the folder holding ${entry.filename}`}><FolderOpen size={12} /></button>
                                   <button className="ctr-action-btn ctr-action-remove" onClick={() => handleDeleteBackup(entry)}
                                     disabled={deletingFile === entry.filename} title="Delete this backup"
                                     aria-label={`Delete backup ${entry.filename}`}><Trash2 size={12} /></button>
@@ -1426,11 +1426,11 @@ export default function ComposeTab({
       )}
 
       {idePickerOpen && (
-        <ModalShell className="compose-modal-backdrop" label="Open in Editor" onClose={() => setIdePickerOpen(false)}>
+        <ModalShell className="compose-modal-backdrop" label="Open in editor" onClose={() => setIdePickerOpen(false)}>
           <div className="compose-modal-box" style={{ maxWidth: 340 }}>
-            <h3 className="compose-modal-title">Open in Editor</h3>
+            <h3 className="compose-modal-title">Open in editor</h3>
             <p className="compose-modal-body" style={{ marginBottom: 12 }}>
-              Choose your preferred editor. This preference is saved and used for all future opens.
+              Choose your preferred editor. Atlas uses it from now on.
             </p>
             {detectedEditors.length === 0 ? (
               <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>

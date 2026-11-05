@@ -177,7 +177,7 @@ function CleanupRow({
               <Trash2 size={11} />
               {removing ? 'Removing…' : `Remove${selected.size > 0 ? ` ${selected.size}` : ''}`}
             </button>
-            <button className="btn-ghost btn-sm" onClick={onNavigate}>View in tab</button>
+            <button className="btn-ghost btn-sm" onClick={onNavigate}>Open page</button>
           </div>
         </div>
       )}
@@ -435,7 +435,7 @@ export default function OverviewTab({
           </div>
         ) : composeProjects.length === 0 ? (
           <p className="overview-empty-row">
-            No compose projects found - create a compose.yaml file to manage multi-container apps.
+            No Compose projects found. Create a compose.yaml file to manage multi-container apps.
           </p>
         ) : (
           <div className="project-cards">
@@ -461,7 +461,7 @@ export default function OverviewTab({
                 Live activity
               </SegmentedItem>
               <SegmentedItem active={resourceView === 'top'} onClick={() => setResourceView('top')}>
-                Top offenders
+                Top usage
               </SegmentedItem>
             </Segmented>
             <Button
@@ -570,7 +570,7 @@ export default function OverviewTab({
           { key: 'images',     label: 'Images',      bytes: imgBytes, color: 'images' },
           { key: 'containers', label: 'Containers',  bytes: ctrBytes, color: 'containers' },
           { key: 'volumes',    label: 'Volumes',     bytes: volBytes, color: 'volumes' },
-          { key: 'cache',      label: 'Build Cache', bytes: bldBytes, color: 'cache' },
+          { key: 'cache',      label: 'Build cache', bytes: bldBytes, color: 'cache' },
         ].filter(s => s.bytes > 0)
 
         const dockerBarSegs = dockerDiskStats
@@ -588,7 +588,7 @@ export default function OverviewTab({
           { key: 'images',     label: 'Images',      bytes: imgBytes,    color: 'images',     freeBytes: imgFree },
           { key: 'containers', label: 'Containers',  bytes: ctrBytes,    color: 'containers', freeBytes: ctrFree },
           { key: 'volumes',    label: 'Volumes',     bytes: volBytes,    color: 'volumes',    freeBytes: 0 },
-          { key: 'cache',      label: 'Build Cache', bytes: bldBytes,    color: 'cache',      freeBytes: bldFree },
+          { key: 'cache',      label: 'Build cache', bytes: bldBytes,    color: 'cache',      freeBytes: bldFree },
           { key: 'backups',    label: 'Backups',     bytes: backupBytes, color: 'backups',    freeBytes: 0,
             driveNote: !sameDrive && backupDiskStats ? backupDiskStats.drive_label : undefined },
         ].filter(r => r.bytes > 0)
@@ -597,7 +597,7 @@ export default function OverviewTab({
           <>
             <SectionHead
               title="Disk usage"
-              meta={totalFreeableBytes > 0 ? `${bytesToHuman(totalFreeableBytes)} freeable` : undefined}
+              meta={totalFreeableBytes > 0 ? `${bytesToHuman(totalFreeableBytes)} reclaimable` : undefined}
             />
             <Panel>
             <div className="disk-body">
@@ -659,7 +659,7 @@ export default function OverviewTab({
                     </span>
                     <span className="disk-legend-size">{bytesToHuman(r.bytes)}</span>
                     {r.freeBytes > 0 && (
-                      <span className="disk-legend-free">{bytesToHuman(r.freeBytes)} freeable</span>
+                      <span className="disk-legend-free">{bytesToHuman(r.freeBytes)} reclaimable</span>
                     )}
                   </div>
                 ))}
@@ -669,9 +669,9 @@ export default function OverviewTab({
                 <span>Docker: <strong>{bytesToHuman(dockerTotal)}</strong></span>
                 {backupBytes > 0 && <span>Backups: <strong>{bytesToHuman(backupBytes)}</strong></span>}
                 {totalFreeableBytes > 0 && (
-                  <span className="disk-summary-free">{bytesToHuman(totalFreeableBytes)} freeable</span>
+                  <span className="disk-summary-free">{bytesToHuman(totalFreeableBytes)} reclaimable</span>
                 )}
-                <span className="disk-summary-note" title="docker system df - may not include Buildx cache on Docker Desktop for Windows">
+                <span className="disk-summary-note" title="From docker system df. It may not include Buildx cache on Docker Desktop for Windows.">
                   via docker system df
                 </span>
               </div>
@@ -682,12 +682,12 @@ export default function OverviewTab({
       })()}
 
       <SectionHead
-        title="Cleanup opportunities"
-        meta={!loading && totalFreeBytes > 0 ? `~${bytesToHuman(totalFreeBytes)} freeable` : undefined}
+        title="Cleanup"
+        meta={!loading && totalFreeBytes > 0 ? `~${bytesToHuman(totalFreeBytes)} reclaimable` : undefined}
         actions={!loading && totalFreeBytes > 0 && (
           <Button size="sm" variant="danger-outline" onClick={() => setDockerTab('prune')}>
             <Trash2 size={11} />
-            Prune all
+            Open Prune
           </Button>
         )}
       />
@@ -707,7 +707,7 @@ export default function OverviewTab({
           <EmptyState
             icon={CheckCircle}
             title="Nothing to reclaim"
-            description="No dangling images, stale containers, unused volumes, or build cache. This is what a clean engine looks like."
+            description="No dangling images, stale containers, unused volumes, or build cache."
           />
         ) : (
           <div className="cleanup-rows">
@@ -746,7 +746,7 @@ export default function OverviewTab({
             {stale.length > 0 && (
               <CleanupRow
                 color="success"
-                label={`Stale containers ≥${STALE_DAYS}d`}
+                label={`Containers stopped ${STALE_DAYS}+ days`}
                 count={stale.length}
                 size={staleContainerBytes > 0 ? bytesToHuman(staleContainerBytes) : null}
                 sizeEst

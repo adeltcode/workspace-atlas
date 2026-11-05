@@ -16,16 +16,16 @@ import { Toolbar, SearchField, Button, ErrorBanner } from '../../../components/u
 type Step = 'select' | 'review' | 'install'
 
 const STEPS: { id: Step; label: string }[] = [
-  { id: 'select',  label: 'Choose distribution' },
+  { id: 'select',  label: 'Choose distro' },
   { id: 'review',  label: 'Review' },
   { id: 'install', label: 'Install' },
 ]
 
 const PHASE_LABEL: Record<InstallProgress['phase'], string> = {
   downloading: 'Downloading',
-  verifying:   'Verifying checksum',
+  verifying:   'Verifying',
   importing:   'Importing',
-  done:        'Finishing up',
+  done:        'Finishing',
 }
 
 /** Downloads the official image directly so it can report real progress, then verifies its SHA-256
@@ -129,7 +129,7 @@ export default function WslInstallWizard({ distros, onReload }: {
 
       {wslInstalling && !installing && (
         <div className="wiz-inflight-note">
-          <RotateCw size={13} className="spin" /> Installing {wslInstalling} in the background - wait for it to finish before starting another.
+          <RotateCw size={13} className="spin" /> Installing {wslInstalling} in the background. Wait for it to finish before starting another.
         </div>
       )}
 
@@ -140,7 +140,7 @@ export default function WslInstallWizard({ distros, onReload }: {
               value={query}
               onChange={setQuery}
               placeholder="Search distros"
-              label="Search installable distributions"
+              label="Search installable distros"
             />
             <div className="toolbar-spacer" />
             <Button onClick={loadCatalog} disabled={catalog === null && !loadErr} title="Re-fetch the catalog">
@@ -163,7 +163,7 @@ export default function WslInstallWizard({ distros, onReload }: {
               ))}
             </div>
           ) : filtered.length === 0 ? (
-            <p className="empty-state">No distributions match “{query}”.</p>
+            <p className="empty-state">No distros match “{query}”.</p>
           ) : (
             <div className="wiz-grid">
               {filtered.map(d => {
@@ -193,7 +193,7 @@ export default function WslInstallWizard({ distros, onReload }: {
 
           <div className="wiz-actions">
             <span className="wiz-actions-hint">
-              {pickedDistro ? `Selected: ${pickedDistro.friendly_name}` : 'Select a distribution to continue.'}
+              {pickedDistro ? `Selected: ${pickedDistro.friendly_name}` : 'Select a distro to continue.'}
             </span>
             <button className="btn-filled btn-filled--accent" disabled={!picked} onClick={() => setStep('review')}>
               Continue <ChevronRight size={14} />
@@ -213,7 +213,7 @@ export default function WslInstallWizard({ distros, onReload }: {
           </div>
 
           <ul className="wiz-facts">
-            <li><Download size={15} className="wiz-fact-icon" /><span>Downloaded straight from the official image, with live speed and size shown below.</span></li>
+            <li><Download size={15} className="wiz-fact-icon" /><span>Downloads the official image directly and shows live speed and size.</span></li>
             <li>
               {pickedDistro.sha256
                 ? <ShieldCheck size={15} className="wiz-fact-icon" />
@@ -300,7 +300,7 @@ export default function WslInstallWizard({ distros, onReload }: {
                   <Terminal size={13} /> Open terminal
                 </button>
                 <button className="btn-secondary" onClick={() => { setSelected(pickedDistro.name); setWslView('dashboard') }}>
-                  <LayoutDashboard size={14} /> Go to dashboard
+                  <LayoutDashboard size={14} /> Go to WSL
                 </button>
                 <button className="btn-secondary" onClick={reset}>Install another</button>
               </div>

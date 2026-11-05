@@ -232,7 +232,7 @@ export default function WslStartupTab({ distros, onReload, onGoToConf }: {
   }, [data, query, filter])
 
   if (distros.length === 0) {
-    return <p className="empty-state" style={{ marginTop: 24 }}>No distributions found.</p>
+    return <p className="empty-state" style={{ marginTop: 24 }}>No distros found.</p>
   }
 
   return (
@@ -240,10 +240,10 @@ export default function WslStartupTab({ distros, onReload, onGoToConf }: {
       {!running && (
         <div className="offline-card" style={{ marginTop: 16 }}>
           <p className="offline-title">{selected} is stopped</p>
-          <p className="offline-desc">Listing services needs the distro running. Start it to continue.</p>
+          <p className="offline-desc">Start the distro to list its services.</p>
           {error && <p className="wsl-opt-error" style={{ margin: '0 0 12px' }}>{error}</p>}
           <button className="btn-filled btn-filled--accent" onClick={startDistro} disabled={starting}>
-            <Play size={13} /> {starting ? 'Starting…' : 'Start distribution'}
+            <Play size={13} /> {starting ? 'Starting…' : 'Start distro'}
           </button>
         </div>
       )}

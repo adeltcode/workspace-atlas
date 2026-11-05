@@ -344,7 +344,7 @@ pub async fn pkg_scan(
         .filter(|s| sources.iter().any(|want| want == s.id))
         .collect();
     if specs.is_empty() {
-        return Err("No known package sources selected".to_string().into());
+        return Err("Select at least one package source.".to_string().into());
     }
 
     tauri::async_runtime::spawn_blocking(move || -> Result<Vec<SourceResult>, AtlasError> {
@@ -367,7 +367,7 @@ pub async fn pkg_scan(
                         command: command_line(spec.argv),
                         installed: true,
                         packages: Vec::new(),
-                        error: Some("scan thread panicked".to_string()),
+                        error: Some("The scan stopped unexpectedly.".to_string()),
                     })
                 })
                 .collect()
@@ -384,7 +384,7 @@ pub async fn pkg_scan(
             } else if let Some(err) = &r.error {
                 emit_line(&app, format!("  ✗ {}: {}", r.id, err), true);
             } else {
-                emit_line(&app, format!("  ✓ {}: {} packages", r.id, r.packages.len()), false);
+                emit_line(&app, format!("  ✓ {}: {} package{}", r.id, r.packages.len(), if r.packages.len() == 1 { "" } else { "s" }), false);
             }
         }
 
@@ -584,7 +584,7 @@ pub async fn pkg_check_updates(app: tauri::AppHandle) -> Result<Vec<SourceUpdate
             handles
                 .into_iter()
                 .map(|(source, handle)| {
-                    let outcome = handle.join().unwrap_or_else(|_| Err("check thread panicked".to_string()));
+                    let outcome = handle.join().unwrap_or_else(|_| Err("The check stopped unexpectedly.".to_string()));
                     let (found, error) = match outcome {
                         Ok(found) => (found, None),
                         Err(e) => (Vec::new(), Some(e)),
@@ -611,7 +611,7 @@ pub async fn pkg_check_updates(app: tauri::AppHandle) -> Result<Vec<SourceUpdate
         for r in &results {
             match &r.error {
                 Some(err) => emit_line(&app, format!("  ✗ {}: {}", r.source, err), true),
-                None => emit_line(&app, format!("  ✓ {}: {} updates", r.source, r.updates.len()), false),
+                None => emit_line(&app, format!("  ✓ {}: {} update{}", r.source, r.updates.len(), if r.updates.len() == 1 { "" } else { "s" }), false),
             }
         }
         Ok(results)
@@ -629,7 +629,7 @@ async fn one_job<T: Send + 'static>(
     job: impl FnOnce() -> Result<T, AtlasError> + Send + 'static,
 ) -> Result<T, AtlasError> {
     if PACKAGE_JOB.swap(true, Ordering::SeqCst) {
-        return Err(AtlasError::new(ErrorKind::Busy, "Wait for the current package job to finish."));
+        return Err(AtlasError::new(ErrorKind::Busy, "Wait for the current package upgrade or uninstall to finish."));
     }
     let result = migration.clone().run_operation(job).await;
     PACKAGE_JOB.store(false, Ordering::SeqCst);
@@ -706,7 +706,7 @@ fn run_streamed(app: &tauri::AppHandle, argv: &[&str], failure: &str) -> Result<
     // `as_admin` has no error code to read, only Start-Process's message on stderr.
     if err_tail.to_lowercase().contains("canceled by the user") {
         return Err(AtlasError::new(ErrorKind::Elevation, "Administrator approval was not given, so nothing was changed.")
-            .hint("Run it again and approve the prompt if you want this to go ahead."));
+            .hint("To continue, run it again and approve the prompt."));
     }
     // Windows Installer's "worked, but restart to finish", which Chocolatey passes on.
     if matches!(status.code(), Some(1641 | 3010)) {
@@ -717,7 +717,7 @@ fn run_streamed(app: &tauri::AppHandle, argv: &[&str], failure: &str) -> Result<
     let code = format!("0x{:08X}", status.code().unwrap_or(-1) as u32);
     emit_line(app, format!("  ✗ {} exited {}", argv[0], code), true);
     Err(AtlasError::new(ErrorKind::Unknown, failure)
-        .hint("The terminal shows the tool's own explanation. If the app is open, close it and try again.")
+        .hint("The terminal shows the tool's own error message. If the program being changed is open, close it and try again.")
         .detail(format!("Exit code {}\n{}", code, tail)))
 }
 

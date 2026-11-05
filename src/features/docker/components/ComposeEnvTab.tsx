@@ -86,7 +86,7 @@ export default function ComposeEnvTab({ filePath, content, yamlContent, onSaved 
           title={masked ? 'Show non-sensitive values' : 'Hide all values'}
         >
           {masked ? <Eye size={12} /> : <EyeOff size={12} />}
-          {masked ? 'Show all' : 'Hide all'}
+          {masked ? 'Show non-sensitive' : 'Hide all'}
         </button>
         <span className="env-tab-count">{pairs.length} variable{pairs.length !== 1 ? 's' : ''}</span>
         <div style={{ flex: 1 }} />
@@ -118,7 +118,7 @@ export default function ComposeEnvTab({ filePath, content, yamlContent, onSaved 
                 <tr>
                   <th className="env-th">Variable</th>
                   <th className="env-th">Value</th>
-                  <th className="env-th env-th--status">Used in compose</th>
+                  <th className="env-th env-th--status">Used in Compose file</th>
                 </tr>
               </thead>
               <tbody>

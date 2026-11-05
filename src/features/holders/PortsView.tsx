@@ -28,7 +28,7 @@ const COLUMNS: TableColumn<PortSortKey>[] = [
   { key: 'parent',    label: 'Started by',      width: 130, sort: 'parent',    hideable: true },
   { key: 'address',   label: 'Addresses',       width: 170, sort: 'address',   hideable: true },
   { key: 'path',      label: 'File path',       width: 280, sort: 'path',      hideable: true },
-  { key: 'actions',   label: 'Action',          width: 160 },
+  { key: 'actions',   label: 'Actions',         width: 160 },
 ]
 
 const Dash = () => <span className="pkg-dash">-</span>
@@ -59,7 +59,7 @@ function PortCell({ column, entry, onClose }: { column: string; entry: PortEntry
     default:
       return (
         <td className="img-td holder-actions">
-          <HolderAction process={entry.process} holds={`holding port ${entry.port}`} onClose={onClose} />
+          <HolderAction process={entry.process} holds={`using port ${entry.port}`} onClose={onClose} />
         </td>
       )
   }
@@ -115,7 +115,7 @@ export default function PortsView() {
 
   const holdsText = ({ process }: PortEntry) => {
     const ports = all.filter(e => e.process.pid === process.pid && e.process.distro === process.distro).map(e => e.port)
-    return `Holds ${ports.length === 1 ? 'port' : 'ports'} ${ports.join(', ')}`
+    return `Using ${ports.length === 1 ? 'port' : 'ports'} ${ports.join(', ')}`
   }
 
   const afterClose = async (closed: PortEntry) => {
@@ -128,7 +128,7 @@ export default function PortsView() {
     }
     const holder = next.entries.find(e => e.port === closed.port)
     setResult(holder
-      ? { tone: 'warn', text: `Closed ${closed.process.name}, but ${holder.process.name} now holds port ${closed.port}` }
+      ? { tone: 'warn', text: `Closed ${closed.process.name}, but ${holder.process.name} is now using port ${closed.port}` }
       : { tone: 'ok', text: `Closed ${closed.process.name}. Port ${closed.port} is free.` })
   }
 

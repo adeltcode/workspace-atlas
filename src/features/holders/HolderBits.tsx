@@ -16,7 +16,7 @@ export function ProgramCell({ process }: { process: ProcessInfo }) {
 
 export function HolderAction({ process, holds, onClose }: {
   process: ProcessInfo
-  /** Finishes the button's accessible name: "holding port 3000". */
+  /** Finishes the button's accessible name: "using port 3000". */
   holds: string
   onClose: () => void
 }) {
@@ -35,7 +35,7 @@ export function HolderAction({ process, holds, onClose }: {
 
 export function CloseProgramDialog({ process, holds, onClosed, onFailed, onCancel }: {
   process: ProcessInfo
-  /** What closing it frees: "Holds port 3000". */
+  /** What closing it frees: "Using port 3000". */
   holds: string
   onClosed: () => void
   onFailed: (error: unknown) => void

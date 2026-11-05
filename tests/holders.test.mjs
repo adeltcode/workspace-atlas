@@ -47,6 +47,24 @@ const entries = [
 const ports = (...args) => rules.filterPorts(entries, ...args).map(e => e.port)
 const sorted = (key, dir) => rules.sortPorts(entries, key, dir).map(e => e.port)
 
+test('a dropped item is named by the last part of its path', () => {
+  assert.equal(rules.itemName('C:\\dev\\shop\\app.log'), 'app.log')
+  assert.equal(rules.itemName('C:\\dev\\shop\\'), 'shop')
+  assert.equal(rules.itemName('\\\\wsl.localhost\\kali\\home\\me\\api'), 'api')
+  assert.equal(rules.itemName('C:\\'), 'C:')
+})
+
+test('the summary says what was checked, for one item or several', () => {
+  const report = (path, is_folder) => ({ path, is_folder, complete: true, holders: [] })
+  const adminNote = 'A program running as administrator'
+  assert.equal(rules.checkedSummary([report('C:\\a.log', false)]), 'Checked C:\\a.log.')
+  const folder = rules.checkedSummary([report('C:\\dev', true)])
+  assert.ok(folder.startsWith('Checked C:\\dev and everything inside it.') && folder.includes(adminNote))
+  assert.equal(rules.checkedSummary([report('C:\\a.log', false), report('C:\\b.log', false)]), 'Checked 2 items.')
+  const mixed = rules.checkedSummary([report('C:\\a.log', false), report('C:\\dev', true)])
+  assert.ok(mixed.startsWith('Checked 2 items, including everything inside the folders.') && mixed.includes(adminNote))
+})
+
 test('the Programs filter hides system rows, and All keeps them', () => {
   assert.deepEqual(ports('', 'programs'), [903, 3000, 5173, 8081])
   assert.deepEqual(ports('', 'all'), [53, 135, 903, 3000, 5173, 8081, 49664])
@@ -124,6 +142,6 @@ test('a file-in-use error offers the File locks page, and other errors do not', 
     '../utils/errors': { toAppError: e => e },
   })
   const render = kind => renderToStaticMarkup(createElement(ui.ErrorBanner, { error: { kind, message: 'Failed' } }))
-  assert.match(render('busy'), /See what holds it/)
-  assert.doesNotMatch(render('permission'), /See what holds it/)
+  assert.match(render('busy'), /Open File locks/)
+  assert.doesNotMatch(render('permission'), /Open File locks/)
 })

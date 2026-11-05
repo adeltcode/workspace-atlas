@@ -101,7 +101,7 @@ export default function NetworksTab() {
           title={search ? 'No networks match this search' : 'No custom networks'}
           description={search
             ? 'Try a shorter search, or clear it to see every network.'
-            : 'Only Docker’s three built-in networks exist. A compose project creates its own, and it appears here.'}
+            : 'Only Docker’s three built-in networks exist. A Compose project creates its own, and it appears here.'}
           actions={search ? <Button onClick={() => setSearch('')}>Clear search</Button> : undefined}
         />
       )}
@@ -114,7 +114,7 @@ export default function NetworksTab() {
               <th className="img-th">Driver</th>
               <th className="img-th">Scope</th>
               <th className="img-th">Created</th>
-              <th className="img-th ctr-th-actions">Action</th>
+              <th className="img-th ctr-th-actions">Actions</th>
             </tr>
           </thead>
           <tbody>

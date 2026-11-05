@@ -74,8 +74,8 @@ export default function WslView() {
   useVisiblePoll(refreshRunning, 5000, available)
 
   const subtitle =
-    wslView === 'dashboard'  ? 'All distributions at a glance: manage, clone, export, and optimize'
-    : wslView === 'wslconfig' ? 'Machine-wide WSL2 settings, applied to every distribution'
+    wslView === 'dashboard'  ? 'All distros at a glance: manage, clone, export, and optimize'
+    : wslView === 'wslconfig' ? 'Machine-wide WSL2 settings, applied to every distro'
     : wslView === 'install'   ? 'Browse the catalog and install a new Linux distribution'
     : DISTRO_TAB_SUBTITLES[wslDistroTab]
 
@@ -128,7 +128,7 @@ export default function WslView() {
       {!loading && status && !available && (
         <Prerequisite
           title="WSL is not installed"
-          description="This module needs the Windows Subsystem for Linux. The rest of Workspace Atlas keeps working without it."
+          description="This page needs the Windows Subsystem for Linux. The rest of Workspace Atlas keeps working without it."
           steps={[
             'Open Windows Terminal or PowerShell as Administrator',
             'Run the command below',

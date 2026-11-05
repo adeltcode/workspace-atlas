@@ -160,7 +160,7 @@ export default function WslHome({ distros, loading, onReload }: {
       await onReload()
     } catch (e) {
       setImportErr(String(e))
-      addActivity({ module: 'wsl', action: `Imported ${name}`, outcome: 'failure', detail: String(e) })
+      addActivity({ module: 'wsl', action: `Import ${name}`, outcome: 'failure', detail: String(e) })
     } finally { setImporting(false); setBusyDistro(null) }
   })
 
@@ -175,7 +175,7 @@ export default function WslHome({ distros, loading, onReload }: {
       setExtras(prev => { const n = { ...prev }; delete n[d.name]; return n })
       await onReload()
     } catch (e) {
-      addActivity({ module: 'wsl', action: `${action} ${d.name}`, outcome: 'failure', detail: String(e) })
+      addActivity({ module: 'wsl', action: `${action === 'stop' ? 'Stop' : 'Restart'} ${d.name}`, outcome: 'failure', detail: String(e) })
     } finally { setBusyAction(null); setBusyDistro(null) }
   })
 
@@ -239,7 +239,7 @@ export default function WslHome({ distros, loading, onReload }: {
     return (
       <EmptyState
         icon={HardDrive}
-        title="No distributions installed"
+        title="No distros installed"
         description="WSL itself is installed, but there is nothing to run in it yet. Install one from the catalog, or run the command below."
         actions={<code className="cmd">wsl --install -d Ubuntu</code>}
       />
@@ -253,7 +253,7 @@ export default function WslHome({ distros, loading, onReload }: {
           value={query}
           onChange={setQuery}
           placeholder="Search distros"
-          label="Search distributions by name"
+          label="Search distros by name"
         />
         <Segmented label="Filter by state">
           {(['all', 'running', 'stopped'] as StateFilter[]).map(f => (
@@ -266,7 +266,7 @@ export default function WslHome({ distros, loading, onReload }: {
 
       {filtered.length === 0 ? (
         <EmptyState
-          title="No distributions match"
+          title="No distros match"
           description="Try a shorter search, or switch the filter back to All."
           actions={<Button onClick={() => { setQuery(''); setFilter('all') }}>Clear filters</Button>}
         />
@@ -309,7 +309,7 @@ export default function WslHome({ distros, loading, onReload }: {
               <div className="sk-box wsl-mon-sk" />
             </div>
           ) : (
-            <p className="wsl-bpanel-empty">No running distributions - start one to see live metrics.</p>
+            <p className="wsl-bpanel-empty">No distros are running. Start one to see live metrics.</p>
           )
         ) : (
           <>
@@ -378,7 +378,7 @@ export default function WslHome({ distros, loading, onReload }: {
                     {multiDrive && <span className="disk-legend-drive-note">{d.vhd_path.slice(0, 2)}</span>}
                   </span>
                   <span className="disk-legend-size">{bytesToHuman(d.vhd_size_bytes)}</span>
-                  {est > 0 && <span className="disk-legend-free">{bytesToHuman(est)} freeable est.</span>}
+                  {est > 0 && <span className="disk-legend-free">{bytesToHuman(est)} reclaimable (est.)</span>}
                 </div>
               )
             })}
@@ -395,7 +395,7 @@ export default function WslHome({ distros, loading, onReload }: {
           <div className="disk-summary">
             <span>WSL: <strong>{bytesToHuman(totalVhd)}</strong></span>
             {scanned.length > 0 && reclaimable > 0 && (
-              <span className="disk-summary-free">≈ {bytesToHuman(reclaimable)} freeable (est.)</span>
+              <span className="disk-summary-free">≈ {bytesToHuman(reclaimable)} reclaimable (est.)</span>
             )}
             <span className="disk-summary-note" title="VHD sizes from the Lxss registry; usage scanned inside running distros">
               via registry + df
@@ -450,7 +450,7 @@ export default function WslHome({ distros, loading, onReload }: {
         >
           <p className="modal-body">
             This runs <code>wsl --terminate {lifecycle.d.name}</code>, stopping every process inside it immediately.
-            {lifecycle.action === 'restart' ? ' It then boots the distro straight back up.' : ' It stays stopped until next use.'}
+            {lifecycle.action === 'restart' ? ' It then starts the distro again.' : ' It stays stopped until next use.'}
           </p>
           <div className="modal-actions">
             <button className="btn-secondary" onClick={() => setLifecycle(null)}>Cancel</button>
@@ -462,7 +462,7 @@ export default function WslHome({ distros, loading, onReload }: {
       )}
 
       {showImport && (
-        <Modal icon={<Upload size={16} />} title="Import distribution" onClose={() => setShowImport(false)} blocking={importing}>
+        <Modal icon={<Upload size={16} />} title="Import distro" onClose={() => setShowImport(false)} blocking={importing}>
           <p className="modal-body">Create a new distro from a <code>.tar</code> archive. Use a new name to clone, or a new location to relocate.</p>
           <Field label="Source archive">
             <div className="wsl-import-row">
@@ -513,7 +513,7 @@ function DistroCard({
   const term = useAsyncAction()
   return (
     <div className="wsl-bcard">
-      <button className="wsl-bcard-head" onClick={onOpen} title="Open this distribution's page">
+      <button className="wsl-bcard-head" onClick={onOpen} title="Open this distro's page">
         <DistroLogo name={d.name} size={30} dimmed={!d.running} />
         <span className="wsl-bcard-name">{d.name}</span>
         {d.is_default && <Star size={11} className="wsl-distro-star" />}
@@ -526,7 +526,7 @@ function DistroCard({
       <div className="wsl-bcard-stats">
         <div className="wsl-bstat">
           <span className="wsl-bstat-k">VHD</span>
-          <span className="wsl-bstat-v">{d.vhd_size_bytes > 0 ? bytesToHuman(d.vhd_size_bytes) : '--'}</span>
+          <span className="wsl-bstat-v">{d.vhd_size_bytes > 0 ? bytesToHuman(d.vhd_size_bytes) : '-'}</span>
         </div>
         <div className="wsl-bstat">
           <span className="wsl-bstat-k">Packages</span>
@@ -538,15 +538,15 @@ function DistroCard({
               : undefined
             }
           >
-            {x ? (x.package_manager === 'unknown' ? '--' : x.package_count)
+            {x ? (x.package_manager === 'unknown' ? '-' : x.package_count)
               : scanning ? <span className="sk-line wsl-bstat-sk" />
-              : d.running ? '--'
+              : d.running ? '-'
               : <button className="btn btn--sm" onClick={onScan} title="Reads inside the distro and starts it if stopped">Scan</button>}
           </span>
         </div>
         <div className="wsl-bstat">
           <span className="wsl-bstat-k">Uptime</span>
-          <span className="wsl-bstat-v">{x ? formatDuration(x.uptime_secs) : scanning ? '…' : '--'}</span>
+          <span className="wsl-bstat-v">{x ? formatDuration(x.uptime_secs) : scanning ? '…' : '-'}</span>
         </div>
         <div className="wsl-bstat">
           <span className="wsl-bstat-k">Version</span>
@@ -555,7 +555,7 @@ function DistroCard({
       </div>
 
       {d.vhd_path && (
-        <button className="wsl-bcard-path" onClick={onReveal} title="Reveal ext4.vhdx in Explorer">
+        <button className="wsl-bcard-path" onClick={onReveal} title="Show ext4.vhdx in Explorer">
           <HardDrive size={12} />
           <span className="wsl-bcard-path-text">{d.vhd_path}</span>
         </button>
@@ -564,15 +564,15 @@ function DistroCard({
       <div className="wsl-bcard-actions">
         {d.running ? (
           <>
-            <button className="btn-secondary btn-sm" onClick={onRestart} disabled={busy} title="Stop, then boot back up">
+            <button className="btn-secondary btn-sm" onClick={onRestart} disabled={busy} title="Stop, then start again">
               <RotateCw size={12} /> {busyAction === d.name ? 'Working…' : 'Restart'}
             </button>
-            <button className="btn-secondary btn-sm" onClick={onStop} disabled={busy} title="Terminate this distro">
+            <button className="btn-secondary btn-sm" onClick={onStop} disabled={busy} title="Stop this distro">
               <Square size={12} /> Stop
             </button>
           </>
         ) : (
-          <button className="btn-secondary btn-sm" onClick={onStart} disabled={busy} title="Boot this distro">
+          <button className="btn-secondary btn-sm" onClick={onStart} disabled={busy} title="Start this distro">
             <Play size={12} /> {busyAction === d.name ? 'Starting…' : 'Start'}
           </button>
         )}
