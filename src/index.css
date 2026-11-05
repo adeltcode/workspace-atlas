@@ -7492,6 +7492,28 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .holder-summary { font-size: var(--text-xs); color: var(--color-text-secondary); overflow-wrap: anywhere; user-select: text; }
 .toolbar > .holder-target { flex: 1 1 320px; max-width: none; }
 
+.clipboard-notices { flex: none; display: grid; gap: var(--space-2); max-height: 34vh; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.clipboard-notice { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: var(--radius-lg); font-size: var(--text-xs); line-height: 1.5; }
+.clipboard-notice > svg { flex: none; color: var(--color-text-tertiary); }
+.clipboard-notice--warn > svg { color: var(--color-warning); }
+.clipboard-notice > .btn, .clipboard-notice > .holder-note { flex: none; }
+.clipboard-notice-text { flex: 1; min-width: 0; color: var(--color-text-secondary); }
+.clipboard-notice-text strong { display: block; font-weight: 600; color: var(--color-text-primary); }
+.clipboard-now { flex: none; display: flex; align-items: center; gap: var(--space-2); min-height: 40px; padding: var(--space-1) var(--space-3); background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: var(--radius-lg); font-size: var(--text-xs); }
+.clipboard-now .clipboard-preview { flex: 0 1 auto; }
+.clipboard-now-label { flex: none; font-size: var(--text-2xs); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-tertiary); }
+.clipboard-muted { flex: none; color: var(--color-text-tertiary); }
+.clipboard-toolbar { flex: none; margin-bottom: 0; }
+.clipboard-content { max-width: 0; }
+.clipboard-preview { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.clipboard-preview-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: var(--text-xs); user-select: text; }
+.clipboard-hidden { letter-spacing: 0.08em; color: var(--color-text-tertiary); }
+.clipboard-swatch { flex: none; width: 12px; height: 12px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm); }
+.clipboard-dialog .modal-header { justify-content: flex-start; }
+.clipboard-facts { margin: 0 0 var(--space-3); font-size: var(--text-xs); color: var(--color-text-tertiary); overflow-wrap: anywhere; user-select: text; }
+.clipboard-text { max-height: 46vh; margin: 0 0 var(--space-3); padding: var(--space-3); overflow: auto; background: var(--color-bg-primary); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.clipboard-image { display: block; max-width: 100%; max-height: 46vh; margin: 0 auto var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+
 .file-drop { position: relative; }
 .file-drop--over { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 .file-drop--danger { outline-color: var(--color-danger); }

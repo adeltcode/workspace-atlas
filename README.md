@@ -87,6 +87,8 @@ Every disk or Docker operation prints the real command it runs, so you can check
 
 - **Ports**: see what is listening on each TCP port, on Windows, in Docker containers, and in running WSL distros, and whether other devices can reach it. Close a stuck program after you confirm. You can sort and resize the table, and add columns for when the port started listening, the command line, working folder, memory, the program that started it, addresses, and file path
 - **File locks**: when Windows won't let you delete or move something, drag it onto the page to see which program is using it, and close that program after you confirm. You can drag several files and folders at once, or paste a path or browse to one
+- **Clipboard**: see what Windows has saved in clipboard history, and what is on the clipboard now. Text stays hidden until you show it, and items that look like passwords or keys are flagged. Search and filter the list, copy an old item back, delete items, or clear them all. Turn history on or off from the page
+- **Clipboard checks**: the page tells you what is getting in the way, such as a policy that blocks history, a disabled clipboard service, a program keeping the clipboard open, or another clipboard program saving its own copy
 
 Atlas won't close Windows, Docker, or WSL's own programs, or anything that needs administrator rights.
 
@@ -257,6 +259,7 @@ src/                      React frontend
   features/packages/      Packages module
   features/sandbox/       Windows Sandbox module
   features/holders/       Ports and File locks pages
+  features/clipboard/     Clipboard page
   features/system/        Machine metrics
   features/config/        Settings export and import
   layout/                 Titlebar, Sidebar, MainPanel, Terminal

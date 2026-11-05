@@ -1,3 +1,5 @@
+#[cfg(windows)]
+mod clipboard;
 mod config;
 mod error;
 mod docker;
@@ -83,6 +85,30 @@ pub fn run() {
             holders::locks_find,
             holders::process_close,
             holders::pick_any_file,
+            #[cfg(windows)]
+            clipboard::clipboard_status,
+            #[cfg(windows)]
+            clipboard::clipboard_read,
+            #[cfg(windows)]
+            clipboard::clipboard_set_history,
+            #[cfg(windows)]
+            clipboard::clipboard_copy_item,
+            #[cfg(windows)]
+            clipboard::clipboard_delete_item,
+            #[cfg(windows)]
+            clipboard::clipboard_clear_history,
+            #[cfg(windows)]
+            clipboard::clipboard_clear_current,
+            #[cfg(windows)]
+            clipboard::clipboard_item_image,
+            #[cfg(windows)]
+            clipboard::clipboard_remove_block,
+            #[cfg(windows)]
+            clipboard::clipboard_restart_service,
+            #[cfg(windows)]
+            clipboard::clipboard_enable_service,
+            #[cfg(windows)]
+            clipboard::clipboard_open_settings,
             sandbox::sandbox_status,
             sandbox::sandbox_start,
             sandbox::sandbox_stop,

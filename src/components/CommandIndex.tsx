@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Box, HardDrive, Package, LayoutDashboard, Settings, Layers, Database, Network, Trash2, ScrollText, CornerDownLeft, Plug, Lock, FlaskConical } from 'lucide-react'
+import { Box, ClipboardList, HardDrive, Package, LayoutDashboard, Settings, Layers, Database, Network, Trash2, ScrollText, CornerDownLeft, Plug, Lock, FlaskConical } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore, type View, type DockerTab, type WslView, type DockerCache, type WslDistroNav } from '../store/appStore'
 import * as dockerApi from '../features/docker/api'
@@ -97,6 +97,7 @@ export default function CommandIndex() {
       { id: 'v:sbx',  label: 'Windows Sandbox', where: 'Page', section: 'Places', icon: FlaskConical, run: go('sandbox') },
       { id: 'v:port', label: 'Ports',      where: 'Tools',  section: 'Places', icon: Plug,            run: go('ports') },
       { id: 'v:lock', label: 'File locks', where: 'Tools',  section: 'Places', icon: Lock,            run: go('locks') },
+      { id: 'v:clip', label: 'Clipboard',  where: 'Tools',  section: 'Places', icon: ClipboardList,   run: go('clipboard') },
     )
     const dockerTabs: Array<[DockerTab, string, React.ElementType]> = [
       ['overview', 'Overview', Box], ['images', 'Images', Layers],
