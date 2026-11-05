@@ -75,6 +75,8 @@ Every disk or Docker operation prints the real command it runs, so you can check
 ### Windows Sandbox
 
 - **Start**: open a clean, throwaway copy of Windows. The network stays off unless you turn it on
+- **Privacy switches**: the microphone, camera, clipboard, printers, and graphics card all start off. Turn on only what you need
+- **Memory**: keep the Windows default, or choose 4, 8, or 16 GB
 - **Share a folder**: show one folder from your PC on the sandbox desktop. It is read-only unless you allow changes
 - **Running sandboxes**: open a sandbox's window again, or stop it. Stopping deletes everything inside
 
