@@ -6,10 +6,20 @@ export interface SandboxStatus {
   running: string[]
 }
 
-export interface SandboxOptions {
+export interface SandboxSwitches {
+  microphone: boolean
+  camera: boolean
+  clipboard: boolean
+  printers: boolean
+  graphics: boolean
+}
+
+export interface SandboxOptions extends SandboxSwitches {
   networking: boolean
   folder: string | null
   writable: boolean
+  /** Null leaves the amount to Windows. */
+  memory_mb: number | null
 }
 
 export const sandboxStatus = () => invoke<SandboxStatus>('sandbox_status')
