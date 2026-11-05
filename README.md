@@ -256,7 +256,7 @@ tests/                    Node tests that check the frontend source
 
 ## Project status
 
-Workspace Atlas is in beta, so its version numbers start with 0. Version 1.0.0 will come once the planned features are built and tested.
+Workspace Atlas is in beta, so its version numbers start with 0. Version 1.0.0 has no fixed feature list or date. It will come once the app has enough features and all of them are tested.
 
 Two Optimize cases haven't been tested on a real system yet: Windows Home, which uses `diskpart`, and a disk that is still in use.
 
