@@ -18,14 +18,14 @@ const paths = ['C:\\dev\\app']
 const isInside = () => true
 const isOutside = () => false
 
-test('a drag shows the cover only while it is over the area', () => {
+test('a drag counts as over the area only while it is on it', () => {
   assert.deepEqual(readDrag({ type: 'enter', paths, position }, isInside), { over: true, dropped: null })
   assert.deepEqual(readDrag({ type: 'enter', paths, position }, isOutside), { over: false, dropped: null })
   assert.deepEqual(readDrag({ type: 'over', position }, isInside), { over: true, dropped: null })
   assert.deepEqual(readDrag({ type: 'over', position }, isOutside), { over: false, dropped: null })
 })
 
-test('dragging away hides the cover and drops nothing', () => {
+test('dragging away ends the hover and drops nothing', () => {
   assert.deepEqual(readDrag({ type: 'leave' }, isInside), { over: false, dropped: null })
 })
 

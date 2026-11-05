@@ -10,7 +10,7 @@ export interface SandboxStatus {
   memory_used_bytes: number | null
 }
 
-/** Null means the sandbox did not answer, except for `ip_address`, where it means no network. */
+/** Null means the sandbox did not answer. */
 export interface SandboxDetails {
   cpu_name: string | null
   cpu_threads: number | null
@@ -19,8 +19,21 @@ export interface SandboxDetails {
   disk_free_gb: number | null
   windows_build: number | null
   graphics: boolean | null
+  /** False when wsb failed for another reason than the sandbox having no network. */
+  network_known: boolean
   ip_address: string | null
 }
+
+/** One of the things a sandbox was started with, for showing on the page. */
+export interface SandboxSharedItem {
+  key: keyof SandboxSwitches | 'folder'
+  label: string
+  /** For a folder: the full path and whether programs can change it. */
+  path?: string
+  writable?: boolean
+}
+
+export type SandboxPathKind = 'program' | 'file' | 'folder' | 'missing'
 
 export interface SandboxSwitches {
   networking: boolean
@@ -46,3 +59,4 @@ export const sandboxStart = (options: SandboxOptions) => invoke<string>('sandbox
 export const sandboxStop = (id: string) => invoke<void>('sandbox_stop', { id })
 export const sandboxOpenWindow = (id: string) => invoke<void>('sandbox_open_window', { id })
 export const sandboxOpenFile = (id: string, file: string) => invoke<void>('sandbox_open_file', { id, file })
+export const sandboxPathKinds = (paths: string[]) => invoke<SandboxPathKind[]>('sandbox_path_kinds', { paths })

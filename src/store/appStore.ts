@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { LogEntry, DockerStatus, DockerSystemDf, DockerImage, DockerContainer, DockerVolume, ComposeProject } from '../features/docker/types'
 import type { DistroMetrics } from '../features/wsl/types'
-import type { SandboxDetails } from '../features/sandbox/api'
+import type { SandboxDetails, SandboxSharedItem } from '../features/sandbox/api'
 import type { TerminalLine } from '../types/terminal'
 
 export type View      = 'dashboard' | 'docker' | 'wsl' | 'sandbox' | 'packages' | 'ports' | 'locks' | 'settings'
@@ -94,8 +94,8 @@ interface AppState {
   sandboxDetails: Record<string, SandboxDetails>
   setSandboxDetails: (id: string, details: SandboxDetails) => void
   /** What a sandbox started with, by ID. Only known for sandboxes started since the app opened. */
-  sandboxShared: Record<string, string[]>
-  setSandboxShared: (id: string, shared: string[]) => void
+  sandboxShared: Record<string, SandboxSharedItem[]>
+  setSandboxShared: (id: string, shared: SandboxSharedItem[]) => void
 
   sidebarWidth: number
   terminalHeight: number

@@ -19,6 +19,7 @@ const EXEC_TIME_LIMIT: Duration = Duration::from_secs(20);
 const DETAIL_TIME_LIMIT: Duration = Duration::from_secs(180);
 const LOGON_TIME_LIMIT: Duration = Duration::from_secs(60);
 const NOT_LOGGED_ON_YET: &str = "0x80070520";
+const NO_NETWORK: &str = "0x803B0001";
 const MEMORY_CHOICES_MB: [u32; 2] = [8192, 16384];
 const DESKTOP_INSIDE: &str = r"C:\Users\WDAGUtilityAccount\Desktop";
 const OPENS_BY_ITSELF: [&str; 4] = ["exe", "msi", "bat", "cmd"];
@@ -44,7 +45,7 @@ pub struct SandboxStatus {
     pub memory_used_bytes: Option<u64>,
 }
 
-/// None means the sandbox did not answer, except for `ip_address`, where it means no network.
+/// None means the sandbox did not answer.
 #[derive(Serialize, Clone, Debug, PartialEq)]
 pub struct SandboxDetails {
     /// Read from this PC, because a sandbox reports the same CPU as its host.
@@ -55,6 +56,8 @@ pub struct SandboxDetails {
     pub disk_free_gb: Option<u32>,
     pub windows_build: Option<u32>,
     pub graphics: Option<bool>,
+    /// False when wsb failed for another reason than the sandbox having no network.
+    pub network_known: bool,
     pub ip_address: Option<String>,
 }
 
@@ -156,12 +159,30 @@ fn shared_folder_inside(number: u32) -> String {
     }
 }
 
+fn opens_by_itself(name: &str) -> bool {
+    let extension = Path::new(name).extension().and_then(|e| e.to_str()).unwrap_or_default();
+    OPENS_BY_ITSELF.iter().any(|e| e.eq_ignore_ascii_case(extension))
+}
+
+/// Says what a dragged path would do, without reading its contents.
+fn path_kind(raw: &str) -> &'static str {
+    let path = Path::new(raw);
+    if path.is_dir() {
+        "folder"
+    } else if !path.is_file() {
+        "missing"
+    } else if opens_by_itself(raw) {
+        "program"
+    } else {
+        "file"
+    }
+}
+
 /// The quotes are safe because a Windows file name cannot contain one.
 /// Other file types may have no app inside, so the folder opens with the file selected instead.
 fn open_command(folder_inside: &str, name: &str) -> String {
     let inside = format!(r"{}\{}", folder_inside, name);
-    let extension = Path::new(name).extension().and_then(|e| e.to_str()).unwrap_or_default();
-    if OPENS_BY_ITSELF.iter().any(|e| e.eq_ignore_ascii_case(extension)) {
+    if opens_by_itself(name) {
         format!(r#"explorer.exe "{}""#, inside)
     } else {
         format!(r#"explorer.exe /select,"{}""#, inside)
@@ -341,6 +362,10 @@ fn read_details(id: &str, log: impl Fn(&[&str]) + Sync) -> SandboxDetails {
     });
     let ip_args = ["ip", "--id", id];
     log(&ip_args);
+    let (network_known, ip_address) = match run_wsb(&ip_args, LIST_TIME_LIMIT) {
+        Ok(ip) => (true, Some(ip).filter(|ip| !ip.is_empty())),
+        Err(e) => (e.to_string().contains(NO_NETWORK), None),
+    };
     SandboxDetails {
         cpu_name: host_cpu_name(),
         cpu_threads,
@@ -349,7 +374,8 @@ fn read_details(id: &str, log: impl Fn(&[&str]) + Sync) -> SandboxDetails {
         disk_free_gb,
         windows_build,
         graphics: graphics_cards.map(|cards| cards > 0),
-        ip_address: run_wsb(&ip_args, LIST_TIME_LIMIT).ok().filter(|ip| !ip.is_empty()),
+        network_known,
+        ip_address,
     }
 }
 
@@ -471,6 +497,11 @@ pub async fn sandbox_open_window(app: tauri::AppHandle, id: String) -> Result<()
 #[tauri::command]
 pub async fn sandbox_open_file(app: tauri::AppHandle, id: String, file: String) -> Result<(), AtlasError> {
     in_background(move || open_in_running(&app, &id, &file)).await
+}
+
+#[tauri::command]
+pub async fn sandbox_path_kinds(paths: Vec<String>) -> Result<Vec<&'static str>, AtlasError> {
+    in_background(move || Ok(paths.iter().map(|path| path_kind(path)).collect())).await
 }
 
 #[tauri::command]
@@ -598,6 +629,22 @@ mod tests {
         for bad in ["real.txt", r"C:\no\such\file.exe", ""] {
             assert_eq!(check_open_file(bad).unwrap_err().kind, ErrorKind::NotFound, "{}", bad);
         }
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn a_dragged_path_is_named_by_what_dropping_it_would_do() {
+        let folder = std::env::temp_dir().join(format!("atlas-path-kinds-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let program = folder.join("Setup.EXE");
+        let notes = folder.join("notes.txt");
+        std::fs::write(&program, "x").unwrap();
+        std::fs::write(&notes, "x").unwrap();
+
+        assert_eq!(path_kind(folder.to_str().unwrap()), "folder");
+        assert_eq!(path_kind(program.to_str().unwrap()), "program");
+        assert_eq!(path_kind(notes.to_str().unwrap()), "file");
+        assert_eq!(path_kind(folder.join("gone.exe").to_str().unwrap()), "missing");
         std::fs::remove_dir_all(&folder).unwrap();
     }
 
@@ -764,6 +811,7 @@ mod tests {
             assert!(details.disk_free_gb.unwrap() > 0 && details.disk_free_gb <= details.disk_total_gb);
             assert!(details.windows_build.unwrap() > 0);
             assert_eq!(details.graphics, Some(shared));
+            assert!(details.network_known);
             assert_eq!(details.ip_address.is_some(), shared);
         }
     }

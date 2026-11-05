@@ -164,8 +164,9 @@ export function SectionHead({ title, meta, actions }: {
   )
 }
 
-export function StatCard({ label, value, unit, sub, pct, tone, onClick, ariaLabel }: {
+export function StatCard({ label, icon: Icon, value, unit, sub, pct, tone, loading, onClick, ariaLabel }: {
   label: string
+  icon?: React.ElementType
   value: string
   /** Rendered small and dim after the value: "%", "free". */
   unit?: string
@@ -175,6 +176,8 @@ export function StatCard({ label, value, unit, sub, pct, tone, onClick, ariaLabe
   pct?: number | null
   /** Overrides the automatic 75/90 banding. */
   tone?: 'ok' | 'warn' | 'danger'
+  /** Draws a placeholder instead of the value, unit, meter, and sub-line. */
+  loading?: boolean
   onClick?: () => void
   ariaLabel?: string
 }) {
@@ -182,9 +185,14 @@ export function StatCard({ label, value, unit, sub, pct, tone, onClick, ariaLabe
   const t = tone ?? auto
   const width = pct == null ? 0 : Math.min(100, Math.max(0, pct))
 
-  const body = (
+  const body = loading ? (
     <>
-      <span className="stat-label">{label}</span>
+      <span className="stat-label">{Icon && <Icon size={12} aria-hidden="true" />}{label}</span>
+      <span className="sk-line w-20 stat-skeleton" />
+    </>
+  ) : (
+    <>
+      <span className="stat-label">{Icon && <Icon size={12} aria-hidden="true" />}{label}</span>
       <span className="stat-value num" title={value}>
         {value}{unit && <span className="stat-unit">{unit}</span>}
       </span>
@@ -253,6 +261,25 @@ export function Panel({ title, meta, actions, onOpen, children, className }: {
   )
 }
 
+/** A panel that starts closed and opens from its head. Its children stay mounted while closed. */
+export function DisclosurePanel({ title, meta, children, className }: {
+  title: string
+  meta?: React.ReactNode
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <details className={clsx('panel', 'disclosure', className)}>
+      <summary className="panel-head disclosure-head">
+        <ChevronRight size={13} className="disclosure-arrow" aria-hidden="true" />
+        <span className="panel-title">{title}</span>
+        {meta && <span className="panel-meta">{meta}</span>}
+      </summary>
+      {children}
+    </details>
+  )
+}
+
 // Pass `error` (the caught value) rather than a string, and the banner draws the sentence, the
 // recovery hint, and the raw Windows or Docker text behind a disclosure.
 
@@ -312,9 +339,10 @@ export function ConfirmDestructive({
   consequence: React.ReactNode
   /** The exact shell line. */
   command: string
-  items: { name: string; meta?: string }[]
+  /** Leave out when the command already names the only item. */
+  items?: { name: string; meta?: string }[]
   /** Counts and totals: "7 volumes · 2.4 GB". */
-  summary: string
+  summary?: string
   confirmLabel: string
   busyLabel?: string
   onConfirm: () => void
@@ -338,17 +366,21 @@ export function ConfirmDestructive({
           <code className="cmd-block-code">{command}</code>
         </div>
 
-        <div className="confirm-list-head">
-          <span className="confirm-list-summary num">{summary}</span>
-        </div>
-        <ul className="confirm-list">
-          {items.map(i => (
-            <li key={i.name} className="confirm-list-item">
-              <span className="confirm-list-name">{i.name}</span>
-              {i.meta && <span className="confirm-list-meta num">{i.meta}</span>}
-            </li>
-          ))}
-        </ul>
+        {items && (
+          <>
+            <div className="confirm-list-head">
+              <span className="confirm-list-summary num">{summary}</span>
+            </div>
+            <ul className="confirm-list">
+              {items.map(i => (
+                <li key={i.name} className="confirm-list-item">
+                  <span className="confirm-list-name">{i.name}</span>
+                  {i.meta && <span className="confirm-list-meta num">{i.meta}</span>}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
 
         <div className="modal-actions">
           {escape && <div className="modal-actions-escape">{escape}</div>}
