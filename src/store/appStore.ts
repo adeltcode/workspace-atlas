@@ -4,7 +4,7 @@ import type { LogEntry, DockerStatus, DockerSystemDf, DockerImage, DockerContain
 import type { DistroMetrics } from '../features/wsl/types'
 import type { TerminalLine } from '../types/terminal'
 
-export type View      = 'dashboard' | 'docker' | 'wsl' | 'packages' | 'ports' | 'locks' | 'settings'
+export type View      = 'dashboard' | 'docker' | 'wsl' | 'sandbox' | 'packages' | 'ports' | 'locks' | 'settings'
 export type Theme     = 'dark' | 'light'
 export type DockerTab = 'overview' | 'images' | 'containers' | 'volumes' | 'networks' | 'compose' | 'prune' | 'log'
 export type WslView      = 'dashboard' | 'distro' | 'wslconfig' | 'install'
@@ -86,6 +86,10 @@ interface AppState {
    *  them instantly instead of a skeleton while the next probe runs. Ephemeral. */
   wslMetrics: Record<string, DistroMetrics>
   setWslMetric: (distro: string, metrics: DistroMetrics) => void
+
+  /** Outlives the Sandbox page, so coming back to it cannot start a second sandbox by accident. Ephemeral. */
+  sandboxStarting: boolean
+  setSandboxStarting: (starting: boolean) => void
 
   sidebarWidth: number
   terminalHeight: number
@@ -215,6 +219,9 @@ export const useAppStore = create<AppState>()(
       setWslInstalling:     (wslInstalling) => set({ wslInstalling }),
       wslMetrics:           {},
       setWslMetric:         (distro, metrics) => set((s) => ({ wslMetrics: { ...s.wslMetrics, [distro]: metrics } })),
+
+      sandboxStarting:      false,
+      setSandboxStarting:   (sandboxStarting) => set({ sandboxStarting }),
 
       // sidebarWidth 0 means the CSS default (--sidebar-width).
       sidebarWidth:  0,
@@ -374,7 +381,7 @@ export const useAppStore = create<AppState>()(
           // Guard against a malformed/partial imported config missing theme.
           if (state.theme === 'dark' || state.theme === 'light') applyTheme(state.theme)
           // Migrate persisted values whose views/tabs no longer exist.
-          if (!['dashboard', 'docker', 'wsl', 'packages', 'ports', 'locks', 'settings'].includes(state.activeView)) {
+          if (!['dashboard', 'docker', 'wsl', 'sandbox', 'packages', 'ports', 'locks', 'settings'].includes(state.activeView)) {
             state.activeView = 'dashboard'
           }
           if (['backup', 'backup-volumes', 'backup-compose'].includes(state.dockerTab as string)) {

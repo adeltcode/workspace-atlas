@@ -73,6 +73,12 @@ Every disk or Docker operation prints the real command it runs, so you can check
 - **Upgrade**: upgrade winget, npm, pip, and Chocolatey packages one at a time
 - **Uninstall**: remove winget, pip, and npm packages and VS Code extensions. First, Atlas shows what depends on the package, which commands you'd lose, whether it's running, and how to reinstall it. Core tools such as Git and Python ask you to type the ID to confirm
 
+### Windows Sandbox
+
+- **Start**: open a clean, throwaway copy of Windows. The network stays off unless you turn it on
+- **Share a folder**: show one folder from your PC on the sandbox desktop. It is read-only unless you allow changes
+- **Running sandboxes**: open a sandbox's window again, or stop it. Stopping deletes everything inside
+
 ### Tools
 
 - **Ports**: see what is listening on each TCP port, on Windows, in Docker containers, and in running WSL distros, and whether other devices can reach it. Close a stuck program after you confirm
@@ -123,6 +129,7 @@ Atlas doesn't update itself. To get a new version, download and run its installe
 | WSL | WSL 2 |
 | Moving a distro | A WSL version with `wsl --manage --move`. Atlas offers to update WSL if yours is too old |
 | Packages | Nothing extra. Atlas scans the package tools you have and lists any it can't find |
+| Windows Sandbox | Windows Pro, Enterprise, or Education with Windows Sandbox turned on, and the `wsb` command. Older Windows versions don't include `wsb` |
 
 ## Ground rules
 
@@ -244,6 +251,7 @@ src/                      React frontend
   features/docker/        Docker module (api, hooks, types, components)
   features/wsl/           WSL module
   features/packages/      Packages module
+  features/sandbox/       Windows Sandbox module
   features/holders/       Ports and File locks pages
   features/system/        Machine metrics
   features/config/        Settings export and import
@@ -256,6 +264,7 @@ src-tauri/src/
   wsl_migration.rs        Moving a distro to another drive
   wsl_migration_acl.rs    Permissions on backup and destination folders
   packages.rs             Package scans, upgrades, uninstall
+  sandbox.rs              Windows Sandbox start, stop, and list through wsb
   holders.rs              Which programs hold a port or file, and closing them
   system.rs               Host CPU, RAM, and disk via sysinfo
   shell.rs                Command execution and streamed output events

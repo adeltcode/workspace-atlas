@@ -1,4 +1,4 @@
-import { LayoutDashboard, Box, HardDrive, Package, Plug, Lock, Settings, Keyboard } from 'lucide-react'
+import { LayoutDashboard, Box, HardDrive, FlaskConical, Package, Plug, Lock, Settings, Keyboard } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore, type DockerTab, type WslView } from '../store/appStore'
 import { composeStatusLabel } from '../utils/format'
@@ -160,6 +160,15 @@ export default function Sidebar() {
             </button>
           </div>
         )}
+
+        <button
+          className={clsx('rail-item', activeView === 'sandbox' && 'active')}
+          onClick={() => setActiveView('sandbox')}
+          aria-current={activeView === 'sandbox' ? 'page' : undefined}
+        >
+          <span className="rail-icon"><FlaskConical size={15} /></span>
+          <span className="rail-label">Sandbox</span>
+        </button>
       </div>
 
       <span className="rail-section">Tools</span>

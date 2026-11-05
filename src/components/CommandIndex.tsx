@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Box, HardDrive, Package, LayoutDashboard, Settings, Layers, Database, Network, Trash2, ScrollText, CornerDownLeft, Plug, Lock } from 'lucide-react'
+import { Box, HardDrive, Package, LayoutDashboard, Settings, Layers, Database, Network, Trash2, ScrollText, CornerDownLeft, Plug, Lock, FlaskConical } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore, type View, type DockerTab, type WslView, type DockerCache, type WslDistroNav } from '../store/appStore'
 import * as dockerApi from '../features/docker/api'
@@ -94,6 +94,7 @@ export default function CommandIndex() {
       { id: 'v:dash', label: 'Overview', where: 'Module', section: 'Places', icon: LayoutDashboard, run: go('dashboard') },
       { id: 'v:set',  label: 'Settings',   where: 'Module', section: 'Places', icon: Settings,        run: go('settings') },
       { id: 'v:pkg',  label: 'Packages',   where: 'Module', section: 'Places', icon: Package,         run: go('packages') },
+      { id: 'v:sbx',  label: 'Windows Sandbox', where: 'Module', section: 'Places', icon: FlaskConical, run: go('sandbox') },
       { id: 'v:port', label: 'Ports',      where: 'Tools',  section: 'Places', icon: Plug,            run: go('ports') },
       { id: 'v:lock', label: 'File locks', where: 'Tools',  section: 'Places', icon: Lock,            run: go('locks') },
     )
