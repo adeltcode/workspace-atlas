@@ -999,7 +999,60 @@ pub async fn wsl_install_download(
 
 /// Run a bash script inside a distro as root. See `run_in_distro_as`.
 fn run_in_distro(distro: &str, script: &str) -> Result<String, AtlasError> {
-    run_in_distro_as(distro, Some("root"), script)
+    run_in_distro_as(distro, Some("root"), script, None)
+}
+
+/// Read-only checks stop waiting after this long, so a frozen distro cannot hang them.
+const PROBE_TIME_LIMIT: std::time::Duration = std::time::Duration::from_secs(30);
+/// The shell profile runs the user's real startup files, which can be slow or wait for input.
+const PROFILE_TIME_LIMIT: std::time::Duration = std::time::Duration::from_secs(120);
+
+fn probe_distro(distro: &str, script: &str) -> Result<String, AtlasError> {
+    run_in_distro_as(distro, Some("root"), script, Some(PROBE_TIME_LIMIT))
+}
+
+/// Like `wait_with_output`, but kills the child and returns `None` once `limit` passes.
+/// That stops `wsl.exe`; a process stuck inside the distro keeps running.
+fn output_within(
+    mut child: std::process::Child,
+    limit: std::time::Duration,
+) -> std::io::Result<Option<std::process::Output>> {
+    use std::io::Read;
+    use std::sync::mpsc::{channel, Receiver};
+    use std::time::{Duration, Instant};
+
+    fn drain<R: Read + Send + 'static>(mut pipe: R) -> Receiver<Vec<u8>> {
+        let (tx, rx) = channel();
+        std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            pipe.read_to_end(&mut bytes).ok();
+            tx.send(bytes).ok();
+        });
+        rx
+    }
+
+    let deadline = Instant::now() + limit;
+    let stdout = drain(child.stdout.take().ok_or(std::io::ErrorKind::BrokenPipe)?);
+    let stderr = drain(child.stderr.take().ok_or(std::io::ErrorKind::BrokenPipe)?);
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            child.kill().ok();
+            child.wait().ok();
+            return Ok(None);
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    };
+
+    // Anything that inherited a pipe can hold it open after the child exits, so reading
+    // shares the deadline.
+    let collect = |rx: Receiver<Vec<u8>>| rx.recv_timeout(deadline.saturating_duration_since(Instant::now()));
+    match (collect(stdout), collect(stderr)) {
+        (Ok(stdout), Ok(stderr)) => Ok(Some(std::process::Output { status, stdout, stderr })),
+        _ => Ok(None),
+    }
 }
 
 /// Run a shell script inside a distro as `user` (None = the distro's default
@@ -1011,7 +1064,12 @@ fn run_in_distro(distro: &str, script: &str) -> Result<String, AtlasError> {
 /// Prefers bash but falls back to sh, so busybox-based distros (Alpine,
 /// docker-desktop) still run the POSIX-compatible probe scripts. Scripts that
 /// genuinely need bash must guard themselves (see PROFILE_SCRIPT).
-fn run_in_distro_as(distro: &str, user: Option<&str>, script: &str) -> Result<String, AtlasError> {
+fn run_in_distro_as(
+    distro: &str,
+    user: Option<&str>,
+    script: &str,
+    limit: Option<std::time::Duration>,
+) -> Result<String, AtlasError> {
     use std::io::Write as _;
     let mut cmd = hidden("wsl");
     cmd.env("WSL_UTF8", "1").arg("-d").arg(distro);
@@ -1025,12 +1083,18 @@ fn run_in_distro_as(distro: &str, user: Option<&str>, script: &str) -> Result<St
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("Failed to launch wsl: {}", e))?;
+    // On a thread, so a distro that never reads its input cannot block past the time limit.
     if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(script.as_bytes())
-            .map_err(|e| format!("Write error: {}", e))?;
+        let script = script.to_owned();
+        std::thread::spawn(move || stdin.write_all(script.as_bytes()));
     }
-    let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    let out = match limit {
+        None => child.wait_with_output().map_err(|e| e.to_string())?,
+        Some(limit) => output_within(child, limit).map_err(|e| e.to_string())?.ok_or_else(|| {
+            AtlasError::new(ErrorKind::Timeout, format!("{} did not answer within {} seconds.", distro, limit.as_secs()))
+                .hint("The distro may be frozen. Restart it from the WSL page, then try again.")
+        })?,
+    };
     if out.status.success() {
         Ok(String::from_utf8_lossy(&out.stdout).to_string())
     } else {
@@ -1219,7 +1283,7 @@ pub async fn wsl_distro_stats(
     distro: String,
 ) -> Result<DistroStats, AtlasError> {
     state.inner().clone().run_operation(move || {
-        let out = run_in_distro(&distro, STATS_SCRIPT)?;
+        let out = probe_distro(&distro, STATS_SCRIPT)?;
         Ok(parse_distro_stats(&out))
     }).await
 }
@@ -1234,7 +1298,7 @@ pub async fn wsl_distro_metrics(
     distro: String,
 ) -> Result<DistroMetrics, AtlasError> {
     state.inner().clone().run_operation(move || {
-        let out = run_in_distro(&distro, METRICS_SCRIPT)?;
+        let out = probe_distro(&distro, METRICS_SCRIPT)?;
         Ok(parse_distro_metrics(&out))
     }).await
 }
@@ -1453,7 +1517,7 @@ pub async fn wsl_distro_extras(
     distro: String,
 ) -> Result<DistroExtras, AtlasError> {
     state.inner().clone().run_operation(move || {
-        let out = run_in_distro(&distro, EXTRAS_SCRIPT)?;
+        let out = probe_distro(&distro, EXTRAS_SCRIPT)?;
         Ok(parse_distro_extras(&out))
     }).await
 }
@@ -1969,7 +2033,7 @@ pub async fn wsl_list_services(
     distro: String,
 ) -> Result<ServiceList, AtlasError> {
     migration.inner().clone().run_operation(move || {
-        let out = run_in_distro(&distro, SERVICES_SCRIPT)?;
+        let out = probe_distro(&distro, SERVICES_SCRIPT)?;
         Ok(parse_services(&out))
     }).await
 }
@@ -2011,7 +2075,7 @@ pub async fn wsl_service_detail(
             "systemctl show {} -p FragmentPath,MainPID,Requires,After 2>/dev/null",
             shell_quote(&service)
         );
-        let out = run_in_distro(&distro, &script)?;
+        let out = probe_distro(&distro, &script)?;
         Ok(parse_service_detail(&out))
     }).await
 }
@@ -2203,7 +2267,7 @@ pub async fn wsl_profile_shell(
     distro: String,
 ) -> Result<ShellProfile, AtlasError> {
     migration.inner().clone().run_operation(move || {
-        let out = run_in_distro_as(&distro, None, PROFILE_SCRIPT)?;
+        let out = run_in_distro_as(&distro, None, PROFILE_SCRIPT, Some(PROFILE_TIME_LIMIT))?;
         Ok(parse_shell_profile(&out))
     }).await
 }
@@ -2519,6 +2583,32 @@ function diskpart {{
             }
             std::fs::remove_dir_all(dir).unwrap();
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn output_within_keeps_large_output_and_stops_at_the_limit() {
+        use std::time::{Duration, Instant};
+        let spawn = |command: &str| {
+            hidden("powershell")
+                .args(["-NoProfile", "-NonInteractive", "-Command", command])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap()
+        };
+
+        // More than a pipe buffer holds, so this hangs unless the output is read while waiting.
+        let out = output_within(spawn("[Console]::Out.Write('x' * 500000)"), Duration::from_secs(60))
+            .unwrap()
+            .unwrap();
+        assert!(out.status.success());
+        assert_eq!(out.stdout.len(), 500_000);
+
+        let started = Instant::now();
+        let out = output_within(spawn("Start-Sleep -Seconds 30"), Duration::from_millis(1500)).unwrap();
+        assert!(out.is_none());
+        assert!(started.elapsed() < Duration::from_secs(10));
     }
 
     #[test]
