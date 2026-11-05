@@ -1,433 +1,572 @@
----
-name: Workspace Atlas
-description: A quiet developer console where the machine's state is the only thing wearing colour.
-colors:
-  bg-base: "#0b0c0e"
-  bg-primary: "#111214"
-  bg-secondary: "#17181b"
-  bg-tertiary: "#1e2024"
-  bg-hover: "#24262b"
-  border: "rgba(255,255,255,0.075)"
-  border-light: "rgba(255,255,255,0.045)"
-  border-strong: "rgba(255,255,255,0.15)"
-  text-primary: "#f2f3f5"
-  text-secondary: "#a2a9b2"
-  text-tertiary: "#8d949e"
-  accent: "#7c84e8"
-  accent-fill: "#4c53c4"
-  accent-hover: "#959ced"
-  accent-subtle: "rgba(124,132,232,0.14)"
-  success: "#4ec26a"
-  success-subtle: "rgba(78,194,106,0.13)"
-  warning: "#e0a63a"
-  warning-subtle: "rgba(224,166,58,0.13)"
-  danger: "#f2665e"
-  danger-fill: "#b8362e"
-  danger-subtle: "rgba(242,102,94,0.13)"
-  on-brand: "#ffffff"
-  on-fill: "#0b0c0e"
-  chrome-text: "#f2f3f5"
-  chrome-text-muted: "#a2a9b2"
-  chrome-text-subtle: "#8d949e"
-  chrome-surface: "rgba(255,255,255,0.045)"
-  chrome-surface-hover: "rgba(255,255,255,0.075)"
-  chrome-divider: "rgba(255,255,255,0.075)"
-  titlebar-close: "#c4342b"
-  syntax-comment: "#7d858f"
-  syntax-key: "#7c84e8"
-  syntax-key-nested: "#a2a9b2"
-  syntax-string: "#e0a63a"
-  syntax-bool: "#b07ce8"
-  syntax-number: "#4ec26a"
-  syntax-env: "#e08a4a"
-  disk-other: "#565d68"
-  disk-free: "#1e2024"
-  shadow-ink: "#000000"
-typography:
-  value:
-    fontFamily: "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, system-ui, sans-serif"
-    fontSize: "22px"
-    fontWeight: 600
-    lineHeight: 1.1
-    letterSpacing: "-0.02em"
-    fontFeature: "tabular-nums"
-  title:
-    fontFamily: "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, system-ui, sans-serif"
-    fontSize: "19px"
-    fontWeight: 600
-    lineHeight: 1.2
-    letterSpacing: "-0.02em"
-  heading:
-    fontFamily: "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, system-ui, sans-serif"
-    fontSize: "14px"
-    fontWeight: 600
-    lineHeight: 1.4
-    letterSpacing: "normal"
-  body:
-    fontFamily: "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, system-ui, sans-serif"
-    fontSize: "13px"
-    fontWeight: 400
-    lineHeight: 1.5
-    letterSpacing: "normal"
-  control:
-    fontFamily: "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, system-ui, sans-serif"
-    fontSize: "12px"
-    fontWeight: 500
-    lineHeight: 1
-    letterSpacing: "normal"
-  label:
-    fontFamily: "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, system-ui, sans-serif"
-    fontSize: "11px"
-    fontWeight: 600
-    lineHeight: 1.4
-    letterSpacing: "0.06em"
-  mono:
-    fontFamily: "Cascadia Mono, Cascadia Code, Consolas, ui-monospace, monospace"
-    fontSize: "13px"
-    fontWeight: 400
-    lineHeight: 1.7
-    letterSpacing: "normal"
-    fontFeature: "tabular-nums"
-rounded:
-  sm: "4px"
-  md: "6px"
-  lg: "8px"
-  xl: "10px"
-  full: "9999px"
-spacing:
-  "1": "4px"
-  "2": "8px"
-  "3": "12px"
-  "4": "16px"
-  "5": "24px"
-  "6": "32px"
-  "7": "48px"
-components:
-  button:
-    backgroundColor: "{colors.bg-secondary}"
-    textColor: "{colors.text-primary}"
-    typography: "{typography.control}"
-    rounded: "{rounded.md}"
-    padding: "0 11px"
-    height: "28px"
-  button-hover:
-    backgroundColor: "{colors.bg-hover}"
-    textColor: "{colors.text-primary}"
-  button-primary:
-    backgroundColor: "{colors.accent-fill}"
-    textColor: "{colors.on-brand}"
-    typography: "{typography.control}"
-    rounded: "{rounded.md}"
-    padding: "0 11px"
-    height: "28px"
-  button-primary-hover:
-    backgroundColor: "{colors.accent-hover}"
-    textColor: "{colors.on-brand}"
-  button-danger:
-    backgroundColor: "{colors.danger-fill}"
-    textColor: "{colors.on-brand}"
-    typography: "{typography.control}"
-    rounded: "{rounded.md}"
-    padding: "0 11px"
-    height: "28px"
-  button-danger-outline:
-    backgroundColor: "{colors.danger-subtle}"
-    textColor: "{colors.danger}"
-    typography: "{typography.control}"
-    rounded: "{rounded.md}"
-    padding: "0 11px"
-    height: "28px"
-  button-ghost:
-    backgroundColor: "transparent"
-    textColor: "{colors.text-secondary}"
-    typography: "{typography.control}"
-    rounded: "{rounded.md}"
-    padding: "0 8px"
-    height: "24px"
-  button-ghost-hover:
-    backgroundColor: "{colors.chrome-surface}"
-    textColor: "{colors.text-primary}"
-  button-sm:
-    height: "24px"
-    padding: "0 8px"
-  button-lg:
-    height: "32px"
-    padding: "0 16px"
-    typography: "{typography.body}"
-  button-icon:
-    width: "28px"
-    height: "28px"
-    padding: "0"
-  field:
-    backgroundColor: "{colors.bg-tertiary}"
-    textColor: "{colors.text-primary}"
-    typography: "{typography.control}"
-    rounded: "{rounded.md}"
-    padding: "0 8px"
-    height: "28px"
-  tag:
-    backgroundColor: "{colors.chrome-surface}"
-    textColor: "{colors.text-secondary}"
-    typography: "{typography.label}"
-    rounded: "{rounded.sm}"
-    padding: "0 8px"
-    height: "20px"
-  tag-ok:
-    backgroundColor: "{colors.success-subtle}"
-    textColor: "{colors.success}"
-  tag-warn:
-    backgroundColor: "{colors.warning-subtle}"
-    textColor: "{colors.warning}"
-  tag-danger:
-    backgroundColor: "{colors.danger-subtle}"
-    textColor: "{colors.danger}"
-  tag-accent:
-    backgroundColor: "{colors.accent-subtle}"
-    textColor: "{colors.accent}"
-  pill:
-    backgroundColor: "{colors.bg-secondary}"
-    textColor: "{colors.text-secondary}"
-    typography: "{typography.label}"
-    rounded: "{rounded.full}"
-    padding: "0 8px"
-    height: "20px"
-  panel:
-    backgroundColor: "{colors.bg-secondary}"
-    textColor: "{colors.text-primary}"
-    rounded: "{rounded.lg}"
-    padding: "12px 16px"
-  stat:
-    backgroundColor: "{colors.bg-secondary}"
-    textColor: "{colors.text-primary}"
-    typography: "{typography.value}"
-    rounded: "{rounded.lg}"
-    padding: "12px 16px"
-  rail-item:
-    backgroundColor: "transparent"
-    textColor: "{colors.chrome-text-muted}"
-    typography: "{typography.control}"
-    rounded: "{rounded.md}"
-    padding: "0 10px"
-  rail-item-active:
-    backgroundColor: "{colors.chrome-surface}"
-    textColor: "{colors.chrome-text}"
-  segmented-item:
-    backgroundColor: "{colors.bg-secondary}"
-    textColor: "{colors.text-secondary}"
-    typography: "{typography.control}"
-    rounded: "0"
-    padding: "0 10px"
-    height: "28px"
-  segmented-item-active:
-    backgroundColor: "{colors.accent-subtle}"
-    textColor: "{colors.accent}"
-  command:
-    backgroundColor: "{colors.bg-primary}"
-    textColor: "{colors.accent}"
-    typography: "{typography.mono}"
-    rounded: "{rounded.sm}"
-    padding: "8px 10px"
----
+# Design system
 
-# Design System: Workspace Atlas
+This document describes the visual design of Workspace Atlas: its design tokens, components, and accessibility rules.
 
-## Overview
+If this document and the code disagree, the code is correct and this document needs updating.
 
-**Creative North Star: "The Quiet Console"**
+| Source | Location |
+|---|---|
+| Design tokens | Top of `src/index.css` |
+| Shared component styles | `src/index.css`, in the `THE BUTTON`, `THE ERROR BANNER`, `PRIMITIVES`, `THE STAT CARD`, and `THE PANEL` sections |
+| Shared React components | `src/components/ui.tsx` |
+| Dialogs | `src/components/ModalShell.tsx` |
+| Command index | `src/components/CommandIndex.tsx` |
+| Sidebar | `src/layout/Sidebar.tsx` |
 
-This is a developer console held to the craft level of Linear, Vercel and Raycast, and that is a deliberate choice over an authored visual metaphor. The product's name is cartographic and its language is cartographic, but the interface carries no map, no notebook, no ornament. Familiarity is the feature: a developer arrives mid-incident with a full disk or a container that will not start, and they should trust the interface on sight rather than decode it. The tool disappears into the task.
+**Contents:** [Principles](#principles) · [Color](#color) · [Typography](#typography) · [Spacing](#spacing) · [Shape](#shape) · [Elevation](#elevation) · [Layout](#layout) · [Motion](#motion) · [Components](#components) · [Accessibility](#accessibility) · [Rules for new UI](#rules-for-new-ui) · [Known issues](#known-issues)
 
-The consequence is that the interface is almost entirely greyscale. Five near-neutral grounds with the barest cool cast, three weights of text, hairline borders, and exactly one accent that carries the primary action, the current selection and the focus ring. Everything else that has colour has it because the machine is in a state: green succeeded, amber is caution, red failed or will destroy. If a colour is not saying one of those things, it does not belong on the screen. Dark is the default because the scene is a developer at their desk beside a dark terminal, often at night; light is a true neutral, never a warm paper.
+## Principles
 
-Density is a design position, not an accident. The whole app runs at 11 to 13px with a 28px control height and 34px table rows, because the user is comparing forty images or six distros and wants them on one screen. That density is what makes contrast and focus visibility structural rather than cosmetic: every colour token in the stylesheet carries its measured contrast ratio in a comment beside it, checked against the lightest ground it can land on rather than the average case, and the focus ring is enforced globally with `!important` because at 11px there is nothing else to see it by.
+1. **Color has meaning.** Surfaces and text are neutral. One accent marks the primary action, the current selection, and keyboard focus. Green, amber, and red show state only.
+2. **Density comes first.** Most text is 11 to 14px, controls are 28px tall, and table rows are 34px, so many objects fit on one screen.
+3. **Surfaces are flat.** Borders and small background changes separate content. Only overlays get a shadow.
+4. **Commands are visible.** When the app is about to change the machine, it shows the exact command.
+5. **Risk sets the effort.** The more damage an action can do, the harder it is to trigger.
 
-**Key Characteristics:**
-- Near-neutral greys, one indigo accent, and colour otherwise reserved for state.
-- Separation is a 1px hairline and a small tone shift. Cards do not float.
-- Four radii, none of them large; the biggest is 10px and belongs to overlays.
-- Seven space steps on a 4px scale, and seven type steps, six of which render.
-- Every number that sits in a column is tabular.
-- Contrast is measured and recorded in the token comment, not estimated.
+## Color
 
-### Scope of this record
+Dark values are set on `:root`. Light values are set on `[data-theme="light"]` and override them. On first launch the app follows the Windows theme, and it then saves the user's choice.
 
-The canonical system is the token layer at the top of `src/index.css`, the shared component CSS under the `THE BUTTON`, `THE ERROR BANNER` and `PRIMITIVES` banners, the component vocabulary in `src/components/ui.tsx`, the rail (`src/layout/Sidebar.tsx`), the index (`src/components/CommandIndex.tsx`), and the page shape every view shares. **Build new surfaces from `ui.tsx`.**
+In the tables below, "Same" means the light theme does not override the token.
 
-The interiors of the Docker tabs, the WSL components and the Packages table still carry per-module class families (`img-*`, `ctr-*`, `wsl-*`, `pkg-*`, `compose-*`). They inherit the tokens and the shared button base but predate the component vocabulary, and they are being migrated onto it. They are not a reference for new work.
+### Surfaces
 
-## Colors
+| Token | Dark | Light | Use |
+|---|---|---|---|
+| `--color-bg-base` | `#0b0c0e` | `#f6f7f8` | App background |
+| `--color-bg-primary` | `#111214` | `#ffffff` | Main panel, inset code |
+| `--color-bg-secondary` | `#17181b` | `#fbfbfc` | Panels, cards, tables, dialogs |
+| `--color-bg-tertiary` | `#1e2024` | `#f1f2f4` | Inputs, active sidebar item |
+| `--color-bg-hover` | `#24262b` | `#e9ebee` | Hover state |
 
-Two renditions of one near-neutral palette, with a single accent and three state colours. Frontmatter values are the dark rendition, which is the default; the light rendition is carried in `.impeccable/design.json` under `colorMeta`.
+### Borders
 
-### Primary
-- **Console Indigo** (`accent`): The app's only accent. It appears as the primary action, the current selection, the active tab underline, the focus ring, and the command text in the terminal. Never as decoration.
-- **Indigo Fill** (`accent-fill`): The same hue dark enough that white sits on it at 6.3:1. Fills only, never small text. Two tokens exist because one colour cannot be both a legible fill and legible small text.
+| Token | Dark | Light | Use |
+|---|---|---|---|
+| `--color-border-light` | `rgba(255,255,255,0.045)` | `rgba(16,20,26,0.06)` | Lines between rows |
+| `--color-border` | `rgba(255,255,255,0.075)` | `rgba(16,20,26,0.10)` | Default border |
+| `--color-border-strong` | `rgba(255,255,255,0.15)` | `rgba(16,20,26,0.20)` | Hover state, overlays |
 
-### Secondary
-- **Selection Wash** (`accent-subtle`): A 14% indigo ground. It marks a selected row, the active segment of a segmented control, and the highlighted row of the index. It is the accent acting as furniture, which is the one job the bright accent may not do alone.
+### Text
 
-### Tertiary
-- **Signal Green** (`success`), **Signal Amber** (`warning`), **Signal Red** (`danger`): The three state colours. Green is an operation that succeeded, amber is caution, red is failure or destruction. Each carries a 13% companion for use as a ground behind its own text, and red carries a darker fill for solid destructive buttons.
+| Token | Dark | Light | Use |
+|---|---|---|---|
+| `--color-text-primary` | `#f2f3f5` | `#16181c` | Main content |
+| `--color-text-secondary` | `#a2a9b2` | `#5a626c` | Supporting content |
+| `--color-text-tertiary` | `#8d949e` | `#616872` | Labels, counts, units |
 
-### Neutral
-- **The Grounds** (`bg-base` through `bg-hover`): Five steps, deepest outward. `bg-base` is the app ground and the chrome, `bg-primary` the main panel, `bg-secondary` cards and raised rows, `bg-tertiary` inputs and wells, `bg-hover` a control under the pointer and the lightest surface any text lands on.
-- **The Text** (`text-primary`, `text-secondary`, `text-tertiary`): Three weights. Primary carries the fact, secondary the supporting detail, tertiary the labels, counts and units.
-- **The Hairlines** (`border-light`, `border`, `border-strong`): Three weights of 1px line doing the work a shadow would do elsewhere.
-- **The Chrome** (`chrome-*`, `sidebar-bg`, `titlebar-bg`, `terminal-bg`): The rail, titlebar and terminal are the app's frame and stay at `bg-base` in both themes. They carry their own solid text tokens because those surfaces are darker than any page.
+### Accent
 
-### Named Rules
+| Token | Dark | Light | Use |
+|---|---|---|---|
+| `--color-accent` | `#8c94ee` | `#4a51c0` | Accent text and borders, focus ring |
+| `--color-accent-fill` | `#4c53c4` | `#4c53c4` | Primary button background |
+| `--color-accent-hover` | `#959ced` | `#3a40a8` | Stronger accent text, such as terminal commands |
+| `--color-accent-subtle` | `rgba(140,148,238,0.12)` | `rgba(76,83,196,0.10)` | Selected row or item background |
+| `--color-accent-border` | `color-mix(in srgb, var(--color-accent) 32%, transparent)` | Same | Border of accent tags and pressed toggles |
 
-**The Two Accents Rule.** `accent` is the text and border value; `accent-fill` is the background value. Never use the bright accent as a fill under white, and never use the fill accent as small text.
+### State
 
-**The State-Only Rule.** Green, amber and red encode state and nothing else. They are never chrome, never a section accent, never a brand colour. If a colour is not saying "this succeeded / take care / this failed", it is not one of these three.
+| Token | Dark | Light | Meaning |
+|---|---|---|---|
+| `--color-success` | `#4ec26a` | `#1a6d36` | The operation succeeded |
+| `--color-success-subtle` | `rgba(78,194,106,0.13)` | `rgba(26,109,54,0.10)` | Background for success text |
+| `--color-warning` | `#e0a63a` | `#7d5307` | Take care |
+| `--color-warning-subtle` | `rgba(224,166,58,0.13)` | `rgba(125,83,7,0.10)` | Background for warning text |
+| `--color-danger` | `#f77f78` | `#b02f28` | Failure or destructive action |
+| `--color-danger-fill` | `#b8362e` | `#b8362e` | Solid destructive button |
+| `--color-danger-subtle` | `rgba(247,127,120,0.13)` | `rgba(176,47,40,0.10)` | Background for danger text |
+| `--color-danger-border` | `color-mix(in srgb, var(--color-danger) 26%, transparent)` | Same | Border of danger tags and outline buttons |
 
-**The Fill Names Its Foreground Rule.** Every filled surface names its own text colour. A single on-brand white fails badly on the bright state colours (white on dark-theme amber measures 2.1:1), so green and amber fills take `on-fill` and only the accent and danger fills take white.
+### Text on fills
 
-**The Solid Chrome Rule.** Chrome text tokens are solid hex, never alpha. A translucent chrome value composites down against whatever is behind it and fails at 11px.
+| Token | Dark | Light | Use |
+|---|---|---|---|
+| `--color-on-brand` | `#fff` | Same | Text on accent and danger fills |
+| `--color-on-fill` | `#0b0c0e` | `#ffffff` | Text on success and warning fills |
 
-**The Doubled Tint Rule.** A state colour has to survive its own tint applied twice: a selected card takes the subtle ground and the badge inside it takes the same ground again. That doubled ground is the darkest surface either can land on, and it is where the light-theme green and red were re-measured to 4.67:1 and 4.56:1.
+### Window frame
 
-**The One Black Rule.** `shadow-ink` is the only black, and it exists for cast shadow and the scrim behind an overlay. It is unthemed, because a shadow is an absence of light in both renditions. The single exception is `titlebar-close`, the Windows system close-button red, which is the one place the app speaks the host platform's language instead of its own.
+The titlebar, sidebar, and terminal match `--color-bg-base` in both themes.
 
-**The Annotation Palette Rule.** Compose files, Dockerfiles and `.env` are marked up in the app's own `syntax-*` tokens rather than an imported editor theme, and both themes read the same token names so there is no per-theme override to drift.
+| Token | Dark | Light | Use |
+|---|---|---|---|
+| `--color-sidebar-bg` | `#0b0c0e` | `#f6f7f8` | Sidebar background |
+| `--color-titlebar-bg` | `#0b0c0e` | `#f6f7f8` | Titlebar background |
+| `--color-terminal-bg` | `#0b0c0e` | `#f6f7f8` | Terminal background |
+| `--titlebar-close` | `#c4342b` | Same | Close button on hover, matching Windows |
+| `--chrome-text` | `#f2f3f5` | `#16181c` | Main text in the titlebar and terminal |
+| `--chrome-text-muted` | `#a2a9b2` | `#5a626c` | Supporting text in the titlebar and terminal |
+| `--chrome-text-subtle` | `#8d949e` | `#616872` | Quiet text in the titlebar and terminal |
+| `--chrome-surface` | `rgba(255,255,255,0.045)` | `rgba(16,20,26,0.045)` | Subtle hover background, neutral tags |
+| `--chrome-surface-hover` | `rgba(255,255,255,0.075)` | `rgba(16,20,26,0.075)` | Stronger hover background |
+| `--chrome-divider` | `rgba(255,255,255,0.075)` | `rgba(16,20,26,0.10)` | Lines in the titlebar and terminal |
+
+### Charts and disk usage
+
+| Token | Dark | Light |
+|---|---|---|
+| `--chart-1` | `#7c84e8` | `#4a51c0` |
+| `--chart-2` | `#4ec26a` | `#1f7a3d` |
+| `--chart-3` | `#e0a63a` | `#7d5307` |
+| `--chart-4` | `#4aa8e0` | `#1d6fa8` |
+| `--chart-5` | `#b07ce8` | `#7b3fb5` |
+| `--chart-6` | `#f2665e` | `#c0362e` |
+| `--chart-7` | `#e08a4a` | `#b0602a` |
+| `--chart-8` | `#43c4b0` | `#10756a` |
+| `--disk-other` | `#565d68` | `#8c939d` |
+| `--disk-free` | `#1e2024` | `#e9ebee` |
+
+### Syntax highlighting
+
+These tokens color Compose files, Dockerfiles, and `.env` files.
+
+| Token | Dark | Light |
+|---|---|---|
+| `--syntax-comment` | `#7d858f` | `#6b727c` |
+| `--syntax-key` | `#7c84e8` | `#4a51c0` |
+| `--syntax-key-nested` | `#a2a9b2` | `#5a626c` |
+| `--syntax-string` | `#e0a63a` | `#7d5307` |
+| `--syntax-bool` | `#b07ce8` | `#7b3fb5` |
+| `--syntax-number` | `#4ec26a` | `#1f7a3d` |
+| `--syntax-env` | `#e08a4a` | `#a5531e` |
+
+### Color rules
+
+- Use `--color-accent` for text and borders, and `--color-accent-fill` for backgrounds. Do not swap them.
+- Use the state colors only to show state, not for decoration or branding.
+- Set a text color on every filled surface. White fails contrast on the dark theme's success and warning colors, so those fills use `--color-on-fill`.
+- Keep `--chrome-text*` tokens as solid colors. A transparent text color changes with whatever is behind it.
+- Use `--shadow-ink` only for shadows and overlay backgrounds.
 
 ## Typography
 
-**Interface Font:** Segoe UI Variable Text (with Segoe UI Variable, Segoe UI, system-ui, sans-serif)
-**Machine Font:** Cascadia Mono (with Cascadia Code, Consolas, ui-monospace, monospace)
+| Font | Stack | Use |
+|---|---|---|
+| Interface | `"Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif` | All interface text |
+| Monospace (`--font-mono`) | `"Cascadia Mono", "Cascadia Code", "Consolas", ui-monospace, monospace` | Commands, IDs, paths, terminal output |
 
-**Character:** Both faces ship with Windows, so the app loads no webfont and touches no network, which is a product commitment rather than a performance one. Segoe UI Variable *Text* is the optical size cut for 12-28px, which is where all of this app lives. Cascadia Mono is Windows Terminal's own face, so machine output looks like machine output rather than a styled quotation of it.
+The app loads no web fonts. It uses fonts already installed on the system.
 
-### Hierarchy
+| Style | Token | Size | Weight | Line height | Letter spacing | Use |
+|---|---|---|---|---|---|---|
+| Value | `--text-xl` | 22px | 600 | 1.1 | -0.02em | The number on a stat card |
+| Title | `--text-lg` | 19px | 600 | 1.2 | -0.02em | Page title |
+| Heading | `--text-md` | 14px | 600 | 1.55 | Normal | Prerequisite titles, dialog titles (weight 700) |
+| Body | `--text-sm`, `--text-base` | 13px | 400 | 1.55 | Normal | Descriptions, table cells |
+| Control | `--text-xs` | 12px | 500 | 1 | Normal | Buttons, fields, segments |
+| Label | `--text-2xs` | 11px | 600 | 1.55 | 0.06em, uppercase | Panel titles, section titles, stat labels |
+| Code | `--text-sm` | 13px | 400 | 1.7 | Normal | Terminal output, file viewers |
 
-Seven steps are defined and six render; 13px is deliberately both the body step and the table step, because a row of facts and a paragraph about them are the same size of thing.
+Table headers, sidebar section labels, and command index section labels use the Label style with 0.05em letter spacing.
 
-- **Value** (600, 22px, 1.1, -0.02em, tabular): The one big number on a stat card. One per card, never for prose.
-- **Title** (600, 19px, 1.2, -0.02em): The page title in the pinned head. One per view.
-- **Heading** (600, 14px): Prerequisite notices, the index's search line, and dialog titles.
-- **Body** (400, 13px, 1.5): Descriptions, empty-state copy, table cells.
-- **Control** (500, 12px, 1): The working size. Buttons, fields, tabs, rail items, segment labels.
-- **Label** (600, 11px, 0.06em, uppercase): Panel titles, table headers, section and stat labels. Everything that names a group of facts takes exactly this treatment, which is why they all look like the same kind of thing.
-- **Machine** (Cascadia Mono, 13px, 1.7, tabular): Commands, identifiers, image and container IDs, paths, terminal output.
+Helper classes:
 
-### Named Rules
+| Class | Effect |
+|---|---|
+| `.num` | Tabular numbers, so digits line up in columns |
+| `.mono` | Monospace font |
+| `.ident` | 11px monospace in `--color-text-tertiary`, for IDs |
 
-**The Machine Voice Rule.** Monospace means the string came from the machine or can be pasted back into it. Nothing is monospace for flavour.
+Typography rules:
 
-**The Aligned Numbers Rule.** Every number that sits in a column takes `font-variant-numeric: tabular-nums`, via the `num` class or a token that carries it. Sizes, counts, versions, percentages and durations all line up.
+- Use monospace only for text that came from the machine or can be pasted into it.
+- Use tabular numbers for any number in a column.
+- Use the Label style for anything that names a group of content.
 
-**The Group Label Rule.** A panel title, a table header and a section label are all 11px, 600, uppercase, 0.06em, tertiary. They are the same thing wearing the same clothes. Do not introduce a fourth treatment for naming a group.
+The titlebar logo (`.titlebar-logo`) is the one exception to the type scale: 10px text on an accent gradient. WCAG 1.4.3 has no contrast requirement for logos.
 
-**The One Exception.** The 20px titlebar mark is the single place in the app off both scales: a 10px literal on the stylesheet's only gradient. It is a logotype rather than type, exempt under WCAG 1.4.3, and it is the exception that should stay one. Nothing else may borrow either liberty.
+## Spacing
+
+All spacing uses one scale.
+
+| Token | Value |
+|---|---|
+| `--space-1` | 4px |
+| `--space-2` | 8px |
+| `--space-3` | 12px |
+| `--space-4` | 16px |
+| `--space-5` | 24px |
+| `--space-6` | 32px |
+| `--space-7` | 48px |
+
+## Shape
+
+| Token | Value | Use |
+|---|---|---|
+| `--radius-sm` | 4px | Tags, keycaps, inset code |
+| `--radius-md` | 6px | Buttons, fields, segmented groups, sidebar items |
+| `--radius-lg` | 8px | Panels, stat cards, tables, dialogs |
+| `--radius-xl` | 10px | Command index |
+| `--radius-full` | 9999px | Status pill, dots, meters |
+
+Containers use a 1px border. Do not add a radius above 10px, except `--radius-full`.
+
+## Elevation
+
+Panels, cards, and tables have no shadow. Shadows are for content that sits above the page.
+
+| Token | Dark | Light | Use |
+|---|---|---|---|
+| `--shadow-ink` | `#000` | Same | Shadow and overlay color |
+| `--shadow-card` | `none` | Same | Not used |
+| `--shadow-sm` | `0 1px 2px color-mix(in srgb, var(--shadow-ink) 30%, transparent)` | `0 1px 2px rgba(16,20,26,0.08)` | Not used |
+| `--shadow-md` | `0 8px 24px -6px color-mix(in srgb, var(--shadow-ink) 50%, transparent)` | `0 8px 24px -6px rgba(16,20,26,0.14)` | Chart tooltip |
+| `--shadow-lg` | `0 20px 56px -16px color-mix(in srgb, var(--shadow-ink) 65%, transparent)` | `0 20px 56px -16px rgba(16,20,26,0.20)` | Command index |
+
+| Token | Value | Use |
+|---|---|---|
+| `--z-sticky` | 10 | Sticky table headers |
+| `--z-dropdown` | 100 | Not used |
+| `--z-terminal` | 200 | Not used |
+| `--z-modal` | 500 | Not used |
+| `--z-palette` | 600 | Command index |
+
+Dialogs use the native `<dialog>` top layer, so they need no z-index.
 
 ## Layout
 
-The shell is four regions: a 44px titlebar, a 212px rail on the left (user-resizable), a main panel, and a 240px terminal panel that floats over the bottom of the content column rather than entering its height calculation. A 300px context panel is defined for selection detail.
+### Window
 
-Every view is the same three parts, and this is the single most load-bearing layout decision in the app: a pinned head carrying breadcrumb, title, status and primary actions; an optional tab strip in the same fixed block; and one scrolling body beneath. The view owns its scroll, not the main panel, which is what keeps Refresh reachable from the bottom of a 400-row table. The head sits on a hairline so the body scrolling under it reads as a separate plane. Page padding is 24px top and 32px sides on the head, and 24/32/48 on the body, which scrolls with `scrollbar-gutter: stable` so the column never shifts sideways when a short page becomes a long one.
+| Region | Size | Behavior |
+|---|---|---|
+| Window | Opens at 1280 by 800px | Minimum 900 by 600px |
+| Titlebar | 44px tall (`--titlebar-height`) | Fixed |
+| Sidebar | 212px wide (`--sidebar-width`) | Resizes from 160 to 360px |
+| Main panel | Fills the remaining space | Minimum 240px tall |
+| Terminal | 180px tall when first opened | Resizes from 100 to 600px, and collapses to a 32px header |
 
-Spacing is one 4px scale of seven steps (4, 8, 12, 16, 24, 32, 48) and nothing outside it. Vertical rhythm inside a scrolling body is a single rule: consecutive panels, stat rows and error banners are separated by 16px.
+The content column adds bottom padding equal to the terminal's height, so the terminal never covers the last row of a page. On `.app-content`, a calculated `--terminal-height` replaces the 240px value set on `:root`.
 
-The window floor is 900x600 and there is no mobile context, so the only responsive behaviour is intrinsic: the stat row is `repeat(auto-fit, minmax(168px, 1fr))`, the toolbar search is `flex: 1 1 220px` capped at 360px, the index panel is `min(620px, 100vw - 32px)`, and long identifiers ellipsize rather than wrap.
+`--context-width` (300px) and `.context-panel` are defined but not used.
 
-**The Flat Rail Rule.** The module list is flat and always will be. Sections within a module live in the in-view tab strip; individual objects live in the index (Ctrl+K). The rail has to take twelve modules as easily as it takes three, which a nested tree cannot.
+### Page structure
 
-## Elevation & Depth
+Every view has three parts: a fixed header, an optional tab strip, and one scrolling body. The view scrolls its own body, so the header and its actions stay visible.
 
-Surfaces do not float. `--shadow-card` is literally `none`, and depth comes from five background layers plus three weights of hairline. The only things that lift are things genuinely overlaid on the page, and they lift with intent.
+| Class | Padding (top, sides, bottom) | Use |
+|---|---|---|
+| `.page-head` | 24px, 32px, 16px | Fixed header with a bottom border. Holds `SheetHead`. |
+| `.page-scroll` | 24px, 32px, 48px | Scrolling body. Uses `scrollbar-gutter: stable` so content does not shift when a scrollbar appears. |
+| `.page-fill` | 24px, 32px, 24px | Body that does not scroll, for pages where an inner element scrolls. |
+| `.page-fill--bleed` | 0 | A `.page-fill` that manages its own padding. |
 
-### Shadow Vocabulary
-- **`--shadow-sm`** (`0 1px 2px` at 30% ink): A barely-there seat for small floating chrome.
-- **`--shadow-md`** (`0 8px 24px -6px` at 50% ink): Popovers, dropdown menus.
-- **`--shadow-lg`** (`0 20px 56px -16px` at 65% ink): Modal-scale overlays and the index panel.
+Spacing inside a body:
 
-Stacking is tokenised rather than ad hoc: sticky 10, dropdown 100, terminal 200, modal 500, index 600.
+| Element | Space above it |
+|---|---|
+| `.panel`, `.stat-row`, `.error-banner` | 16px |
+| `.section-head` | 32px |
 
-### Named Rules
+### Resizing
 
-**The Flat Surface Rule.** A card, panel, table or section gets no shadow. If a thing needs a shadow it is not on the page, it is over the page, and it should be a real overlay with a scrim.
+The app has no breakpoints. Content adapts to the window width:
 
-## Shapes
+| Element | Rule |
+|---|---|
+| Stat row | `repeat(auto-fit, minmax(168px, 1fr))` |
+| Toolbar search | `flex: 1 1 220px`, from 180 to 360px wide |
+| Command index | `min(620px, calc(100vw - var(--space-6)))` |
+| Long IDs and names | Cut off with an ellipsis |
 
-Four radii and none of them large: `sm` (4px) for tags, checkboxes, command blocks and small inset code; `md` (6px) for every control, which is buttons, fields, segmented groups and rail items; `lg` (8px) for containers, which is panels, stat cards and row lists; `xl` (10px) for true overlays, which is the index panel and modals. `full` exists for two jobs only, the status pill and small round dots and pips.
+## Motion
 
-Borders carry the structure the corners do not. Every container is a 1px drawn line weighted by the three border tokens, and a control at rest is a 1px line plus a one-step ground shift. Tabs and rail items underline or take a wash rather than filling. The meter under a stat value is a 3px track, effectively a rule rather than a bar, because it annotates a number that is already stated.
+| Token | Value | Use |
+|---|---|---|
+| `--transition-fast` | `0.1s ease` | Hover and color changes |
+| `--transition-base` | `0.15s ease` | General transitions |
+| `--transition-slow` | `0.24s ease` | Terminal panel, meter fill |
+
+Under `prefers-reduced-motion: reduce`, which the Windows "Show animations" setting controls:
+
+| Motion | Behavior |
+|---|---|
+| Transitions | Finish at once (`transition-duration: 0.01ms`) |
+| Entrance animations | Fade without moving |
+| Pin animation | Removed |
+| Spinners, loading shimmers, and stripes | Pulse in opacity, because they are the only sign that work is running |
+| Indeterminate progress bar | Fills its track and pulses |
+
+These overrides redefine each `@keyframes` rule by name. Any new rule that uses one of those names gets the reduced version automatically.
 
 ## Components
 
-The vocabulary lives in `src/components/ui.tsx` and its CSS in the `THE BUTTON`, `THE ERROR BANNER` and `PRIMITIVES` sections of `src/index.css`. If a module needs something the vocabulary does not have, it belongs there, not in that module.
+Build new UI from `src/components/ui.tsx`.
 
-### Buttons
-- **Shape:** 6px corner, 1px border, 28px tall at the default size.
-- **Default:** Raised ground with a hairline and primary text; hover lifts the ground one step and strengthens the border; active drops it back.
-- **Primary:** Solid indigo fill with white text; hover moves to the bright accent, still white.
-- **Danger:** Solid dark red with white text; hover brightens 12% rather than changing hue.
-- **Danger-outline:** Red text on a 13% red ground with a red hairline. This is the destructive action that *opens* a dialog, and it deliberately weighs less than the solid confirm inside that dialog, because the most dangerous action must be the hardest to trigger.
-- **Ghost:** No ground, no border, secondary text; hover picks up the faint chrome surface only.
-- **Sizes:** sm 24px, md 28px, lg 32px. Icon-only is a square at the size's own height and requires an `aria-label`.
-- **Disabled:** 45% opacity and `not-allowed`. Colour is never removed, only weight: a greyed-out red button still has to read as the destructive one.
+### Button
 
-### Chips
-- **Style:** `Tag` is a 4px-cornered rectangle with a faint chrome ground, a hairline, and 11px label type.
-- **State:** Five tones. Neutral, plus ok / warn / danger / accent, each taking its own colour for text, a 28-32% mix of it for the border, and its subtle alpha for the ground.
-- **Pill:** A separate, fully-rounded 20px form used for one thing only: a dot and a fact, such as engine status in a page head.
+`Button` takes `variant`, `size`, and `icon` props.
 
-### Cards / Containers
-- **Corner Style:** 8px (`lg`).
-- **Background:** `bg-secondary` for panels and cards; `bg-primary` for inset code.
-- **Shadow Strategy:** None. See Elevation & Depth.
-- **Border:** 1px hairline, always.
-- **Internal Padding:** 12px vertical, 16px horizontal for a dense panel.
-- **Head:** An 11px uppercase title, optional tabular meta, and actions pushed right. A panel that summarises a section can make its whole head a link, in which case it gains a chevron.
+| Variant | Background | Text | Border | On hover | Use |
+|---|---|---|---|---|---|
+| `default` | `--color-bg-secondary` | `--color-text-primary` | `--color-border` | Background `--color-bg-hover`, border `--color-border-strong` | Most actions |
+| `primary` | `--color-accent-fill` | `--color-on-brand` | `--color-accent-fill` | `filter: brightness(1.12)` | The main action in a view or dialog |
+| `danger` | `--color-danger-fill` | `--color-on-brand` | `--color-danger-fill` | `filter: brightness(1.12)` | The confirm button in a destructive dialog |
+| `danger-outline` | `--color-danger-subtle` | `--color-danger` | `--color-danger-border` | Stronger background and border | A destructive action that opens a dialog |
+| `ghost` | Transparent | `--color-text-secondary` | Transparent | Background `--chrome-surface`, text `--color-text-primary` | Low-emphasis actions |
 
-### Inputs / Fields
-- **Style:** `SearchField` is the only search control in the app and it says one verb, "Search". 28px tall, well-coloured ground, 1px hairline, 6px corner, a leading icon in tertiary text, and a clear button that appears only when there is a value.
-- **Focus:** A 2px accent outline inset by 2px, plus an accent border. Every focusable thing in the app gets this ring; it is enforced globally and survives the `outline: none` on inputs.
+The hover rule of a filled variant must set its background and border again. Otherwise `.btn:hover` replaces the fill.
 
-### Navigation
-- **The rail:** A flat vertical list at 12px, 500 weight, in muted chrome text with a 15px icon and an optional right-aligned tabular count. The active item takes the chrome surface and the primary chrome text, and carries `aria-current="page"`. Children (Docker sections, WSL distros) indent one level and mark themselves the same way. A module that cannot run on this machine is dimmed rather than hidden: the user should see the module exists.
-- **The tab strip:** Underline tabs in the fixed head block, tertiary at rest, primary with an accent underline when active. Built from `TabList` / `Tab`, which supply `role="tablist"`, `role="tab"`, `aria-selected`, a roving tabindex and arrow-key traversal with selection following focus. A strip of buttons with an `.active` class is not a tab strip.
-- **Segmented:** A single 28px bordered group of filters with hairline dividers; the active segment takes the selection wash and accent text, and its count stays dim because a count is a fact about the segment, not part of the selection.
-- **Breadcrumbs:** 11px tertiary above the page title, `/` separators at 55% opacity, the current crumb in secondary.
+| Size | Height | Padding | Font size |
+|---|---|---|---|
+| `sm` | 24px | 0 8px | 12px |
+| `md` (default) | 28px | 0 11px | 12px |
+| `lg` | 32px | 0 16px | 13px |
 
-### The Command Block
-The product's thesis rendered as a component. A 11px uppercase label, then the exact command in Cascadia Mono, accent-coloured, on the inset ground, selectable, wrapping rather than truncating. It appears wherever the app is about to do something to the machine, and the test is literal: the line shown must run if pasted into PowerShell.
+| State | Behavior |
+|---|---|
+| Pressed (`default` variant) | Background `--color-bg-tertiary` |
+| Disabled | `opacity: 0.45` and `cursor: not-allowed`. The color stays, so a disabled destructive button still looks destructive. |
+| Icon only | The `icon` prop makes a 28px square, or a 24px square with `size="sm"`. Requires `aria-label`. |
+| Toggled on | The `btn--on` class sets background `--color-accent-subtle`, border `--color-accent-border`, and text `--color-accent`. |
 
-### The Stat Card
-A label, one big tabular number with an optional dim unit, an optional 3px meter, and an optional sub-line. The meter bands automatically at 75% (amber) and 90% (red), and it carries `role="meter"` with real min/now/max. `pct` of `null` draws an empty track, `undefined` draws no track at all, for facts that have no ceiling. The number is always stated, because a bar alone is not a reading.
+### SearchField
 
-### The Index (Ctrl+K)
-A centred 620px panel on a dimmed scrim, capped at 62vh, holding every module, section, distro, image, container, volume, compose project and package on the machine. Rows are icon, label and a right-aligned "where"; the active row takes the selection wash and its icon turns accent. This is the answer to the eight separate filter boxes that used to be the only way to find anything.
+A search input with a leading icon. A clear button appears when the field has a value.
 
-### Error Banner, Empty State and Prerequisite
-`ErrorBanner` carries `role="alert"` and unpacks a classified error into a sentence, a recovery hint, an optional action, and the raw Windows or Docker text behind a disclosure, hidden by default because it is evidence rather than the message. `EmptyState` teaches the surface rather than announcing a void. `Prerequisite` is the one treatment for "this module's tool is not installed" across every module: title, description, optional numbered steps, and the install command as a real command block, because the user could have typed it.
+- **Size:** 28px tall, with a 6px radius, a 1px border, and a `--color-bg-tertiary` background.
+- **Placeholder:** Starts with "Search", such as "Search images".
+- **Focus:** 2px accent outline inset by 2px, plus an accent border.
 
-### Motion
-Transitions are 0.1s / 0.15s / 0.24s ease and nothing else. Entrances fade and travel a few pixels. Under `prefers-reduced-motion: reduce` transitions collapse to 0.01ms, slide and scale entrances become pure fades, the pin flourish is neutralised entirely, and spinners, shimmers and stripes become in-place opacity pulses rather than disappearing, because they are the only signal that a distro is booting or a prune is running. The neutralised animations are redefined **by keyframe name**, not by selector, so any future rule reusing the name inherits the reduced variant automatically.
+### Tag
 
-## Do's and Don'ts
+A small inline label: 20px tall, 8px side padding, 4px radius, 11px text at weight 500.
 
-### Do:
-- **Do** build new surfaces from `src/components/ui.tsx`. If the vocabulary lacks something, add it there.
-- **Do** give every view the same three-part shape: pinned head, optional tab strip, one scrolling body.
-- **Do** keep spacing on the seven-step 4px scale and pick one of the seven type steps and one of the four radii. All three scales are closed.
-- **Do** state a number as well as drawing it. Every meter prints its reading; every reclaim figure prints its size.
-- **Do** record the measured contrast ratio in a comment beside any new colour token, against the lightest ground it can land on (`bg-hover`), not the average case.
-- **Do** give any filled surface its own explicit foreground token.
-- **Do** show the exact command in a command block wherever the app is about to touch the machine.
-- **Do** make anything that switches panels a real tab strip via `TabList` / `Tab`, and anything that navigates a rail item with `aria-current`.
-- **Do** label every icon-only control with the row it belongs to, not just its verb: "Remove volume pgdata", not "Remove".
-- **Do** keep state-carrying pulses alive under reduced motion, and neutralise animations by keyframe name.
+| `tone` | Background | Text | Border |
+|---|---|---|---|
+| `neutral` (default) | `--chrome-surface` | `--color-text-secondary` | `--color-border` |
+| `ok` | `--color-success-subtle` | `--color-success` | 28% `--color-success` |
+| `warn` | `--color-warning-subtle` | `--color-warning` | 28% `--color-warning` |
+| `danger` | `--color-danger-subtle` | `--color-danger` | `--color-danger-border` |
+| `accent` | `--color-accent-subtle` | `--color-accent` | `--color-accent-border` |
 
-### Don't:
-- **Don't** reach for the legacy `img-*`, `ctr-*`, `wsl-*`, `pkg-*` or `compose-*` class families in new work. They inherit the tokens but not the vocabulary, and they are being migrated out.
-- **Don't** hardcode a colour, size, radius or spacing literal. Every value in this system is a token.
-- **Don't** use green, amber or red for anything that is not state.
-- **Don't** put a shadow on a card, panel, table or section. Shadows belong to real overlays only.
-- **Don't** introduce a radius above 10px, or use `full` on anything but the status pill and small dots.
-- **Don't** use monospace for emphasis or flavour. It means the string came from the machine.
-- **Don't** define a chrome text colour as an alpha value. It composites down against the frame and fails.
-- **Don't** nest the rail. Sections go in the tab strip, objects go in the index.
-- **Don't** ship a search control with a verb other than "Search", or a second empty-state or prerequisite treatment.
-- **Don't** suppress a focus ring. The global ring is deliberate and load-bearing at these type sizes.
-- **Don't** add ornament that illustrates the atlas metaphor. The metaphor governs language and information architecture; the interface stays a console.
+### Status pill
+
+The `.pill` class shows a status dot and a short fact: 20px tall, fully rounded, 11px `--color-text-secondary` text on `--color-bg-secondary`, with a 1px border. It has no React component.
+
+### Panel
+
+A bordered group with an optional header: `--color-bg-secondary` background, 8px radius, 1px border.
+
+| Prop | Effect |
+|---|---|
+| `title` | Shows a header at least 34px tall with a bottom border. Leave it out for a plain group. |
+| `meta` | Shows a short fact next to the title. |
+| `actions` | Shows controls at the right of the header. Ignored when `onOpen` is set. |
+| `onOpen` | Makes the whole header a button with a chevron, linking to the section it summarizes. |
+
+Use `.panel-body` for 12px by 16px padding inside a panel.
+
+### StatCard and StatRow
+
+`StatCard` shows one number, with an optional unit, meter, and sub-line. Place cards in a `StatRow`, which spaces them 12px apart.
+
+| `pct` value | Result |
+|---|---|
+| 0 to 100 | Draws a 3px meter |
+| `null` | Draws an empty track |
+| `undefined` | Draws no track, for values with no upper limit |
+
+The meter uses `--color-accent` below 75, `--color-warning` from 75, and `--color-danger` from 90. The `tone` prop overrides this. The meter has `role="meter"` with min, max, and current values. Add `onClick` to make the whole card a button.
+
+### SheetHead
+
+The page header. It shows a breadcrumb, a title, an optional status, right-aligned actions, and an optional subtitle. Its title row is at least 28px tall, so the height stays the same with or without actions.
+
+Breadcrumbs use 11px `--color-text-tertiary` text, with the current page in `--color-text-secondary`. They sit in a `nav` with `aria-label="Breadcrumb"`, and the current page has `aria-current="page"`.
+
+### SectionHead
+
+A section title with an optional fact, a line that runs to the edge of the column, and optional actions. It is at least 28px tall with 12px of space below it.
+
+### Toolbar
+
+The row above a table, holding search, filters, and counts. It has an 8px gap and 12px of space below it. A `SearchField` inside a toolbar grows to fill the space, up to 360px.
+
+### Segmented and SegmentedItem
+
+A group of filter buttons: 28px tall, 6px radius, with 1px lines between items. The active item uses `--color-accent-subtle` and `--color-accent`, and its count stays dim at 75% opacity. The group has `role="group"`, and each item sets `aria-pressed`.
+
+### TabList and Tab
+
+These two components provide tab behavior only. Each tab strip sets its own appearance through `className`.
+
+- **Roles:** `role="tablist"` and `role="tab"`, with `aria-selected` and `aria-controls`.
+- **Keyboard:** Left and Right arrows, Home, and End move between tabs, and selection follows focus. Only the selected tab is in the Tab order.
+
+Use these for anything that switches panels. A row of plain buttons with an `.active` class is not a tab strip.
+
+### Table
+
+There is no shared table component. Tables use the `.img-table` classes inside `.img-table-wrap`.
+
+| Part | Style |
+|---|---|
+| Wrapper | 1px border, 8px radius, `--color-bg-secondary` background |
+| Header | 30px tall and sticky, in the Label style |
+| Row | 34px tall, 13px text, with `--color-border-light` between rows |
+
+### Command display
+
+Both styles use monospace text that the user can select.
+
+| Class | Style | Use |
+|---|---|---|
+| `.cmd-block` | An 11px label above 13px `--color-accent` text on `--color-bg-primary`. Long commands wrap. | Before an action runs, such as in `ConfirmDestructive` |
+| `.cmd` | 12px `--color-text-secondary` text on `--color-bg-base`, with a 1px border. Long commands scroll sideways. | Install commands in `Prerequisite` |
+
+The text must be the exact command, and it must work if pasted into PowerShell.
+
+### ErrorBanner
+
+Shows an error with `role="alert"`.
+
+| Prop | Effect |
+|---|---|
+| `title` | Names the operation that failed, such as "Could not remove the volume". |
+| `error` | The caught error. Supplies the message, the recovery hint, and the raw error text. |
+| `action` | A recovery control, such as a retry button. |
+| `detailLabel` | The label for the raw error text, which starts collapsed. Defaults to "What Windows reported". |
+
+### EmptyState
+
+Shows an optional icon, a title, a description, and actions, centered. The text should explain what belongs in the view and how to add it, not only say that it is empty.
+
+### Prerequisite
+
+Shows that a module's tool is missing: a title, a description, optional numbered steps, the install command in `.cmd`, and actions. Use it for every missing tool, so they all look the same.
+
+### ConfirmDestructive
+
+The dialog for bulk destructive actions. It shows, in order:
+
+1. The title.
+2. What will be lost.
+3. The exact command.
+4. A summary of counts and totals.
+5. The affected items, by name.
+6. Cancel and a solid `danger` confirm button.
+
+The optional `escape` prop adds a safer option at the left of the buttons, such as backing up first. While `busy` is true, both buttons are disabled, and Escape and clicking outside do nothing.
+
+### Dialogs
+
+`ModalShell` wraps the native `<dialog>` element and opens it with `showModal()`. Render it conditionally: it opens when mounted and closes when unmounted.
+
+The `.modal` class sets a `--color-bg-secondary` background, a 1px border, an 8px radius, 28px of padding, and a width of 440px, or 520px with `.modal--wide`.
+
+### Kbd
+
+A keycap: at least 17px wide, 17px tall, 4px radius, 11px text at weight 600 on `--color-bg-tertiary`.
+
+### Sidebar
+
+A vertical list of modules. Items under the active module appear nested below it, with a line down the left side.
+
+| Item | Height | Text | On hover | When active |
+|---|---|---|---|---|
+| Module (`.rail-item`) | 30px | 13px `--color-text-secondary` | `--chrome-surface` background, `--color-text-primary` text | `--color-bg-tertiary` background, `--color-text-primary` text, weight 550 |
+| Child (`.rail-kid`) | 26px | 12px `--color-text-tertiary` | `--chrome-surface` background, `--color-text-secondary` text | `--color-accent-subtle` background, `--color-text-primary` text |
+
+Modules have a 15px icon and an optional count. The current item has `aria-current="page"`.
+
+### Command index
+
+A search dialog opened with Ctrl+K. It lists places, distros, Compose projects, images, containers, and volumes.
+
+- **Panel:** Up to 620px wide and 62vh tall, with a 10px radius, `--color-border-strong`, and `--shadow-lg`, over a 55% `--shadow-ink` background.
+- **Rows:** An icon, a label, and the item's location at the right. The active row uses `--color-accent-subtle`, and its icon uses `--color-accent`.
+
+### Legacy classes
+
+The Docker tabs, WSL components, and Packages table still use older classes: `img-*`, `ctr-*`, `wsl-*`, `pkg-*`, and `compose-*`. Older button classes, such as `btn-primary` and `ctr-action-btn`, share the `.btn` base styles.
+
+These classes use the design tokens, but do not copy them for new components. Tables are the exception, as there is no shared component yet.
+
+## Accessibility
+
+The target is [WCAG 2.1](https://www.w3.org/TR/WCAG21/) level AA.
+
+### Contrast
+
+Ratios use the WCAG formula. Text must reach 4.5:1. `--color-bg-hover` gives the lowest ratio for all of these colors, so check new colors against it.
+
+| Text token | Dark on `--color-bg-primary` | Dark on `--color-bg-hover` | Light on `--color-bg-primary` | Light on `--color-bg-hover` |
+|---|---|---|---|---|
+| `--color-text-primary` | 16.88 | 13.64 | 17.77 | 14.88 |
+| `--color-text-secondary` | 7.90 | 6.38 | 6.18 | 5.17 |
+| `--color-text-tertiary` | 6.12 | 4.95 | 5.63 | 4.71 |
+| `--color-accent` | 6.77 | 5.47 | 6.50 | 5.44 |
+| `--color-success` | 8.25 | 6.67 | 6.39 | 5.35 |
+| `--color-warning` | 8.64 | 6.98 | 6.75 | 5.65 |
+| `--color-danger` | 7.37 | 5.96 | 6.40 | 5.36 |
+
+| Text on fill | Dark | Light |
+|---|---|---|
+| `--color-on-brand` on `--color-accent-fill` | 6.28 | 6.28 |
+| `--color-on-brand` on `--color-danger-fill` | 5.82 | 5.82 |
+| `--color-on-fill` on `--color-success` | 8.62 | 6.39 |
+| `--color-on-fill` on `--color-warning` | 9.02 | 6.75 |
+| `--color-on-brand` on `--color-accent-fill` at `brightness(1.12)`, on hover | 5.28 | 5.28 |
+| `--color-on-brand` on `--color-danger-fill` at `brightness(1.12)`, on hover | 4.85 | 4.85 |
+
+A color can sit on its own subtle background twice, such as a badge inside a selected card, so check that case too. These ratios were measured over `--color-bg-secondary`.
+
+| Text on subtle background | Dark | Light |
+|---|---|---|
+| `--color-accent` on `--color-accent-subtle` | 5.35 | 5.45 |
+| `--color-success` on `--color-success-subtle` | 6.27 | 5.35 |
+| `--color-warning` on `--color-warning-subtle` | 6.51 | 5.64 |
+| `--color-danger` on `--color-danger-subtle` | 5.72 | 5.29 |
+| `--color-success` on `--color-success-subtle`, twice | 4.92 | 4.67 |
+| `--color-warning` on `--color-warning-subtle`, twice | 5.06 | 4.91 |
+| `--color-danger` on `--color-danger-subtle`, twice | 4.58 | 4.56 |
+
+### Focus
+
+- Buttons, inputs, text areas, selects, and elements with `tabindex` get a 2px `--color-accent` outline with a 2px offset. It uses `!important`, so it overrides any `outline: none`.
+- Shared components, such as `.btn`, `.segmented-item`, and `.rail-item`, inset the outline by 2px.
+- `.field` shows the outline on the whole field through `:focus-within`, and also turns its border to the accent color.
+
+### Keyboard
+
+| Control | Keys |
+|---|---|
+| Tabs | Left, Right, Home, End |
+| Dialogs | Focus moves in and stays inside. Escape closes the dialog, and focus returns to the control that opened it. |
+| Command index | Ctrl+K opens it |
+
+### Names and roles
+
+- Every icon-only control needs an `aria-label` that names its target, such as "Remove volume pgdata" instead of "Remove".
+- Current navigation items use `aria-current="page"`.
+- Errors use `role="alert"`, and meters use `role="meter"`.
+- Hide decorative icons with `aria-hidden="true"`.
+- Show every value as text as well. A meter or bar alone is not enough.
+
+## Rules for new UI
+
+**Do:**
+
+- Build from `src/components/ui.tsx`. If something is missing, add it there, not in a module.
+- Use tokens for color, size, radius, and spacing.
+- Give every view the standard [page structure](#page-structure).
+- Show the exact command before the app changes the machine.
+- Use `TabList` and `Tab` for anything that switches panels.
+- Keep working indicators visible under reduced motion.
+- Add new colors to this document, with their contrast ratios.
+
+**Do not:**
+
+- Add a shadow to a panel, card, or table.
+- Use green, amber, or red for anything except state.
+- Use monospace for emphasis.
+- Remove a focus outline.
+- Add a second style for search fields, empty states, or missing tools.
+- Add decorative graphics.
+
+## Known issues
+
+- `.terminal-panel` uses a literal `z-index: 20` instead of `--z-terminal`.
+- Some tokens are defined but not used. They are marked "Not used" in [Elevation](#elevation).
+- [Legacy classes](#legacy-classes) remain in the Docker, WSL, and Packages views.
