@@ -114,7 +114,7 @@ The titlebar, sidebar, and terminal match `--color-bg-base` in both themes.
 | `--chart-6` | `#f2665e` | `#c0362e` |
 | `--chart-7` | `#e08a4a` | `#b0602a` |
 | `--chart-8` | `#43c4b0` | `#10756a` |
-| `--disk-other` | `#565d68` | `#8c939d` |
+| `--disk-other` | `#656c77` | `#7f868f` |
 | `--disk-free` | `#1e2024` | `#e9ebee` |
 
 ### Syntax highlighting
@@ -490,6 +490,8 @@ The target is [WCAG 2.1](https://www.w3.org/TR/WCAG21/) level AA.
 ### Contrast
 
 Ratios use the WCAG formula. Text must reach 4.5:1. `--color-bg-hover` gives the lowest ratio for all of these colors, so check new colors against it.
+
+Graphics must reach 3:1 against the colors next to them. `--disk-other` measures 3.08:1 against the disk bar's track in the dark theme, and 3.08:1 against `--disk-free` in the light theme, its lowest ratios.
 
 | Text token | Dark on `--color-bg-primary` | Dark on `--color-bg-hover` | Light on `--color-bg-primary` | Light on `--color-bg-hover` |
 |---|---|---|---|---|
