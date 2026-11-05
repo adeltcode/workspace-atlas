@@ -1,26 +1,101 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import clsx from 'clsx'
 import { AppWindow, File, FolderOpen, RefreshCw } from 'lucide-react'
 import { useAppStore } from '../../store/appStore'
 import { useVisiblePoll } from '../../hooks/useVisiblePoll'
-import { Button, ConfirmDestructive, EmptyState, ErrorBanner, Panel, Prerequisite, SheetHead } from '../../components/ui'
-import { FileDropZone } from '../../components/FileDropZone'
+import { Button, ConfirmDestructive, ErrorBanner, Panel, Prerequisite, SectionHead, SheetHead, StatCard, StatRow, Tag } from '../../components/ui'
+import { FileDropPrompt, FileDropZone } from '../../components/FileDropZone'
 import { pickAnyFile } from '../holders/api'
 import { pickDirectory } from '../wsl/api'
 import * as api from './api'
 import type { SandboxStatus, SandboxSwitches } from './api'
 
 const POLL_MS = 10_000
-const MEMORY_GB = [4, 8, 16]
+const WINDOW_APPEARS_MS = 1_500
+const MEMORY_GB = [8, 16]
 
 const SWITCHES: { key: keyof SandboxSwitches; label: string; help: string }[] = [
-  { key: 'microphone', label: 'Share your microphone', help: 'Programs inside can listen through it.' },
-  { key: 'camera', label: 'Share your camera', help: 'Programs inside can see through it.' },
-  { key: 'clipboard', label: 'Share your clipboard', help: 'Copy and paste work both ways, so programs inside can read what you copy.' },
-  { key: 'printers', label: 'Share your printers', help: 'Programs inside can print to them.' },
-  { key: 'graphics', label: 'Use your graphics card', help: 'The sandbox may run faster, but this can give programs inside more ways to attack your PC.' },
+  { key: 'networking', label: 'Network', help: 'The internet and your local network.' },
+  { key: 'clipboard', label: 'Clipboard', help: 'Copy and paste. Programs can read what you copy.' },
+  { key: 'microphone', label: 'Microphone', help: 'Programs can listen through it.' },
+  { key: 'camera', label: 'Camera', help: 'Programs can see through it.' },
+  { key: 'printers', label: 'Printers', help: 'Programs can print to them.' },
+  { key: 'graphics', label: 'Graphics card', help: 'May run faster, but is less isolated.' },
 ]
 
-const ALL_OFF: SandboxSwitches = { microphone: false, camera: false, clipboard: false, printers: false, graphics: false }
+const ALL_OFF: SandboxSwitches = { networking: false, microphone: false, camera: false, clipboard: false, printers: false, graphics: false }
+
+// Outside the component so leaving the page and coming back does not read everything again.
+const detailsAsked = new Set<string>()
+
+const gigabytes = (bytes: number) => `${(bytes / 2 ** 30).toFixed(1)} GB`
+
+function RunningSandbox({ id, status, onOpenWindow, onStop }: {
+  id: string
+  status: SandboxStatus
+  onOpenWindow: (id: string) => void
+  onStop: (id: string) => void
+}) {
+  const details = useAppStore(s => s.sandboxDetails[id])
+  const shared = useAppStore(s => s.sandboxShared[id])
+
+  const fact = <T,>(value: T | null | undefined, show: (value: T) => string) =>
+    !details ? '…' : value == null ? 'Unknown' : show(value)
+
+  const used = status.memory_used_bytes
+  const limitMb = details?.memory_mb
+  const alsoShared = [...(shared ?? []), ...(details?.graphics ? ['Graphics card'] : [])]
+
+  return (
+    <div>
+      <SectionHead
+        title="Running sandbox"
+        meta={!details && 'Reading details…'}
+        actions={
+          <>
+            {!status.window_open && <Button size="sm" onClick={() => onOpenWindow(id)}><AppWindow size={12} /> Open window</Button>}
+            <Button size="sm" variant="danger-outline" onClick={() => onStop(id)}>Stop</Button>
+          </>
+        }
+      />
+      <StatRow>
+        <StatCard
+          label="CPU"
+          value={fact(details?.cpu_threads, String)}
+          unit={details?.cpu_threads != null ? 'threads' : undefined}
+          sub={details?.cpu_name && <span className="sandbox-cpu-name">{details.cpu_name.replace(/\s*\((R|TM)\)/g, '')}</span>}
+        />
+        <StatCard
+          label="Memory in use"
+          value={used == null ? 'Unknown' : gigabytes(used)}
+          unit={limitMb != null ? `of ${Math.round(limitMb / 1024)} GB` : undefined}
+          pct={used != null && limitMb != null ? (used / 2 ** 20 / limitMb) * 100 : null}
+        />
+        <StatCard
+          label="Disk"
+          value={fact(details?.disk_free_gb, gb => `${gb} GB`)}
+          unit={details?.disk_free_gb != null ? 'free' : undefined}
+          sub={details?.disk_total_gb != null && `of ${details.disk_total_gb} GB`}
+        />
+        <StatCard
+          label="Network"
+          value={!details ? '…' : details.ip_address ? 'On' : 'Off'}
+          sub={details && (details.ip_address ?? 'No internet or local network')}
+        />
+        <StatCard
+          label="Windows build"
+          value={fact(details?.windows_build, String)}
+          sub="Inside the sandbox"
+        />
+      </StatRow>
+      <div className="sandbox-running-foot">
+        <span className="ident" title="Sandbox ID">{id}</span>
+        {alsoShared.length > 0 && <span className="sandbox-help">Also shared:</span>}
+        {alsoShared.map(item => <Tag key={item}>{item}</Tag>)}
+      </div>
+    </div>
+  )
+}
 
 export default function SandboxView() {
   const starting = useAppStore(s => s.sandboxStarting)
@@ -28,7 +103,6 @@ export default function SandboxView() {
   const loading = useRef(false)
   const [loadError, setLoadError] = useState<unknown>(null)
   const [actionError, setActionError] = useState<unknown>(null)
-  const [networking, setNetworking] = useState(false)
   const [switches, setSwitches] = useState(ALL_OFF)
   const [memoryGb, setMemoryGb] = useState<number | null>(null)
   const [folder, setFolder] = useState<string | null>(null)
@@ -53,6 +127,20 @@ export default function SandboxView() {
   useEffect(() => { load() }, [load])
   useVisiblePoll(() => { if (!loading.current) load() }, POLL_MS, !stopTarget)
 
+  useEffect(() => {
+    const { setSandboxDetails } = useAppStore.getState()
+    for (const id of status?.running ?? []) {
+      if (detailsAsked.has(id)) continue
+      detailsAsked.add(id)
+      api.sandboxDetails(id).then(details => setSandboxDetails(id, details)).catch(setActionError)
+    }
+  }, [status])
+
+  const refresh = () => {
+    detailsAsked.clear()
+    return load()
+  }
+
   // Permission to change a folder must not carry over to a different folder.
   const chooseFolder = async () => {
     const picked = await pickDirectory()
@@ -62,22 +150,32 @@ export default function SandboxView() {
     }
   }
 
-  const openWindow = (id: string) => {
+  const openWindow = async (id: string) => {
     setActionError(null)
-    return api.sandboxOpenWindow(id).catch(setActionError)
+    try {
+      await api.sandboxOpenWindow(id)
+      window.setTimeout(load, WINDOW_APPEARS_MS)
+    } catch (e) {
+      setActionError(e)
+    }
   }
 
   const start = async (openFile: string | null = null) => {
-    const { setSandboxStarting, addActivity } = useAppStore.getState()
+    const { setSandboxStarting, setSandboxShared, addActivity } = useAppStore.getState()
+    const on = SWITCHES.filter(s => switches[s.key])
     const sharing = folder ? `${writable ? 'Can change' : 'Read-only'}: ${folder}` : 'No shared folder'
-    const alsoOn = SWITCHES.filter(s => switches[s.key]).map(s => s.key).join(', ') || 'nothing'
     const memory = memoryGb ? `${memoryGb} GB` : 'Windows default'
-    const detail = `${openFile ? `Opened: ${openFile}. ` : ''}Network ${networking ? 'on' : 'off'}. ${sharing}. Also on: ${alsoOn}. Memory: ${memory}`
+    const detail = `${openFile ? `Opened: ${openFile}. ` : ''}Shared: ${on.map(s => s.label).join(', ') || 'nothing'}. ${sharing}. Memory: ${memory}`
     setActionError(null)
     setOpenedFile(null)
     setSandboxStarting(true)
     try {
-      const id = await api.sandboxStart({ networking, folder, writable, ...switches, memory_mb: memoryGb && memoryGb * 1024, open_file: openFile })
+      const id = await api.sandboxStart({ ...switches, folder, writable, memory_mb: memoryGb && memoryGb * 1024, open_file: openFile })
+      // Network and graphics are read from the sandbox itself, the others can only be remembered.
+      setSandboxShared(id, [
+        ...on.filter(s => s.key !== 'networking' && s.key !== 'graphics').map(s => s.label),
+        ...(folder ? [`${folder} (${writable ? 'can change' : 'read-only'})`] : []),
+      ])
       addActivity({ module: 'system', action: 'Start sandbox', outcome: 'success', detail })
       await openWindow(id)
     } catch (e) {
@@ -158,8 +256,8 @@ export default function SandboxView() {
     ? 'Drop to open it in a new sandbox'
     : replaceRunning ? 'Drop to replace the running sandbox' : 'Drop to open it in the running sandbox'
   const openHelp = running.length > 0 && !replaceRunning
-    ? 'Windows runs one sandbox at a time. Drop a file on this panel, or choose one, and a copy opens in the running sandbox. It keeps the settings it started with, and programs already inside can reach the copy.'
-    : 'Or drop a file on this panel. A copy opens in a new sandbox with these settings. Programs start by themselves, and other files appear in a folder.'
+    ? 'A read-only copy opens in the running sandbox. Programs already inside can reach it.'
+    : 'A read-only copy opens in a new sandbox with these settings. Programs start by themselves, and other files appear in a folder.'
 
   return (
     <div className="view-container">
@@ -171,7 +269,13 @@ export default function SandboxView() {
           ]}
           title="Windows Sandbox"
           subtitle="A clean, throwaway copy of Windows for trying programs. Everything inside is deleted when it stops."
-          actions={<Button onClick={load}><RefreshCw size={12} /> Refresh</Button>}
+          status={status?.available && (
+            <span className="pill">
+              <span className={clsx('rail-dot', running.length > 0 ? 'running' : 'stopped')} />
+              {running.length === 0 ? 'Not running' : status.window_open ? 'Running' : 'Running, window closed'}
+            </span>
+          )}
+          actions={<Button onClick={refresh}><RefreshCw size={12} /> Refresh</Button>}
         />
       </div>
 
@@ -195,37 +299,45 @@ export default function SandboxView() {
         )}
 
         {status?.available && (
-          <>
-            <FileDropZone label={dropLabel} disabled={starting} onDrop={dropFile}>
-              <Panel title="New sandbox">
-                <div className="panel-body sandbox-form">
-                  <label className="sandbox-option">
-                    <input type="checkbox" checked={networking} onChange={e => setNetworking(e.target.checked)} />
-                    <span>
-                      Allow network access
-                      <span className="sandbox-help">Programs inside can reach the internet and your local network.</span>
-                    </span>
-                  </label>
+          <FileDropZone className="sandbox-page" label={dropLabel} disabled={starting} onDrop={dropFile}>
+            {running.map(id => (
+              <RunningSandbox
+                key={id}
+                id={id}
+                status={status}
+                onOpenWindow={openWindow}
+                onStop={target => { setActionError(null); setStopTarget(target) }}
+              />
+            ))}
 
-                  {SWITCHES.map(({ key, label, help }) => (
-                    <label key={key} className="sandbox-option">
-                      <input type="checkbox" checked={switches[key]} onChange={e => setSwitches({ ...switches, [key]: e.target.checked })} />
-                      <span>
-                        {label}
-                        <span className="sandbox-help">{help}</span>
-                      </span>
-                    </label>
-                  ))}
+            <div className="sandbox-columns">
+              <Panel title="New sandbox" className="sandbox-panel">
+                <div className="panel-body sandbox-panel-body">
+                  <div>
+                    <p className="section-label">Share with the sandbox</p>
+                    <div className="sandbox-switches">
+                      {SWITCHES.map(({ key, label, help }) => (
+                        <label key={key} className="sandbox-option">
+                          <input type="checkbox" checked={switches[key]} onChange={e => setSwitches({ ...switches, [key]: e.target.checked })} />
+                          <span>
+                            {label}
+                            <span className="sandbox-help">{help}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
 
-                  <label className="sandbox-memory">
-                    Memory
+                  <label className="sandbox-field">
+                    <span className="sandbox-field-label">Memory</span>
                     <select className="wslcfg-field-control" value={memoryGb ?? ''} onChange={e => setMemoryGb(e.target.value ? Number(e.target.value) : null)}>
-                      <option value="">Windows default</option>
+                      <option value="">4 GB (Windows default)</option>
                       {MEMORY_GB.map(gb => <option key={gb} value={gb}>{gb} GB</option>)}
                     </select>
                   </label>
 
-                  <div className="sandbox-folder">
+                  <div className="sandbox-field">
+                    <span className="sandbox-field-label">Folder</span>
                     <Button onClick={chooseFolder}><FolderOpen size={12} /> {folder ? 'Change folder' : 'Share a folder'}</Button>
                     {folder && (
                       <>
@@ -239,18 +351,8 @@ export default function SandboxView() {
                     <label className="sandbox-option">
                       <input type="checkbox" checked={writable} onChange={e => setWritable(e.target.checked)} />
                       <span>
-                        Let programs inside change this folder
-                        <span className="sandbox-help">The folder appears on the sandbox desktop. When this is on, programs inside can edit or delete your real files.</span>
-                      </span>
-                    </label>
-                  )}
-
-                  {running.length > 0 && (
-                    <label className="sandbox-option">
-                      <input type="checkbox" checked={replaceRunning} onChange={e => setReplaceRunning(e.target.checked)} />
-                      <span>
-                        Replace the running sandbox
-                        <span className="sandbox-help">A file you open stops the running sandbox, deletes everything inside it, and starts a new one.</span>
+                        Let programs change this folder
+                        <span className="sandbox-help">It appears on the sandbox desktop. With this on, programs can edit or delete your real files.</span>
                       </span>
                     </label>
                   )}
@@ -259,48 +361,34 @@ export default function SandboxView() {
                     <Button variant="primary" disabled={starting || running.length > 0} onClick={() => start()}>
                       {starting && running.length === 0 ? 'Starting…' : 'Start sandbox'}
                     </Button>
-                    <Button disabled={starting} onClick={chooseFile}>
-                      <File size={12} /> {starting && running.length > 0 ? 'Opening…' : 'Open a file…'}
-                    </Button>
+                    {running.length > 0 && <span className="sandbox-help">Stop the running sandbox to start another.</span>}
                   </div>
-                  <span className="sandbox-help">{openHelp}</span>
-                  {openedFile && running.length > 0 && <span className="sandbox-help" role="status">Opened {openedFile.split(/[\\/]/).pop()} in the running sandbox.</span>}
                 </div>
               </Panel>
-            </FileDropZone>
 
-            <Panel title="Running" meta={running.length > 0 ? String(running.length) : undefined}>
-              {running.length === 0 ? (
-                <EmptyState title="No sandbox is running" description="Start one above. A window opens when it is ready." />
-              ) : (
-                <table className="img-table">
-                  <thead>
-                    <tr>
-                      <th className="img-th">Sandbox ID</th>
-                      <th className="img-th holder-actions">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {running.map(id => (
-                      <tr key={id} className="img-row">
-                        <td className="img-td img-id">{id}</td>
-                        <td className="img-td">
-                          <div className="sandbox-actions">
-                            <Button size="sm" onClick={() => openWindow(id)} aria-label={`Open window for sandbox ${id}`}>
-                              <AppWindow size={12} /> Open window
-                            </Button>
-                            <Button size="sm" variant="danger-outline" onClick={() => { setActionError(null); setStopTarget(id) }} aria-label={`Stop sandbox ${id}`}>
-                              Stop
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </Panel>
-          </>
+              <Panel title="Open a file" className="sandbox-panel">
+                <div className="panel-body sandbox-panel-body">
+                  <FileDropPrompt
+                    title="Drop a file here"
+                    description={openHelp}
+                    actions={
+                      <Button disabled={starting} onClick={chooseFile}>
+                        <File size={12} /> {starting && running.length > 0 ? 'Opening…' : 'Choose a file…'}
+                      </Button>
+                    }
+                  />
+                  {openedFile && running.length > 0 && <span className="sandbox-help" role="status">Opened {openedFile.split(/[\\/]/).pop()} in the running sandbox.</span>}
+                  <label className="sandbox-option">
+                    <input type="checkbox" checked={replaceRunning} onChange={e => setReplaceRunning(e.target.checked)} />
+                    <span>
+                      Open in a new sandbox
+                      <span className="sandbox-help">Stops a running sandbox first and deletes everything inside.</span>
+                    </span>
+                  </label>
+                </div>
+              </Panel>
+            </div>
+          </FileDropZone>
         )}
       </div>
 

@@ -69,10 +69,10 @@ export function FileDropZone({ label, disabled = false, onDrop, className, child
 }
 
 /** The visible target for a drop area with nothing in it yet. Goes inside a `FileDropZone`. */
-export function FileDropPrompt({ title, description }: { title: string; description: string }) {
+export function FileDropPrompt({ title, description, actions }: { title: string; description: string; actions?: React.ReactNode }) {
   return (
     <div className="file-drop-prompt">
-      <EmptyState icon={ArrowDownToLine} title={title} description={description} />
+      <EmptyState icon={ArrowDownToLine} title={title} description={description} actions={actions} />
     </div>
   )
 }

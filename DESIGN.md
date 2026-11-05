@@ -442,7 +442,7 @@ Wraps an area that takes files and folders dragged in from outside the app, from
 | `disabled` | Ignores drags and shows no cover. Set it while a dialog is open or work is running. |
 | `onDrop` | Gets every dropped path, and always at least one. The page decides what to do with more than one. |
 
-Put `FileDropPrompt` inside the zone while the area has nothing else to show. It is an `EmptyState` in a dashed box.
+Put `FileDropPrompt` inside the zone while the area has nothing else to show. It is an `EmptyState` in a dashed box, with optional actions.
 
 Always offer another way to choose a path, such as a path field or a Browse button. Windows blocks these drags when the app runs as administrator.
 
