@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { Shield, Layers, Zap, Eye, Play, RotateCcw, AlertTriangle, Check } from 'lucide-react'
 import clsx from 'clsx'
@@ -124,6 +124,11 @@ export default function PruneTab({ onDone }: { onDone: () => void }) {
     setPruneState('idle'); setPreview(null); setPreviewError(null)
     setConfirmText(''); setResult(null)
   }
+
+  // A preview is only right for the moment it was taken: images can be pinned while this page is hidden.
+  const runningNow = useRef(false)
+  runningNow.current = pruneState === 'running'
+  useEffect(() => () => { if (!runningNow.current) reset() }, [])
 
   const running    = pruneState === 'running'
   const canExecute = preview !== null && pruneState === 'idle' && preview.image_ids.length > 0

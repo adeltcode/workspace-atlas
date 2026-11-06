@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   Star, Terminal, ChevronRight, HardDrive,
@@ -23,9 +23,8 @@ import { OutputDialog, OutputText } from '../../../components/CommandOutput'
 type StateFilter = 'all' | 'running' | 'stopped'
 type Lifecycle = { d: WslDistro; action: 'stop' | 'restart' }
 
-export default function WslHome({ distros, loading, onReload }: {
+export default function WslHome({ distros, onReload }: {
   distros: WslDistro[]
-  loading: boolean
   onReload: () => Promise<void> | void
 }) {
   const addActivity   = useAppStore(s => s.addActivity)
@@ -97,6 +96,16 @@ export default function WslHome({ distros, loading, onReload }: {
       if (d.running && d.name !== busyDistro && !extras[d.name] && !extrasBusy.has(d.name) && !extrasFailed.has(d.name)) loadExtras(d.name)
     }
   }, [distros, extras, extrasBusy, extrasFailed, loadExtras, busyDistro])
+
+  // Uptime and disk use change while this page is hidden. WslView only shows it again once the
+  // running flags are current, so this cannot boot a stopped distro.
+  const shownBefore = useRef(false)
+  useEffect(() => {
+    if (shownBefore.current) {
+      for (const d of distros) if (d.running && d.name !== busyDistro) loadExtras(d.name)
+    }
+    shownBefore.current = true
+  }, []) // eslint-disable-line
 
   // The probe runs a command inside the distro, so it would reboot one that is mid-stop: leave the
   // busy distro out of the poll set. The probe itself takes about 1 s (jiffies delta).
@@ -235,7 +244,7 @@ export default function WslHome({ distros, loading, onReload }: {
     return !q || d.name.toLowerCase().includes(q)
   })
 
-  if (!loading && distros.length === 0) {
+  if (distros.length === 0) {
     return (
       <EmptyState
         icon={HardDrive}

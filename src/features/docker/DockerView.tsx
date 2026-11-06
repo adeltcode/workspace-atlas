@@ -17,6 +17,7 @@ import PruneTab       from './components/PruneTab'
 import LogTab         from './components/LogTab'
 import { DockerColumnsMenu } from './components/TableBits'
 import { SheetHead, Prerequisite, Button, ErrorBanner } from '../../components/ui'
+import KeepAlive from '../../components/KeepAlive'
 
 const TAB_SUBTITLES: Partial<Record<DockerTab, string>> = {
   overview:   'Disk usage at a glance across images, containers, volumes, and build cache',
@@ -35,7 +36,7 @@ const TABLE_TABS: DockerTab[] = ['containers', 'images', 'volumes', 'networks']
 export default function DockerView() {
   const dockerTab     = useAppStore(s => s.dockerTab)
   const setActiveView = useAppStore(s => s.setActiveView)
-  const { status, df, images, containers, volumes, loading, error, refresh, refreshContainers, refreshVolumes } = useDockerData()
+  const { status, df, images, containers, volumes, loading, refreshing, waiting, error, refresh, refreshContainers, refreshVolumes } = useDockerData()
   const [composeTick, setComposeTick] = useState(0)
   const [starting, setStarting]       = useState(false)
   const [startError, setStartError]   = useState<string | null>(null)
@@ -75,7 +76,7 @@ export default function DockerView() {
 
   useEffect(() => {
     if (!online) { setStatsLoading(false); setContainerStats([]); setStatHistory(new Map()); return }
-    setStatsLoading(true)
+    setStatsLoading(containerStats.length === 0)
     setStatsError(null)
     // Do not reset statHistory here: the updater already evicts departed containers, so sparklines
     // survive a manual Refresh. History is only wiped in the !online branch above.
@@ -156,8 +157,8 @@ export default function DockerView() {
         actions={
           <>
             {online && TABLE_TABS.includes(dockerTab) && <DockerColumnsMenu tab={dockerTab as DockerTableTab} />}
-            <Button onClick={handleRefresh} disabled={loading}>
-              <RefreshCw size={13} className={loading ? 'spin' : ''} />
+            <Button onClick={handleRefresh} disabled={refreshing}>
+              <RefreshCw size={13} className={refreshing ? 'spin' : ''} />
               Refresh
             </Button>
           </>
@@ -206,8 +207,8 @@ export default function DockerView() {
                 <Play size={13} />
                 {starting ? 'Starting…' : 'Start Docker Desktop'}
               </Button>
-              <Button onClick={handleRefresh} disabled={loading}>
-                <RefreshCw size={13} className={loading ? 'spin' : ''} />
+              <Button onClick={handleRefresh} disabled={refreshing}>
+                <RefreshCw size={13} className={refreshing ? 'spin' : ''} />
                 Refresh
               </Button>
             </>
@@ -217,17 +218,25 @@ export default function DockerView() {
 
       {(online || loading) && (
         <>
-          {dockerTab === 'overview'   && <OverviewTab df={df} containers={containers} images={images} volumes={volumes} status={status} loading={loading} refreshTick={composeTick} onRefresh={refresh} containerStats={containerStats} statsLoading={statsLoading} statsError={statsError} statHistory={statHistory} onPollStats={pollStats} />}
-          {dockerTab === 'images'     && <ImagesTab images={images} containers={containers} loading={loading} />}
-          {dockerTab === 'containers' && <ContainersTab containers={containers} loading={loading} onRefresh={refreshContainers} />}
+          <KeepAlive active={dockerTab === 'overview'}>
+            <OverviewTab df={df} containers={containers} images={images} volumes={volumes} status={status} loading={loading} refreshTick={composeTick} onRefresh={refresh} containerStats={containerStats} statsLoading={statsLoading} statsError={statsError} statHistory={statHistory} onPollStats={pollStats} />
+          </KeepAlive>
+          <KeepAlive active={dockerTab === 'images'}>
+            <ImagesTab images={images} containers={containers} loading={waiting('images')} />
+          </KeepAlive>
+          <KeepAlive active={dockerTab === 'containers'}>
+            <ContainersTab containers={containers} loading={waiting('containers')} onRefresh={refreshContainers} />
+          </KeepAlive>
 
           {/* VolumesTab stays mounted while Docker is online so that in-progress
               backups, event listeners, and progress state survive tab switches. */}
           <div className={clsx('docker-pane-fill', dockerTab !== 'volumes' && 'tab-hidden')}>
-            <VolumesTab volumes={volumes} loading={loading} onRefresh={refreshVolumes} />
+            <VolumesTab volumes={volumes} loading={waiting('volumes')} onRefresh={refreshVolumes} />
           </div>
 
-          {dockerTab === 'networks'   && <NetworksTab refreshTick={composeTick} />}
+          <KeepAlive active={dockerTab === 'networks'}>
+            <NetworksTab refreshTick={composeTick} />
+          </KeepAlive>
 
           {/* ComposeTab stays mounted so it can update the sidebar's compose project list */}
           <div className={clsx('docker-pane-fill', dockerTab !== 'compose' && 'tab-hidden')}>

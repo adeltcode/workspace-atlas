@@ -115,6 +115,8 @@ function CleanupRow({
   const [removing,   setRemoving]   = useState(false)
 
   const expandable = items != null && removal != null
+  // Only what is still listed counts: an item can be pinned or removed after it was ticked.
+  const chosen = items?.filter(i => selected.has(i.id)) ?? []
 
   function handleHeaderClick() {
     if (expandable) setExpanded(e => !e)
@@ -126,14 +128,14 @@ function CleanupRow({
   }
 
   function toggleAll() {
-    setSelected(prev => prev.size === items!.length ? new Set() : new Set(items!.map(i => i.id)))
+    setSelected(chosen.length === items!.length ? new Set() : new Set(items!.map(i => i.id)))
   }
 
   async function handleRemove() {
-    if (!removal || selected.size === 0) return
+    if (!removal || chosen.length === 0) return
     setRemoving(true)
     try {
-      await removal.run([...selected])
+      await removal.run(chosen.map(i => i.id))
       setExpanded(false); setSelected(new Set())
     } finally {
       setRemoving(false)
@@ -161,7 +163,7 @@ function CleanupRow({
         <div className="cleanup-expand">
           <label className="cleanup-expand-all">
             <input type="checkbox"
-              checked={items.length > 0 && selected.size === items.length}
+              checked={items.length > 0 && chosen.length === items.length}
               onChange={toggleAll}
             />
             <span>Select all ({items.length})</span>
@@ -179,11 +181,11 @@ function CleanupRow({
           <div className="cleanup-expand-actions">
             <button
               className="btn-filled btn-filled--danger btn-sm"
-              disabled={selected.size === 0 || removing}
+              disabled={chosen.length === 0 || removing}
               onClick={() => setConfirming(true)}
             >
               <Trash2 size={11} />
-              {removing ? 'Removing…' : `Remove${selected.size > 0 ? ` ${selected.size}` : ''}`}
+              {removing ? 'Removing…' : `Remove${chosen.length > 0 ? ` ${chosen.length}` : ''}`}
             </button>
             <button className="btn-ghost btn-sm" onClick={onNavigate}>Open page</button>
           </div>
@@ -192,11 +194,11 @@ function CleanupRow({
 
       {confirming && removal && items && (
         <ConfirmDestructive
-          title={`Remove ${selected.size} ${removal.noun}${selected.size === 1 ? '' : 's'}?`}
+          title={`Remove ${chosen.length} ${removal.noun}${chosen.length === 1 ? '' : 's'}?`}
           consequence={removal.consequence}
-          command={removal.command([...selected])}
-          summary={`${selected.size} selected`}
-          items={items.filter(i => selected.has(i.id)).map(i => ({ name: i.label, meta: i.size ?? undefined }))}
+          command={removal.command(chosen.map(i => i.id))}
+          summary={`${chosen.length} selected`}
+          items={chosen.map(i => ({ name: i.label, meta: i.size ?? undefined }))}
           confirmLabel="Remove"
           busy={removing}
           onConfirm={handleRemove}
@@ -296,7 +298,7 @@ export default function OverviewTab({
 
   useEffect(() => {
     if (!status?.available) { setComposeLoading(false); return }
-    setComposeLoading(true)
+    setComposeLoading(composeProjects.length === 0)
     api.dockerComposeLs()
       .then(setComposeProjects)
       .catch(() => setComposeProjects([]))

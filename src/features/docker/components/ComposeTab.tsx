@@ -633,7 +633,7 @@ export default function ComposeTab({
   }
 
   const loadProjects = async () => {
-    setLoading(true); setError(null)
+    setLoading(projects.length === 0); setError(null)
     try {
       const live = await api.dockerComposeLs()
       // A project that is down drops out of `docker compose ls`, so re-add remembered ones as stopped

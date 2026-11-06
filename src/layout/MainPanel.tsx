@@ -1,4 +1,5 @@
 import { useAppStore } from '../store/appStore'
+import KeepAlive      from '../components/KeepAlive'
 import Dashboard      from '../views/Dashboard'
 import DockerView     from '../features/docker/DockerView'
 import WslView        from '../views/WslView'
@@ -10,21 +11,28 @@ import ClipboardView  from '../features/clipboard/ClipboardView'
 import CachesView     from '../features/caches/CachesView'
 import SettingsView   from '../views/SettingsView'
 
+// Constant elements, so moving between pages does not re-render the hidden ones.
+const PAGES = {
+  dashboard: <Dashboard />,
+  docker:    <DockerView />,
+  wsl:       <WslView />,
+  sandbox:   <SandboxView />,
+  packages:  <PackagesView />,
+  ports:     <PortsView />,
+  locks:     <LocksView />,
+  clipboard: <ClipboardView />,
+  caches:    <CachesView />,
+  settings:  <SettingsView />,
+}
+
 export default function MainPanel() {
   const activeView = useAppStore(s => s.activeView)
 
   return (
     <main className="main-panel">
-      {activeView === 'dashboard'  && <Dashboard />}
-      {activeView === 'docker'     && <DockerView />}
-      {activeView === 'wsl'        && <WslView />}
-      {activeView === 'sandbox'    && <SandboxView />}
-      {activeView === 'packages'   && <PackagesView />}
-      {activeView === 'ports'      && <PortsView />}
-      {activeView === 'locks'      && <LocksView />}
-      {activeView === 'clipboard'  && <ClipboardView />}
-      {activeView === 'caches'     && <CachesView />}
-      {activeView === 'settings'   && <SettingsView />}
+      {Object.entries(PAGES).map(([view, page]) => (
+        <KeepAlive key={view} active={activeView === view}>{page}</KeepAlive>
+      ))}
     </main>
   )
 }
