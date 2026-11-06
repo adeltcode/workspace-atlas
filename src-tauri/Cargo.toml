@@ -1,6 +1,6 @@
 [package]
 name = "workspace-atlas"
-version = "0.2.0"
+version = "0.3.0"
 description = "A Windows developer utility for managing Docker, WSL2, and packages."
 authors = ["Patrick James Garcia"]
 license = "MIT"
