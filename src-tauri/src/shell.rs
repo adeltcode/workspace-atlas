@@ -1,4 +1,4 @@
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -17,6 +17,15 @@ pub(crate) fn hidden(program: &str) -> Command {
         command.creation_flags(0x0800_0000);
     }
     command
+}
+
+/// The lines of a child's output. `BufRead::lines` fails on a line that is not UTF-8, which is
+/// normal on a Windows set to another language, and that line would be lost.
+pub(crate) fn output_lines(pipe: impl Read) -> impl Iterator<Item = String> {
+    BufReader::new(pipe)
+        .split(b'\n')
+        .map_while(Result::ok)
+        .map(|line| String::from_utf8_lossy(&line).trim_end_matches('\r').to_string())
 }
 
 // ── Managed state ─────────────────────────────────────────────────────────────
@@ -76,7 +85,7 @@ pub async fn shell_run(
         let stdout_app = app.clone();
         let stdout_handle = stdout.map(|out| {
             thread::spawn(move || {
-                BufReader::new(out).lines().flatten().for_each(|line| {
+                output_lines(out).for_each(|line| {
                     stdout_app
                         .emit("shell-out", ShellOut { text: line, stderr: false })
                         .ok();
@@ -87,7 +96,7 @@ pub async fn shell_run(
         let stderr_app = app.clone();
         let stderr_handle = stderr.map(|err| {
             thread::spawn(move || {
-                BufReader::new(err).lines().flatten().for_each(|line| {
+                output_lines(err).for_each(|line| {
                     if !line.trim().is_empty() {
                         stderr_app
                             .emit("shell-out", ShellOut { text: line, stderr: true })
@@ -140,4 +149,15 @@ pub async fn shell_kill(state: tauri::State<'_, ShellState>) -> Result<(), Atlas
         child.kill().ok();
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_line_that_is_not_utf8_is_kept() {
+        let lines: Vec<String> = output_lines(&b"first\r\ncaf\xe9\r\n\nlast"[..]).collect();
+        assert_eq!(lines, ["first", "caf\u{fffd}", "", "last"]);
+    }
 }

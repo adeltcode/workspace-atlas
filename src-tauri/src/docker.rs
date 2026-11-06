@@ -1,11 +1,10 @@
 use std::collections::HashSet;
-use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::thread;
 
 use tauri::Emitter;
 use crate::error::{AtlasError, ErrorKind};
-use crate::shell::hidden;
+use crate::shell::{hidden, output_lines};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -677,7 +676,7 @@ fn run_streaming(app: &tauri::AppHandle, mut cmd: Command, tag_stderr: bool) -> 
     let stdout_app = app.clone();
     let stdout_handle = child.stdout.take().map(|out| {
         thread::spawn(move || {
-            BufReader::new(out).lines().flatten().for_each(|line| {
+            output_lines(out).for_each(|line| {
                 stdout_app.emit("docker-log", &line).ok();
             });
         })
@@ -687,7 +686,7 @@ fn run_streaming(app: &tauri::AppHandle, mut cmd: Command, tag_stderr: bool) -> 
     let stderr_handle = child.stderr.take().map(|err| {
         thread::spawn(move || {
             let mut last_line = String::new();
-            BufReader::new(err).lines().flatten().for_each(|line| {
+            output_lines(err).for_each(|line| {
                 if !line.trim().is_empty() {
                     last_line = line.clone();
                     let payload = if tag_stderr {
@@ -1340,6 +1339,33 @@ fn write_compose_manifest(root: &str, manifest: &ComposeBackupManifest) -> Resul
     Ok(std::fs::write(path, json).map_err(|e| e.to_string())?)
 }
 
+/// True when both texts name one folder, as `C:/b`, `C:\b` and `c:/b/` do.
+fn same_folder(a: &str, b: &str) -> bool {
+    a == b || matches!((std::fs::canonicalize(a), std::fs::canonicalize(b)), (Ok(a), Ok(b)) if a == b)
+}
+
+/// A backup list is a plain JSON file, and a backup folder can be shared or synced, so its paths
+/// are not trusted. Only a file that is really inside the folder gets moved or deleted.
+fn is_inside_folder(folder: &str, path: &str) -> bool {
+    matches!((std::fs::canonicalize(folder), std::fs::canonicalize(path)), (Ok(folder), Ok(path)) if path.starts_with(&folder))
+}
+
+/// Delete a backup's file. A file outside the backup folder stays where it is.
+fn remove_backup_file(app: &tauri::AppHandle, backup_dir: &str, path: &str, filename: &str) -> Result<(), AtlasError> {
+    let line = |text: String| { app.emit("shell-out", ShellOut { text, stderr: false }).ok(); };
+    let exists = std::path::Path::new(path).exists();
+    if exists && !is_inside_folder(backup_dir, path) {
+        line(format!("  # not in the backup folder, so the file was left in place: {}", path));
+        return Ok(());
+    }
+    line(format!("Remove-Item \"{}\"", path.replace('/', "\\")));
+    if exists {
+        std::fs::remove_file(path).map_err(|e| format!("Failed to delete '{}': {}", path, e))?;
+    }
+    line(format!("  \u{2713} deleted {}", filename));
+    Ok(())
+}
+
 /// Read a source file as a UTF-8 string, handling Windows / WSL-mount / pure-WSL paths.
 fn read_source_as_string(src: &str) -> Result<String, AtlasError> {
     if is_windows_absolute(src) {
@@ -1890,7 +1916,11 @@ pub async fn docker_volume_backup(
             size_bytes,
             created_at: ts as i64,
         });
-        write_manifest(&backup_dir, &manifest).ok();
+        if let Err(e) = write_manifest(&backup_dir, &manifest) {
+            let text = format!("The backup file '{}' was saved, but the backup list could not be updated, so it will not be listed: {}", filename, e);
+            emit_bp(&app, vol, "Backup failed", 95, true, Some(text.clone()), None, None);
+            return Err(text.into());
+        }
 
         emit_bp(&app, vol, &format!("Saved as '{}'", filename), 100, true, None, Some(filename.clone()), None);
         Ok(filename)
@@ -2129,7 +2159,9 @@ pub async fn docker_backup_compose(
             if for_file.len() > 10 {
                 let stale_names: std::collections::HashSet<_> = for_file[10..]
                     .iter().map(|e| e.filename.clone()).collect();
-                for old in &for_file[10..] { fs::remove_file(&old.path).ok(); }
+                for old in &for_file[10..] {
+                    if is_inside_folder(&backup_dir, &old.path) { fs::remove_file(&old.path).ok(); }
+                }
                 manifest.backups.retain(|e| !stale_names.contains(&e.filename));
             }
         }
@@ -2174,23 +2206,9 @@ pub async fn docker_delete_compose_backup(
             .map(|e| e.path.clone())
             .unwrap_or_else(|| format!("{}/docker/compose/{}", backup_dir, filename));
 
-        app.emit("shell-out", ShellOut {
-            text:   format!("Remove-Item \"{}\"", path.replace('/', "\\")),
-            stderr: false,
-        }).ok();
-
-        if std::path::Path::new(&path).exists() {
-            std::fs::remove_file(&path)
-                .map_err(|e| format!("Failed to delete '{}': {}", path, e))?;
-        }
+        remove_backup_file(&app, &backup_dir, &path, &filename)?;
         manifest.backups.retain(|e| e.filename != filename);
-        write_compose_manifest(&backup_dir, &manifest)?;
-
-        app.emit("shell-out", ShellOut {
-            text:   format!("  \u{2713} deleted {}", filename),
-            stderr: false,
-        }).ok();
-        Ok(())
+        write_compose_manifest(&backup_dir, &manifest)
     }).await
 }
 
@@ -2214,79 +2232,99 @@ pub async fn transfer_backups(
     from_dir: String,
     to_dir: String,
 ) -> Result<TransferResult, AtlasError> {
-    migration.inner().clone().run_operation(move || {
-        use std::fs;
+    migration.inner().clone().run_operation(move || move_backups(&from_dir, &to_dir)).await
+}
 
-        if from_dir == to_dir {
-            return Ok(TransferResult { moved: 0, old_dir_removed: false });
+fn move_backups(from_dir: &str, to_dir: &str) -> Result<TransferResult, AtlasError> {
+    use std::fs;
+
+    // The old list is deleted below, which here would be the list just written.
+    if same_folder(from_dir, to_dir) {
+        return Ok(TransferResult { moved: 0, old_dir_removed: false });
+    }
+
+    let dest_vols = docker_volumes_dir(to_dir);
+    fs::create_dir_all(&dest_vols)
+        .map_err(|e| format!("Cannot create '{}': {}", dest_vols, e))?;
+
+    let mut manifest = read_manifest(from_dir);
+    let mut transferred = 0u32;
+
+    for entry in &mut manifest.backups {
+        let src = std::path::Path::new(&entry.path);
+        if !src.exists() || !is_inside_folder(from_dir, &entry.path) {
+            continue;
         }
+        let fname = src
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or(&entry.filename)
+            .to_string();
+        let dest = format!("{}/{}", dest_vols.replace('\\', "/"), fname);
 
-        let dest_vols = docker_volumes_dir(&to_dir);
-        fs::create_dir_all(&dest_vols)
-            .map_err(|e| format!("Cannot create '{}': {}", dest_vols, e))?;
+        let ok = fs::rename(&entry.path, &dest).is_ok()
+            || fs::copy(&entry.path, &dest).map(|_| { fs::remove_file(&entry.path).ok(); }).is_ok();
 
-        let mut manifest = read_manifest(&from_dir);
-        let mut transferred = 0u32;
-
-        for entry in &mut manifest.backups {
-            let src = std::path::Path::new(&entry.path);
-            if !src.exists() {
-                continue;
-            }
-            let fname = src
-                .file_name()
-                .and_then(|f| f.to_str())
-                .unwrap_or(&entry.filename)
-                .to_string();
-            let dest = format!("{}/{}", dest_vols.replace('\\', "/"), fname);
-
-            let ok = fs::rename(&entry.path, &dest).is_ok()
-                || fs::copy(&entry.path, &dest).map(|_| { fs::remove_file(&entry.path).ok(); }).is_ok();
-
-            if ok {
-                entry.path = dest;
-                transferred += 1;
-            }
+        if ok {
+            entry.path = dest;
+            transferred += 1;
         }
+    }
 
-        // Write updated manifest to new root, remove old manifests
-        write_manifest(&to_dir, &manifest)?;
-        fs::remove_file(format!("{}/backup_manifest.json", from_dir)).ok();
-        fs::remove_file(format!("{}/docker/manifest.json", from_dir)).ok();
+    // The new folder can already hold backups, so its list is added to, not replaced.
+    let mut target = read_manifest(to_dir);
+    target.backups.retain(|old| !manifest.backups.iter().any(|e| e.filename == old.filename));
+    target.backups.append(&mut manifest.backups);
+    write_manifest(to_dir, &target)?;
+    fs::remove_file(format!("{}/backup_manifest.json", from_dir)).ok();
+    fs::remove_file(format!("{}/docker/manifest.json", from_dir)).ok();
 
-        // Transfer compose subdirectory (old flat or new docker/compose/)
-        for src_compose in [
-            format!("{}/docker/compose", from_dir.replace('\\', "/")),
-            format!("{}/compose",        from_dir.replace('\\', "/")),
-        ] {
-            if !std::path::Path::new(&src_compose).exists() {
-                continue;
-            }
-            let dst_compose = docker_compose_dir(&to_dir);
-            if fs::create_dir_all(&dst_compose).is_ok() {
-                if let Ok(entries) = fs::read_dir(&src_compose) {
-                    for dir_entry in entries.flatten() {
-                        let sf = dir_entry.path();
-                        if let Some(name) = sf.file_name().and_then(|n| n.to_str()) {
-                            let df = format!("{}/{}", dst_compose, name);
-                            if fs::rename(&sf, &df).is_err() {
-                                if fs::copy(&sf, &df).is_ok() {
-                                    fs::remove_file(&sf).ok();
-                                }
+    // Transfer compose subdirectory (old flat or new docker/compose/)
+    for src_compose in [
+        format!("{}/docker/compose", from_dir.replace('\\', "/")),
+        format!("{}/compose",        from_dir.replace('\\', "/")),
+    ] {
+        if !std::path::Path::new(&src_compose).exists() {
+            continue;
+        }
+        let dst_compose = docker_compose_dir(to_dir);
+        let mut kept = read_compose_manifest(to_dir).backups;
+        if fs::create_dir_all(&dst_compose).is_ok() {
+            if let Ok(entries) = fs::read_dir(&src_compose) {
+                for dir_entry in entries.flatten() {
+                    let sf = dir_entry.path();
+                    if let Some(name) = sf.file_name().and_then(|n| n.to_str()) {
+                        let df = format!("{}/{}", dst_compose, name);
+                        if fs::rename(&sf, &df).is_err() {
+                            if fs::copy(&sf, &df).is_ok() {
+                                fs::remove_file(&sf).ok();
                             }
                         }
                     }
                 }
             }
-            break; // only migrate one source compose dir
         }
 
-        // Remove the old root if nothing remains in it.
-        let old_dir_removed = is_effectively_empty(std::path::Path::new(&from_dir))
-            && std::fs::remove_dir_all(&from_dir).is_ok();
+        // The list moved with the files, but its paths still name the old folder, and the
+        // Compose page hides a backup whose file it cannot find.
+        let mut list = read_compose_manifest(to_dir);
+        for entry in &mut list.backups {
+            let moved = format!("{}/{}", dst_compose, entry.filename);
+            if std::path::Path::new(&moved).exists() {
+                entry.path = moved;
+            }
+        }
+        kept.retain(|old| !list.backups.iter().any(|e| e.filename == old.filename));
+        list.backups.append(&mut kept);
+        write_compose_manifest(to_dir, &list)?;
+        break; // only migrate one source compose dir
+    }
 
-        Ok(TransferResult { moved: transferred, old_dir_removed })
-    }).await
+    // Remove the old root if nothing remains in it.
+    let old_dir_removed = is_effectively_empty(std::path::Path::new(from_dir))
+        && std::fs::remove_dir_all(from_dir).is_ok();
+
+    Ok(TransferResult { moved: transferred, old_dir_removed })
 }
 
 /// Delete a backup archive and remove its entry from the manifest.
@@ -2308,24 +2346,10 @@ pub async fn docker_delete_backup(
             .map(|e| e.path.clone())
             .unwrap_or_else(|| format!("{}/docker/volumes/{}", backup_dir, filename));
 
-        app.emit("shell-out", ShellOut {
-            text:   format!("Remove-Item \"{}\"", path.replace('/', "\\")),
-            stderr: false,
-        }).ok();
-
-        if std::path::Path::new(&path).exists() {
-            std::fs::remove_file(&path)
-                .map_err(|e| format!("Failed to delete '{}': {}", path, e))?;
-        }
+        remove_backup_file(&app, &backup_dir, &path, &filename)?;
 
         manifest.backups.retain(|e| e.filename != filename);
-        write_manifest(&backup_dir, &manifest)?;
-
-        app.emit("shell-out", ShellOut {
-            text:   format!("  \u{2713} deleted {}", filename),
-            stderr: false,
-        }).ok();
-        Ok(())
+        write_manifest(&backup_dir, &manifest)
     }).await
 }
 
@@ -2744,12 +2768,12 @@ pub async fn compose_logs_watch(
         let tx2 = tx.clone();
         if let Some(out) = stdout {
             thread::spawn(move || {
-                BufReader::new(out).lines().flatten().for_each(|l| { tx.send(l).ok(); });
+                output_lines(out).for_each(|l| { tx.send(l).ok(); });
             });
         }
         if let Some(err) = stderr {
             thread::spawn(move || {
-                BufReader::new(err).lines().flatten().for_each(|l| { tx2.send(l).ok(); });
+                output_lines(err).for_each(|l| { tx2.send(l).ok(); });
             });
         }
 
@@ -2885,6 +2909,93 @@ mod tests {
 
         assert_eq!(found.len(), 2, "{found:?}");
         assert!(found.iter().all(|p| !p.contains("node_modules")), "{found:?}");
+    }
+
+    /// A folder holding one volume backup and one Compose backup, with both lists.
+    fn backup_folder(root: &std::path::Path, stamp: u32) {
+        let text = root.to_str().unwrap().replace('\\', "/");
+        std::fs::create_dir_all(root.join("docker/volumes")).unwrap();
+        std::fs::create_dir_all(root.join("docker/compose")).unwrap();
+        let (volume, compose) = (format!("data_{stamp}.tar.gz"), format!("compose_{stamp}.yml"));
+        std::fs::write(root.join("docker/volumes").join(&volume), "volume").unwrap();
+        std::fs::write(root.join("docker/compose").join(&compose), "compose").unwrap();
+        write_manifest(&text, &BackupManifest { backups: vec![VolumeBackupEntry {
+            filename: volume.clone(), volume: "data".into(), path: format!("{text}/docker/volumes/{volume}"), size_bytes: 6, created_at: 1,
+        }] }).unwrap();
+        write_compose_manifest(&text, &ComposeBackupManifest { backups: vec![ComposeBackupEntry {
+            filename: compose.clone(), project: "app".into(), original_path: "C:/app/compose.yml".into(),
+            path: format!("{text}/docker/compose/{compose}"), size_bytes: 7, created_at: 1,
+        }] }).unwrap();
+    }
+
+    fn test_folder(name: &str) -> std::path::PathBuf {
+        let folder = std::env::temp_dir().join(format!("atlas-backup-test-{}-{}", name, std::process::id()));
+        std::fs::remove_dir_all(&folder).ok();
+        std::fs::create_dir_all(&folder).unwrap();
+        folder
+    }
+
+    #[test]
+    fn moving_backups_keeps_them_listed_and_keeps_what_the_new_folder_had() {
+        let folder = test_folder("move");
+        let (from, to) = (folder.join("from"), folder.join("to"));
+        backup_folder(&from, 1);
+        backup_folder(&to, 2);
+        let (from_text, to_text) = (from.to_str().unwrap(), to.to_str().unwrap().replace('\\', "/"));
+
+        let result = move_backups(from_text, &to_text).unwrap();
+        assert_eq!(result.moved, 1);
+        assert!(result.old_dir_removed);
+
+        let compose = read_compose_manifest(&to_text).backups;
+        assert_eq!(compose.len(), 2, "the moved backup and the one already there");
+        assert!(compose.iter().all(|e| std::path::Path::new(&e.path).exists() && e.path.starts_with(&to_text)), "the Compose page hides a backup whose file is missing");
+
+        let volumes = read_manifest(&to_text).backups;
+        assert_eq!(volumes.len(), 2);
+        assert!(volumes.iter().all(|e| std::path::Path::new(&e.path).exists() && e.path.starts_with(&to_text)));
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn moving_backups_to_the_same_folder_spelled_differently_changes_nothing() {
+        let folder = test_folder("same");
+        let root = folder.join("root");
+        backup_folder(&root, 1);
+        let backslashes = root.to_str().unwrap().replace('/', "\\");
+        let slashes = backslashes.replace('\\', "/");
+
+        for other in [slashes.clone(), format!("{slashes}/"), slashes.to_uppercase()] {
+            let result = move_backups(&backslashes, &other).unwrap();
+            assert_eq!(result.moved, 0, "{other}");
+            assert_eq!(read_manifest(&slashes).backups.len(), 1, "{other}");
+            assert_eq!(read_compose_manifest(&slashes).backups.len(), 1, "{other}");
+        }
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn a_path_in_a_backup_list_cannot_reach_outside_the_folder() {
+        let folder = test_folder("inside");
+        let (root, outside) = (folder.join("root"), folder.join("important.tar.gz"));
+        backup_folder(&root, 1);
+        std::fs::write(&outside, "keep me").unwrap();
+        let root_text = root.to_str().unwrap().replace('\\', "/");
+        let outside_text = outside.to_str().unwrap().to_string();
+
+        assert!(is_inside_folder(&root_text, &format!("{root_text}/docker/volumes/data_1.tar.gz")));
+        assert!(!is_inside_folder(&root_text, &outside_text));
+        assert!(!is_inside_folder(&root_text, &format!("{root_text}/docker/../../important.tar.gz")), "climbing out with ..");
+        assert!(!is_inside_folder(&root_text, &format!("{root_text}/docker/volumes/missing.tar.gz")));
+
+        // A tampered list names a file outside the folder, and moving must leave that file alone.
+        let mut list = read_manifest(&root_text);
+        list.backups[0].path = outside_text.clone();
+        write_manifest(&root_text, &list).unwrap();
+        let to = folder.join("to");
+        assert_eq!(move_backups(&root_text, to.to_str().unwrap()).unwrap().moved, 0);
+        assert_eq!(std::fs::read_to_string(&outside).unwrap(), "keep me");
+        std::fs::remove_dir_all(&folder).unwrap();
     }
 
     #[test]

@@ -149,20 +149,21 @@ export default function WslDistroPage({ distros, onReload }: {
   const deleteArmed = deleteText.trim() === d.name
 
   const runDelete = () => op.run(async () => {
-    if (!deleteArmed) return
-    setBusyOp('delete'); setDeleteErr(null)
+    if (!deleteArmed || useAppStore.getState().wslBusyDistro) return
+    setBusyOp('delete'); setBusyDistro(d.name); setDeleteErr(null)
     try {
       await api.wslUnregisterDistro(d.name, deleteText.trim())
       addActivity({ module: 'wsl', action: `Deleted ${d.name}`, outcome: 'success', detail: `unregistered · ${bytesToHuman(d.vhd_size_bytes)} freed` })
       setShowDelete(false); setDeleteText('')
       // The page we're on no longer has a distro behind it, so leave for the
-      // dashboard before the reload drops it from the list.
+      // dashboard before the reload drops it from the list. The busy mark blocks leaving.
+      setBusyDistro(null)
       useAppStore.getState().setWslView('dashboard')
       onReload()
     } catch (e) {
       setDeleteErr(String(e))
       addActivity({ module: 'wsl', action: `Delete ${d.name}`, outcome: 'failure', detail: String(e) })
-    } finally { setBusyOp(null) }
+    } finally { setBusyOp(null); setBusyDistro(null) }
   })
 
   const busy = busyOp !== null || busyDistro !== null
@@ -362,7 +363,7 @@ export default function WslDistroPage({ distros, onReload }: {
           {deleteErr && <div className="settings-status settings-status--error" role="alert">{deleteErr}</div>}
           <div className="modal-actions">
             <button className="btn-secondary" onClick={() => { setShowDelete(false); setDeleteText('') }} disabled={busyOp === 'delete'}>Cancel</button>
-            <button className="btn-filled btn-filled--danger" onClick={runDelete} disabled={!deleteArmed || busyOp === 'delete'}>
+            <button className="btn-filled btn-filled--danger" onClick={runDelete} disabled={!deleteArmed || busy}>
               <Trash2 size={13} /> {busyOp === 'delete' ? 'Deleting…' : 'Delete permanently'}
             </button>
           </div>

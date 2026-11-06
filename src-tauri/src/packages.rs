@@ -470,11 +470,13 @@ fn upgrade_command(source: &str, id: &str) -> Option<String> {
 
 /// Wrap a command so Windows asks for approval and runs it in its own window,
 /// since an elevated process cannot stream to this one. The exit code still
-/// comes back. Validated ids keep quotes out of the string.
+/// comes back. Validated ids keep quotes out of the string. A declined prompt exits 1223:
+/// Start-Process keeps only the translated text of that error, so it is compared with the same
+/// text from Windows, which works in any language.
 fn as_admin<S: AsRef<str>>(argv: &[S]) -> Vec<String> {
     let args: Vec<&str> = argv[1..].iter().map(AsRef::as_ref).collect();
     let script = format!(
-        "exit (Start-Process {} -Verb RunAs -Wait -PassThru -ArgumentList '{}').ExitCode",
+        "try {{ exit (Start-Process {} -Verb RunAs -Wait -PassThru -ArgumentList '{}').ExitCode }} catch {{ if ($_.Exception.Message.Contains((New-Object ComponentModel.Win32Exception 1223).Message)) {{ exit 1223 }}; throw }}",
         argv[0].as_ref(),
         args.join(" ")
     );
@@ -698,13 +700,14 @@ fn run_streamed(app: &tauri::AppHandle, argv: &[&str], failure: &str) -> Result<
         .take()
         .map(|pipe| stream_lines(app, pipe, false))
         .unwrap_or_default();
-    let err_tail = err_thread.and_then(|t| t.join().ok()).unwrap_or_default();
+    if let Some(thread) = err_thread {
+        thread.join().ok();
+    }
     let status = child.wait()?;
     if status.success() {
         return Ok(());
     }
-    // `as_admin` has no error code to read, only Start-Process's message on stderr.
-    if err_tail.to_lowercase().contains("canceled by the user") {
+    if status.code() == Some(1223) {
         return Err(AtlasError::new(ErrorKind::Elevation, "Administrator approval was not given, so nothing was changed.")
             .hint("To continue, run it again and approve the prompt."));
     }
@@ -2046,7 +2049,7 @@ oauth 1.0 requires requests-oauthlib, which is not installed.
         assert_eq!(upgrade_command("npm", "@scope/tool").as_deref(), Some("npm.cmd install --global @scope/tool"));
         assert_eq!(
             upgrade_command("choco", "git.install").as_deref(),
-            Some("powershell -NoProfile -NonInteractive -Command \"exit (Start-Process choco -Verb RunAs -Wait -PassThru -ArgumentList 'upgrade git.install --yes').ExitCode\"")
+            Some("powershell -NoProfile -NonInteractive -Command \"try { exit (Start-Process choco -Verb RunAs -Wait -PassThru -ArgumentList 'upgrade git.install --yes').ExitCode } catch { if ($_.Exception.Message.Contains((New-Object ComponentModel.Win32Exception 1223).Message)) { exit 1223 }; throw }\"")
         );
         // These would break out of the quoted string that runs elevated.
         for bad in ["a'b", "a b", "a;calc", "--force", "a$b", "a`b", ""] {
@@ -2060,10 +2063,27 @@ oauth 1.0 requires requests-oauthlib, which is not installed.
     fn admin_commands_keep_the_exact_arguments() {
         assert_eq!(
             command_line(&as_admin(&["pip", "install", "--upgrade", "ninja"])),
-            "powershell -NoProfile -NonInteractive -Command \"exit (Start-Process pip -Verb RunAs -Wait -PassThru -ArgumentList 'install --upgrade ninja').ExitCode\""
+            "powershell -NoProfile -NonInteractive -Command \"try { exit (Start-Process pip -Verb RunAs -Wait -PassThru -ArgumentList 'install --upgrade ninja').ExitCode } catch { if ($_.Exception.Message.Contains((New-Object ComponentModel.Win32Exception 1223).Message)) { exit 1223 }; throw }\""
         );
         assert!(!needs_admin("npm"));
         assert!(!needs_admin("choco"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_declined_admin_prompt_exits_1223_in_any_language() {
+        let run = |body: &str| {
+            let script = as_admin(&["pip", "install", "ninja"]).pop().unwrap();
+            let mock = format!("function Start-Process {{ param($FilePath, $Verb, [switch]$Wait, [switch]$PassThru, $ArgumentList) {body} }}\n{script}");
+            std::process::Command::new("powershell")
+                .args(["-NoProfile", "-NonInteractive", "-Command", &mock])
+                .output().unwrap().status.code()
+        };
+        // Windows PowerShell's Start-Process throws this shape, with no error code on it.
+        let refusal = |code: u32| format!("throw [InvalidOperationException]::new('This command cannot be run due to the error: ' + (New-Object ComponentModel.Win32Exception {code}).Message)");
+        assert_eq!(run(&refusal(1223)), Some(1223));
+        assert_eq!(run(&refusal(5)), Some(1), "another failure is not a declined prompt");
+        assert_eq!(run("[pscustomobject]@{ ExitCode = 7 }"), Some(7), "the program's own exit code comes back");
     }
 
     #[test]

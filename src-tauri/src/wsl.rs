@@ -433,6 +433,14 @@ pub async fn wsl_conf_restore(
     }).await
 }
 
+/// True for `{root}/wsl/wslconfig/*.conf` and `{root}/wsl/wslconf/*.conf`, where this app saves them.
+fn is_conf_backup(path: &str) -> bool {
+    let path = path.replace('\\', "/");
+    let parts: Vec<&str> = path.split('/').collect();
+    matches!(parts.as_slice(), [.., "wsl", "wslconfig" | "wslconf", file] if file.ends_with(".conf"))
+        && !parts.contains(&"..")
+}
+
 /// Delete a single config backup file (used for both .wslconfig and wsl.conf backups).
 #[tauri::command]
 pub async fn wsl_conf_delete_backup(
@@ -440,6 +448,9 @@ pub async fn wsl_conf_delete_backup(
     app: tauri::AppHandle,
     backup_path: String,
 ) -> Result<(), AtlasError> {
+    if !is_conf_backup(&backup_path) {
+        return Err(AtlasError::invalid("This file is not a config backup, so it was not deleted."));
+    }
     migration.inner().clone().run_operation(move || {
         emit_line(&app, format!("$ Remove-Item \"{}\"", backup_path.replace('/', "\\")), false);
         if std::path::Path::new(&backup_path).exists() {
@@ -1637,15 +1648,19 @@ pub async fn wsl_clone_distro(
     }).await
 }
 
+// Async because a command that is not runs on the window's thread, and checking a folder on a
+// sleeping disk would freeze the window until the disk wakes up.
 #[tauri::command]
-pub fn wsl_suggest_migration_dir(distro: String, new_dir: String) -> Result<String, AtlasError> {
-    crate::wsl_migration::suggest_folder(std::path::Path::new(new_dir.trim()), &distro).map_err(|mut error| {
-        error.action = Some(RecoveryAction::ChooseFolder);
-        if matches!(error.kind, ErrorKind::Permission | ErrorKind::Elevation) {
-            error.hint = Some("Choose a local folder you own. No folder has been created.".to_string());
-        }
-        error
-    })
+pub async fn wsl_suggest_migration_dir(distro: String, new_dir: String) -> Result<String, AtlasError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::wsl_migration::suggest_folder(std::path::Path::new(new_dir.trim()), &distro).map_err(|mut error| {
+            error.action = Some(RecoveryAction::ChooseFolder);
+            if matches!(error.kind, ErrorKind::Permission | ErrorKind::Elevation) {
+                error.hint = Some("Choose a local folder you own. No folder has been created.".to_string());
+            }
+            error
+        })
+    }).await.map_err(|e| e.to_string())?
 }
 
 fn decode_wsl_output(bytes: &[u8]) -> String {
@@ -2638,6 +2653,21 @@ function Start-Process {{
         let refusal = |code: u32| format!("throw [InvalidOperationException]::new('This command cannot be run due to the error: ' + (New-Object ComponentModel.Win32Exception {code}).Message)");
         assert_eq!(run(&refusal(1223), "Write-Output 'x'").status.code(), Some(1223));
         assert_eq!(run(&refusal(5), "Write-Output 'x'").status.code(), Some(1));
+    }
+
+    #[test]
+    fn only_a_saved_config_backup_can_be_deleted() {
+        assert!(is_conf_backup("C:/b/wsl/wslconfig/wslconfig_1700000000.conf"));
+        assert!(is_conf_backup(r"C:/b/wsl/wslconf\ubuntu_1700000000.conf"));
+        assert!(is_conf_backup(r"C:\b\wsl\wslconf\ubuntu_1700000000.conf"));
+
+        assert!(!is_conf_backup(r"C:\Users\me\.wslconfig"));
+        assert!(!is_conf_backup(r"C:\Users\me\Documents\report.docx"));
+        assert!(!is_conf_backup("C:/b/wsl/wslconf/report.docx"));
+        assert!(!is_conf_backup("C:/b/other/wslconf/ubuntu_1.conf"));
+        assert!(!is_conf_backup("C:/wsl/wslconf/../../Windows/app.conf"));
+        assert!(!is_conf_backup("C:/b/../wsl/wslconf/ubuntu_1.conf"));
+        assert!(!is_conf_backup(""));
     }
 
     #[test]

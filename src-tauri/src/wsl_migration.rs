@@ -833,7 +833,10 @@ mod tests {
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_nanos();
-            let root = parent.join(format!("case-{}", id));
+            // Tests run at once and can read the same clock value.
+            static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+            let number = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let root = parent.join(format!("case-{}-{}", id, number));
             fs::create_dir(&root).unwrap();
             let root = root.canonicalize().unwrap();
             let base = root.join("source");
