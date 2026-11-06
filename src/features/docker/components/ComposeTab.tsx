@@ -490,11 +490,9 @@ export default function ComposeTab({
   const [wipeConfirmOpen, setWipeConfirmOpen] = useState(false)
   const [wipeRunning, setWipeRunning]         = useState(false)
 
-  // Detected Dockerfiles and .env files the compose file references, cached per project. Preloaded
-  // so the sidebar file menu never flickers as content loads.
+  // Detected Dockerfiles and .env files the compose file references, cached per project.
   const [filesByProject, setFilesByProject] = useState<Record<string, DetectedFile[]>>({})
-  // Projects whose detection is in flight, so the preload and a user-select
-  // never run detection for the same project at once.
+  // Projects whose detection is in flight, so it never runs twice at once for one project.
   const detectingRef = useRef<Set<string>>(new Set())
   const [fileContents, setFileContents] = useState<Record<string, string>>({})
 
@@ -571,8 +569,6 @@ export default function ComposeTab({
     setActiveFile(abs); setEditMode(false); loadExtraFile(abs)
   }
 
-  const composeFileSelect = useAppStore(s => s.composeFileSelect)
-
   // Re-selecting the active file is a no-op unless it failed to load. Then clicking it again retries.
   const openFile = (path: string) => {
     if (!path || (path === activeFile && !fileError)) return
@@ -584,22 +580,8 @@ export default function ComposeTab({
   }
 
   useEffect(() => {
-    if (viewMode !== 'project' || !selected) {
-      useAppStore.getState().setComposeFilesNav([])
-      return
-    }
-    useAppStore.getState().setComposeFilesNav(buildFileNav(selected, visibleProjectFiles))
-  }, [viewMode, selected, visibleProjectFiles])
-
-  useEffect(() => {
     useAppStore.getState().setComposeActiveFilePath(viewMode === 'project' ? (activeFile || null) : null)
   }, [viewMode, activeFile])
-
-  useEffect(() => {
-    if (!composeFileSelect) return
-    useAppStore.getState().setComposeFileSelect(null)
-    openFile(composeFileSelect)
-  }, [composeFileSelect]) // eslint-disable-line
 
   const fileType = useMemo((): 'compose' | 'env' | 'dockerfile' => {
     const name = activeFile.split('/').pop()?.split('\\').pop() ?? ''
@@ -609,7 +591,7 @@ export default function ComposeTab({
   }, [activeFile])
 
   // On failure (e.g. WSL busy) the entry stays uncached, so a later select retries rather than
-  // caching an empty menu.
+  // caching an empty list.
   const ensureProjectFiles = async (project: ComposeProject, force = false) => {
     if (detectingRef.current.has(project.name)) return
     if (!force && filesByProject[project.name] !== undefined) return
@@ -653,18 +635,6 @@ export default function ComposeTab({
 
   useEffect(() => { loadProjects() }, [refreshTick]) // eslint-disable-line
 
-  // One project at a time: a burst of concurrent `wsl` reads can fail, especially during WSL cold-start.
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      for (const p of projects) {
-        if (cancelled) break
-        await ensureProjectFiles(p)
-      }
-    })()
-    return () => { cancelled = true }
-  }, [projects]) // eslint-disable-line
-
   useEffect(() => {
     api.metadataLoad().then(setMetadata).catch(() => {})
   }, [])
@@ -672,16 +642,6 @@ export default function ComposeTab({
   useEffect(() => {
     api.detectEditors().then(setDetectedEditors).catch(() => {})
   }, [])
-
-  const composeShowOverview = useAppStore(s => s.composeShowOverview)
-
-  useEffect(() => {
-    if (!composeShowOverview) return
-    useAppStore.getState().setComposeShowOverview(false)
-    setViewMode('main')
-    setSelected(null)
-    useAppStore.getState().setComposeActiveProject(null)
-  }, [composeShowOverview])
 
   useEffect(() => {
     useAppStore.getState().setComposeProjectsNav(
@@ -708,9 +668,6 @@ export default function ComposeTab({
     // Re-selecting the open project must not reload content already on screen: that causes a visible flicker.
     if (selected?.name === project.name) return
 
-    // Publish the new project's file menu in the same render as setSelected, from
-    // the preloaded cache, so the sidebar never shows an empty or stale menu.
-    useAppStore.getState().setComposeFilesNav(buildFileNav(project, filesByProject[project.name] ?? EMPTY_FILES))
     setSelected(project)
     fileRequest.current++
     setFileLoading(false)
@@ -1159,6 +1116,27 @@ export default function ComposeTab({
           <div className="compose-project-layout">
 
             <div className="compose-project-left">
+
+              {selected && (() => {
+                const files = buildFileNav(selected, visibleProjectFiles)
+                return files.length > 1 && (
+                  <div className="compose-file-tabs" role="group" aria-label="Project files">
+                    {files.map(f => (
+                      <button
+                        key={f.path}
+                        className={clsx('compose-file-path-item', f.path === activeFile && 'active')}
+                        onClick={() => openFile(f.path)}
+                        title={f.path}
+                        aria-current={f.path === activeFile ? 'true' : undefined}
+                      >
+                        {f.kind === 'dockerfile' && <FileCode2 size={11} style={{ color: 'var(--chart-4)', flexShrink: 0 }} />}
+                        {f.kind === 'env' && <FileKey size={11} style={{ color: 'var(--color-warning)', flexShrink: 0 }} />}
+                        <span className="compose-file-path-text"><bdi>{f.label}</bdi></span>
+                      </button>
+                    ))}
+                  </div>
+                )
+              })()}
 
               <div className="compose-left-header">
                 <div className="compose-active-file" title={activeFile}>

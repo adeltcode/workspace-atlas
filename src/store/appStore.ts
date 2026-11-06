@@ -163,17 +163,8 @@ interface AppState {
   forgetComposeProject: (name: string) => void
   composeActiveProject: string | null
   setComposeActiveProject: (name: string | null) => void
-  // Published by ComposeTab and shown as a child menu in the sidebar.
-  composeFilesNav: Array<{ path: string; label: string; kind: 'compose' | 'dockerfile' | 'env' }>
-  setComposeFilesNav: (files: Array<{ path: string; label: string; kind: 'compose' | 'dockerfile' | 'env' }>) => void
   composeActiveFilePath: string | null
   setComposeActiveFilePath: (p: string | null) => void
-  // Sidebar → ComposeTab: open this file path (cleared after read)
-  composeFileSelect: string | null
-  setComposeFileSelect: (p: string | null) => void
-  // When true, ComposeTab should switch to main overview page (cleared after read)
-  composeShowOverview: boolean
-  setComposeShowOverview: (v: boolean) => void
   preferredEditor: { name: string; command: string } | null
   setPreferredEditor: (e: { name: string; command: string } | null) => void
 
@@ -345,14 +336,8 @@ export const useAppStore = create<AppState>()(
         }),
       composeActiveProject:   null,
       setComposeActiveProject:(composeActiveProject) => set({ composeActiveProject }),
-      composeFilesNav:        [],
-      setComposeFilesNav:     (composeFilesNav) => set({ composeFilesNav }),
       composeActiveFilePath:  null,
       setComposeActiveFilePath: (composeActiveFilePath) => set({ composeActiveFilePath }),
-      composeFileSelect:      null,
-      setComposeFileSelect:   (composeFileSelect) => set({ composeFileSelect }),
-      composeShowOverview:    false,
-      setComposeShowOverview: (composeShowOverview) => set({ composeShowOverview }),
       preferredEditor:        null,
       setPreferredEditor:     (preferredEditor) => set({ preferredEditor }),
 
