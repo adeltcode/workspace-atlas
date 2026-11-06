@@ -573,28 +573,19 @@ fn count_unused_volumes_sync() -> u32 {
         .unwrap_or(0)
 }
 
+fn volume_sizes_command() -> Command {
+    let mut cmd = hidden("docker");
+    cmd.args(["system", "df", "-v"]);
+    cmd
+}
+
 /// Run `docker system df -v` and return a map of volume name → size in bytes.
 /// Returns an empty map on any error so it degrades gracefully.
 fn get_volume_sizes_sync() -> std::collections::HashMap<String, u64> {
-    let output = match hidden("docker")
-        .args(["system", "df", "-v", "--format", "{{json .}}"])
-        .output()
-    {
-        // Some older Docker versions don't support --format with -v; fall back to plain text
-        Ok(o) if o.status.success() => o,
-        _ => {
-            // Fallback: plain text
-            match hidden("docker").args(["system", "df", "-v"]).output() {
-                Ok(o) if o.status.success() => return parse_volume_sizes_text(&String::from_utf8_lossy(&o.stdout)),
-                _ => return std::collections::HashMap::new(),
-            }
-        }
-    };
-
-    // `--format` is unreliable with `-v` across Docker versions, so the output is
-    // parsed as plain text in both the primary and fallback paths.
-    let text = String::from_utf8_lossy(&output.stdout);
-    parse_volume_sizes_text(&text)
+    match volume_sizes_command().output() {
+        Ok(o) if o.status.success() => parse_volume_sizes_text(&String::from_utf8_lossy(&o.stdout)),
+        _ => std::collections::HashMap::new(),
+    }
 }
 
 fn parse_volume_sizes_text(text: &str) -> std::collections::HashMap<String, u64> {
@@ -2920,6 +2911,43 @@ mod tests {
         let (free, total) = crate::system::disk_space("C:\\").unwrap();
         assert!(total > 0 && free <= total);
         assert!(crate::system::disk_space("Q:\\no-such-drive").is_none() || std::path::Path::new("Q:\\").exists());
+    }
+
+    #[test]
+    fn volume_sizes_are_read_from_the_plain_table() {
+        let output = "\
+Images space usage:
+
+REPOSITORY   TAG       IMAGE ID       CREATED       SIZE      SHARED SIZE   UNIQUE SIZE   CONTAINERS
+nginx        alpine    4bd5e4b0f6c7   2 weeks ago   43.3MB    0B            43.3MB        1
+
+Containers space usage:
+
+CONTAINER ID   IMAGE     COMMAND   LOCAL VOLUMES   SIZE      CREATED       STATUS    NAMES
+f1c2d3e4a5b6   nginx     \"nginx\"   1               2B        2 weeks ago   Up 2 hours   web
+
+Local Volumes space usage:
+
+VOLUME NAME   LINKS     SIZE
+app_data      1         1.5GB
+cache-vol     0         43.6MB
+empty_one     0         0B
+
+Build cache usage: 0B
+
+CACHE ID   CACHE TYPE   SIZE      CREATED   LAST USED   USAGE     SHARED
+";
+        let sizes = parse_volume_sizes_text(output);
+        assert_eq!(sizes.len(), 3, "{sizes:?}");
+        assert_eq!(sizes["app_data"], 1_500_000_000);
+        assert_eq!(sizes["cache-vol"], 43_600_000);
+        assert_eq!(sizes["empty_one"], 0);
+    }
+
+    #[test]
+    fn volume_sizes_use_the_command_that_prints_the_table() {
+        let args: Vec<_> = volume_sizes_command().get_args().map(|a| a.to_string_lossy().into_owned()).collect();
+        assert_eq!(args, ["system", "df", "-v"], "--format replaces the table the parser reads");
     }
 
     #[test]

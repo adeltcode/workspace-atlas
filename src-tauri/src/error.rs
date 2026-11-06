@@ -140,7 +140,8 @@ impl From<std::io::Error> for AtlasError {
 /// prompt also reports as access-denied, and the recovery is different. Kept as
 /// a flat scan of lowercase substrings rather than regex, because the inputs are
 /// Windows error text, `docker` stderr and `wsl` stderr, none of which are
-/// stable enough to be worth a grammar.
+/// stable enough to be worth a grammar. An `os error` needle ends in `)` so that
+/// code 5 does not also match code 53.
 pub fn classify(raw: &str) -> AtlasError {
     let t = raw.to_lowercase();
     let has = |needles: &[&str]| needles.iter().any(|n| t.contains(n));
@@ -152,25 +153,25 @@ pub fn classify(raw: &str) -> AtlasError {
             .hint("Re-run it with the terminal panel open to see the raw output.");
     }
 
-    if has(&["cancelled by the user", "canceled by the user", "operation was canceled", "administrator access was cancelled", "requires elevation", "os error 740", "the operation was cancelled by the user"]) {
+    if has(&["cancelled by the user", "canceled by the user", "operation was canceled", "administrator access was cancelled", "requires elevation", "os error 740)", "the operation was cancelled by the user"]) {
         return AtlasError::new(ErrorKind::Elevation, "Administrator approval was not given.")
             .hint("This needs administrator rights. Run it again and approve the prompt.")
             .detail(raw);
     }
 
-    if has(&["access is denied", "permission denied", "permissiondenied", "os error 5", "not authorized", "access to the path"]) {
+    if has(&["access is denied", "permission denied", "permissiondenied", "os error 5)", "not authorized", "access to the path"]) {
         return AtlasError::new(ErrorKind::Permission, "Windows denied access.")
             .hint("A program may have the file open, or your account may not have access to the path. Stop the distro or container that uses it, then try again.")
             .detail(raw);
     }
 
-    if has(&["being used by another process", "os error 32", "sharing violation", "resource busy", "is currently in use", "device or resource busy", "text file busy", "os error 33"]) {
+    if has(&["being used by another process", "os error 32)", "sharing violation", "resource busy", "is currently in use", "device or resource busy", "text file busy", "os error 33)"]) {
         return AtlasError::new(ErrorKind::Busy, "The file is open in another program.")
             .hint("This is usually a running distro or container. Stop it, then try again.")
             .detail(raw);
     }
 
-    if has(&["no space left", "not enough space", "os error 112", "insufficient disk space", "disk full", "no space available"]) {
+    if has(&["no space left", "not enough space", "os error 112)", "insufficient disk space", "disk full", "no space available"]) {
         return AtlasError::new(ErrorKind::DiskFull, "The drive is out of space.")
             .hint("Free some space and try again. The Prune page shows what Docker can reclaim.")
             .detail(raw);
@@ -188,13 +189,18 @@ pub fn classify(raw: &str) -> AtlasError {
             .detail(raw);
     }
 
-    if has(&["is not a registered distribution", "cannot find the file", "cannot find the path", "os error 2", "os error 3", "no such file", "not found", "does not exist"]) {
+    if has(&["is not a registered distribution", "cannot find the file", "cannot find the path", "os error 2)", "os error 3)", "no such file", "not found", "does not exist"]) {
         return AtlasError::new(ErrorKind::NotFound, "The item could not be found.")
             .hint("Refresh to see the current state. It may have been removed outside Atlas.")
             .detail(raw);
     }
 
-    if has(&["could not resolve", "dns", "connection refused", "network is unreachable", "os error 10054", "os error 10060", "os error 11001", "certificate", "tls", "connection reset"]) {
+    // Whole phrases, because this text can hold Docker names such as `pihole_dnsmasq` or `mtls_net`.
+    if has(&[
+        "could not resolve", "no such host", "dns failed", "connection refused", "connection reset", "network is unreachable",
+        "os error 10054)", "os error 10060)", "os error 11001)",
+        "tls connection", "tls handshake", "tls: failed", "tls: handshake", "x509: certificate", "invalid peer certificate",
+    ]) {
         return AtlasError::new(ErrorKind::Network, "A network request failed.")
             .hint("Check your internet connection and try again.")
             .detail(raw);
@@ -219,6 +225,56 @@ pub fn classify(raw: &str) -> AtlasError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_name_holding_an_error_word_is_not_that_error() {
+        for raw in [
+            "Error response from daemon: remove pihole_dnsmasq: volume is in use - [3fa9]",
+            "Error response from daemon: remove traefik_certificates: volume is in use - [3fa9]",
+            "Error response from daemon: remove mtls: volume is in use - [3fa9]",
+            "Error response from daemon: network mtls_net id 8c1f has active endpoints",
+        ] {
+            assert_eq!(classify(raw).kind, ErrorKind::Unknown, "{raw}");
+            assert_eq!(classify(raw).message, raw, "the raw text says what happened");
+        }
+    }
+
+    #[test]
+    fn real_network_failures_still_read_as_network() {
+        for raw in [
+            // ureq, with its own wording.
+            "https://example.com/a.wsl: Dns Failed: resolve dns name 'example.com:443': failed to lookup address information",
+            "https://example.com/a.wsl: Connection Failed: tls connection init failed: invalid peer certificate: UnknownIssuer",
+            "https://example.com/a.wsl: Network Error: tls connection creation failed",
+            // Docker pulling an image.
+            "Error response from daemon: Get \"https://registry-1.docker.io/v2/\": dial tcp: lookup registry-1.docker.io: no such host",
+            "Error response from daemon: Get \"https://registry-1.docker.io/v2/\": net/http: TLS handshake timeout",
+            "Error response from daemon: Get \"https://example.com/v2/\": tls: failed to verify certificate: x509: certificate signed by unknown authority",
+            "Error response from daemon: Get \"https://example.com/v2/\": remote error: tls: handshake failure",
+            // Windows.
+            "No such host is known. (os error 11001)",
+            "An existing connection was forcibly closed by the remote host. (os error 10054)",
+            "A connection attempt failed. (os error 10060)",
+            "curl: (6) Could not resolve host: example.com",
+            "dial tcp 127.0.0.1:443: connect: connection refused",
+        ] {
+            assert_eq!(classify(raw).kind, ErrorKind::Network, "{raw}");
+        }
+    }
+
+    #[test]
+    fn an_os_error_code_matches_only_itself() {
+        assert_eq!(classify("Access is denied. (os error 5)").kind, ErrorKind::Permission);
+        assert_eq!(classify("Something. (os error 2)").kind, ErrorKind::NotFound);
+        assert_eq!(classify("Something. (os error 3)").kind, ErrorKind::NotFound);
+        assert_eq!(classify("Something. (os error 32)").kind, ErrorKind::Busy);
+        assert_eq!(classify("Something. (os error 33)").kind, ErrorKind::Busy);
+
+        assert_eq!(classify("The network path was not found. (os error 53)").kind, ErrorKind::NotFound, "not 5");
+        assert_eq!(classify("Something. (os error 21)").kind, ErrorKind::Unknown, "not 2");
+        assert_eq!(classify("Something. (os error 38)").kind, ErrorKind::Unknown, "not 3");
+        assert_eq!(classify("Something. (os error 1125)").kind, ErrorKind::Unknown, "not 112");
+    }
 
     /// One check per branch that has a distinct recovery, plus the two ordering
     /// traps: a declined UAC prompt also says "access is denied", and a missing
