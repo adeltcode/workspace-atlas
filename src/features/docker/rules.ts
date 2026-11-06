@@ -1,7 +1,11 @@
 import type { TableColumn } from '../../components/TableColumns'
 import type { DockerTableTab } from '../../store/appStore'
-import type { DockerContainer, DockerImage, DockerNetwork, DockerVolume } from './types'
+import type { DockerContainer, DockerImage, DockerNetwork, DockerVolume, PrunePreview } from './types'
 import { compareText, sortRows, type SortDir } from '../../utils/sortRows'
+
+/** Level 3 also removes containers, volumes, and build cache, so it can still run with no images. */
+export const canRunPrune = ({ level, image_ids }: Pick<PrunePreview, 'level' | 'image_ids'>) =>
+  level === 3 || image_ids.length > 0
 
 export type { SortDir }
 export type ContainerSortKey = 'name' | 'image' | 'status' | 'ports' | 'project' | 'service' | 'created' | 'id'

@@ -782,7 +782,7 @@ pub async fn docker_prune_preview(
             2 => format!("docker rmi {}", ids),
             _ => {
                 let images = if ids.is_empty() { String::new() } else { format!(" && docker rmi {}", ids) };
-                format!("docker container prune -f{}  && docker volume prune -f && docker builder prune -a -f", images)
+                format!("docker container prune -f{} && docker volume prune -f && docker builder prune -a -f", images)
             }
         };
         // Level 3 also removes stopped containers, unused volumes and the build cache.

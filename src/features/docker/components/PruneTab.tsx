@@ -4,6 +4,7 @@ import { Shield, Layers, Zap, Eye, Play, RotateCcw, AlertTriangle, Check } from 
 import clsx from 'clsx'
 import { useAppStore } from '../../../store/appStore'
 import { dockerPrunePreview, dockerPruneRun, dockerSystemDf } from '../api'
+import { canRunPrune } from '../rules'
 import ModalShell from '../../../components/ModalShell'
 import { ErrorBanner } from '../../../components/ui'
 import { bytesToHuman, parseSizeBytes } from '../../../utils/format'
@@ -134,7 +135,7 @@ export default function PruneTab({ onDone }: { onDone: () => void }) {
   useEffect(() => () => { if (!runningNow.current) reset() }, [])
 
   const running    = pruneState === 'running'
-  const canExecute = preview !== null && pruneState === 'idle' && preview.image_ids.length > 0
+  const canExecute = preview !== null && pruneState === 'idle' && canRunPrune(preview)
 
   return (
     <div className="prune-tab">
@@ -223,7 +224,7 @@ export default function PruneTab({ onDone }: { onDone: () => void }) {
             <span className="prune-preview-title">Dry-run preview</span>
             {preview.reclaim_bytes > 0
               ? <span className="prune-reclaim">~{preview.reclaim_size} reclaimable</span>
-              : <span className="prune-reclaim-zero">Nothing to remove</span>}
+              : <span className="prune-reclaim-zero">{preview.level === 3 ? 'No unused images' : 'Nothing to remove'}</span>}
           </div>
           <div className="cmd-block">
             <span className="cmd-block-label">Exact command</span>
@@ -234,8 +235,8 @@ export default function PruneTab({ onDone }: { onDone: () => void }) {
               <p className="prune-image-list-heading">{preview.image_names.length} image{preview.image_names.length !== 1 ? 's' : ''} to remove</p>
               <ul>{preview.image_names.map(name => <li key={name} className="prune-image-item">{name}</li>)}</ul>
             </div>
-          ) : <p className="prune-nothing">No images match this level, so there is nothing to remove.</p>}
-          {preview.level === 3 && (preview.container_count > 0 || preview.volume_count > 0) && (
+          ) : preview.level !== 3 && <p className="prune-nothing">No images match this level, so there is nothing to remove.</p>}
+          {preview.level === 3 && (
             <div className="prune-extras">
               <AlertTriangle size={11} className="prune-extras-icon" />
               {preview.container_count > 0 && <span className="prune-extra-badge">{preview.container_count} stopped container{preview.container_count !== 1 ? 's' : ''}</span>}

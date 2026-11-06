@@ -161,6 +161,14 @@ test('cleanup never offers a pinned image or one in use', () => {
   assert.deepEqual(rules.removableImages([image('<none>', '<none>', { id: 'a' })], ['a']), [], 'a pinned dangling image stays too')
 })
 
+test('Nuclear prune can run with no unused images, the other levels cannot', () => {
+  assert.equal(rules.canRunPrune({ level: 3, image_ids: [] }), true, 'containers, volumes, and build cache still go')
+  assert.equal(rules.canRunPrune({ level: 3, image_ids: ['a'] }), true)
+  assert.equal(rules.canRunPrune({ level: 2, image_ids: [] }), false)
+  assert.equal(rules.canRunPrune({ level: 2, image_ids: ['a'] }), true)
+  assert.equal(rules.canRunPrune({ level: 1, image_ids: [] }), false)
+})
+
 test('sorting leaves the list it was given alone', () => {
   const list = [container('b'), container('a')]
   rules.sortContainers(list, 'name', 'asc')
