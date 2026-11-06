@@ -14,14 +14,13 @@ use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTME
 use windows_future::{AsyncStatus, IAsyncOperation};
 use windows_sys::Win32::Foundation::{ERROR_SUCCESS, HWND};
 use windows_sys::Win32::System::DataExchange::{GetClipboardOwner, GetClipboardSequenceNumber, GetOpenClipboardWindow};
-use windows_sys::Win32::System::Registry::{
-    RegGetValueW, RegSetKeyValueW, HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, REG_DWORD, RRF_RT_REG_DWORD, RRF_RT_REG_SZ,
-};
+use windows_sys::Win32::System::Registry::{RegSetKeyValueW, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, REG_DWORD};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, GetWindowThreadProcessId, MsgWaitForMultipleObjects, PeekMessageW, TranslateMessage, MSG, PM_REMOVE, QS_ALLINPUT,
 };
 
 use crate::error::{AtlasError, ErrorKind};
+use crate::registry::{read_dword, read_text_value, wide};
 use crate::holders::{describe, process_snapshot, ProcessInfo};
 use crate::shell::hidden;
 use crate::wsl::elevation_command;
@@ -169,36 +168,6 @@ pub struct ClipboardRead {
     /// Left out while the clipboard has not changed, or when another program has it open.
     pub current: Option<CurrentClipboard>,
     pub sequence: Option<u32>,
-}
-
-fn wide(text: &str) -> Vec<u16> {
-    text.encode_utf16().chain(Some(0)).collect()
-}
-
-fn read_dword(root: HKEY, key: &str, value: &str) -> Option<u32> {
-    let (key, value) = (wide(key), wide(value));
-    let mut data = 0u32;
-    let mut size = size_of::<u32>() as u32;
-    let status = unsafe {
-        RegGetValueW(root, key.as_ptr(), value.as_ptr(), RRF_RT_REG_DWORD, std::ptr::null_mut(), (&raw mut data).cast(), &mut size)
-    };
-    (status == ERROR_SUCCESS).then_some(data)
-}
-
-fn read_text_value(root: HKEY, key: &str, value: &str) -> Option<String> {
-    let (key, value) = (wide(key), wide(value));
-    let mut size = 0u32;
-    let status = unsafe {
-        RegGetValueW(root, key.as_ptr(), value.as_ptr(), RRF_RT_REG_SZ, std::ptr::null_mut(), std::ptr::null_mut(), &mut size)
-    };
-    if status != ERROR_SUCCESS {
-        return None;
-    }
-    let mut data = vec![0u16; (size as usize).div_ceil(2)];
-    let status = unsafe {
-        RegGetValueW(root, key.as_ptr(), value.as_ptr(), RRF_RT_REG_SZ, std::ptr::null_mut(), data.as_mut_ptr().cast(), &mut size)
-    };
-    (status == ERROR_SUCCESS).then(|| String::from_utf16_lossy(&data).trim_end_matches('\0').to_string())
 }
 
 fn write_user_setting(on: bool) -> Result<(), AtlasError> {

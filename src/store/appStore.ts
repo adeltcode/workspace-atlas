@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { capDetail, capLines, delayedStorage } from './savedState'
 import type { LogEntry, DockerStatus, DockerSystemDf, DockerImage, DockerContainer, DockerVolume, ComposeProject } from '../features/docker/types'
 import type { DistroMetrics } from '../features/wsl/types'
 import type { SandboxDetails, SandboxSharedItem } from '../features/sandbox/api'
@@ -230,6 +231,9 @@ function applyTheme(theme: Theme) {
 
 let _lineId = 0
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const savedState = delayedStorage<any>(localStorage)
+
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
@@ -363,7 +367,7 @@ export const useAppStore = create<AppState>()(
         set((s) => ({ dockerKeepList: s.dockerKeepList.filter((k) => k !== id) })),
 
       dockerLogs: [],
-      addDockerLog:  (entry) => set((s) => ({ dockerLogs: [entry, ...s.dockerLogs].slice(0, MAX_DOCKER_LOGS) })),
+      addDockerLog:  (entry) => set((s) => ({ dockerLogs: [{ ...entry, lines: capLines(entry.lines) }, ...s.dockerLogs].slice(0, MAX_DOCKER_LOGS) })),
       clearDockerLogs: () => set({ dockerLogs: [] }),
 
       activityLog: [],
@@ -372,7 +376,7 @@ export const useAppStore = create<AppState>()(
           activityLog: [
             // Timestamp + counter so ids stay unique across reloads (activityLog is
             // persisted; a bare counter resets to 0 and would collide with rehydrated ids).
-            { ...entry, id: `${Date.now()}-${++_lineId}`, ts: Date.now() },
+            { ...entry, detail: capDetail(entry.detail), id: `${Date.now()}-${++_lineId}`, ts: Date.now() },
             ...s.activityLog,
           ].slice(0, MAX_ACTIVITY),
         })),
@@ -437,6 +441,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'workspace-atlas-v1',
+      storage: savedState,
       partialize: (s) => ({
         theme:           s.theme,
         activeView:      s.activeView,

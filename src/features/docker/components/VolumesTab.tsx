@@ -128,7 +128,8 @@ export default function VolumesTab({
   const [isRestoring, setIsRestoring]       = useState(false)
   const [isDeletingEntry, setIsDeletingEntry] = useState<string | null>(null)
 
-  const { backupDir, setActiveView } = useAppStore()
+  const backupDir     = useAppStore(s => s.backupDir)
+  const setActiveView = useAppStore(s => s.setActiveView)
 
   const loadBackupsForVol = async (name: string) => {
     if (!backupDir) { setVolBackups(prev => ({ ...prev, [name]: [] })); return }

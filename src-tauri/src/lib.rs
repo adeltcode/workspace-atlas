@@ -7,6 +7,8 @@ mod error;
 mod docker;
 mod holders;
 mod packages;
+#[cfg(windows)]
+mod registry;
 mod sandbox;
 mod shell;
 mod system;

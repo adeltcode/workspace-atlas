@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { getVersion } from '@tauri-apps/api/app'
 import { Folder, RefreshCw, MoveRight, HardDriveDownload, Info, ExternalLink, Shield, Upload, Download } from 'lucide-react'
-import { useAppStore } from '../store/appStore'
+import { savedState, useAppStore } from '../store/appStore'
 import { SheetHead } from '../components/ui'
 import * as api from '../features/docker/api'
 import { exportConfig, importConfig } from '../features/config/api'
@@ -25,7 +25,8 @@ function stripNonConfig(raw: string): string | null {
 }
 
 export default function SettingsView() {
-  const { backupDir, setBackupDir } = useAppStore()
+  const backupDir    = useAppStore(s => s.backupDir)
+  const setBackupDir = useAppStore(s => s.setBackupDir)
 
   const [dirInput, setDirInput]       = useState(backupDir)
   const [pendingDir, setPendingDir]   = useState<string | null>(null)
@@ -111,6 +112,7 @@ export default function SettingsView() {
   }
 
   const handleExportConfig = async () => {
+    savedState.flush()
     const raw = localStorage.getItem(STORAGE_KEY)
     const contents = raw && stripNonConfig(raw)
     if (!contents) {

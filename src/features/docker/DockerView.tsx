@@ -52,7 +52,7 @@ export default function DockerView() {
 
   const pollStats = useCallback(() => {
     if (!online) { setStatsLoading(false); return }
-    api.dockerStats()
+    return api.dockerStats()
       .then(snaps => {
         setContainerStats(snaps)
         setStatsError(null)

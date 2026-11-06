@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Sun, Moon, Minus, Square, X, Search } from 'lucide-react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { useAppStore } from '../store/appStore'
+import { savedState, useAppStore } from '../store/appStore'
 
 const win = getCurrentWindow()
 
 export default function Titlebar() {
-  const { theme, toggleTheme } = useAppStore()
+  const theme       = useAppStore(s => s.theme)
+  const toggleTheme = useAppStore(s => s.toggleTheme)
   const [isMaximized, setIsMaximized] = useState(false)
 
   useEffect(() => {
@@ -45,7 +46,7 @@ export default function Titlebar() {
         <button className="titlebar-btn" onClick={() => win.toggleMaximize()} title={isMaximized ? 'Restore' : 'Maximize'}>
           <Square size={11} />
         </button>
-        <button className="titlebar-btn close-btn" onClick={() => win.close()} title="Close">
+        <button className="titlebar-btn close-btn" onClick={() => { savedState.flush(); win.close() }} title="Close">
           <X size={14} />
         </button>
       </div>

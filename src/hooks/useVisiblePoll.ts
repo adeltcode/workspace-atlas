@@ -1,10 +1,23 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+
+/** A call made before the last one's promise settles does nothing, so a slow command cannot pile up. */
+export function skipWhileRunning(fn: () => unknown): () => void {
+  let running = false
+  const done = () => { running = false }
+  return () => {
+    if (running) return
+    running = true
+    new Promise(resolve => resolve(fn())).then(done, done)
+  }
+}
 
 /** Run `fn` every `ms`, only while the window is visible: every poll here shells out, so a minimized
- *  window must not keep spawning processes. `fn` is held in a ref, so inline closures are fine. */
-export function useVisiblePoll(fn: () => void, ms: number, enabled = true) {
+ *  window must not keep spawning processes. `fn` is held in a ref, so inline closures are fine. Return
+ *  the promise from `fn`, so a poll that is still running is not started again. */
+export function useVisiblePoll(fn: () => unknown, ms: number, enabled = true) {
   const saved = useRef(fn)
   saved.current = fn
+  const [tick] = useState(() => skipWhileRunning(() => saved.current()))
 
   useEffect(() => {
     if (!enabled) return
@@ -15,8 +28,8 @@ export function useVisiblePoll(fn: () => void, ms: number, enabled = true) {
     // first start the caller has usually just fetched, so firing would double the request.
     const start = (immediate = false) => {
       if (id !== undefined) return
-      if (immediate) saved.current()
-      id = setInterval(() => saved.current(), ms)
+      if (immediate) tick()
+      id = setInterval(tick, ms)
     }
     const stop = () => {
       if (id === undefined) return
@@ -34,5 +47,5 @@ export function useVisiblePoll(fn: () => void, ms: number, enabled = true) {
       stop()
       document.removeEventListener('visibilitychange', onVisibility)
     }
-  }, [ms, enabled])
+  }, [ms, enabled, tick])
 }

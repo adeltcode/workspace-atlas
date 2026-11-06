@@ -38,7 +38,10 @@ async function measureDockerBytes(): Promise<number | null> {
 }
 
 export default function PruneTab({ onDone }: { onDone: () => void }) {
-  const { dockerKeepList, addDockerLog, addTerminalLine, addActivity } = useAppStore()
+  const dockerKeepList  = useAppStore(s => s.dockerKeepList)
+  const addDockerLog    = useAppStore(s => s.addDockerLog)
+  const addTerminalLine = useAppStore(s => s.addTerminalLine)
+  const addActivity     = useAppStore(s => s.addActivity)
 
   const [selectedLevel, setSelectedLevel] = useState<1 | 2 | 3>(1)
   const [pruneState, setPruneState]       = useState<PruneState>('idle')

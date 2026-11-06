@@ -1644,8 +1644,7 @@ pub async fn docker_stats(
     migration.inner().clone().run_operation(get_stats_sync).await
 }
 
-/// Query total and free bytes for the drive that contains `path` (Windows only).
-/// Uses PowerShell's `[System.IO.DriveInfo]` - no extra crates needed.
+/// Query total and free bytes for the drive that contains `path`.
 #[tauri::command]
 pub async fn get_disk_stats(
     migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
@@ -1666,31 +1665,12 @@ pub async fn get_disk_stats(
                     .to_uppercase()
             });
 
-        let script = format!(
-            r#"$d=[System.IO.DriveInfo]::new('{}'); "$($d.TotalSize) $($d.AvailableFreeSpace)""#,
-            drive
-        );
-
-        let output = hidden("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
-            .output()
-            .map_err(|e| format!("Could not run PowerShell to read disk space: {}", e))?;
-
-        let out = String::from_utf8_lossy(&output.stdout);
-        let parts: Vec<u64> = out
-            .trim()
-            .trim_matches('"')
-            .split_whitespace()
-            .filter_map(|s| s.parse().ok())
-            .collect();
-
-        if parts.len() < 2 {
-            return Err(format!("Could not read the drive's size from PowerShell: {:?}", out.trim()).into());
-        }
+        let (free_bytes, total_bytes) = crate::system::disk_space(&format!("{}:\\", drive))
+            .ok_or_else(|| format!("Could not read the size of drive {}:. It may not exist.", drive))?;
 
         Ok(DiskStats {
-            total_bytes:  parts[0],
-            free_bytes:   parts[1],
+            total_bytes,
+            free_bytes,
             drive_label:  format!("{}:", drive),
         })
     }).await
@@ -2589,11 +2569,19 @@ pub struct EditorInfo {
 }
 
 pub(crate) fn is_in_path(cmd: &str) -> bool {
-    hidden("where.exe")
-        .arg(cmd)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    let Some(path) = std::env::var_os("PATH") else { return false };
+    let endings = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
+    found_on_path(cmd, &path, &endings)
+}
+
+/// The search Windows does for a bare command: each folder, with each ending. Store apps such as
+/// winget are links that a normal read cannot open, so this reads the link itself.
+fn found_on_path(cmd: &str, path: &std::ffi::OsStr, endings: &str) -> bool {
+    std::env::split_paths(path).any(|folder| {
+        endings.split(';').filter(|ending| !ending.is_empty()).any(|ending| {
+            folder.join(format!("{cmd}{ending}")).symlink_metadata().is_ok_and(|file| !file.is_dir())
+        })
+    })
 }
 
 const EDITORS: [(&str, &str); 5] = [
@@ -2906,6 +2894,32 @@ mod tests {
 
         assert_eq!(found.len(), 2, "{found:?}");
         assert!(found.iter().all(|p| !p.contains("node_modules")), "{found:?}");
+    }
+
+    #[test]
+    fn a_command_is_found_the_way_windows_finds_it() {
+        let folder = std::env::temp_dir().join(format!("atlas-path-test-{}", std::process::id()));
+        std::fs::create_dir_all(folder.join("tool.exe")).unwrap();
+        std::fs::write(folder.join("shim.CMD"), "").unwrap();
+        std::fs::write(folder.join("noending"), "").unwrap();
+        let path = std::env::join_paths([folder.join("missing"), folder.clone()]).unwrap();
+        let found = |cmd: &str| found_on_path(cmd, &path, ".EXE;.CMD;");
+
+        assert!(found("shim"));
+        assert!(!found("tool"), "a folder is not a command");
+        assert!(!found("noending"), "cmd will not run a file with no ending");
+        assert!(!found("absent"));
+        std::fs::remove_dir_all(&folder).unwrap();
+
+        assert!(is_in_path("cmd"));
+        assert!(!is_in_path("atlas-no-such-command"));
+    }
+
+    #[test]
+    fn a_drive_reports_free_and_total_space() {
+        let (free, total) = crate::system::disk_space("C:\\").unwrap();
+        assert!(total > 0 && free <= total);
+        assert!(crate::system::disk_space("Q:\\no-such-drive").is_none() || std::path::Path::new("Q:\\").exists());
     }
 
     #[test]

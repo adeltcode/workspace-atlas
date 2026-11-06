@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { useAppStore } from '../../store/appStore'
 import { useVisiblePoll } from '../../hooks/useVisiblePoll'
@@ -85,7 +85,6 @@ function PortCell({ column, entry, onClose }: { column: string; entry: PortEntry
 
 export default function PortsView() {
   const [list, setList] = useState<PortList | null>(null)
-  const loading = useRef(false)
   const [error, setError] = useState<unknown>(null)
   const [closeError, setCloseError] = useState<unknown>(null)
   const [query, setQuery] = useState('')
@@ -106,7 +105,6 @@ export default function PortsView() {
   })
 
   const load = useCallback(async () => {
-    loading.current = true
     try {
       const next = await api.portsList()
       setList(next)
@@ -115,8 +113,6 @@ export default function PortsView() {
     } catch (e) {
       setError(e)
       return null
-    } finally {
-      loading.current = false
     }
   }, [])
 
@@ -129,7 +125,7 @@ export default function PortsView() {
   }, [portsJump])
 
   useEffect(() => { load() }, [load])
-  useVisiblePoll(() => { if (!loading.current) load() }, POLL_MS, !closing)
+  useVisiblePoll(load, POLL_MS, !closing)
 
   const handleSort = (key: PortSortKey) => {
     if (key === sortKey) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))

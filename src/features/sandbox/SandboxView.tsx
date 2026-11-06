@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import clsx from 'clsx'
 import {
   AlertTriangle, AppWindow, Ban, Camera, CircleCheck, Clipboard, Cpu, File, FolderOpen, Globe, Gpu, HardDrive,
@@ -174,7 +174,6 @@ function RunningSandbox({ id, status }: { id: string; status: SandboxStatus }) {
 export default function SandboxView() {
   const starting = useAppStore(s => s.sandboxStarting)
   const [status, setStatus] = useState<SandboxStatus | null>(null)
-  const loading = useRef(false)
   const [refreshing, setRefreshing] = useState(false)
   const [loadError, setLoadError] = useState<unknown>(null)
   const [actionError, setActionError] = useState<{ title: string; error: unknown } | null>(null)
@@ -191,19 +190,16 @@ export default function SandboxView() {
   const fail = (title: string, error: unknown) => setActionError({ title, error })
 
   const load = useCallback(async () => {
-    loading.current = true
     try {
       setStatus(await api.sandboxStatus())
       setLoadError(null)
     } catch (e) {
       setLoadError(e)
-    } finally {
-      loading.current = false
     }
   }, [])
 
   useEffect(() => { load() }, [load])
-  useVisiblePoll(() => { if (!loading.current) load() }, POLL_MS, !stopTarget && !replaceTarget)
+  useVisiblePoll(load, POLL_MS, !stopTarget && !replaceTarget)
 
   const running = status?.running ?? []
   const current = running[0]

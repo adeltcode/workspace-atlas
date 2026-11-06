@@ -22,7 +22,9 @@ const FILTERS: { key: ImageFilter; label: string; title?: string }[] = [
 const Dash = () => <span className="pkg-dash">-</span>
 
 export default function ImagesTab({ images, containers, loading }: { images: DockerImage[]; containers: DockerContainer[]; loading: boolean }) {
-  const { dockerKeepList, addToKeepList, removeFromKeepList } = useAppStore()
+  const dockerKeepList     = useAppStore(s => s.dockerKeepList)
+  const addToKeepList      = useAppStore(s => s.addToKeepList)
+  const removeFromKeepList = useAppStore(s => s.removeFromKeepList)
   const table = useDockerTable<ImageSortKey>('images')
 
   const [filter, setFilter] = useState<ImageFilter>('all')
