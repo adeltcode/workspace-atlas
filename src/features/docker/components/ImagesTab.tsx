@@ -1,54 +1,56 @@
-import { useState, useMemo } from 'react'
-import { Pin, PinOff, X, Layers } from 'lucide-react'
+import { Fragment, useState, useMemo } from 'react'
+import { Pin, PinOff, Layers } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../../../store/appStore'
-import type { DockerImage } from '../types'
-import { SortHeader } from './TableBits'
-import { SearchField, EmptyState } from '../../../components/ui'
+import type { DockerContainer, DockerImage } from '../types'
+import { StatusCell, useDockerJump, useDockerTable } from './TableBits'
+import { Button, CellLink, EmptyState, SearchField, Segmented, SegmentedItem, Toolbar } from '../../../components/ui'
+import { TableHead } from '../../../components/TableColumns'
+import {
+  containersUsing, filterImages, imageName, matchesImageFilter, sortImages,
+  type ImageFilter, type ImageSortKey, type SortDir,
+} from '../rules'
 
-type SortKey = 'name' | 'size_bytes' | 'age_days'
-type SortDir = 'asc' | 'desc'
+const FILTERS: { key: ImageFilter; label: string; title?: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'in-use', label: 'In use' },
+  { key: 'unused', label: 'Unused', title: 'Images with a name that no container uses' },
+  { key: 'dangling', label: 'Dangling', title: 'Images with no name that no container uses' },
+  { key: 'pinned', label: 'Pinned', title: 'Pinned images are never pruned' },
+]
 
-export default function ImagesTab({ images, loading }: { images: DockerImage[]; loading: boolean }) {
+const Dash = () => <span className="pkg-dash">-</span>
+
+export default function ImagesTab({ images, containers, loading }: { images: DockerImage[]; containers: DockerContainer[]; loading: boolean }) {
   const { dockerKeepList, addToKeepList, removeFromKeepList } = useAppStore()
+  const table = useDockerTable<ImageSortKey>('images')
 
   // Consumes a one-shot pre-filter set by the Overview cleanup panel.
-  const [imageFilter, setImageFilter] = useState<'dangling' | 'unused-tagged' | null>(() => {
+  const [filter, setFilter] = useState<ImageFilter>(() => {
     const s = useAppStore.getState()
     const f = s.imagesFilter
-    if (f) { s.setImagesFilter(null); return f }
-    return null
+    if (f) s.setImagesFilter(null)
+    return f === 'dangling' ? 'dangling' : f === 'unused-tagged' ? 'unused' : 'all'
   })
 
-  const [sortKey, setSortKey] = useState<SortKey>('size_bytes')
+  const [sortKey, setSortKey] = useState<ImageSortKey>('size')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
-  const [maxAge, setMaxAge]   = useState(3650)
   const [search, setSearch]   = useState('')
 
-  const handleSort = (key: SortKey) => {
+  useDockerJump('images', ({ query }) => {
+    setSearch(query)
+    setFilter('all')
+  })
+
+  const handleSort = (key: ImageSortKey) => {
     if (key === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-    else { setSortKey(key); setSortDir('desc') }
+    else { setSortKey(key); setSortDir(key === 'size' || key === 'created' ? 'desc' : 'asc') }
   }
 
-  const sorted = useMemo(() => {
-    const q = search.toLowerCase()
-    return [...images]
-      .filter(img => {
-        if (imageFilter === 'dangling')      return !img.in_use && img.repository === '<none>'
-        if (imageFilter === 'unused-tagged') return !img.in_use && img.repository !== '<none>'
-        return true
-      })
-      .filter(img => img.age_days <= maxAge)
-      .filter(img => !q || img.repository.toLowerCase().includes(q) || img.tag.toLowerCase().includes(q) || img.id.includes(q))
-      .sort((a, b) => {
-        const av = sortKey === 'name' ? `${a.repository}:${a.tag}` : a[sortKey]
-        const bv = sortKey === 'name' ? `${b.repository}:${b.tag}` : b[sortKey]
-        const cmp = av < bv ? -1 : av > bv ? 1 : 0
-        return sortDir === 'asc' ? cmp : -cmp
-      })
-  }, [images, sortKey, sortDir, maxAge, search, imageFilter])
-
-  const rows = [...sorted.filter(i => dockerKeepList.includes(i.id)), ...sorted.filter(i => !dockerKeepList.includes(i.id))]
+  const rows = useMemo(() => {
+    const sorted = sortImages(filterImages(images, search, filter, dockerKeepList), sortKey, sortDir)
+    return [...sorted.filter(i => dockerKeepList.includes(i.id)), ...sorted.filter(i => !dockerKeepList.includes(i.id))]
+  }, [images, search, filter, dockerKeepList, sortKey, sortDir])
 
   if (loading) return <div className="img-loading">Loading images…</div>
   if (!images.length) return (
@@ -59,85 +61,104 @@ export default function ImagesTab({ images, loading }: { images: DockerImage[]; 
     />
   )
 
+  const cell = (column: string, image: DockerImage) => {
+    const pinned = dockerKeepList.includes(image.id)
+    switch (column) {
+      case 'name':
+        return (
+          <td className="img-td img-name" title={imageName(image)}>
+            {pinned && <Pin size={10} className="row-pin-icon" />}
+            <span className="img-repo">{image.repository}</span>
+            {image.repository !== '<none>' && <><span className="img-colon">:</span><span className="img-tag">{image.tag}</span></>}
+          </td>
+        )
+      case 'id':
+        return <td className="img-td img-id" title={image.id}>{image.id.replace(/^sha256:/, '').slice(0, 12)}</td>
+      case 'size':
+        return <td className="img-td img-size">{image.size}</td>
+      case 'created':
+        return <td className="img-td img-age">{image.created_since}</td>
+      case 'status':
+        return <td className="img-td img-age"><StatusCell dot={image.in_use ? 'running' : 'stopped'}>{image.in_use ? 'In use' : 'Unused'}</StatusCell></td>
+      case 'used-by': {
+        const users = containersUsing(image, containers)
+        return (
+          <td className="img-td img-age" title={users.map(c => c.name).join(', ')}>
+            {users.length === 0 && <Dash />}
+            {users.map((c, i) => (
+              <Fragment key={c.id}>
+                {i > 0 && ', '}
+                <CellLink title={`Show ${c.name} in Containers`} onClick={() => useAppStore.getState().jumpToDocker('containers', c.name)}>{c.name}</CellLink>
+              </Fragment>
+            ))}
+          </td>
+        )
+      }
+      default:
+        return (
+          <td className="img-td holder-actions">
+            <Button
+              size="sm"
+              icon
+              variant="ghost"
+              className={clsx('pin-btn', pinned && 'pinned')}
+              onClick={() => (pinned ? removeFromKeepList(image.id) : addToKeepList(image.id))}
+              title={pinned ? 'Unpin this image' : 'Pin this image so it is never pruned'}
+              aria-label={`${pinned ? 'Unpin' : 'Pin'} ${imageName(image)}`}
+            >
+              {pinned ? <PinOff size={13} /> : <Pin size={13} />}
+            </Button>
+          </td>
+        )
+    }
+  }
+
   return (
     <div className="img-tab">
-      {imageFilter && (
-        <div className="prefilter-banner">
-          {imageFilter === 'dangling'
-            ? 'Showing dangling (<none>:<none>) images only'
-            : 'Showing unused tagged images only'}
-          <button className="prefilter-banner-close" onClick={() => setImageFilter(null)} title="Clear filter">
-            <X size={12} />
-          </button>
-        </div>
-      )}
-      <div className="img-toolbar">
+      <Toolbar>
         <SearchField
           value={search}
           onChange={setSearch}
           placeholder="Search images"
           label="Search images by name, tag, or ID"
         />
-        <div className="age-filter">
-          <span className="age-label">
-            {maxAge >= 3650 ? 'Any age' : `Age ≤ ${maxAge >= 365 ? `${Math.round(maxAge / 365)}y` : `${maxAge}d`}`}
-          </span>
-          <input type="range" min={1} max={3650} aria-label="Maximum image age in days" value={maxAge} onChange={e => setMaxAge(Number(e.target.value))} className="age-slider" />
-        </div>
-        <span className="img-count">{rows.length} image{rows.length !== 1 ? 's' : ''}</span>
-      </div>
+        <Segmented label="Filter images">
+          {FILTERS.map(({ key, label, title }) => (
+            <SegmentedItem
+              key={key}
+              active={filter === key}
+              count={images.filter(image => matchesImageFilter(image, key, dockerKeepList)).length}
+              title={title}
+              onClick={() => setFilter(key)}
+            >
+              {label}
+            </SegmentedItem>
+          ))}
+        </Segmented>
+        <span className="img-count">{rows.length} shown</span>
+      </Toolbar>
 
-      <div className="img-table-wrap">
-        <table className="img-table">
-          <thead>
-            <tr>
-              <SortHeader label="Name : Tag" col="name"       sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
-              <th className="img-th">ID</th>
-              <SortHeader label="Size"       col="size_bytes" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
-              <SortHeader label="Age"        col="age_days"   sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
-              <th className="img-th">Status</th>
-              <th className="img-th img-th-pin">Pin</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(img => {
-              const pinned = dockerKeepList.includes(img.id)
-              return (
-                <tr key={`${img.id}-${img.repository}-${img.tag}`} className={clsx('img-row', pinned && 'pinned')}>
-                  <td className="img-td img-name">
-                    {pinned && <Pin size={10} className="row-pin-icon" />}
-                    <span className="img-repo">{img.repository}</span>
-                    <span className="img-colon">:</span>
-                    <span className="img-tag">{img.tag}</span>
-                  </td>
-                  <td className="img-td img-id">{img.id}</td>
-                  <td className="img-td img-size">{img.size}</td>
-                  <td className="img-td img-age">{img.created_since}</td>
-                  <td className="img-td">
-                    {img.in_use
-                      ? <span className="badge badge-active">In use</span>
-                      : <span className="badge badge-idle">Unused</span>}
-                  </td>
-                  <td className="img-td img-td-pin">
-                    <button
-                      className={clsx('pin-btn', pinned && 'pinned')}
-                      onClick={() => pinned ? removeFromKeepList(img.id) : addToKeepList(img.id)}
-                      title={pinned ? 'Unpin this image' : 'Pin this image so it is never pruned'}
-                    >
-                      {pinned ? <PinOff size={13} /> : <Pin size={13} />}
-                    </button>
-                  </td>
+      {rows.length === 0 && (
+        <EmptyState
+          title="No images match"
+          description="Try a shorter search or another filter."
+          actions={<Button onClick={() => { setSearch(''); setFilter('all') }}>Show all images</Button>}
+        />
+      )}
+
+      {rows.length > 0 && (
+        <div className="img-table-wrap">
+          <table className="img-table pkg-table" style={{ width: table.tableWidth }}>
+            <TableHead table={table} sortKey={sortKey} sortDir={sortDir} onSort={handleSort} actionsClass="holder-actions" />
+            <tbody>
+              {rows.map(image => (
+                <tr key={`${image.id}-${image.repository}-${image.tag}`} className={clsx('img-row', dockerKeepList.includes(image.id) && 'pinned')}>
+                  {table.visible.map(column => <Fragment key={column.key}>{cell(column.key, image)}</Fragment>)}
+                  {table.fillFixed && <td className="img-td" aria-hidden="true" />}
                 </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {dockerKeepList.length > 0 && (
-        <div className="keeplist-notice">
-          <Pin size={12} />
-          {dockerKeepList.length} image{dockerKeepList.length !== 1 ? 's' : ''} pinned and never pruned
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

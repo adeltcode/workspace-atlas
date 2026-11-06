@@ -137,13 +137,13 @@ export default function CommandIndex() {
     }
     for (const img of live?.images ?? cache?.images ?? []) {
       const name = img.repository === '<none>' ? img.id.slice(0, 12) : `${img.repository}:${img.tag}`
-      out.push({ id: `img:${img.id}`, label: name, where: `Image · ${img.size}`, section: 'Images', icon: Layers, run: goDocker('images') })
+      out.push({ id: `img:${img.id}`, label: name, where: `Image · ${img.size}`, section: 'Images', icon: Layers, run: () => useAppStore.getState().jumpToDocker('images', name) })
     }
     for (const c of live?.containers ?? cache?.containers ?? []) {
-      out.push({ id: `ctr:${c.id}`, label: c.name, where: `Container · ${c.state}`, section: 'Containers', icon: Box, run: goDocker('containers') })
+      out.push({ id: `ctr:${c.id}`, label: c.name, where: `Container · ${c.state}`, section: 'Containers', icon: Box, run: () => useAppStore.getState().jumpToDocker('containers', c.name) })
     }
     for (const v of live?.volumes ?? cache?.volumes ?? []) {
-      out.push({ id: `vol:${v.name}`, label: v.name, where: 'Volume', section: 'Volumes', icon: Database, run: goDocker('volumes') })
+      out.push({ id: `vol:${v.name}`, label: v.name, where: 'Volume', section: 'Volumes', icon: Database, run: () => useAppStore.getState().jumpToDocker('volumes', v.name) })
     }
     return out
   }, [cache, distros, projects, live])

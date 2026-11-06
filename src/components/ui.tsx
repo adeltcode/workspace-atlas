@@ -4,6 +4,7 @@ import { Search, X, ChevronRight, AlertTriangle, Check } from 'lucide-react'
 import clsx from 'clsx'
 import CommandOutput from './CommandOutput'
 import { toAppError } from '../utils/errors'
+import { portInUse } from '../utils/format'
 import ModalShell from './ModalShell'
 import { useAppStore } from '../store/appStore'
 
@@ -159,6 +160,11 @@ export function Switch({ label, on, disabled, title, onChange }: {
       {label} {on ? 'on' : 'off'}
     </button>
   )
+}
+
+/** Text in a table cell that goes straight to the thing it names. Rows can be clickable, so it keeps the click. */
+export function CellLink({ title, onClick, children }: { title: string; onClick: () => void; children: React.ReactNode }) {
+  return <button className="cell-link" title={title} onClick={e => { e.stopPropagation(); onClick() }}>{children}</button>
 }
 
 const TOAST_MS = 4_000
@@ -334,6 +340,7 @@ export function ErrorBanner({ title, error, action, className, detailLabel = 'De
 }) {
   const e = error === undefined ? null : toAppError(error)
   const body = e ? e.message : children
+  const takenPort = e && portInUse(`${e.message} ${e.detail ?? ''}`)
 
   return (
     <div className={clsx('error-banner', className)} role="alert">
@@ -354,9 +361,10 @@ export function ErrorBanner({ title, error, action, className, detailLabel = 'De
             <CommandOutput text={e.detail} title={detailLabel} />
           </details>
         )}
-        {(action || e?.kind === 'busy') && (
+        {(action || e?.kind === 'busy' || takenPort) && (
           <div className="error-actions">
             {action}
+            {takenPort && <Button size="sm" onClick={() => useAppStore.getState().jumpToPorts(String(takenPort))}>See what is using port {takenPort}</Button>}
             {e?.kind === 'busy' && <Button size="sm" onClick={() => useAppStore.getState().setActiveView('locks')}>Open File locks</Button>}
           </div>
         )}

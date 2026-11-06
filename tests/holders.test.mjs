@@ -17,6 +17,7 @@ const compile = (path, shims = {}) => {
 }
 
 const rules = compile('../src/features/holders/rules.ts')
+const format = compile('../src/utils/format.ts')
 
 const proc = (name, pid, owner = 'app', distro = null, path = null) => ({ pid, name, path, started_at: 1, owner, distro })
 const entry = (port, process, more = {}) => ({
@@ -131,6 +132,39 @@ test('only programs we can really close get a Close button', () => {
 test('the shown command is what a person could type', () => {
   assert.equal(rules.closeCommand(proc('node.exe', 4100)), 'taskkill /PID 4100 /F')
   assert.equal(rules.closeCommand(proc('node', 4200, 'wsl', 'kali')), 'wsl -d kali -u root kill 4200')
+  assert.equal(rules.closeCommand(proc('web-nginx', 0, 'docker')), 'docker stop web-nginx')
+  assert.equal(rules.closeCommand(proc('com.docker.backend.exe', 900, 'docker')), 'docker desktop stop')
+  assert.equal(rules.closeCommand(proc('wslrelay.exe', 900, 'wsl')), 'wsl --shutdown')
+})
+
+test('every holder gets the fix that really frees what it holds', () => {
+  assert.equal(rules.fixFor(proc('node.exe', 1)), 'close')
+  assert.equal(rules.fixFor(proc('node', 1, 'wsl', 'kali')), 'close')
+  assert.equal(rules.fixFor(proc('web-nginx', 0, 'docker')), 'stop-container', 'a container has PID 0')
+  assert.equal(rules.fixFor(proc('com.docker.backend.exe', 900, 'docker')), 'stop-docker')
+  assert.equal(rules.fixFor(proc('wslrelay.exe', 900, 'wsl')), 'stop-wsl')
+  for (const owner of ['admin', 'distro-system', 'windows', 'this-app', 'unknown']) {
+    assert.equal(rules.fixFor(proc('x', 1, owner)), null, owner)
+    assert.ok(rules.NOT_CLOSABLE[owner], owner)
+  }
+})
+
+test('the dialog and the result say what happens to that kind of holder', () => {
+  const container = proc('web-nginx', 0, 'docker')
+  assert.equal(rules.fixDialog(container).title, 'Stop web-nginx?')
+  assert.match(rules.fixDialog(container).consequence, /start it again/)
+  assert.equal(rules.fixDone(container), 'Stopped web-nginx')
+
+  const desktop = proc('com.docker.backend.exe', 900, 'docker')
+  assert.match(rules.fixDialog(desktop).consequence, /Every running container stops/)
+  assert.equal(rules.fixDone(desktop), 'Stopped Docker Desktop')
+
+  const relay = proc('wslrelay.exe', 900, 'wsl')
+  assert.match(rules.fixDialog(relay).consequence, /Every running distro stops/)
+  assert.equal(rules.fixDone(relay), 'Shut down WSL')
+
+  assert.match(rules.fixDialog(proc('node', 1, 'wsl', 'kali')).consequence, /in kali/)
+  assert.equal(rules.fixDone(proc('node.exe', 1)), 'Closed node.exe')
 })
 
 test('a file-in-use error offers the File locks page, and other errors do not', () => {
@@ -140,8 +174,20 @@ test('a file-in-use error offers the File locks page, and other errors do not', 
     './ModalShell': { __esModule: true, default: ({ children }) => children },
     '../store/appStore': { useAppStore: { getState: () => ({ setActiveView() {} }) } },
     '../utils/errors': { toAppError: e => e },
+    '../utils/format': format,
   })
-  const render = kind => renderToStaticMarkup(createElement(ui.ErrorBanner, { error: { kind, message: 'Failed' } }))
+  const render = (kind, message = 'Failed') => renderToStaticMarkup(createElement(ui.ErrorBanner, { error: { kind, message } }))
   assert.match(render('busy'), /Open File locks/)
   assert.doesNotMatch(render('permission'), /Open File locks/)
+  assert.match(render('unknown', 'Bind for 0.0.0.0:8000 failed: port is already allocated'), /See what is using port 8000/)
+  assert.doesNotMatch(render('unknown'), /See what is using/)
+})
+
+test('an error about a taken port names the port, however it is worded', () => {
+  assert.equal(format.portInUse('Bind for 0.0.0.0:8000 failed: port is already allocated'), 8000)
+  assert.equal(format.portInUse('listen tcp 127.0.0.1:5432: bind: address already in use'), 5432)
+  assert.equal(format.portInUse('ports are not available: exposing port TCP 0.0.0.0:3000 -> 127.0.0.1:0: listen tcp 0.0.0.0:3000: bind: Only one usage of each socket address'), 3000)
+  assert.equal(format.portInUse('listen tcp [::]:9000: bind: address already in use'), 9000)
+  assert.equal(format.portInUse('container 0.0.0.0:80 is not running'), null, 'mentions a port, but not a taken one')
+  assert.equal(format.portInUse('address already in use'), null, 'no port named')
 })

@@ -556,7 +556,7 @@ ul, ol { list-style: none; }
 
 .btn,
 .btn-primary, .btn-secondary, .btn-refresh, .btn-filled, .btn-ghost,
-.btn-icon, .btn-prune-unused, .btn-clear-log,
+.btn-icon, .btn-clear-log,
 .ctr-action-btn, .compose-card-btn, .compose-edit-btn,
 .compose-save-btn, .compose-cancel-edit-btn,
 .settings-dir-btn, .settings-dir-refresh, .overview-prune-btn, .pkg-toggle {
@@ -592,7 +592,7 @@ ul, ol { list-style: none; }
 .btn:disabled,
 .btn-primary:disabled, .btn-secondary:disabled, .btn-refresh:disabled,
 .btn-filled:disabled, .btn-ghost:disabled, .btn-icon:disabled,
-.btn-prune-unused:disabled, .ctr-action-btn:disabled,
+.ctr-action-btn:disabled,
 .compose-card-btn:disabled, .compose-edit-btn:disabled,
 .settings-dir-btn:disabled, .settings-dir-refresh:disabled, .pkg-toggle:disabled {
   opacity: 0.45;
@@ -645,12 +645,12 @@ ul, ol { list-style: none; }
 }
 
 /* For toolbars: it must carry less weight than the solid confirm button in the dialog it opens. */
-.btn--danger-outline, .btn-prune-unused {
+.btn--danger-outline {
   background: var(--color-danger-subtle);
   border-color: var(--color-danger-border);
   color: var(--color-danger);
 }
-.btn--danger-outline:hover:not(:disabled), .btn-prune-unused:hover:not(:disabled) {
+.btn--danger-outline:hover:not(:disabled) {
   background: color-mix(in srgb, var(--color-danger) 18%, transparent);
   border-color: color-mix(in srgb, var(--color-danger) 45%, transparent);
   color: var(--color-danger);
@@ -679,18 +679,10 @@ ul, ol { list-style: none; }
 /* The hover tint is the only sign of what a row action does, so keep it. */
 .ctr-action-start:hover:not(:disabled),
 .compose-card-btn--up:hover:not(:disabled)      { color: var(--color-success); background: var(--color-success-subtle); }
-.ctr-action-stop:hover:not(:disabled),
 .compose-card-btn--restart:hover:not(:disabled) { color: var(--color-warning); background: var(--color-warning-subtle); }
 .ctr-action-remove:hover:not(:disabled),
 .compose-card-btn--down:hover:not(:disabled),
 .btn-clear-log:hover:not(:disabled)             { color: var(--color-danger);  background: var(--color-danger-subtle);  }
-
-.ctr-action-confirm {
-  width: auto; padding: 0 var(--space-2);
-  background: var(--color-danger-subtle); color: var(--color-danger);
-  border-color: var(--color-danger-border);
-}
-.ctr-action-confirm:hover:not(:disabled) { background: var(--color-danger-subtle); filter: brightness(1.15); }
 
 .btn--on, .btn--on:hover:not(:disabled), .compose-edit-btn.active {
   background: var(--color-accent-subtle);
@@ -701,7 +693,7 @@ ul, ol { list-style: none; }
 
 /* THE CHIP: the shared shape for small inline labels. Must stay above the label families
    below so their border-color wins. */
-.tag, .badge, .ctr-port-chip, .compose-tag-chip, .cst-state-badge, .env-ref-chip,
+.tag, .compose-tag-chip, .cst-state-badge, .env-ref-chip,
 .wsl-svc-badge, .wiz-card-badge, .prune-extra-badge, .log-level-badge {
   display: inline-flex;
   align-items: center;
@@ -878,37 +870,6 @@ ul, ol { list-style: none; }
   min-height: 0;
 }
 
-/* Shown when arriving from the Overview cleanup panel. */
-.prefilter-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px 12px;
-  background: var(--color-accent-subtle);
-  border: 1px solid var(--color-accent);
-  border-radius: var(--radius-sm);
-  font-size: var(--text-sm);
-  font-weight: 500;
-  color: var(--color-accent-hover);
-}
-
-.prefilter-banner-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: var(--radius-sm);
-  background: none;
-  border: none;
-  color: var(--color-accent-hover);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background 0.15s;
-}
-.prefilter-banner-close:hover { background: color-mix(in srgb, var(--color-accent) 15%, transparent); }
-
 .toolbar, .img-toolbar {
   display: flex;
   align-items: center;
@@ -922,14 +883,6 @@ ul, ol { list-style: none; }
   max-width: 360px;
 }
 .toolbar-spacer { flex: 1; }
-
-.age-filter {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-.age-label { font-size: var(--text-xs); color: var(--color-text-secondary); white-space: nowrap; }
-.age-slider { width: 100px; cursor: pointer; accent-color: var(--color-accent); }
 
 .img-count {
   font-size: var(--text-xs);
@@ -1005,11 +958,6 @@ ul, ol { list-style: none; }
   accent-color: var(--color-accent);
 }
 
-/* 28px: the header's 12px padding + 16px for the chevron (11px icon + 5px gap). */
-.img-th-vol-name { padding-left: 28px; }
-
-.img-th-pin { width: 44px; }
-
 /* Set on the tr so there are no gaps between cells. */
 .row-selected { background: var(--color-accent-subtle) !important; }
 .row-selected td { background: transparent !important; }
@@ -1050,41 +998,9 @@ ul, ol { list-style: none; }
 .img-id { font-family: "Cascadia Code", "Consolas", monospace; color: var(--color-text-tertiary); font-size: var(--text-xs); }
 .img-size { font-variant-numeric: tabular-nums; }
 .img-age { color: var(--color-text-secondary); white-space: nowrap; }
-.img-td-pin { text-align: center; }
 
-.badge-active {
-  background: var(--color-success-subtle);
-  color: var(--color-success);
-}
-.badge-idle {
-  background: var(--color-bg-tertiary);
-  color: var(--color-text-tertiary);
-}
-
-.pin-btn {
-  width: 26px;
-  height: 26px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-sm);
-  color: var(--color-text-tertiary);
-  transition: background 0.1s, color 0.1s;
-}
-.pin-btn:hover { background: var(--color-bg-hover); color: var(--color-text-primary); }
 .pin-btn.pinned { color: var(--color-accent); }
 
-.keeplist-notice {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--text-sm);
-  color: var(--color-accent);
-  padding: 8px 12px;
-  background: var(--color-accent-subtle);
-  border: 1px solid color-mix(in srgb, var(--color-accent) 20%, transparent);
-  border-radius: var(--radius-md);
-}
 
 
 
@@ -2726,19 +2642,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   font-size: var(--text-xs);
 }
 
-.badge-running {
-  background: var(--color-success-subtle);
-  color: var(--color-success);
-}
-.badge-paused {
-  background: var(--color-warning-subtle);
-  color: var(--color-warning);
-}
-.badge-created {
-  background: var(--color-accent-subtle);
-  color: var(--color-accent);
-}
-
 /* Same height as the button, so a toolbar sits on one baseline. */
 .segmented, .ctr-state-filter {
   display: flex;
@@ -3821,34 +3724,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   color: var(--color-accent);
 }
 
-.ctr-port-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px;
-  align-items: center;
-}
-.ctr-port-chip {
-  font-variant-numeric: tabular-nums;
-  background: var(--color-accent-subtle);
-  color: var(--color-accent-hover);
-  border-color: color-mix(in srgb, var(--color-accent) 20%, transparent);
-}
-.ctr-port-chip--udp {
-  background: var(--color-warning-subtle);
-  color: var(--color-warning);
-  border-color: color-mix(in srgb, var(--color-warning) 20%, transparent);
-}
-[data-theme="light"] .ctr-port-chip {
-  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
-  color: var(--color-accent);
-  border-color: color-mix(in srgb, var(--color-accent) 20%, transparent);
-}
-[data-theme="light"] .ctr-port-chip--udp {
-  background: color-mix(in srgb, var(--color-warning) 8%, transparent);
-  color: var(--color-warning);
-  border-color: color-mix(in srgb, var(--color-warning) 20%, transparent);
-}
-
 .log-viewer-row {
   box-shadow: inset 3px 0 0 var(--color-accent);
 }
@@ -3950,42 +3825,6 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 [data-theme="light"] .log-viewer { background: var(--color-bg-secondary); }
 [data-theme="light"] .log-viewer-header { background: var(--color-bg-tertiary); }
 [data-theme="light"] .log-ts { color: var(--color-text-tertiary); }
-
-.net-protected-name { opacity: 0.7; }
-.net-id-hint {
-  display: block;
-  font-size: var(--text-2xs);
-  color: var(--color-text-tertiary);
-  font-family: ui-monospace, monospace;
-  margin-top: 1px;
-}
-.net-name-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.net-flag-row {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-
-.ctr-status-cell {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
-}
-.ctr-status-sub {
-  font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
-  line-height: 1.3;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 200px;
-}
 
 /* The cap is on the children, not the scroll box, so the scrollbar stays on the panel edge. */
 .settings-body > * { max-width: 640px; }
@@ -5954,6 +5793,9 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .wsl-menu, .menu { position: relative; display: inline-flex; }
 .wsl-menu-caret { transition: transform var(--transition-fast); }
 .wsl-menu-caret--open { transform: rotate(180deg); }
+.menu-panel.menu-panel--left { left: 0; right: auto; }
+.menu-panel { max-height: 60vh; overflow-y: auto; }
+.menu-count { margin-left: auto; padding-left: var(--space-3); color: var(--color-text-tertiary); }
 .wsl-menu-panel, .menu-panel {
   position: absolute;
   top: calc(100% + 6px);
@@ -6914,15 +6756,7 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .pkg-upgrade { margin-left: var(--space-2); }
 .pkg-check-warn strong { color: var(--color-warning); }
 
-.pkg-sources {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
-}
-.pkg-source { gap: var(--space-1); }
-.pkg-source:not(.btn--on) { color: var(--color-text-secondary); }
-.pkg-source:not(.btn--on):hover:not(:disabled) { color: var(--color-text-primary); }
+
 
 .pkg-toggle {
   gap: var(--space-1);
@@ -7497,6 +7331,13 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 }
 .holder-item { display: block; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .holder-actions { width: 124px; text-align: right; white-space: nowrap; }
+.holder-actions > .btn:not(.btn--icon) + .btn { margin-left: var(--space-1); }
+.cell-link { max-width: 100%; padding: 0; overflow: hidden; background: none; border: none; font: inherit; color: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; cursor: pointer; }
+.cell-link:hover { color: var(--color-accent); text-decoration: underline; }
+.table-dot { display: inline-block; margin-right: var(--space-2); vertical-align: middle; }
+.pkg-table .img-th-check, .pkg-table .img-td-check { padding: 0; text-overflow: clip; }
+.pkg-table .ctr-name-cell, .pkg-table .vol-name-cell { display: flex; width: 100%; min-width: 0; }
+.pkg-table .ctr-name-cell .img-repo, .pkg-table .vol-name-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .holder-note { font-size: var(--text-xs); color: var(--color-text-tertiary); }
 .holder-summary { font-size: var(--text-xs); color: var(--color-text-secondary); overflow-wrap: anywhere; user-select: text; }
 .toolbar > .holder-target { flex: 1 1 320px; max-width: none; }

@@ -1200,6 +1200,13 @@ pub async fn docker_container_action(
 }
 
 #[tauri::command]
+pub async fn docker_desktop_stop(
+    migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
+) -> Result<(), AtlasError> {
+    migration.inner().clone().run_operation(|| docker_run_ok(&["desktop", "stop"])).await
+}
+
+#[tauri::command]
 pub async fn docker_volume_remove(
     migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
     name: String,

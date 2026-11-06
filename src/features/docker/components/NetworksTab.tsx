@@ -1,10 +1,14 @@
-import { useEffect, useState } from 'react'
-import clsx from 'clsx'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import * as api from '../api'
 import type { DockerNetwork } from '../types'
 import { useAppStore } from '../../../store/appStore'
-import { ConfirmRemoveButton } from './TableBits'
-import { SearchField, EmptyState, Button, ErrorBanner } from '../../../components/ui'
+import { ConfirmRemoveButton, useDockerJump, useDockerTable } from './TableBits'
+import { SearchField, EmptyState, Button, ErrorBanner, Segmented, SegmentedItem, Toolbar } from '../../../components/ui'
+import { TableHead } from '../../../components/TableColumns'
+import {
+  filterNetworks, isBuiltInNetwork, matchesNetworkFilter, networkOptions, sortNetworks,
+  type NetworkFilter, type NetworkSortKey, type SortDir,
+} from '../rules'
 
 /** Format an ISO date string as relative ("3 months ago") for recent dates,
  *  or a short absolute date for older ones. */
@@ -25,32 +29,44 @@ function fmtDate(raw: string): string {
   return `${diffY} year${diffY !== 1 ? 's' : ''} ago`
 }
 
-// Built-in Docker networks that cannot (and should not) be removed.
-const PROTECTED = new Set(['bridge', 'host', 'none'])
+const FILTERS: { key: NetworkFilter; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'custom', label: 'Custom' },
+  { key: 'built-in', label: 'Built-in' },
+]
 
-function ScopeBadge({ scope }: { scope: string }) {
-  if (scope === 'local')  return <span className="badge badge-idle">local</span>
-  if (scope === 'swarm')  return <span className="badge badge-paused">swarm</span>
-  if (scope === 'global') return <span className="badge badge-running">global</span>
-  return <span className="badge badge-idle">{scope}</span>
-}
-
-export default function NetworksTab() {
+export default function NetworksTab({ refreshTick }: { refreshTick: number }) {
   const [networks, setNetworks]       = useState<DockerNetwork[]>([])
   const [loading, setLoading]         = useState(true)
-  const [error, setError]             = useState<string | null>(null)
+  const [error, setError]             = useState<unknown>(null)
   const [search, setSearch]           = useState('')
+  const [filter, setFilter]           = useState<NetworkFilter>('all')
+  const [sortKey, setSortKey]         = useState<NetworkSortKey>('name')
+  const [sortDir, setSortDir]         = useState<SortDir>('asc')
   const [busy, setBusy]               = useState<string | null>(null)
-  const [actionError, setActionError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<unknown>(null)
+  const table = useDockerTable<NetworkSortKey>('networks')
 
-  const load = async () => {
-    setLoading(true); setError(null)
-    try { setNetworks(await api.dockerNetworks()) }
-    catch (e) { setError(String(e)) }
-    finally { setLoading(false) }
+  useDockerJump('networks', ({ query }) => {
+    setSearch(query)
+    setFilter('all')
+  })
+
+  useEffect(() => {
+    let current = true
+    setLoading(true)
+    setError(null)
+    api.dockerNetworks()
+      .then(next => { if (current) setNetworks(next) })
+      .catch(e => { if (current) setError(e) })
+      .finally(() => { if (current) setLoading(false) })
+    return () => { current = false }
+  }, [refreshTick])
+
+  const handleSort = (key: NetworkSortKey) => {
+    if (key === sortKey) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
+    else { setSortKey(key); setSortDir(key === 'created' ? 'desc' : 'asc') }
   }
-
-  useEffect(() => { load() }, [])
 
   const doRemove = async (id: string) => {
     setBusy(id); setActionError(null)
@@ -63,100 +79,93 @@ export default function NetworksTab() {
       setNetworks(prev => prev.filter(n => n.id !== id))
     } catch (e) {
       addTerminalLine(`  ✗ ${String(e)}`, 'error')
-      setActionError(String(e))
+      setActionError(e)
     } finally { setBusy(null) }
   }
 
-  const filtered = networks.filter(n => {
-    const q = search.toLowerCase()
-    return !q || n.name.toLowerCase().includes(q) || n.driver.toLowerCase().includes(q)
-  })
+  const rows = useMemo(
+    () => sortNetworks(filterNetworks(networks, search, filter), sortKey, sortDir),
+    [networks, search, filter, sortKey, sortDir],
+  )
 
   if (loading) return <div className="img-loading">Loading networks…</div>
 
+  const cell = (column: string, n: DockerNetwork) => {
+    switch (column) {
+      case 'name':    return <td className="img-td img-repo" title={n.name}>{n.name}</td>
+      case 'id':      return <td className="img-td img-id" title={n.id}>{n.id.slice(0, 12)}</td>
+      case 'driver':  return <td className="img-td img-age">{n.driver}</td>
+      case 'scope':   return <td className="img-td img-age">{n.scope}</td>
+      case 'options': return <td className="img-td img-age">{networkOptions(n) || <span className="pkg-dash">-</span>}</td>
+      case 'created': return <td className="img-td img-age" title={n.created}>{fmtDate(n.created)}</td>
+      default:
+        return (
+          <td className="img-td holder-actions">
+            {isBuiltInNetwork(n)
+              ? <span className="holder-note" title="Docker's own networks cannot be removed">Built-in</span>
+              : (
+                <ConfirmRemoveButton
+                  onConfirm={() => doRemove(n.id)}
+                  onArm={() => setActionError(null)}
+                  disabled={busy === n.id}
+                  title={`Remove network ${n.name}`}
+                />
+              )}
+          </td>
+        )
+    }
+  }
+
   return (
     <div className="img-tab">
-      <div className="img-toolbar">
+      <Toolbar>
         <SearchField
           value={search}
           onChange={setSearch}
           placeholder="Search networks"
-          label="Search networks by name or driver"
+          label="Search networks by name, driver, or ID"
         />
-        <span className="img-count">
-          {filtered.length} network{filtered.length !== 1 ? 's' : ''}
-        </span>
-      </div>
+        <Segmented label="Filter networks">
+          {FILTERS.map(({ key, label }) => (
+            <SegmentedItem
+              key={key}
+              active={filter === key}
+              count={networks.filter(n => matchesNetworkFilter(n, key)).length}
+              onClick={() => setFilter(key)}
+            >
+              {label}
+            </SegmentedItem>
+          ))}
+        </Segmented>
+        <span className="img-count">{rows.length} shown</span>
+      </Toolbar>
 
-      {error && (
-        <ErrorBanner className="error-banner--flush" error={error} />
-      )}
+      {error != null && <ErrorBanner className="error-banner--flush" title="Could not list networks" error={error} />}
+      {actionError != null && <ErrorBanner className="error-banner--flush" title="Could not remove the network" error={actionError} />}
 
-      {actionError && (
-        <ErrorBanner className="error-banner--flush" error={actionError} />
-      )}
-
-      {filtered.length === 0 && !error && (
+      {rows.length === 0 && error == null && (
         <EmptyState
-          title={search ? 'No networks match this search' : 'No custom networks'}
-          description={search
-            ? 'Try a shorter search, or clear it to see every network.'
-            : 'Only Docker’s three built-in networks exist. A Compose project creates its own, and it appears here.'}
-          actions={search ? <Button onClick={() => setSearch('')}>Clear search</Button> : undefined}
+          title="No networks match"
+          description="Try a shorter search or another filter."
+          actions={<Button onClick={() => { setSearch(''); setFilter('all') }}>Show all networks</Button>}
         />
       )}
 
-      <div className="img-table-wrap">
-        <table className="img-table">
-          <thead>
-            <tr>
-              <th className="img-th">Name</th>
-              <th className="img-th">Driver</th>
-              <th className="img-th">Scope</th>
-              <th className="img-th">Created</th>
-              <th className="img-th ctr-th-actions">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map(n => {
-              const isProtected  = PROTECTED.has(n.name)
-              const isBusy       = busy === n.id
-
-              return (
+      {rows.length > 0 && (
+        <div className="img-table-wrap">
+          <table className="img-table pkg-table" style={{ width: table.tableWidth }}>
+            <TableHead table={table} sortKey={sortKey} sortDir={sortDir} onSort={handleSort} actionsClass="holder-actions" />
+            <tbody>
+              {rows.map(n => (
                 <tr key={n.id} className="img-row">
-                  <td className="img-td">
-                    <div className="net-name-row">
-                      <span className={clsx('img-repo', isProtected && 'net-protected-name')}>
-                        {n.name}
-                      </span>
-                      {n.internal && <span className="badge badge-paused net-inline-flag">internal</span>}
-                      {n.ipv6     && <span className="badge badge-created net-inline-flag">IPv6</span>}
-                    </div>
-                    <span className="img-colon net-id-hint" title={n.id}>
-                      {n.id.slice(0, 12)}
-                    </span>
-                  </td>
-                  <td className="img-td img-age">{n.driver}</td>
-                  <td className="img-td"><ScopeBadge scope={n.scope} /></td>
-                  <td className="img-td img-age">{fmtDate(n.created)}</td>
-                  <td className="img-td ctr-td-actions">
-                    {isProtected ? (
-                      <span className="img-colon" title="Built-in network - cannot be removed">-</span>
-                    ) : (
-                      <ConfirmRemoveButton
-                        onConfirm={() => doRemove(n.id)}
-                        onArm={() => setActionError(null)}
-                        disabled={isBusy}
-                        title="Remove network"
-                      />
-                    )}
-                  </td>
+                  {table.visible.map(column => <Fragment key={column.key}>{cell(column.key, n)}</Fragment>)}
+                  {table.fillFixed && <td className="img-td" aria-hidden="true" />}
                 </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }

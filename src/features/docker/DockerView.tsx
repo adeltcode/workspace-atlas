@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { RefreshCw, Play, ExternalLink } from 'lucide-react'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import clsx from 'clsx'
-import { useAppStore, type DockerTab } from '../../store/appStore'
+import { useAppStore, type DockerTab, type DockerTableTab } from '../../store/appStore'
 import { useVisiblePoll } from '../../hooks/useVisiblePoll'
 import { useDockerData } from './hooks'
 import * as api from './api'
@@ -15,6 +15,7 @@ import NetworksTab    from './components/NetworksTab'
 import ComposeTab     from './components/ComposeTab'
 import PruneTab       from './components/PruneTab'
 import LogTab         from './components/LogTab'
+import { DockerColumnsMenu } from './components/TableBits'
 import { SheetHead, Prerequisite, Button, ErrorBanner } from '../../components/ui'
 
 const TAB_SUBTITLES: Partial<Record<DockerTab, string>> = {
@@ -29,6 +30,7 @@ const TAB_SUBTITLES: Partial<Record<DockerTab, string>> = {
 }
 
 const FILLING_TABS = new Set<DockerTab>(['images', 'containers', 'volumes', 'networks', 'compose'])
+const TABLE_TABS: DockerTab[] = ['containers', 'images', 'volumes', 'networks']
 
 export default function DockerView() {
   const dockerTab     = useAppStore(s => s.dockerTab)
@@ -152,10 +154,13 @@ export default function DockerView() {
             )
         }
         actions={
-          <Button onClick={handleRefresh} disabled={loading}>
-            <RefreshCw size={13} className={loading ? 'spin' : ''} />
-            Refresh
-          </Button>
+          <>
+            {online && TABLE_TABS.includes(dockerTab) && <DockerColumnsMenu tab={dockerTab as DockerTableTab} />}
+            <Button onClick={handleRefresh} disabled={loading}>
+              <RefreshCw size={13} className={loading ? 'spin' : ''} />
+              Refresh
+            </Button>
+          </>
         }
       />
       </div>
@@ -213,7 +218,7 @@ export default function DockerView() {
       {(online || loading) && (
         <>
           {dockerTab === 'overview'   && <OverviewTab df={df} containers={containers} images={images} volumes={volumes} status={status} loading={loading} refreshTick={composeTick} onRefresh={refresh} containerStats={containerStats} statsLoading={statsLoading} statsError={statsError} statHistory={statHistory} onPollStats={pollStats} />}
-          {dockerTab === 'images'     && <ImagesTab images={images} loading={loading} />}
+          {dockerTab === 'images'     && <ImagesTab images={images} containers={containers} loading={loading} />}
           {dockerTab === 'containers' && <ContainersTab containers={containers} loading={loading} onRefresh={refreshContainers} />}
 
           {/* VolumesTab stays mounted while Docker is online so that in-progress
@@ -222,7 +227,7 @@ export default function DockerView() {
             <VolumesTab volumes={volumes} loading={loading} onRefresh={refreshVolumes} />
           </div>
 
-          {dockerTab === 'networks'   && <NetworksTab />}
+          {dockerTab === 'networks'   && <NetworksTab refreshTick={composeTick} />}
 
           {/* ComposeTab stays mounted so it can update the sidebar's compose project list */}
           <div className={clsx('docker-pane-fill', dockerTab !== 'compose' && 'tab-hidden')}>

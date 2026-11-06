@@ -344,6 +344,10 @@ A small inline label: 20px tall, 8px side padding, 4px radius, 11px text at weig
 
 A labeled on and off control for a page's main setting, with `role="switch"`. Its text reads "History on" or "History off", so it also shows the state, and it can replace a status tag. Put it in the `status` slot of `SheetHead`.
 
+### CellLink
+
+Text in a table cell that goes straight to the thing it names, such as a container's image or the distro a port runs in. It looks like the text around it until you point at it. It keeps the click, so it also works inside a row you can click. Say where it goes in `title`.
+
 ### Toast
 
 Says that something worked, then goes away after 4 seconds. It floats over the page, so nothing moves when it comes and goes. Put it inside a parent with `position: relative`, and keep it mounted, because it holds the `role="status"` region. Use `ErrorBanner` for failures, because they must not go away by themselves.
@@ -414,7 +418,11 @@ Use these for anything that switches panels. A row of plain buttons with an `.ac
 
 ### Table
 
-There is no shared table component. Tables use the `.img-table` classes inside `.img-table-wrap`. For resizable columns, sorting, and a Columns menu, add `.pkg-table` and use `useTableColumns`, `TableHead`, and `ColumnsMenu` from `src/components/TableColumns.tsx`, with the choices saved in the store.
+There is no shared table component. Tables use the `.img-table` classes inside `.img-table-wrap`. For resizable columns, sorting, and a Columns menu, add `.pkg-table` and use `useTableColumns`, `TableHead`, and `ColumnsMenu` from `src/components/TableColumns.tsx`, with the choices saved in the store. A column keyed `select` holds checkboxes and cannot be resized, and `TableHead` draws its header checkbox from the `select` prop.
+
+A table's page keeps the same order: the Columns menu in the page header, then a `Toolbar` with search, a `Segmented` filter with counts, and how many rows are shown. Show a state in a cell as a status dot and plain text, not a tag.
+
+Use `CheckMenu` from the same file when a filter has more choices than fit on one row. It is a button that opens a list of checkboxes, so adding a choice does not make the page taller.
 
 | Part | Style |
 |---|---|

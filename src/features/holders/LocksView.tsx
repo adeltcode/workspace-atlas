@@ -6,7 +6,7 @@ import { FileDropPrompt, FileDropZone } from '../../components/FileDropZone'
 import { pickDirectory } from '../wsl/api'
 import * as api from './api'
 import type { LockHolder, LockReport } from './api'
-import { checkedSummary, HOLD_REASON, itemName } from './rules'
+import { checkedSummary, fixDone, HOLD_REASON, itemName } from './rules'
 import { CloseProgramDialog, HolderAction, ProgramCell } from './HolderBits'
 
 export default function LocksView() {
@@ -51,7 +51,7 @@ export default function LocksView() {
     const stillHeld = next?.some(r => r.holders.some(h => h.process.pid === closed.process.pid))
     setResult(stillHeld
       ? { tone: 'warn', text: `${closed.process.name} is still using this` }
-      : { tone: 'ok', text: `Closed ${closed.process.name}` })
+      : { tone: 'ok', text: fixDone(closed.process) })
   }
 
   return (

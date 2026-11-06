@@ -5,16 +5,85 @@ export type PortSortKey =
   | 'port' | 'program' | 'pid' | 'runs-in' | 'reachable' | 'since'
   | 'command' | 'folder' | 'memory' | 'parent' | 'address' | 'path'
 
+export const canClose = (process: ProcessInfo) =>
+  process.owner === 'app' || (process.owner === 'wsl' && process.distro !== null)
+
+export const isContainer = (process: ProcessInfo) => process.owner === 'docker' && process.pid === 0
+
+export type HolderFix = 'close' | 'stop-container' | 'stop-docker' | 'stop-wsl'
+
+/** What frees what this program holds, right from the row. Null when nothing here can. */
+export function fixFor(process: ProcessInfo): HolderFix | null {
+  if (isContainer(process)) return 'stop-container'
+  if (process.owner === 'docker') return 'stop-docker'
+  if (process.owner === 'wsl' && process.distro === null) return 'stop-wsl'
+  return canClose(process) ? 'close' : null
+}
+
+export const FIX_BUTTON: Record<HolderFix, string> = {
+  close: 'Close',
+  'stop-container': 'Stop',
+  'stop-docker': 'Stop Docker',
+  'stop-wsl': 'Shut down WSL',
+}
+
 export function closeCommand(process: ProcessInfo): string {
+  switch (fixFor(process)) {
+    case 'stop-container': return `docker stop ${process.name}`
+    case 'stop-docker':    return 'docker desktop stop'
+    case 'stop-wsl':       return 'wsl --shutdown'
+  }
   return process.distro
     ? `wsl -d ${process.distro} -u root kill ${process.pid}`
     : `taskkill /PID ${process.pid} /F`
 }
 
-export const canClose = (process: ProcessInfo) =>
-  process.owner === 'app' || (process.owner === 'wsl' && process.distro !== null)
+export function fixDone(process: ProcessInfo): string {
+  switch (fixFor(process)) {
+    case 'stop-container': return `Stopped ${process.name}`
+    case 'stop-docker':    return 'Stopped Docker Desktop'
+    case 'stop-wsl':       return 'Shut down WSL'
+    default:               return `Closed ${process.name}`
+  }
+}
 
-/** Shown instead of a Close button. Docker and WSL's own programs link to their page instead. */
+/** The wording of the dialog that asks before the fix runs. */
+export function fixDialog(process: ProcessInfo): { title: string; consequence: string; confirmLabel: string; busyLabel: string } {
+  switch (fixFor(process)) {
+    case 'stop-container':
+      return {
+        title: `Stop ${process.name}?`,
+        consequence: 'Docker stops this container and frees its ports. Its files stay, and you can start it again from the Docker page.',
+        confirmLabel: 'Stop container',
+        busyLabel: 'Stopping…',
+      }
+    case 'stop-docker':
+      return {
+        title: 'Stop Docker Desktop?',
+        consequence: `${process.name} is part of Docker Desktop, so the only way to free this is to stop Docker Desktop. Every running container stops with it. You can start it again from the Docker page.`,
+        confirmLabel: 'Stop Docker Desktop',
+        busyLabel: 'Stopping…',
+      }
+    case 'stop-wsl':
+      return {
+        title: 'Shut down WSL?',
+        consequence: `${process.name} is part of WSL, so the only way to free this is to shut WSL down. Every running distro stops, and anything they have not saved is lost. Docker Desktop also stops working if it runs on WSL.`,
+        confirmLabel: 'Shut down WSL',
+        busyLabel: 'Shutting down…',
+      }
+    default:
+      return {
+        title: `Close ${process.name}?`,
+        consequence: process.distro
+          ? `Linux asks this program in ${process.distro} to stop. Anything it has not saved may be lost.`
+          : 'Windows ends this program right away, without letting it save. Anything it has not saved is lost.',
+        confirmLabel: 'Close program',
+        busyLabel: 'Closing…',
+      }
+  }
+}
+
+/** Shown instead of a button when nothing here can free what the program holds. */
 export const NOT_CLOSABLE: Partial<Record<ProcessOwner, string>> = {
   admin: 'Needs administrator',
   'distro-system': 'Part of the distro',
