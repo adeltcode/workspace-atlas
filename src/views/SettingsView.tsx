@@ -5,6 +5,7 @@ import { savedState, useAppStore } from '../store/appStore'
 import { SheetHead } from '../components/ui'
 import * as api from '../features/docker/api'
 import { exportConfig, importConfig } from '../features/config/api'
+import { pickDirectory } from '../features/wsl/api'
 
 const STORAGE_KEY = 'workspace-atlas-v1'
 
@@ -77,9 +78,9 @@ export default function SettingsView() {
   }
 
   const handlePickFolder = async () => {
-    const dir = await api.pickBackupFolder()
+    const dir = await pickDirectory()
     if (!dir) return
-    const final = appendAtlasBackup(dir)
+    const final = appendAtlasBackup(dir.replace(/\\/g, '/'))
     setDirInput(final)
     setPendingDir(null)
     if (final !== backupDir) applyDirChange(final)

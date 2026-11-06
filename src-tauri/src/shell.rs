@@ -10,12 +10,15 @@ use crate::error::AtlasError;
 /// A console program with no window. An installed copy has no console of its own,
 /// so without CREATE_NO_WINDOW Windows opens a new window for every command.
 pub(crate) fn hidden(program: &str) -> Command {
+    use std::os::windows::process::CommandExt;
     let mut command = Command::new(program);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x0800_0000);
-    }
+    command.creation_flags(0x0800_0000);
+    command
+}
+
+pub(crate) fn powershell(script: &str) -> Command {
+    let mut command = hidden("powershell");
+    command.args(["-NoProfile", "-NonInteractive", "-Command", script]);
     command
 }
 
@@ -26,6 +29,27 @@ pub(crate) fn output_lines(pipe: impl Read) -> impl Iterator<Item = String> {
         .split(b'\n')
         .map_while(Result::ok)
         .map(|line| String::from_utf8_lossy(&line).trim_end_matches('\r').to_string())
+}
+
+/// A line in the terminal panel.
+pub(crate) fn emit_line(app: &tauri::AppHandle, text: impl Into<String>, stderr: bool) {
+    app.emit("shell-out", ShellOut { text: text.into(), stderr }).ok();
+}
+
+/// Show a failure in the terminal panel and pass it on.
+pub(crate) fn logged<T, E: std::fmt::Display + Into<AtlasError>>(app: &tauri::AppHandle, result: Result<T, E>) -> Result<T, AtlasError> {
+    result.map_err(|e| {
+        emit_line(app, format!("  ✗ {}", e), true);
+        e.into()
+    })
+}
+
+pub(crate) async fn in_background<T: Send + 'static>(work: impl FnOnce() -> Result<T, AtlasError> + Send + 'static) -> Result<T, AtlasError> {
+    tauri::async_runtime::spawn_blocking(work).await.map_err(|e| e.to_string())?
+}
+
+pub(crate) fn now_seconds() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
 // ── Managed state ─────────────────────────────────────────────────────────────
@@ -65,8 +89,7 @@ pub async fn shell_run(
 ) -> Result<i32, AtlasError> {
     let child_arc = state.0.clone();
     migration.inner().clone().run_operation(move || {
-        let mut child = hidden("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-Command", &cmd])
+        let mut child = powershell(&cmd)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()

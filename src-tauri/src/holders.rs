@@ -8,8 +8,8 @@ use serde::Serialize;
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 
 use crate::error::{AtlasError, ErrorKind};
-use crate::shell::hidden;
-use crate::wsl::{output_within, run_in_distro_as, shell_quote};
+use crate::shell::{hidden, in_background, now_seconds};
+use crate::wsl::{distro_names, output_within, run_in_distro_as, shell_quote};
 
 const WINDOWS_PROCESSES: &[&str] = &[
     "system", "registry", "memory compression", "secure system", "smss.exe", "csrss.exe",
@@ -194,7 +194,6 @@ pub(crate) fn describe(system: &System, pid: u32) -> ProcessInfo {
     }
 }
 
-#[cfg(windows)]
 fn tcp_rows<Row: Copy>(family: u32) -> Result<Vec<Row>, AtlasError> {
     use windows_sys::Win32::NetworkManagement::IpHelper::{GetExtendedTcpTable, TCP_TABLE_OWNER_MODULE_LISTENER};
     const ERROR_INSUFFICIENT_BUFFER: u32 = 122;
@@ -227,7 +226,6 @@ fn filetime_seconds(filetime: i64) -> Option<u64> {
 }
 
 /// (address, port, PID, when the socket opened)
-#[cfg(windows)]
 fn tcp_listeners() -> Result<Vec<(IpAddr, u16, u32, Option<u64>)>, AtlasError> {
     use windows_sys::Win32::NetworkManagement::IpHelper::{MIB_TCP6ROW_OWNER_MODULE, MIB_TCPROW_OWNER_MODULE};
     const AF_INET: u32 = 2;
@@ -244,11 +242,6 @@ fn tcp_listeners() -> Result<Vec<(IpAddr, u16, u32, Option<u64>)>, AtlasError> {
         listeners.push((IpAddr::from(row.ucLocalAddr), port(row.dwLocalPort), row.dwOwningPid, filetime_seconds(row.liCreateTimestamp)));
     }
     Ok(listeners)
-}
-
-#[cfg(not(windows))]
-fn tcp_listeners() -> Result<Vec<(IpAddr, u16, u32, Option<u64>)>, AtlasError> {
-    Err(AtlasError::invalid("Listing ports is only available on Windows."))
 }
 
 fn to_entries(listeners: Vec<Listener>) -> Vec<PortEntry> {
@@ -324,24 +317,13 @@ fn output_of(command: &mut std::process::Command) -> Option<Option<std::process:
     output_within(child, SOURCE_TIME_LIMIT).ok()
 }
 
-fn now_seconds() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
-}
-
 /// Seconds since 1970 for a UTC time as Docker prints it: `2026-11-05T08:52:37.628493201Z`.
 fn utc_seconds(text: &str) -> Option<u64> {
     let (date, time) = text.trim_end_matches('Z').split_once('T')?;
     let mut date = date.split('-').map(|part| part.parse::<i64>().ok());
-    let (year, month, day) = (date.next()??, date.next()??, date.next()??);
+    let days = crate::packages::days_from_civil(date.next()??, date.next()??, date.next()??);
     let mut time = time.split('.').next()?.split(':').map(|part| part.parse::<i64>().ok());
     let (hour, minute, second) = (time.next()??, time.next()??, time.next()??);
-    // Days from 1970 by the civil calendar, counting years from March so leap days fall last.
-    let (y, m) = if month <= 2 { (year - 1, month + 9) } else { (year, month - 3) };
-    let era = y.div_euclid(400);
-    let year_of_era = y - era * 400;
-    let day_of_year = (153 * m + 2) / 5 + day - 1;
-    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
-    let days = era * 146_097 + day_of_era - 719_468;
     u64::try_from(days * 86_400 + hour * 3600 + minute * 60 + second).ok()
 }
 
@@ -418,11 +400,7 @@ fn running_distros() -> Result<Vec<String>, ()> {
         return Ok(Vec::new());
     };
     let output = output.ok_or(())?;
-    Ok(String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty())
-        .collect())
+    Ok(distro_names(&output.stdout))
 }
 
 /// Listeners, then a line for each listening program: PID, seconds running, memory in KiB, parent's
@@ -604,14 +582,8 @@ fn key_is_inside(candidate: &str, folder: &str) -> bool {
     candidate.strip_prefix(folder).is_some_and(|rest| rest.is_empty() || rest.starts_with('\\'))
 }
 
-#[cfg(test)]
-fn is_inside(candidate: &Path, folder: &Path) -> bool {
-    key_is_inside(&path_key(candidate), &path_key(folder))
-}
-
 /// Records `path` under each target it is inside. A scan calls this for every open file and loaded
 /// module on the PC, so `keys` is worked out once and the cost does not grow with the targets.
-#[cfg(windows)]
 fn note_holder(found: &mut [BTreeMap<u32, PathBuf>], keys: &[String], pid: u32, path: &Path) {
     let candidate = path_key(path);
     for (held, key) in found.iter_mut().zip(keys) {
@@ -624,7 +596,6 @@ fn note_holder(found: &mut [BTreeMap<u32, PathBuf>], keys: &[String], pid: u32, 
 /// Which programs have exactly this file or folder open, leaving out this app. This sees programs
 /// running as administrator too, but one call costs about 100 ms, which rules it out for every file in
 /// a tree. A program's working folder counts as an open folder.
-#[cfg(windows)]
 fn programs_using(path: &Path) -> std::io::Result<Vec<u32>> {
     use std::os::windows::fs::OpenOptionsExt;
     use std::os::windows::io::AsRawHandle;
@@ -665,16 +636,9 @@ fn programs_using(path: &Path) -> std::io::Result<Vec<u32>> {
     }
 }
 
-#[cfg(not(windows))]
-fn programs_using(_path: &Path) -> std::io::Result<Vec<u32>> {
-    Err(std::io::Error::other("Finding file locks is only available on Windows."))
-}
-
-#[cfg(windows)]
 const STATUS_INFO_LENGTH_MISMATCH: i32 = 0xC000_0004u32 as i32;
 
 /// One row of `SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX`, which Windows does not publish a type for.
-#[cfg(windows)]
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct HandleEntry {
@@ -688,7 +652,6 @@ struct HandleEntry {
     reserved: u32,
 }
 
-#[cfg(windows)]
 fn system_handles() -> std::io::Result<Vec<HandleEntry>> {
     use windows_sys::Wdk::System::SystemInformation::NtQuerySystemInformation;
     const SYSTEM_EXTENDED_HANDLE_INFORMATION: i32 = 64;
@@ -713,7 +676,6 @@ fn system_handles() -> std::io::Result<Vec<HandleEntry>> {
     }
 }
 
-#[cfg(windows)]
 fn open_process(pid: u32, access: u32) -> Option<std::os::windows::io::OwnedHandle> {
     use std::os::windows::io::FromRawHandle;
     use windows_sys::Win32::System::Threading::OpenProcess;
@@ -722,7 +684,6 @@ fn open_process(pid: u32, access: u32) -> Option<std::os::windows::io::OwnedHand
 }
 
 /// Pipes and devices are skipped first, because asking for a pipe's name can hang.
-#[cfg(windows)]
 fn disk_file_path(handle: windows_sys::Win32::Foundation::HANDLE) -> Option<PathBuf> {
     use windows_sys::Win32::Storage::FileSystem::{GetFileType, GetFinalPathNameByHandleW, FILE_TYPE_DISK};
     if unsafe { GetFileType(handle) } != FILE_TYPE_DISK {
@@ -735,7 +696,6 @@ fn disk_file_path(handle: windows_sys::Win32::Foundation::HANDLE) -> Option<Path
 
 /// Every file handle on the PC is checked once, so the size of the folder does not matter. Programs
 /// running as administrator cannot be read this way.
-#[cfg(windows)]
 fn open_files_inside(keys: &[String]) -> std::io::Result<Vec<BTreeMap<u32, PathBuf>>> {
     use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
     use windows_sys::Win32::Foundation::{DuplicateHandle, DUPLICATE_SAME_ACCESS};
@@ -777,7 +737,6 @@ fn open_files_inside(keys: &[String]) -> std::io::Result<Vec<BTreeMap<u32, PathB
 }
 
 /// A loaded DLL or native addon stays locked with no file handle open, such as a `.node` file.
-#[cfg(windows)]
 fn modules_inside(keys: &[String], pids: impl Iterator<Item = u32>) -> Vec<BTreeMap<u32, PathBuf>> {
     use std::os::windows::ffi::OsStringExt;
     use std::os::windows::io::AsRawHandle;
@@ -866,7 +825,6 @@ fn find_locks(raw_paths: &[String], time_limit: Duration) -> Result<Vec<LockRepo
     // On its own thread: an open file's name or a program's module list can take many seconds to read,
     // and the page must not wait for it. They report separately, so a slow module list cannot lose the
     // open files already found.
-    #[cfg(windows)]
     let complete = {
         let (send_files, files) = std::sync::mpsc::channel();
         let (send_modules, modules) = std::sync::mpsc::channel();
@@ -897,8 +855,6 @@ fn find_locks(raw_paths: &[String], time_limit: Duration) -> Result<Vec<LockRepo
         }
         complete
     };
-    #[cfg(not(windows))]
-    let complete = { let _ = time_limit; false };
 
     for (pid, process) in system.processes() {
         let Some(exe) = process.exe().filter(|_| pid.as_u32() != std::process::id()) else {
@@ -1003,9 +959,7 @@ pub async fn ports_list(
 /// Which programs hold each file, or anything inside each folder.
 #[tauri::command]
 pub async fn locks_find(paths: Vec<String>) -> Result<Vec<LockReport>, AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || find_locks(&paths, SCAN_TIME_LIMIT))
-        .await
-        .map_err(|e| e.to_string())?
+    in_background(move || find_locks(&paths, SCAN_TIME_LIMIT)).await
 }
 
 #[tauri::command]
@@ -1035,6 +989,10 @@ pub async fn pick_any_file() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn is_inside(candidate: &Path, folder: &Path) -> bool {
+        key_is_inside(&path_key(candidate), &path_key(folder))
+    }
 
     fn process(owner: ProcessOwner, started_at: u64) -> ProcessInfo {
         ProcessInfo { pid: 1234, name: "node.exe".to_string(), path: None, started_at, owner, distro: None }
@@ -1246,7 +1204,6 @@ mod tests {
         assert!(error.message.contains("100"), "{}", error.message);
     }
 
-    #[cfg(windows)]
     #[test]
     fn a_real_listener_shows_up_with_its_port_and_program() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -1266,7 +1223,6 @@ mod tests {
         assert_eq!(entry.addresses, vec!["127.0.0.1".to_string()]);
     }
 
-    #[cfg(windows)]
     #[test]
     fn a_held_file_reports_its_holder_alone_and_inside_its_folder() {
         use std::os::windows::fs::OpenOptionsExt;
@@ -1319,7 +1275,6 @@ mod tests {
         std::fs::remove_dir_all(folder).unwrap();
     }
 
-    #[cfg(windows)]
     #[test]
     fn a_program_working_inside_a_folder_counts_as_holding_it() {
         let folder = temp_folder("working");
@@ -1338,7 +1293,6 @@ mod tests {
         std::fs::remove_dir_all(folder).unwrap();
     }
 
-    #[cfg(windows)]
     #[test]
     fn closing_checks_the_start_time_then_ends_the_real_program() {
         let mut child = hidden("ping")

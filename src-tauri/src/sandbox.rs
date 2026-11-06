@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use sysinfo::{CpuRefreshKind, ProcessRefreshKind, ProcessesToUpdate, RefreshKind, System};
 
 use crate::error::{AtlasError, ErrorKind};
-use crate::shell::hidden;
-use crate::wsl::{emit_line, output_within};
+use crate::shell::{emit_line, hidden, in_background, logged};
+use crate::wsl::output_within;
 use crate::wsl_migration::quote;
 
 const LIST_TIME_LIMIT: Duration = Duration::from_secs(15);
@@ -130,11 +130,7 @@ fn command_line(args: &[&str]) -> String {
 
 fn run_logged(app: &tauri::AppHandle, args: &[&str], limit: Duration) -> Result<String, AtlasError> {
     emit_line(app, command_line(args), false);
-    let result = run_wsb(args, limit);
-    if let Err(e) = &result {
-        emit_line(app, format!("  ✗ {}", e), true);
-    }
-    result
+    logged(app, run_wsb(args, limit))
 }
 
 fn xml_escape(text: &str) -> String {
@@ -252,11 +248,7 @@ fn copy_into_new_folder(file: &str, folder: &Path) -> Result<PathBuf, AtlasError
 
 fn copy_logged(app: &tauri::AppHandle, file: &str, folder: &Path) -> Result<PathBuf, AtlasError> {
     emit_line(app, format!("$ Copy-Item -LiteralPath {} -Destination (New-Item -ItemType Directory {})", quote(file), quote(&folder.to_string_lossy())), false);
-    let copied = copy_into_new_folder(file, folder);
-    if let Err(e) = &copied {
-        emit_line(app, format!("  ✗ {}", e), true);
-    }
-    copied
+    logged(app, copy_into_new_folder(file, folder))
 }
 
 /// A copy that cannot be deleted now is tried again on the next start or stop, so this never fails either one.
@@ -458,16 +450,9 @@ fn open_in_running(app: &tauri::AppHandle, id: &str, file: &str) -> Result<(), A
     let command = open_command(&inside, &name);
     let args = ["exec", "--id", id, "-r", "ExistingLogin", "-c", &command];
     emit_line(app, command_line(&args), false);
-    if let Err(e) = run_once_logged_on(&args) {
-        emit_line(app, format!("  ✗ {}", e), true);
-        return Err(e);
-    }
+    logged(app, run_once_logged_on(&args))?;
     emit_line(app, format!("  ✓ Opened {}", name), false);
     Ok(())
-}
-
-async fn in_background<T: Send + 'static>(work: impl FnOnce() -> Result<T, AtlasError> + Send + 'static) -> Result<T, AtlasError> {
-    tauri::async_runtime::spawn_blocking(work).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]

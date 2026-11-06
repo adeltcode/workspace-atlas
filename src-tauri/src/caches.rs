@@ -9,7 +9,8 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 use crate::error::{classify, AtlasError, ErrorKind};
-use crate::wsl::emit_line;
+use crate::shell::emit_line;
+use crate::wsl_migration::quote;
 
 const PROGRESS_EVERY: Duration = Duration::from_millis(150);
 
@@ -492,10 +493,6 @@ fn check_can_clear(text: &str, env: &dyn Fn(&str) -> Option<String>) -> Result<O
     Ok(Some(path))
 }
 
-fn powershell_quote(text: &str) -> String {
-    format!("'{}'", text.replace('\'', "''"))
-}
-
 /// `F:` or `\\server\share`.
 fn drive_of(path: &str) -> String {
     match Path::new(path).components().next() {
@@ -581,7 +578,7 @@ pub async fn caches_clear(
     migration.inner().clone().run_operation(move || {
         let total = paths.len();
         Ok(clear(&paths, &real_env, &mut |path, done, error| {
-            emit_line(&app, format!("$ Remove-Item -LiteralPath {} -Recurse -Force", powershell_quote(path)), false);
+            emit_line(&app, format!("$ Remove-Item -LiteralPath {} -Recurse -Force", quote(path)), false);
             match error {
                 Some(error) => emit_line(&app, format!("  ✗ {error}"), true),
                 None => emit_line(&app, "  ✓ removed", false),
@@ -996,7 +993,7 @@ mod tests {
 
     #[test]
     fn the_shown_command_quotes_awkward_paths() {
-        assert_eq!(powershell_quote("C:\\it's\\here"), "'C:\\it''s\\here'");
+        assert_eq!(quote("C:\\it's\\here"), "'C:\\it''s\\here'");
     }
 
     #[test]

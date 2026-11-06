@@ -22,7 +22,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 use crate::error::{AtlasError, ErrorKind};
 use crate::registry::{read_dword, read_text_value, wide};
 use crate::holders::{describe, process_snapshot, ProcessInfo};
-use crate::shell::hidden;
+use crate::shell::powershell;
 use crate::wsl::elevation_command;
 
 const USER_KEY: &str = r"Software\Microsoft\Clipboard";
@@ -477,8 +477,7 @@ fn item_image(id: &str) -> Result<Vec<u8>, AtlasError> {
 }
 
 fn run_as_admin(script: &str) -> Result<(), AtlasError> {
-    let output = hidden("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", &elevation_command(script)])
+    let output = powershell(&elevation_command(script))
         .output()
         .map_err(|e| format!("Could not ask Windows for administrator approval: {}", e))?;
     match output.status.code() {
@@ -582,6 +581,7 @@ pub async fn clipboard_open_settings() -> Result<(), AtlasError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::shell::hidden;
 
     #[test]
     fn only_a_zero_policy_blocks_history() {

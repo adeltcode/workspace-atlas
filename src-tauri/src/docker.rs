@@ -4,7 +4,7 @@ use std::thread;
 
 use tauri::Emitter;
 use crate::error::{AtlasError, ErrorKind};
-use crate::shell::{hidden, output_lines};
+use crate::shell::{emit_line, hidden, in_background, now_seconds, output_lines};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -321,21 +321,7 @@ fn read_via_wsl(path: &str, max_bytes: usize) -> Result<Vec<u8>, AtlasError> {
 /// Returns IDs of containers that are currently **running** and have `volume_name`
 /// mounted. Uses `docker ps` (running-only by default, no `-a` flag).
 fn get_running_containers_for_volume(volume_name: &str) -> Vec<String> {
-    hidden("docker")
-        .args([
-            "ps",
-            "--filter", &format!("volume={}", volume_name),
-            "--format", "{{.ID}}",
-        ])
-        .output()
-        .map(|o| {
-            String::from_utf8_lossy(&o.stdout)
-                .lines()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect()
-        })
-        .unwrap_or_default()
+    docker_lines(&["ps", "--filter", &format!("volume={}", volume_name), "--format", "{{.ID}}"])
 }
 
 
@@ -355,62 +341,17 @@ fn parse_label(label_str: &str, key: &str) -> Option<String> {
 /// string (e.g. "Exited (0) 3 weeks ago", "Exited (1) About a minute ago").
 /// Returns -1 for running/paused/created containers.
 fn parse_stopped_days(state: &str, status: &str) -> i64 {
-    if state != "exited" && state != "dead" {
-        return -1;
+    match state {
+        "dead" => 999, // definitely stale
+        "exited" => status.split_once(") ").map_or(0, |(_, age)| parse_age_days(age)),
+        _ => -1,
     }
-    if state == "dead" {
-        return 999; // definitely stale
-    }
-    // Walk backwards from the word "ago" to find "N unit"
-    let lower = status.to_lowercase();
-    let words: Vec<&str> = lower.split_whitespace().collect();
-    if let Some(ago_pos) = words.iter().position(|&w| w == "ago") {
-        if ago_pos >= 2 {
-            let n = words[ago_pos - 2].parse::<i64>().unwrap_or(1);
-            let unit = words[ago_pos - 1];
-            return match unit {
-                u if u.starts_with("second") || u.starts_with("minute") || u.starts_with("hour") => 0,
-                u if u.starts_with("day")   => n,
-                u if u.starts_with("week")  => n * 7,
-                u if u.starts_with("month") => n * 30,
-                u if u.starts_with("year")  => n * 365,
-                _ => 0,
-            };
-        }
-    }
-    0
 }
 
 /// Split a `docker system df` row on 2+ consecutive spaces so multi-word
 /// type names ("Local Volumes", "Build Cache") and "1.23GB (72%)" stay intact.
 fn split_df_line(line: &str) -> Vec<String> {
-    let mut cols: Vec<String> = Vec::new();
-    let mut col = String::new();
-    let mut run: usize = 0;
-
-    for ch in line.chars() {
-        if ch == ' ' {
-            run += 1;
-            if run == 1 {
-                col.push(ch);
-            }
-        } else {
-            if run >= 2 {
-                let s = col.trim().to_string();
-                if !s.is_empty() {
-                    cols.push(s);
-                }
-                col = String::new();
-            }
-            run = 0;
-            col.push(ch);
-        }
-    }
-    let s = col.trim().to_string();
-    if !s.is_empty() {
-        cols.push(s);
-    }
-    cols
+    line.split("  ").map(str::trim).filter(|col| !col.is_empty()).map(String::from).collect()
 }
 
 fn parse_system_df(output: &str) -> Result<DockerSystemDf, AtlasError> {
@@ -484,28 +425,54 @@ fn parse_age_days(created_since: &str) -> i64 {
 // Helpers - data fetching (sync, called from async commands via spawn_blocking)
 // ─────────────────────────────────────────────────────────────────────────────
 
-fn get_all_images_sync() -> Result<Vec<DockerImage>, AtlasError> {
+/// What `docker <args>` prints, or its error text if it fails.
+fn docker_stdout(args: &[&str]) -> Result<String, AtlasError> {
     let output = hidden("docker")
-        .args(["images", "--format", "{{json .}}"])
+        .args(args)
         .output()
         .map_err(|e| format!("Failed to run docker: {}", e))?;
-
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string().into());
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string().into())
     }
+}
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+fn docker_run_ok(args: &[&str]) -> Result<(), AtlasError> {
+    docker_stdout(args).map(|_| ())
+}
+
+/// The lines `docker <args>` prints, or none if it fails, for details a page can go without.
+fn docker_lines(args: &[&str]) -> Vec<String> {
+    hidden("docker")
+        .args(args)
+        .output()
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// One JSON value per line, as `--format {{json .}}` prints. `what` names the list in the error.
+fn docker_json_lines(args: &[&str], what: &str) -> Result<Vec<serde_json::Value>, AtlasError> {
+    docker_stdout(args)?
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_str(line).map_err(|e| format!("Could not read the {} list from Docker: {}", what, e).into()))
+        .collect()
+}
+
+fn get_all_images_sync() -> Result<Vec<DockerImage>, AtlasError> {
+    let rows = docker_json_lines(&["images", "--format", "{{json .}}"], "image")?;
     let used_names = get_container_image_names_sync();
     let mut images = Vec::new();
 
-    for line in stdout.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let v: serde_json::Value =
-            serde_json::from_str(line).map_err(|e| format!("Could not read the image list from Docker: {}", e))?;
-
+    for v in rows {
         let id = v["ID"].as_str().unwrap_or("").to_string();
         let repository = v["Repository"].as_str().unwrap_or("<none>").to_string();
         let tag = v["Tag"].as_str().unwrap_or("<none>").to_string();
@@ -533,43 +500,15 @@ fn get_all_images_sync() -> Result<Vec<DockerImage>, AtlasError> {
 }
 
 fn get_container_image_names_sync() -> HashSet<String> {
-    hidden("docker")
-        .args(["ps", "-a", "--format", "{{.Image}}"])
-        .output()
-        .map(|o| {
-            String::from_utf8_lossy(&o.stdout)
-                .lines()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect()
-        })
-        .unwrap_or_default()
+    docker_lines(&["ps", "-a", "--format", "{{.Image}}"]).into_iter().collect()
 }
 
 fn count_stopped_containers_sync() -> u32 {
-    hidden("docker")
-        .args(["ps", "-aq", "-f", "status=exited"])
-        .output()
-        .map(|o| {
-            String::from_utf8_lossy(&o.stdout)
-                .lines()
-                .filter(|l| !l.trim().is_empty())
-                .count() as u32
-        })
-        .unwrap_or(0)
+    docker_lines(&["ps", "-aq", "-f", "status=exited"]).len() as u32
 }
 
 fn count_unused_volumes_sync() -> u32 {
-    hidden("docker")
-        .args(["volume", "ls", "-qf", "dangling=true"])
-        .output()
-        .map(|o| {
-            String::from_utf8_lossy(&o.stdout)
-                .lines()
-                .filter(|l| !l.trim().is_empty())
-                .count() as u32
-        })
-        .unwrap_or(0)
+    docker_lines(&["volume", "ls", "-qf", "dangling=true"]).len() as u32
 }
 
 fn volume_sizes_command() -> Command {
@@ -621,24 +560,9 @@ fn parse_volume_sizes_text(text: &str) -> std::collections::HashMap<String, u64>
 }
 
 fn get_networks_sync() -> Result<Vec<DockerNetwork>, AtlasError> {
-    let output = hidden("docker")
-        .args(["network", "ls", "--format", "{{json .}}"])
-        .output()
-        .map_err(|e| format!("Failed to run docker network ls: {}", e))?;
-
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string().into());
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
     let mut networks = Vec::new();
 
-    for line in stdout.lines() {
-        let line = line.trim();
-        if line.is_empty() { continue; }
-        let v: serde_json::Value = serde_json::from_str(line)
-            .map_err(|e| format!("Could not read the network list from Docker: {}", e))?;
-
+    for v in docker_json_lines(&["network", "ls", "--format", "{{json .}}"], "network")? {
         let internal = v["Internal"].as_str().unwrap_or("false")
             .eq_ignore_ascii_case("true");
         let ipv6 = v["IPv6"].as_str().unwrap_or("false")
@@ -812,18 +736,7 @@ pub async fn launch_docker_desktop(
 pub async fn docker_system_df(
     migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
 ) -> Result<DockerSystemDf, AtlasError> {
-    migration.inner().clone().run_operation(move || {
-        let output = hidden("docker")
-            .args(["system", "df"])
-            .output()
-            .map_err(|e| format!("Failed to run docker: {}", e))?;
-
-        if !output.status.success() {
-            return Err(String::from_utf8_lossy(&output.stderr).trim().to_string().into());
-        }
-
-        parse_system_df(&String::from_utf8_lossy(&output.stdout))
-    }).await
+    migration.inner().clone().run_operation(|| parse_system_df(&docker_stdout(&["system", "df"])?)).await
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -851,97 +764,44 @@ pub async fn docker_prune_preview(
             .filter(|img| !img.in_use && !keep_list.contains(&img.id))
             .collect();
 
-        match level {
-            1 => {
-                // Dangling (untagged) images only
-                let dangling: Vec<&DockerImage> = unused_not_kept
-                    .iter()
-                    .copied()
-                    .filter(|img| img.repository == "<none>" && img.tag == "<none>")
-                    .collect();
+        let chosen: Vec<&DockerImage> = match level {
+            // Dangling (untagged) images only
+            1 => unused_not_kept.iter().copied().filter(|img| img.repository == "<none>" && img.tag == "<none>").collect(),
+            2 | 3 => unused_not_kept,
+            _ => return Err(AtlasError::invalid(format!("Prune level {} does not exist. Levels are 1, 2 and 3.", level))),
+        };
 
-                let reclaim_bytes: u64 = dangling.iter().map(|i| i.size_bytes).sum();
-                let ids: Vec<String> = dangling.iter().map(|i| i.id.clone()).collect();
-                let names: Vec<String> = dangling
-                    .iter()
-                    .map(|i| format!("{}:{}", i.repository, i.tag))
-                    .collect();
+        let reclaim_bytes: u64 = chosen.iter().map(|i| i.size_bytes).sum();
+        let image_ids: Vec<String> = chosen.iter().map(|i| i.id.clone()).collect();
+        let image_names: Vec<String> = chosen.iter().map(|i| format!("{}:{}", i.repository, i.tag)).collect();
+        let ids = image_ids.join(" ");
 
-                Ok(PrunePreview {
-                    level: 1,
-                    command: "docker image prune -f".to_string(),
-                    image_ids: ids,
-                    image_names: names,
-                    reclaim_bytes,
-                    reclaim_size: bytes_to_human(reclaim_bytes),
-                    container_count: 0,
-                    volume_count: 0,
-                })
+        let command = match level {
+            1 => "docker image prune -f".to_string(),
+            2 if ids.is_empty() => "# Nothing to remove".to_string(),
+            2 => format!("docker rmi {}", ids),
+            _ => {
+                let images = if ids.is_empty() { String::new() } else { format!(" && docker rmi {}", ids) };
+                format!("docker container prune -f{}  && docker volume prune -f && docker builder prune -a -f", images)
             }
+        };
+        // Level 3 also removes stopped containers, unused volumes and the build cache.
+        let (container_count, volume_count) = if level == 3 {
+            (count_stopped_containers_sync(), count_unused_volumes_sync())
+        } else {
+            (0, 0)
+        };
 
-            2 => {
-                // All unused images not in keep-list
-                let reclaim_bytes: u64 = unused_not_kept.iter().map(|i| i.size_bytes).sum();
-                let ids: Vec<String> = unused_not_kept.iter().map(|i| i.id.clone()).collect();
-                let names: Vec<String> = unused_not_kept
-                    .iter()
-                    .map(|i| format!("{}:{}", i.repository, i.tag))
-                    .collect();
-
-                let command = if ids.is_empty() {
-                    "# Nothing to remove".to_string()
-                } else {
-                    format!("docker rmi {}", ids.join(" "))
-                };
-
-                Ok(PrunePreview {
-                    level: 2,
-                    command,
-                    image_ids: ids,
-                    image_names: names,
-                    reclaim_bytes,
-                    reclaim_size: bytes_to_human(reclaim_bytes),
-                    container_count: 0,
-                    volume_count: 0,
-                })
-            }
-
-            3 => {
-                // Level 2 + stopped containers + unused volumes + build cache
-                let reclaim_bytes: u64 = unused_not_kept.iter().map(|i| i.size_bytes).sum();
-                let ids: Vec<String> = unused_not_kept.iter().map(|i| i.id.clone()).collect();
-                let names: Vec<String> = unused_not_kept
-                    .iter()
-                    .map(|i| format!("{}:{}", i.repository, i.tag))
-                    .collect();
-
-                let container_count = count_stopped_containers_sync();
-                let volume_count = count_unused_volumes_sync();
-
-                let img_part = if ids.is_empty() {
-                    String::new()
-                } else {
-                    format!(" && docker rmi {}", ids.join(" "))
-                };
-                let command = format!(
-                    "docker container prune -f{}  && docker volume prune -f && docker builder prune -a -f",
-                    img_part
-                );
-
-                Ok(PrunePreview {
-                    level: 3,
-                    command,
-                    image_ids: ids,
-                    image_names: names,
-                    reclaim_bytes,
-                    reclaim_size: bytes_to_human(reclaim_bytes),
-                    container_count,
-                    volume_count,
-                })
-            }
-
-            _ => Err(AtlasError::invalid(format!("Prune level {} does not exist. Levels are 1, 2 and 3.", level))),
-        }
+        Ok(PrunePreview {
+            level,
+            command,
+            image_ids,
+            image_names,
+            reclaim_bytes,
+            reclaim_size: bytes_to_human(reclaim_bytes),
+            container_count,
+            volume_count,
+        })
     }).await
 }
 
@@ -953,63 +813,34 @@ pub async fn docker_prune_run(
     image_ids: Vec<String>,
 ) -> Result<(), AtlasError> {
     migration.inner().clone().run_operation(move || {
-        let emit = |line: &str| {
-            app.emit("docker-log", line).ok();
+        let step = |args: &[&str]| {
+            app.emit("docker-log", format!("$ docker {}", args.join(" "))).ok();
+            let mut cmd = hidden("docker");
+            cmd.args(args);
+            run_streaming(&app, cmd, true)
         };
+        let mut rmi = vec!["rmi"];
+        rmi.extend(image_ids.iter().map(String::as_str));
 
         match level {
-            1 => {
-                emit("$ docker image prune -f");
-                let mut cmd = hidden("docker");
-                cmd.args(["image", "prune", "-f"]);
-                run_streaming(&app, cmd, true)?;
+            1 => step(&["image", "prune", "-f"]),
+            2 if image_ids.is_empty() => {
+                app.emit("docker-log", "# Nothing to remove.").ok();
+                Ok(())
             }
-
-            2 => {
-                if image_ids.is_empty() {
-                    emit("# Nothing to remove.");
-                } else {
-                    emit(&format!("$ docker rmi {}", image_ids.join(" ")));
-                    let mut cmd = hidden("docker");
-                    cmd.arg("rmi");
-                    for id in &image_ids {
-                        cmd.arg(id);
-                    }
-                    run_streaming(&app, cmd, true)?;
-                }
-            }
-
+            2 => step(&rmi),
             3 => {
                 // One failed step does not stop the rest, because each one frees space on its own.
-                let mut first_failure = None;
-                let mut step = |args: &[&str]| {
-                    emit(&format!("$ docker {}", args.join(" ")));
-                    let mut cmd = hidden("docker");
-                    cmd.args(args);
-                    if let Err(e) = run_streaming(&app, cmd, true) {
-                        first_failure.get_or_insert(e);
-                    }
-                };
-
-                step(&["container", "prune", "-f"]);
+                let mut steps: Vec<&[&str]> = vec![&["container", "prune", "-f"]];
                 if !image_ids.is_empty() {
-                    let mut rmi = vec!["rmi"];
-                    rmi.extend(image_ids.iter().map(String::as_str));
-                    step(&rmi);
+                    steps.push(&rmi);
                 }
-                step(&["volume", "prune", "-f"]);
-                step(&["builder", "prune", "-a", "-f"]);
-
-                if let Some(e) = first_failure {
-                    return Err(e);
-                }
+                steps.push(&["volume", "prune", "-f"]);
+                steps.push(&["builder", "prune", "-a", "-f"]);
+                steps.into_iter().map(step).fold(Ok(()), Result::and)
             }
-
-            _ => return Err(AtlasError::invalid(format!("Prune level {} does not exist. Levels are 1, 2 and 3.", level))),
+            _ => Err(AtlasError::invalid(format!("Prune level {} does not exist. Levels are 1, 2 and 3.", level))),
         }
-
-        app.emit("docker-done", true).ok();
-        Ok(())
     }).await
 }
 
@@ -1018,26 +849,9 @@ pub async fn docker_prune_run(
 // ─────────────────────────────────────────────────────────────────────────────
 
 fn get_containers_sync() -> Result<Vec<DockerContainer>, AtlasError> {
-    let output = hidden("docker")
-        .args(["ps", "-a", "--format", "{{json .}}"])
-        .output()
-        .map_err(|e| format!("Failed to run docker: {}", e))?;
-
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string().into());
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
     let mut containers = Vec::new();
 
-    for line in stdout.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let v: serde_json::Value =
-            serde_json::from_str(line).map_err(|e| format!("Could not read the container list from Docker: {}", e))?;
-
+    for v in docker_json_lines(&["ps", "-a", "--format", "{{json .}}"], "container")? {
         // Names can be comma-separated; take the first and strip any leading slash
         let raw_name = v["Names"].as_str().unwrap_or("").to_string();
         let name = raw_name
@@ -1073,39 +887,16 @@ fn get_containers_sync() -> Result<Vec<DockerContainer>, AtlasError> {
 }
 
 fn get_volumes_sync() -> Result<Vec<DockerVolume>, AtlasError> {
-    let output = hidden("docker")
-        .args(["volume", "ls", "--format", "{{json .}}"])
-        .output()
-        .map_err(|e| format!("Failed to run docker: {}", e))?;
-
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string().into());
-    }
+    let rows = docker_json_lines(&["volume", "ls", "--format", "{{json .}}"], "volume")?;
 
     // Docker's own reference-counting filter - the only reliable source of truth
     // for whether a volume is referenced by at least one container.
     // `dangling=true` means "not referenced by any container (running or stopped)".
-    let dangling: HashSet<String> = hidden("docker")
-        .args(["volume", "ls", "-qf", "dangling=true"])
-        .output()
-        .map(|o| {
-            String::from_utf8_lossy(&o.stdout)
-                .lines()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect()
-        })
-        .unwrap_or_default();
+    let dangling: HashSet<String> = docker_lines(&["volume", "ls", "-qf", "dangling=true"]).into_iter().collect();
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
     let mut volumes = Vec::new();
 
-    for line in stdout.lines() {
-        let line = line.trim();
-        if line.is_empty() { continue; }
-        let v: serde_json::Value =
-            serde_json::from_str(line).map_err(|e| format!("Could not read the volume list from Docker: {}", e))?;
-
+    for v in rows {
         let name = v["Name"].as_str().unwrap_or("").to_string();
 
         // `in_use` = referenced by any container (running or stopped).
@@ -1116,21 +907,11 @@ fn get_volumes_sync() -> Result<Vec<DockerVolume>, AtlasError> {
         // Only queried for in-use volumes; these are the containers that will be
         // paused during backup (shown as a warning in the UI).
         let containers: Vec<String> = if in_use {
-            hidden("docker")
-                .args([
-                    "ps",                                 // running-only (no -a)
-                    "--filter", &format!("volume={}", name),
-                    "--format", "{{.Names}}",
-                ])
-                .output()
-                .map(|o| {
-                    String::from_utf8_lossy(&o.stdout)
-                        .lines()
-                        .map(|s| s.trim().trim_start_matches('/').to_string())
-                        .filter(|s| !s.is_empty())
-                        .collect()
-                })
-                .unwrap_or_default()
+            docker_lines(&["ps", "--filter", &format!("volume={}", name), "--format", "{{.Names}}"])
+                .into_iter()
+                .map(|s| s.trim_start_matches('/').to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
         } else {
             Vec::new()
         };
@@ -1177,19 +958,6 @@ pub async fn docker_volumes(
         }
         Ok(volumes)
     }).await
-}
-
-/// Run a one-shot `docker <args>` command: Ok on success, trimmed stderr on failure.
-fn docker_run_ok(args: &[&str]) -> Result<(), AtlasError> {
-    let output = hidden("docker")
-        .args(args)
-        .output()
-        .map_err(|e| format!("Failed to run docker: {}", e))?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(String::from_utf8_lossy(&output.stderr).trim().to_string().into())
-    }
 }
 
 #[tauri::command]
@@ -1300,43 +1068,35 @@ pub async fn docker_network_remove(
 fn docker_volumes_dir(root: &str) -> String { format!("{}/docker/volumes", root) }
 fn docker_compose_dir(root: &str) -> String { format!("{}/docker/compose", root) }
 
+fn read_json<T: serde::de::DeserializeOwned>(path: impl AsRef<std::path::Path>) -> Option<T> {
+    serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()
+}
+
+fn write_json<T: serde::Serialize>(path: impl AsRef<std::path::Path>, value: &T) -> Result<(), AtlasError> {
+    if let Some(folder) = path.as_ref().parent() {
+        std::fs::create_dir_all(folder).map_err(|e| e.to_string())?;
+    }
+    let json = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
+    Ok(std::fs::write(path, json).map_err(|e| e.to_string())?)
+}
+
 fn read_manifest(root: &str) -> BackupManifest {
     // Try new path first, fall back to legacy flat path for migration.
-    let new_path = format!("{}/docker/manifest.json", root);
-    if let Ok(s) = std::fs::read_to_string(&new_path) {
-        if let Ok(m) = serde_json::from_str(&s) {
-            return m;
-        }
-    }
-    let old_path = format!("{}/backup_manifest.json", root);
-    std::fs::read_to_string(&old_path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
+    read_json(format!("{}/docker/manifest.json", root))
+        .or_else(|| read_json(format!("{}/backup_manifest.json", root)))
         .unwrap_or_default()
 }
 
 fn write_manifest(root: &str, manifest: &BackupManifest) -> Result<(), AtlasError> {
-    let dir = format!("{}/docker", root);
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = format!("{}/manifest.json", dir);
-    let json = serde_json::to_string_pretty(manifest).map_err(|e| e.to_string())?;
-    Ok(std::fs::write(path, json).map_err(|e| e.to_string())?)
+    write_json(format!("{}/docker/manifest.json", root), manifest)
 }
 
 fn read_compose_manifest(root: &str) -> ComposeBackupManifest {
-    let path = format!("{}/docker/compose/manifest.json", root);
-    std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+    read_json(format!("{}/docker/compose/manifest.json", root)).unwrap_or_default()
 }
 
 fn write_compose_manifest(root: &str, manifest: &ComposeBackupManifest) -> Result<(), AtlasError> {
-    let dir = format!("{}/docker/compose", root);
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = format!("{}/manifest.json", dir);
-    let json = serde_json::to_string_pretty(manifest).map_err(|e| e.to_string())?;
-    Ok(std::fs::write(path, json).map_err(|e| e.to_string())?)
+    write_json(format!("{}/docker/compose/manifest.json", root), manifest)
 }
 
 /// True when both texts name one folder, as `C:/b`, `C:\b` and `c:/b/` do.
@@ -1352,34 +1112,42 @@ fn is_inside_folder(folder: &str, path: &str) -> bool {
 
 /// Delete a backup's file. A file outside the backup folder stays where it is.
 fn remove_backup_file(app: &tauri::AppHandle, backup_dir: &str, path: &str, filename: &str) -> Result<(), AtlasError> {
-    let line = |text: String| { app.emit("shell-out", ShellOut { text, stderr: false }).ok(); };
     let exists = std::path::Path::new(path).exists();
     if exists && !is_inside_folder(backup_dir, path) {
-        line(format!("  # not in the backup folder, so the file was left in place: {}", path));
+        emit_line(app, format!("  # not in the backup folder, so the file was left in place: {}", path), false);
         return Ok(());
     }
-    line(format!("Remove-Item \"{}\"", path.replace('/', "\\")));
+    emit_line(app, format!("Remove-Item \"{}\"", path.replace('/', "\\")), false);
     if exists {
         std::fs::remove_file(path).map_err(|e| format!("Failed to delete '{}': {}", path, e))?;
     }
-    line(format!("  \u{2713} deleted {}", filename));
+    emit_line(app, format!("  \u{2713} deleted {}", filename), false);
     Ok(())
 }
 
-/// Read a source file as a UTF-8 string, handling Windows / WSL-mount / pure-WSL paths.
-fn read_source_as_string(src: &str) -> Result<String, AtlasError> {
-    if is_windows_absolute(src) {
-        Ok(std::fs::read_to_string(src)
-            .map_err(|e| format!("Cannot read '{}': {}", src, e))?)
-    } else if let Some(win) = wsl_mount_to_windows(src) {
-        Ok(std::fs::read_to_string(&win)
-            .map_err(|e| format!("Cannot read '{}': {}", win, e))?)
+/// Read a text file at a Windows, `/mnt/<drive>` or WSL path. Capped at 512 KB.
+fn read_text_file(path: &str) -> Result<String, AtlasError> {
+    const MAX_BYTES: usize = 512_000;
+
+    let windows = wsl_mount_to_windows(path);
+    let path = windows.as_deref().unwrap_or(path);
+
+    let bytes = if is_windows_absolute(path) {
+        let meta = std::fs::metadata(path)
+            .map_err(|e| format!("Cannot access '{}': {}", path, e))?;
+        if meta.len() > MAX_BYTES as u64 {
+            return Err(format!(
+                "This file is too large to show ({} KB). The limit is 512 KB.",
+                meta.len() / 1024
+            ).into());
+        }
+        std::fs::read(path).map_err(|e| format!("Could not read '{}': {}", path, e))?
     } else {
-        read_via_wsl(src, 512_000).and_then(|bytes| {
-            Ok(String::from_utf8(bytes)
-                .map_err(|_| "File contains non-UTF-8 characters".to_string())?)
-        })
-    }
+        read_via_wsl(path, MAX_BYTES)?
+    };
+
+    Ok(String::from_utf8(bytes)
+        .map_err(|_| "This file is not UTF-8 text, so it cannot be displayed.".to_string())?)
 }
 
 // ── Commands ──────────────────────────────────────────────────────────────────
@@ -1390,16 +1158,7 @@ pub async fn docker_compose_ls(
     migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
 ) -> Result<Vec<ComposeProject>, AtlasError> {
     migration.inner().clone().run_operation(move || {
-        let output = hidden("docker")
-            .args(["compose", "ls", "--all", "--format", "json"])
-            .output()
-            .map_err(|e| format!("Failed to run docker compose: {}", e))?;
-
-        if !output.status.success() {
-            return Err(String::from_utf8_lossy(&output.stderr).trim().to_string().into());
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stdout = docker_stdout(&["compose", "ls", "--all", "--format", "json"])?;
         let trimmed = stdout.trim();
         if trimmed.is_empty() || trimmed == "null" || trimmed == "[]" {
             return Ok(Vec::new());
@@ -1427,8 +1186,20 @@ pub async fn docker_compose_ls(
     }).await
 }
 
-/// Run a docker compose lifecycle action against a specific config file,
-/// streaming output via `docker-log` events.
+/// Run `docker compose -f <config_file> <args>`, streaming output via `docker-log` events.
+fn run_compose(app: &tauri::AppHandle, config_file: &str, args: &[&str]) -> Result<(), AtlasError> {
+    // Display the command as it will actually run
+    app.emit("docker-log", format!("$ docker compose -f \"{}\" {}", config_file, args.join(" "))).ok();
+
+    let (mut cmd, resolved) = compose_base(config_file);
+    if let Some(win) = &resolved {
+        app.emit("docker-log", format!("# resolved to {}", win)).ok();
+    }
+    cmd.args(args);
+    run_streaming(app, cmd, false)
+}
+
+/// Run a docker compose lifecycle action against a specific config file.
 ///
 /// Handles three path origins:
 ///   - Windows absolute (`C:\...`)  → `docker compose -f <path> <action>`
@@ -1451,20 +1222,7 @@ pub async fn docker_compose_action(
             other          => return Err(AtlasError::invalid(format!("Unknown Compose action: \"{}\".", other))),
         };
 
-        // Display the command as it will actually run
-        app.emit("docker-log",
-            format!("$ docker compose -f \"{}\" {}", &config_file, extra_args.join(" "))
-        ).ok();
-
-        let (mut cmd, resolved) = compose_base(&config_file);
-        if let Some(win) = &resolved {
-            app.emit("docker-log", format!("# resolved to {}", win)).ok();
-        }
-        cmd.args(extra_args);
-        run_streaming(&app, cmd, false)?;
-
-        app.emit("docker-done", true).ok();
-        Ok(())
+        run_compose(&app, &config_file, extra_args)
     }).await
 }
 
@@ -1486,23 +1244,9 @@ pub async fn docker_compose_service_action(
             other     => return Err(AtlasError::invalid(format!("Unknown service action: \"{}\".", other))),
         };
 
-        // Build final arg list: base_args + [service]
-        let mut extra: Vec<String> = base.iter().map(|s| s.to_string()).collect();
-        extra.push(service.clone());
-
-        app.emit("docker-log",
-            format!("$ docker compose -f \"{}\" {} {}", &config_file, base.join(" "), &service)
-        ).ok();
-
-        let (mut cmd, resolved) = compose_base(&config_file);
-        if let Some(win) = &resolved {
-            app.emit("docker-log", format!("# resolved to {}", win)).ok();
-        }
-        cmd.args(extra.iter().map(|s| s.as_str()).collect::<Vec<_>>());
-        run_streaming(&app, cmd, false)?;
-
-        app.emit("docker-done", true).ok();
-        Ok(())
+        let mut args = base.to_vec();
+        args.push(&service);
+        run_compose(&app, &config_file, &args)
     }).await
 }
 
@@ -1553,14 +1297,10 @@ pub async fn write_file_content(
     content: String,
 ) -> Result<(), AtlasError> {
     migration.inner().clone().run_operation(move || {
+        let path = wsl_mount_to_windows(&path).unwrap_or(path);
         if is_windows_absolute(&path) {
             Ok(std::fs::write(&path, content.as_bytes())
                 .map_err(|e| format!("Could not write '{}': {}", path, e))?)
-
-        } else if let Some(win_path) = wsl_mount_to_windows(&path) {
-            Ok(std::fs::write(&win_path, content.as_bytes())
-                .map_err(|e| format!("Could not write '{}': {}", win_path, e))?)
-
         } else {
             // Pure WSL path - pipe content through `wsl -e tee`
             use std::io::Write as _;
@@ -1624,18 +1364,8 @@ fn parse_mem_used(s: &str) -> u64 {
 }
 
 fn get_stats_sync() -> Result<Vec<ContainerStats>, AtlasError> {
-    let output = hidden("docker")
-        .args(["stats", "--no-stream", "--format", "{{json .}}"])
-        .output()
-        .map_err(|e| format!("Failed to run docker stats: {}", e))?;
-
-    if !output.status.success() {
-        let err = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("docker stats: {}", err.trim()).into());
-    }
-
     let mut stats = Vec::new();
-    for line in String::from_utf8_lossy(&output.stdout).lines() {
+    for line in docker_stdout(&["stats", "--no-stream", "--format", "{{json .}}"])?.lines() {
         let line = line.trim();
         if line.is_empty() { continue; }
         let v: serde_json::Value = match serde_json::from_str(line) {
@@ -1718,51 +1448,13 @@ pub async fn get_backup_size(
     }).await
 }
 
-/// Read a text file from the filesystem. Handles three path types:
-///   - Windows absolute (`C:\...`)    → direct `fs::read`
-///   - WSL mount (`/mnt/c/...`)       → convert to Windows path, then `fs::read`
-///   - Pure WSL (`/home/...` etc.)    → `wsl cat <path>`
-/// All variants are capped at 512 KB.
+/// Read a text file, up to 512 KB, for showing in the app.
 #[tauri::command]
 pub async fn read_file_content(
     migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
     path: String,
 ) -> Result<String, AtlasError> {
-    migration.inner().clone().run_operation(move || {
-        const MAX_BYTES: usize = 512_000;
-
-        let bytes: Vec<u8> = if is_windows_absolute(&path) {
-            // ── Native Windows path ──────────────────────────────────────────
-            let meta = std::fs::metadata(&path)
-                .map_err(|e| format!("Cannot access '{}': {}", path, e))?;
-            if meta.len() > MAX_BYTES as u64 {
-                return Err(format!(
-                    "This file is too large to show ({} KB). The limit is 512 KB.",
-                    meta.len() / 1024
-                ).into());
-            }
-            std::fs::read(&path).map_err(|e| format!("Could not read '{}': {}", path, e))?
-
-        } else if let Some(win_path) = wsl_mount_to_windows(&path) {
-            // ── /mnt/c/ → C:\ ───────────────────────────────────────────────
-            let meta = std::fs::metadata(&win_path)
-                .map_err(|e| format!("Cannot access '{}': {}", win_path, e))?;
-            if meta.len() > MAX_BYTES as u64 {
-                return Err(format!(
-                    "This file is too large to show ({} KB). The limit is 512 KB.",
-                    meta.len() / 1024
-                ).into());
-            }
-            std::fs::read(&win_path).map_err(|e| format!("Could not read '{}': {}", win_path, e))?
-
-        } else {
-            // ── Pure WSL path (/home/…, /root/…, etc.) ──────────────────────
-            read_via_wsl(&path, MAX_BYTES)?
-        };
-
-        Ok(String::from_utf8(bytes)
-            .map_err(|_| "This file is not UTF-8 text, so it cannot be displayed.".to_string())?)
-    }).await
+    migration.inner().clone().run_operation(move || read_text_file(&path)).await
 }
 
 /// Returns the OS-appropriate default backup root directory.
@@ -1804,16 +1496,12 @@ pub async fn docker_volume_backup(
     validate_docker_name(&volume_name)?;
     migration.inner().clone().run_operation(move || {
         use std::fs;
-        use std::time::{SystemTime, UNIX_EPOCH};
 
         let volumes_dir = docker_volumes_dir(&backup_dir);
         fs::create_dir_all(&volumes_dir)
             .map_err(|e| format!("Could not create the backup folder: {}", e))?;
 
-        let ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let ts = now_seconds();
 
         let filename       = format!("{}_{}.tar.gz", volume_name, ts);
         let backup_path    = format!("{}/{}", volumes_dir, filename);
@@ -1824,13 +1512,7 @@ pub async fn docker_volume_backup(
         emit_bp(&app, vol, "Checking for the alpine image…", 5, false, None, None,
             Some("docker image inspect alpine --format {{.Id}}".to_string()));
 
-        let alpine_ok = hidden("docker")
-            .args(["image", "inspect", "alpine", "--format", "{{.Id}}"])
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false);
-
-        if !alpine_ok {
+        if docker_run_ok(&["image", "inspect", "alpine", "--format", "{{.Id}}"]).is_err() {
             emit_bp(&app, vol, "Pulling the alpine image…", 10, false, None, None,
                 Some("docker pull alpine".to_string()));
             let pull = hidden("docker")
@@ -1855,12 +1537,7 @@ pub async fn docker_volume_backup(
                 30, false, None, None, Some(pause_cmd));
 
             for id in &running {
-                let ok = hidden("docker")
-                    .args(["pause", id])
-                    .output()
-                    .map(|o| o.status.success())
-                    .unwrap_or(false);
-                if ok { paused.push(id.clone()); }
+                if docker_run_ok(&["pause", id]).is_ok() { paused.push(id.clone()); }
             }
             let skipped = running.len() - paused.len();
             if skipped > 0 {
@@ -1894,7 +1571,7 @@ pub async fn docker_volume_backup(
             let unpause_cmd = format!("docker unpause {}", paused.join(" "));
             emit_bp(&app, vol, "Resuming containers…", 88, false, None, None, Some(unpause_cmd));
             for id in &paused {
-                hidden("docker").args(["unpause", id]).output().ok();
+                docker_run_ok(&["unpause", id]).ok();
             }
         }
 
@@ -1991,12 +1668,7 @@ pub async fn docker_volume_restore(
                 15, false, None, None, Some(stop_cmd));
 
             for id in &running {
-                let ok = hidden("docker")
-                    .args(["stop", id])
-                    .output()
-                    .map(|o| o.status.success())
-                    .unwrap_or(false);
-                if ok {
+                if docker_run_ok(&["stop", id]).is_ok() {
                     stopped.push(id.clone());
                 } else {
                     emit_bp(&app, vol,
@@ -2017,7 +1689,7 @@ pub async fn docker_volume_restore(
             let err = String::from_utf8_lossy(&create.stderr).trim().to_string();
             // Restart containers even on failure
             for id in &stopped {
-                hidden("docker").args(["start", id]).output().ok();
+                docker_run_ok(&["start", id]).ok();
             }
             emit_bp(&app, vol, "Failed to prepare volume", 25, true, Some(err.clone()), None, None);
             return Err(err.into());
@@ -2041,7 +1713,7 @@ pub async fn docker_volume_restore(
             let start_cmd = format!("docker start {}", stopped.join(" "));
             emit_bp(&app, vol, "Restarting containers…", 92, false, None, None, Some(start_cmd));
             for id in &stopped {
-                hidden("docker").args(["start", id]).output().ok();
+                docker_run_ok(&["start", id]).ok();
             }
         }
 
@@ -2055,8 +1727,6 @@ pub async fn docker_volume_restore(
         Ok(())
     }).await
 }
-
-use crate::shell::ShellOut;
 
 /// Backup compose config files for a project.
 /// - Skips files whose content is unchanged since the last backup (deduplication).
@@ -2073,23 +1743,19 @@ pub async fn docker_backup_compose(
 ) -> Result<Vec<ComposeBackupEntry>, AtlasError> {
     migration.inner().clone().run_operation(move || {
         use std::fs;
-        use std::time::{SystemTime, UNIX_EPOCH};
 
         let compose_dir = docker_compose_dir(&backup_dir);
         fs::create_dir_all(&compose_dir)
             .map_err(|e| format!("Could not create the Compose backup folder: {}", e))?;
 
-        let ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let ts = now_seconds();
 
         let mut manifest = read_compose_manifest(&backup_dir);
         let mut saved: Vec<ComposeBackupEntry> = Vec::new();
 
         for src_str in &config_files {
             // Read the current file content
-            let content = match read_source_as_string(src_str) {
+            let content = match read_text_file(src_str) {
                 Ok(c)  => c,
                 Err(e) => { eprintln!("Warning: cannot read '{}': {}", src_str, e); continue; }
             };
@@ -2123,18 +1789,12 @@ pub async fn docker_backup_compose(
                     .unwrap_or_else(|| src_str.to_string())
             };
             let display_dest = dest_path.replace('/', "\\");
-            app.emit("shell-out", ShellOut {
-                text: format!("Copy-Item -Path \"{}\" -Destination \"{}\"", display_src, display_dest),
-                stderr: false,
-            }).ok();
+            emit_line(&app, format!("Copy-Item -Path \"{}\" -Destination \"{}\"", display_src, display_dest), false);
 
             fs::write(&dest_path, &content)
                 .map_err(|e| format!("Failed to write '{}': {}", dest_path, e))?;
 
-            app.emit("shell-out", ShellOut {
-                text: format!("  \u{2713} saved {}", filename),
-                stderr: false,
-            }).ok();
+            emit_line(&app, format!("  \u{2713} saved {}", filename), false);
 
             let size_bytes = fs::metadata(&dest_path).map(|m| m.len()).unwrap_or(0);
 
@@ -2353,20 +2013,6 @@ pub async fn docker_delete_backup(
     }).await
 }
 
-/// Open a native folder-picker dialog and return the selected path.
-/// Returns `null` if the user cancels.
-#[tauri::command]
-pub async fn pick_backup_folder() -> Option<String> {
-    tauri::async_runtime::spawn_blocking(|| {
-        rfd::FileDialog::new()
-            .pick_folder()
-            .and_then(|p| p.to_str().map(|s| s.replace('\\', "/")))
-    })
-    .await
-    .ok()
-    .flatten()
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // App Metadata System - per-project metadata (favorites, tags, notes, etc.)
 // Stored as JSON in the Tauri app-data directory.
@@ -2397,20 +2043,7 @@ fn metadata_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, AtlasErro
 }
 
 fn read_metadata(app: &tauri::AppHandle) -> AppMetadataStore {
-    metadata_path(app)
-        .ok()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
-}
-
-fn write_metadata(app: &tauri::AppHandle, store: &AppMetadataStore) -> Result<(), AtlasError> {
-    let path = metadata_path(app)?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    let json = serde_json::to_string_pretty(store).map_err(|e| e.to_string())?;
-    Ok(std::fs::write(&path, json).map_err(|e| e.to_string())?)
+    metadata_path(app).ok().and_then(read_json).unwrap_or_default()
 }
 
 /// Load all project metadata as a map keyed by project name.
@@ -2418,10 +2051,7 @@ fn write_metadata(app: &tauri::AppHandle, store: &AppMetadataStore) -> Result<()
 pub async fn metadata_load(
     app: tauri::AppHandle,
 ) -> Result<std::collections::HashMap<String, AppProjectMeta>, AtlasError> {
-    let store = tauri::async_runtime::spawn_blocking(move || read_metadata(&app))
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(store.projects)
+    in_background(move || Ok(read_metadata(&app).projects)).await
 }
 
 /// Persist one project's metadata entry.
@@ -2431,13 +2061,11 @@ pub async fn metadata_save_project(
     name: String,
     meta: AppProjectMeta,
 ) -> Result<(), AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), AtlasError> {
+    in_background(move || {
         let mut store = read_metadata(&app);
         store.projects.insert(name, meta);
-        write_metadata(&app, &store)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+        write_json(metadata_path(&app)?, &store)
+    }).await
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2531,22 +2159,15 @@ pub async fn detect_compose_project_files(
     migration.inner().clone().run_operation(move || {
         const MAX_DEPTH: usize = 3;
 
-        // Derive project dir from config_file path
-        let dir = if is_windows_absolute(&config_file) {
-            let p = std::path::Path::new(&config_file);
-            p.parent().map(|d| d.to_string_lossy().to_string()).unwrap_or_default()
-        } else if let Some(win) = wsl_mount_to_windows(&config_file) {
-            let p = std::path::Path::new(&win);
-            p.parent().map(|d| d.to_string_lossy().to_string()).unwrap_or_default()
-        } else {
-            // Pure WSL: use parent by splitting on '/'
-            let p = std::path::Path::new(&config_file);
-            p.parent().map(|d| d.to_string_lossy().to_string()).unwrap_or_default()
-        };
+        let config_file = wsl_mount_to_windows(&config_file).unwrap_or(config_file);
+        let dir = std::path::Path::new(&config_file)
+            .parent()
+            .map(|d| d.to_string_lossy().to_string())
+            .unwrap_or_default();
 
         let mut results: Vec<DetectedFile> = Vec::new();
 
-        if is_windows_absolute(&config_file) || wsl_mount_to_windows(&config_file).is_some() {
+        if is_windows_absolute(&config_file) {
             // Windows-accessible path - recurse for Dockerfiles, root-only for .env
             let base = std::path::Path::new(&dir);
             scan_dockerfiles_win(base, 0, MAX_DEPTH, &mut results);
@@ -2634,14 +2255,11 @@ fn editor_command(editor_cmd: &str, path: &str) -> Result<Command, AtlasError> {
     if !EDITORS.iter().any(|(_, cmd)| *cmd == editor_cmd) {
         return Err(AtlasError::invalid(format!("\"{}\" is not a supported editor.", editor_cmd)));
     }
+    use std::os::windows::process::CommandExt;
     let quoted = quoted_for_cmd(path)?;
     let mut cmd = hidden("cmd");
     cmd.args(["/C", editor_cmd]);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.raw_arg(quoted);
-    }
+    cmd.raw_arg(quoted);
     Ok(cmd)
 }
 
@@ -2676,17 +2294,10 @@ pub async fn reveal_path(
     path: String,
 ) -> Result<(), AtlasError> {
     migration.inner().clone().run_operation(move || {
+        use std::os::windows::process::CommandExt;
         let win = to_windows_path(&path);
         let mut c = Command::new("explorer");
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            c.raw_arg(format!("/select,\"{}\"", win));
-        }
-        #[cfg(not(windows))]
-        {
-            c.arg(format!("/select,{}", win));
-        }
+        c.raw_arg(format!("/select,\"{}\"", win));
         // explorer.exe returns a non-zero exit code even on success, so we only
         // surface a spawn failure.
         Ok(c.spawn()
@@ -2727,6 +2338,13 @@ pub async fn docker_compose_config(
 /// Managed state holding the currently-running log stream process.
 pub struct ComposeLogState(pub std::sync::Arc<std::sync::Mutex<Option<std::process::Child>>>);
 
+fn stop_log_stream(state: &ComposeLogState) {
+    // A poisoned lock still holds a usable handle, and one panic must not break logs for good.
+    let mut guard = state.0.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(child) = guard.as_mut() { child.kill().ok(); }
+    *guard = None;
+}
+
 /// Start streaming `docker compose logs -f [services...]` to the frontend via
 /// `compose-log-batch` events. Lines are buffered for 75 ms before emitting
 /// to prevent event channel saturation. Any previous stream is killed first.
@@ -2738,13 +2356,7 @@ pub async fn compose_logs_watch(
     config_file: String,
     services:    Vec<String>,
 ) -> Result<(), AtlasError> {
-    // Kill any previous stream
-    {
-        // A poisoned lock still holds a usable handle, and one panic must not break logs for good.
-        let mut guard = state.0.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(ref mut child) = *guard { child.kill().ok(); }
-        *guard = None;
-    }
+    stop_log_stream(&state);
 
     let child_arc = state.0.clone();
     migration.inner().clone().run_operation(move || {
@@ -2778,6 +2390,11 @@ pub async fn compose_logs_watch(
         }
 
         // Batch reader: collect for 75 ms then emit
+        let flush = |buf: &mut Vec<String>| {
+            if !buf.is_empty() {
+                app.emit("compose-log-batch", std::mem::take(buf)).ok();
+            }
+        };
         let mut buf: Vec<String> = Vec::new();
         let mut last = std::time::Instant::now();
 
@@ -2786,31 +2403,22 @@ pub async fn compose_logs_watch(
                 Ok(line) => {
                     buf.push(line);
                     if buf.len() >= 100 || last.elapsed().as_millis() >= 75 {
-                        if !buf.is_empty() {
-                            app.emit("compose-log-batch", buf.clone()).ok();
-                            buf.clear();
-                        }
+                        flush(&mut buf);
                         last = std::time::Instant::now();
                     }
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                    if !buf.is_empty() {
-                        app.emit("compose-log-batch", buf.clone()).ok();
-                        buf.clear();
-                    }
+                    flush(&mut buf);
                     last = std::time::Instant::now();
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                     // Both reader threads exited - process ended
-                    if !buf.is_empty() {
-                        app.emit("compose-log-batch", buf.clone()).ok();
-                    }
+                    flush(&mut buf);
                     break;
                 }
             }
         }
 
-        app.emit("compose-log-done", true).ok();
         Ok(())
     }).await
 }
@@ -2820,9 +2428,7 @@ pub async fn compose_logs_watch(
 pub async fn compose_logs_stop(
     state: tauri::State<'_, ComposeLogState>,
 ) -> Result<(), AtlasError> {
-    let mut guard = state.0.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(ref mut child) = *guard { child.kill().ok(); }
-    *guard = None;
+    stop_log_stream(&state);
     Ok(())
 }
 

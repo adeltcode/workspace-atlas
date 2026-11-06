@@ -102,7 +102,6 @@ test "$contents" = 'atlas-migration-check'
 rm -f "$probe"
 trap - EXIT HUP INT TERM
 "#;
-#[cfg(windows)]
 const FILE_SHARE_READ_DELETE: u32 = 1 | 4;
 
 pub fn quote(value: &str) -> String {
@@ -201,7 +200,6 @@ pub fn destination(input: &Path, distros: &[WslDistro]) -> Result<PathBuf, Atlas
             "Enter the full path of a folder on a local drive.",
         ));
     }
-    #[cfg(windows)]
     if !is_local_path(input) {
         return Err(AtlasError::invalid(
             "Choose a folder on a local drive, rather than a network share.",
@@ -215,7 +213,6 @@ pub fn destination(input: &Path, distros: &[WslDistro]) -> Result<PathBuf, Atlas
             "Choose a folder without '..' in its path.",
         ));
     }
-    #[cfg(windows)]
     for part in input.components() {
         if let std::path::Component::Normal(name) = part {
             if !valid_folder_name(&name.to_string_lossy()) {
@@ -229,7 +226,6 @@ pub fn destination(input: &Path, distros: &[WslDistro]) -> Result<PathBuf, Atlas
     let path = ancestor
         .canonicalize()?
         .join(input.strip_prefix(ancestor).map_err(|e| e.to_string())?);
-    #[cfg(windows)]
     if !is_local_path(&path) {
         return Err(AtlasError::invalid(
             "Choose a folder on a local drive, rather than a network share.",
@@ -330,7 +326,6 @@ pub fn suggest_folder(input: &Path, name: &str) -> Result<String, AtlasError> {
         return Err(AtlasError::invalid("Choose a folder on a local drive.")
             .action(RecoveryAction::ChooseFolder));
     }
-    #[cfg(windows)]
     if !is_local_path(input) {
         return Err(
             AtlasError::invalid("Choose a local drive instead of a network share.")
@@ -367,7 +362,6 @@ pub fn plan(
 ) -> Result<MigrationPlan, AtlasError> {
     let dest = destination(&suggested_destination(input, &source.name), distros)?;
     let ancestor = existing_ancestor(&dest)?;
-    #[cfg(windows)]
     crate::wsl_migration_acl::validate_destination(ancestor, ancestor == dest)?;
     let required = required_space(fs::metadata(&source.vhd_path)?.len(), 2)?;
     let available = available_space(ancestor)?;
@@ -406,20 +400,13 @@ pub fn create_destination(dest: &Path, distros: &[WslDistro]) -> Result<Vec<fs::
         .components()
     {
         current.push(part);
-        #[cfg(windows)]
         guards.push(crate::wsl_migration_acl::create_private_directory(
             &current,
         )?);
-        #[cfg(not(windows))]
-        {
-            fs::create_dir(&current)?;
-            guards.push(fs::File::open(&current)?);
-        }
     }
     Ok(guards)
 }
 
-#[cfg(windows)]
 fn is_local_path(path: &Path) -> bool {
     matches!(path.components().next(), Some(std::path::Component::Prefix(p))
         if matches!(p.kind(), std::path::Prefix::Disk(_) | std::path::Prefix::VerbatimDisk(_)))
@@ -444,40 +431,11 @@ pub fn ensure_space(path: &Path, size: u64, copies: u64) -> Result<(), AtlasErro
     check_space(available_space(path)?, required_space(size, copies)?)
 }
 
-#[cfg(windows)]
 fn available_space(path: &Path) -> Result<u64, AtlasError> {
-    use std::os::windows::ffi::OsStrExt;
-    #[link(name = "kernel32")]
-    extern "system" {
-        fn GetDiskFreeSpaceExW(
-            path: *const u16,
-            available: *mut u64,
-            total: *mut u64,
-            free: *mut u64,
-        ) -> i32;
-    }
-    let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-    let mut available = 0;
-    let success = unsafe {
-        GetDiskFreeSpaceExW(
-            wide.as_ptr(),
-            &mut available,
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-        )
-    };
-    if success == 0 {
-        return Err(AtlasError::invalid(
-            "Could not read free space on the destination drive. The move was stopped.",
-        )
-        .detail(std::io::Error::last_os_error().to_string()));
-    }
-    Ok(available)
-}
-
-#[cfg(not(windows))]
-fn available_space(_: &Path) -> Result<u64, AtlasError> {
-    Err(AtlasError::invalid("Moving a WSL distro requires Windows."))
+    crate::system::disk_space(path).map(|(free, _)| free).ok_or_else(|| {
+        AtlasError::invalid("Could not read free space on the destination drive. The move was stopped.")
+            .detail(std::io::Error::last_os_error().to_string())
+    })
 }
 
 fn save_new(path: &Path, text: &str) -> Result<(), AtlasError> {
@@ -556,7 +514,6 @@ fn wait_for_disk_release(path: &Path, timeout: Duration) -> Result<fs::File, Atl
     loop {
         let mut options = OpenOptions::new();
         options.read(true);
-        #[cfg(windows)]
         {
             use std::os::windows::fs::OpenOptionsExt;
             const GENERIC_READ: u32 = 0x80000000;
@@ -594,7 +551,6 @@ pub fn migrate(
     mut log: impl FnMut(String),
     mut progress: impl FnMut(&str),
 ) -> Result<MigrateResult, AtlasError> {
-    #[cfg(windows)]
     let _destination_guard = crate::wsl_migration_acl::secure_destination(dest)?;
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -604,10 +560,7 @@ pub fn migrate(
         .parent()
         .ok_or_else(|| AtlasError::invalid("Choose a dedicated destination folder."))?
         .join(format!("atlas-migration-backup-{}", nonce));
-    #[cfg(windows)]
     let _backup_guard = crate::wsl_migration_acl::create_private_directory(&backup_dir)?;
-    #[cfg(not(windows))]
-    fs::create_dir(&backup_dir)?;
     let guide = backup_dir.join("RECOVERY.txt");
     let extension = Path::new(&source.vhd_path)
         .extension()
@@ -636,7 +589,6 @@ pub fn migrate(
 fn verify_copy(source: &Path, backup: &Path) -> Result<(), AtlasError> {
     let mut options = OpenOptions::new();
     options.read(true);
-    #[cfg(windows)]
     {
         use std::os::windows::fs::OpenOptionsExt;
         options.share_mode(FILE_SHARE_READ_DELETE);
@@ -683,7 +635,6 @@ fn migrate_with_backup(
     run(&["--shutdown"])
         .map_err(|e| at_step(e, "WSL could not shut down. The disk was not moved."))?;
     let source_guard = wait_for_disk_release(Path::new(&source.vhd_path), Duration::from_secs(5))?;
-    #[cfg(windows)]
     crate::wsl_migration_acl::secure_disk_handle(&source_guard)?;
     drop(source_guard);
     progress("backing-up");
@@ -741,7 +692,6 @@ fn migrate_with_backup(
     log("# Waiting for WSL to release the virtual disk".to_string());
     let movement_guard =
         wait_for_disk_release(Path::new(&current.vhd_path), Duration::from_secs(5))?;
-    #[cfg(windows)]
     crate::wsl_migration_acl::secure_disk_handle(&movement_guard)?;
     drop(movement_guard);
     progress("moving");
@@ -762,7 +712,6 @@ fn migrate_with_backup(
             .file_name()
             .ok_or_else(|| AtlasError::invalid("The virtual disk filename is missing."))?,
     );
-    #[cfg(windows)]
     crate::wsl_migration_acl::secure_disk(&moved_disk)?;
 
     let moved_distros = inspect()?;
@@ -932,7 +881,6 @@ mod tests {
         }
     }
 
-    #[cfg(windows)]
     fn read_permissions(path: &Path) -> serde_json::Value {
         let output = std::process::Command::new("powershell")
             .args(["-NoProfile", "-NonInteractive", "-Command", r#"
@@ -961,7 +909,6 @@ mod tests {
         serde_json::from_slice(&output.stdout).unwrap()
     }
 
-    #[cfg(windows)]
     fn assert_private_permissions(path: &Path) {
         let permissions = read_permissions(path);
         let mut allowed: Vec<_> = permissions["Entries"]
@@ -985,7 +932,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(windows)]
     fn backup_and_same_volume_moved_disk_have_private_permissions() {
         let fixture = Fixture::new();
         let parent_before = read_permissions(&fixture.root);
@@ -1010,7 +956,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(windows)]
     fn replaced_source_is_private_even_when_post_move_inspection_fails() {
         let fixture = Fixture::new();
         let inspections = Cell::new(0);
@@ -1055,7 +1000,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(windows)]
     fn private_directory_creation_preserves_existing_files_and_handles_unicode() {
         let fixture = Fixture::new();
         let directory = fixture.root.join("backup ' $folder Ω");
@@ -1072,7 +1016,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(windows)]
     fn destination_permission_setup_rejects_occupied_folders_before_commands() {
         let fixture = Fixture::new();
         let sentinel = fixture.dest.join("sentinel");
@@ -1198,7 +1141,6 @@ mod tests {
         assert!(check_space(101, 101).is_ok());
     }
 
-    #[cfg(windows)]
     #[test]
     fn drive_roots_suggest_safe_dedicated_folders() {
         for root in [r"F:\", "F:/"] {
@@ -1220,7 +1162,6 @@ mod tests {
         );
     }
 
-    #[cfg(windows)]
     #[test]
     fn root_recommendation_does_not_depend_on_wsl_or_create_a_directory() {
         let name = format!(
@@ -1236,7 +1177,6 @@ mod tests {
         assert!(suggest_folder(Path::new(r"\\server\share"), &name).is_err());
     }
 
-    #[cfg(windows)]
     #[test]
     fn planning_checks_space_without_creating_folders_or_changing_permissions() {
         let mut fixture = Fixture::new();
@@ -1254,7 +1194,6 @@ mod tests {
         assert!(fixture.backups().is_empty());
     }
 
-    #[cfg(windows)]
     #[test]
     fn confirmed_nested_destination_is_created_privately_without_overwriting() {
         let fixture = Fixture::new();
@@ -1271,7 +1210,6 @@ mod tests {
         assert_eq!(fs::read_to_string(sentinel).unwrap(), "keep");
     }
 
-    #[cfg(windows)]
     #[test]
     fn missing_paths_cannot_escape_into_registered_disks_or_invalid_names() {
         let fixture = Fixture::new();
@@ -1325,7 +1263,6 @@ mod tests {
         assert!(fixture.backups()[0].join("BACKUP-COMPLETE.txt").is_file());
     }
 
-    #[cfg(windows)]
     #[test]
     fn reads_available_space_for_the_destination_directory() {
         let fixture = Fixture::new();
@@ -1333,7 +1270,6 @@ mod tests {
         assert!(available_space(&fixture.root.join("missing")).is_err());
     }
 
-    #[cfg(windows)]
     #[test]
     fn junction_into_a_registered_distribution_is_rejected() {
         let fixture = Fixture::new();
@@ -1349,7 +1285,6 @@ mod tests {
         assert!(target.is_dir());
     }
 
-    #[cfg(windows)]
     #[test]
     fn confirmation_rejects_a_parent_replaced_by_a_junction() {
         let fixture = Fixture::new();
@@ -1458,7 +1393,6 @@ mod tests {
         assert!(commands.last().unwrap().contains("--exec sh -c"));
     }
 
-    #[cfg(windows)]
     #[test]
     fn network_and_device_paths_are_rejected_without_network_access() {
         assert!(!is_local_path(Path::new(r"\\server\share\folder")));
@@ -1467,7 +1401,6 @@ mod tests {
         assert!(destination(Path::new(r"C:\"), &[]).is_err());
     }
 
-    #[cfg(windows)]
     #[test]
     fn locked_disk_is_rejected_without_waiting_indefinitely() {
         use std::os::windows::fs::OpenOptionsExt;

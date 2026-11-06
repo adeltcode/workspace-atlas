@@ -48,9 +48,6 @@ export const dockerDeleteComposeBackup  = (backupDir: string, filename: string) 
 export const dockerDeleteBackup = (backupDir: string, filename: string) =>
   invoke<void>('docker_delete_backup', { backupDir, filename })
 
-export const pickBackupFolder = () =>
-  invoke<string | null>('pick_backup_folder')
-
 export const metadataLoad = () =>
   invoke<Record<string, AppProjectMeta>>('metadata_load')
 

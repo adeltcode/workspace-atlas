@@ -16,17 +16,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::UNIX_EPOCH;
 
-use tauri::Emitter;
-
-use crate::shell::hidden;
-
 use crate::docker::is_in_path;
-use crate::shell::ShellOut;
+use crate::shell::{emit_line, hidden, in_background, logged};
 use crate::error::{AtlasError, ErrorKind};
-
-fn emit_line(app: &tauri::AppHandle, text: impl Into<String>, stderr: bool) {
-    app.emit("shell-out", ShellOut { text: text.into(), stderr }).ok();
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sources
@@ -347,7 +339,7 @@ pub async fn pkg_scan(
         return Err("Select at least one package source.".to_string().into());
     }
 
-    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<SourceResult>, AtlasError> {
+    in_background(move || {
         for spec in &specs {
             emit_line(&app, format!("$ {}", command_line(spec.argv)), false);
         }
@@ -389,9 +381,7 @@ pub async fn pkg_scan(
         }
 
         Ok(results)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 /// Save a scan as CSV. The contents are built by the frontend; this only picks
@@ -401,7 +391,7 @@ pub async fn pkg_export_csv(
     app: tauri::AppHandle,
     contents: String,
 ) -> Result<Option<String>, AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<Option<String>, AtlasError> {
+    in_background(move || {
         let Some(path) = rfd::FileDialog::new()
             .set_file_name("installed-packages.csv")
             .add_filter("CSV", &["csv"])
@@ -411,20 +401,10 @@ pub async fn pkg_export_csv(
         };
         let win = path.to_string_lossy().replace('/', "\\");
         emit_line(&app, format!("$ Set-Content -Path \"{}\" -Encoding utf8", win), false);
-        match std::fs::write(&path, contents) {
-            Ok(_) => {
-                emit_line(&app, format!("  ✓ saved {}", win), false);
-                Ok(Some(win))
-            }
-            Err(e) => {
-                let msg = format!("Cannot write '{}': {}", win, e);
-                emit_line(&app, format!("  ✗ {}", msg), true);
-                Err(msg.into())
-            }
-        }
-    })
-    .await
-    .map_err(|e| e.to_string())?
+        logged(&app, std::fs::write(&path, contents).map_err(|e| format!("Cannot write '{}': {}", win, e)))?;
+        emit_line(&app, format!("  ✓ saved {}", win), false);
+        Ok(Some(win))
+    }).await
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -569,7 +549,7 @@ fn outdated(source: &str, argv: &[&str]) -> Result<Vec<(String, String)>, String
 /// but needs the internet. Tools that are not installed are left out.
 #[tauri::command]
 pub async fn pkg_check_updates(app: tauri::AppHandle) -> Result<Vec<SourceUpdates>, AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<SourceUpdates>, AtlasError> {
+    in_background(move || {
         let checks: Vec<_> = UPDATE_CHECKS.iter().filter(|(_, argv)| is_in_path(argv[0])).collect();
         for (source, argv) in &checks {
             if *source == "pip" {
@@ -617,9 +597,7 @@ pub async fn pkg_check_updates(app: tauri::AppHandle) -> Result<Vec<SourceUpdate
             }
         }
         Ok(results)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 /// One package job (upgrade or uninstall) at a time, even if the view is
@@ -889,7 +867,7 @@ pub async fn pkg_uninstall_check(
         ..Default::default()
     };
 
-    tauri::async_runtime::spawn_blocking(move || -> Result<UninstallCheck, AtlasError> {
+    in_background(move || {
         match source.as_str() {
             "pip" => {
                 if needs_admin("pip") {
@@ -958,9 +936,7 @@ pub async fn pkg_uninstall_check(
             _ => {}
         }
         Ok(check)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 /// Uninstall one package, streaming the manager's output to the terminal.
@@ -1616,7 +1592,7 @@ fn install_date(s: &str) -> Option<u64> {
 }
 
 /// Days since 1970-01-01 for a Gregorian date (Howard Hinnant's algorithm).
-fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+pub(crate) fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     let y = if m <= 2 { y - 1 } else { y };
     let era = y.div_euclid(400);
     let yoe = y - era * 400;
@@ -2069,7 +2045,6 @@ oauth 1.0 requires requests-oauthlib, which is not installed.
         assert!(!needs_admin("choco"));
     }
 
-    #[cfg(windows)]
     #[test]
     fn a_declined_admin_prompt_exits_1223_in_any_language() {
         let run = |body: &str| {

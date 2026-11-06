@@ -1,20 +1,16 @@
-#[cfg(windows)]
 mod clipboard;
-#[cfg(windows)]
 mod caches;
 mod config;
 mod error;
 mod docker;
 mod holders;
 mod packages;
-#[cfg(windows)]
 mod registry;
 mod sandbox;
 mod shell;
 mod system;
 mod wsl;
 mod wsl_migration;
-#[cfg(windows)]
 mod wsl_migration_acl;
 
 /// Drop PowerShell 7's module folders from a PSModulePath. Started from
@@ -77,7 +73,6 @@ pub fn run() {
             docker::docker_delete_compose_backup,
             docker::docker_delete_backup,
             docker::transfer_backups,
-            docker::pick_backup_folder,
             docker::metadata_load,
             docker::metadata_save_project,
             docker::detect_compose_project_files,
@@ -91,35 +86,20 @@ pub fn run() {
             holders::locks_find,
             holders::process_close,
             holders::pick_any_file,
-            #[cfg(windows)]
             caches::caches_scan,
-            #[cfg(windows)]
             caches::caches_scan_stop,
-            #[cfg(windows)]
             caches::caches_clear,
-            #[cfg(windows)]
             clipboard::clipboard_status,
-            #[cfg(windows)]
             clipboard::clipboard_read,
-            #[cfg(windows)]
             clipboard::clipboard_set_history,
-            #[cfg(windows)]
             clipboard::clipboard_copy_item,
-            #[cfg(windows)]
             clipboard::clipboard_delete_item,
-            #[cfg(windows)]
             clipboard::clipboard_clear_history,
-            #[cfg(windows)]
             clipboard::clipboard_clear_current,
-            #[cfg(windows)]
             clipboard::clipboard_item_image,
-            #[cfg(windows)]
             clipboard::clipboard_remove_block,
-            #[cfg(windows)]
             clipboard::clipboard_restart_service,
-            #[cfg(windows)]
             clipboard::clipboard_enable_service,
-            #[cfg(windows)]
             clipboard::clipboard_open_settings,
             sandbox::sandbox_status,
             sandbox::sandbox_start,
