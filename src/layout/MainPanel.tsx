@@ -1,4 +1,5 @@
 import { useAppStore } from '../store/appStore'
+import ErrorBoundary  from '../components/ErrorBoundary'
 import KeepAlive      from '../components/KeepAlive'
 import Dashboard      from '../views/Dashboard'
 import DockerView     from '../features/docker/DockerView'
@@ -31,7 +32,9 @@ export default function MainPanel() {
   return (
     <main className="main-panel">
       {Object.entries(PAGES).map(([view, page]) => (
-        <KeepAlive key={view} active={activeView === view}>{page}</KeepAlive>
+        <KeepAlive key={view} active={activeView === view}>
+          <ErrorBoundary title="This page failed to render">{page}</ErrorBoundary>
+        </KeepAlive>
       ))}
     </main>
   )
