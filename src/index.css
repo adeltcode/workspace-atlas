@@ -2023,12 +2023,6 @@ select:focus-visible,
   white-space: nowrap;
 }
 
-.cleanup-expand-error {
-  font-size: var(--text-xs);
-  color: var(--color-danger);
-  padding: 4px 2px;
-}
-
 .cleanup-expand-actions {
   display: flex;
   align-items: center;

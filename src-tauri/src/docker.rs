@@ -235,6 +235,13 @@ fn wsl_mount_to_windows(path: &str) -> Option<String> {
     Some(format!("{}:\\{}", drive.to_ascii_uppercase(), win_rest))
 }
 
+/// A command in the default distro, run without its shell, so `;` or `$(...)` in a path stays plain text.
+fn wsl_exec() -> Command {
+    let mut cmd = hidden("wsl");
+    cmd.arg("-e");
+    cmd
+}
+
 /// Resolve any path to a Windows-openable form: native Windows paths pass
 /// through, `/mnt/<drive>` maps directly, and a pure-WSL path (e.g.
 /// `/home/me/proj`) is converted to its `\\wsl.localhost\<distro>\…` UNC form
@@ -247,7 +254,7 @@ fn to_windows_path(path: &str) -> String {
         return win;
     }
     if path.starts_with('/') {
-        if let Ok(out) = hidden("wsl").args(["wslpath", "-w", path]).output() {
+        if let Ok(out) = wsl_exec().args(["wslpath", "-w", path]).output() {
             if out.status.success() {
                 let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
                 if !s.is_empty() {
@@ -273,15 +280,15 @@ fn compose_base(config_file: &str) -> (Command, Option<String>) {
         cmd.args(["compose", "-f", &win_path]);
         (cmd, Some(win_path))
     } else {
-        let mut cmd = hidden("wsl");
+        let mut cmd = wsl_exec();
         cmd.args(["docker", "compose", "-f", config_file]);
         (cmd, None)
     }
 }
 
-/// Read a file that lives inside WSL via `wsl cat`. Capped at `max_bytes`.
+/// Read a file that lives inside WSL via `wsl -e cat`. Capped at `max_bytes`.
 fn read_via_wsl(path: &str, max_bytes: usize) -> Result<Vec<u8>, AtlasError> {
-    let output = hidden("wsl")
+    let output = wsl_exec()
         .args(["cat", path])
         .output()
         .map_err(|e| format!(
@@ -688,8 +695,10 @@ fn run_streaming(app: &tauri::AppHandle, mut cmd: Command, tag_stderr: bool) -> 
     let stderr_app = app.clone();
     let stderr_handle = child.stderr.take().map(|err| {
         thread::spawn(move || {
+            let mut last_line = String::new();
             BufReader::new(err).lines().flatten().for_each(|line| {
                 if !line.trim().is_empty() {
+                    last_line = line.clone();
                     let payload = if tag_stderr {
                         format!("[err] {}", line)
                     } else {
@@ -698,13 +707,25 @@ fn run_streaming(app: &tauri::AppHandle, mut cmd: Command, tag_stderr: bool) -> 
                     stderr_app.emit("docker-log", payload).ok();
                 }
             });
+            last_line
         })
     });
 
-    child.wait().map_err(|e| e.to_string())?;
+    let status = child.wait().map_err(|e| e.to_string())?;
     if let Some(h) = stdout_handle { h.join().ok(); }
-    if let Some(h) = stderr_handle { h.join().ok(); }
-    Ok(())
+    let last_stderr = stderr_handle.and_then(|h| h.join().ok()).unwrap_or_default();
+    streaming_result(status, &last_stderr)
+}
+
+/// The last stderr line usually names the cause, such as a port that is already allocated.
+fn streaming_result(status: std::process::ExitStatus, last_stderr: &str) -> Result<(), AtlasError> {
+    if status.success() {
+        Ok(())
+    } else if last_stderr.trim().is_empty() {
+        Err(format!("The Docker command failed ({}).", status).into())
+    } else {
+        Err(last_stderr.trim().into())
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -969,30 +990,29 @@ pub async fn docker_prune_run(
             }
 
             3 => {
-                emit("$ docker container prune -f");
-                let mut cmd = hidden("docker");
-                cmd.args(["container", "prune", "-f"]);
-                run_streaming(&app, cmd, true)?;
-
-                if !image_ids.is_empty() {
-                    emit(&format!("$ docker rmi {}", image_ids.join(" ")));
+                // One failed step does not stop the rest, because each one frees space on its own.
+                let mut first_failure = None;
+                let mut step = |args: &[&str]| {
+                    emit(&format!("$ docker {}", args.join(" ")));
                     let mut cmd = hidden("docker");
-                    cmd.arg("rmi");
-                    for id in &image_ids {
-                        cmd.arg(id);
+                    cmd.args(args);
+                    if let Err(e) = run_streaming(&app, cmd, true) {
+                        first_failure.get_or_insert(e);
                     }
-                    run_streaming(&app, cmd, true)?;
+                };
+
+                step(&["container", "prune", "-f"]);
+                if !image_ids.is_empty() {
+                    let mut rmi = vec!["rmi"];
+                    rmi.extend(image_ids.iter().map(String::as_str));
+                    step(&rmi);
                 }
+                step(&["volume", "prune", "-f"]);
+                step(&["builder", "prune", "-a", "-f"]);
 
-                emit("$ docker volume prune -f");
-                let mut cmd = hidden("docker");
-                cmd.args(["volume", "prune", "-f"]);
-                run_streaming(&app, cmd, true)?;
-
-                emit("$ docker builder prune -a -f");
-                let mut cmd = hidden("docker");
-                cmd.args(["builder", "prune", "-a", "-f"]);
-                run_streaming(&app, cmd, true)?;
+                if let Some(e) = first_failure {
+                    return Err(e);
+                }
             }
 
             _ => return Err(AtlasError::invalid(format!("Prune level {} does not exist. Levels are 1, 2 and 3.", level))),
@@ -1396,7 +1416,7 @@ pub async fn docker_compose_ls(
 /// Handles three path origins:
 ///   - Windows absolute (`C:\...`)  → `docker compose -f <path> <action>`
 ///   - WSL mount (`/mnt/c/...`)     → convert to Windows path, then same
-///   - Pure WSL (`/home/...` etc.)  → `wsl docker compose -f <path> <action>`
+///   - Pure WSL (`/home/...` etc.)  → `wsl -e docker compose -f <path> <action>`
 #[tauri::command]
 pub async fn docker_compose_action(
     migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
@@ -1525,9 +1545,9 @@ pub async fn write_file_content(
                 .map_err(|e| format!("Could not write '{}': {}", win_path, e))?)
 
         } else {
-            // Pure WSL path - pipe content through `wsl tee`
+            // Pure WSL path - pipe content through `wsl -e tee`
             use std::io::Write as _;
-            let mut child = hidden("wsl")
+            let mut child = wsl_exec()
                 .args(["tee", &path])
                 .stdin(Stdio::piped())
                 .stdout(Stdio::null())
@@ -1906,10 +1926,11 @@ pub async fn docker_volume_backup(
     }).await
 }
 
+// `tar tzf` reads the whole archive first, so a damaged backup fails before anything is deleted.
 // `find -mindepth 1 -delete` empties the volume but keeps its directory, including hidden
 // files and nested folders. The filename arrives as `$1`, never as script text, so a file
 // named `a;touch b.tar.gz` cannot run anything.
-const RESTORE_SCRIPT: &str = "find /target -mindepth 1 -delete && tar xzf \"/backup/$1\" -C /target";
+const RESTORE_SCRIPT: &str = "tar tzf \"/backup/$1\" > /dev/null && find /target -mindepth 1 -delete && tar xzf \"/backup/$1\" -C /target";
 
 fn restore_args(volume: &str, backup_dir: &str, filename: &str) -> Vec<String> {
     [
@@ -2477,6 +2498,36 @@ fn scan_dockerfiles_win(dir: &std::path::Path, depth: usize, max_depth: usize, o
 /// subdirectories - e.g. ./nginx/Dockerfile, ./php/Dockerfile - are detected,
 /// not only ones sitting next to the compose file. .env is matched at the root
 /// only. Handles Windows, WSL-mount, and pure-WSL paths.
+fn wsl_project_files(dir: &str, max_depth: usize) -> Vec<DetectedFile> {
+    let mut results = Vec::new();
+    let depth = max_depth.to_string();
+    let found = wsl_exec()
+        .args([
+            "find", dir, "-maxdepth", &depth,
+            "(", "-name", "node_modules", "-o", "-name", ".git", "-o", "-name", "vendor",
+            "-o", "-name", "target", "-o", "-name", "dist", "-o", "-name", "build", ")", "-prune",
+            "-o", "-type", "f", "(", "-name", "Dockerfile", "-o", "-name", "Dockerfile.*", "-o", "-name", "*.dockerfile", ")", "-print",
+        ])
+        .output();
+    if let Ok(out) = found {
+        for line in String::from_utf8_lossy(&out.stdout).lines() {
+            let p = line.trim();
+            if !p.is_empty() {
+                results.push(DetectedFile { path: p.to_string(), kind: "dockerfile".into() });
+            }
+        }
+    }
+    // .env at the project root
+    if let Ok(out) = wsl_exec().args(["ls", "-1", dir]).output() {
+        for name in String::from_utf8_lossy(&out.stdout).lines().map(|l| l.trim()) {
+            if is_env_name(name) {
+                results.push(DetectedFile { path: format!("{}/{}", dir, name), kind: "env".into() });
+            }
+        }
+    }
+    results
+}
+
 #[tauri::command]
 pub async fn detect_compose_project_files(
     migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
@@ -2515,39 +2566,7 @@ pub async fn detect_compose_project_files(
             }
         } else {
             // Pure WSL - recursive `find` for Dockerfiles, root `ls` for .env
-            let safe_dir = dir.replace('\'', "'\\''");
-            let find_cmd = format!(
-                "find '{}' -maxdepth {} \\( -name node_modules -o -name .git -o -name vendor -o -name target -o -name dist -o -name build \\) -prune -o -type f \\( -name Dockerfile -o -name 'Dockerfile.*' -o -name '*.dockerfile' \\) -print 2>/dev/null",
-                safe_dir, MAX_DEPTH
-            );
-            let out = hidden("wsl")
-                .args(["bash", "-lc", &find_cmd])
-                .output()
-                .unwrap_or_else(|_| std::process::Output {
-                    status: std::process::ExitStatus::default(),
-                    stdout: vec![],
-                    stderr: vec![],
-                });
-            for line in String::from_utf8_lossy(&out.stdout).lines() {
-                let p = line.trim();
-                if !p.is_empty() {
-                    results.push(DetectedFile { path: p.to_string(), kind: "dockerfile".into() });
-                }
-            }
-            // .env at the project root
-            let lsout = hidden("wsl")
-                .args(["ls", "-1", &dir])
-                .output()
-                .unwrap_or_else(|_| std::process::Output {
-                    status: std::process::ExitStatus::default(),
-                    stdout: vec![],
-                    stderr: vec![],
-                });
-            for name in String::from_utf8_lossy(&lsout.stdout).lines().map(|l| l.trim()) {
-                if is_env_name(name) {
-                    results.push(DetectedFile { path: format!("{}/{}", dir, name), kind: "env".into() });
-                }
-            }
+            results.extend(wsl_project_files(&dir, MAX_DEPTH));
         }
 
         // De-dupe by path, then order Dockerfiles before .env (and by path within each)
@@ -2577,24 +2596,50 @@ pub(crate) fn is_in_path(cmd: &str) -> bool {
         .unwrap_or(false)
 }
 
+const EDITORS: [(&str, &str); 5] = [
+    ("VS Code",     "code"),
+    ("Cursor",      "cursor"),
+    ("Sublime Text","subl"),
+    ("Notepad++",   "notepad++"),
+    ("Notepad",     "notepad"),
+];
+
 /// Detect code editors available in PATH on Windows.
 #[tauri::command]
 pub async fn detect_editors() -> Vec<EditorInfo> {
     tauri::async_runtime::spawn_blocking(|| {
-        let candidates = [
-            ("VS Code",     "code"),
-            ("Cursor",      "cursor"),
-            ("Sublime Text","subl"),
-            ("Notepad++",   "notepad++"),
-            ("Notepad",     "notepad"),
-        ];
-        candidates.iter()
+        EDITORS.iter()
             .filter(|(_, cmd)| is_in_path(cmd))
             .map(|(name, cmd)| EditorInfo { name: name.to_string(), command: cmd.to_string() })
             .collect()
     })
     .await
     .unwrap_or_default()
+}
+
+/// `cmd /C` reads `&` in an unquoted argument as a second command, and Rust only quotes
+/// arguments with spaces. Windows file names cannot hold `"`, but WSL file names can.
+fn quoted_for_cmd(path: &str) -> Result<String, AtlasError> {
+    if path.contains('"') {
+        return Err(AtlasError::invalid(format!("'{}' cannot be opened in an editor because its path contains a double quote.", path)));
+    }
+    Ok(format!("\"{}\"", path))
+}
+
+/// Only the known editors run, because an imported configuration file can set any command here.
+fn editor_command(editor_cmd: &str, path: &str) -> Result<Command, AtlasError> {
+    if !EDITORS.iter().any(|(_, cmd)| *cmd == editor_cmd) {
+        return Err(AtlasError::invalid(format!("\"{}\" is not a supported editor.", editor_cmd)));
+    }
+    let quoted = quoted_for_cmd(path)?;
+    let mut cmd = hidden("cmd");
+    cmd.args(["/C", editor_cmd]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.raw_arg(quoted);
+    }
+    Ok(cmd)
 }
 
 /// Open a file in an external editor, detached from the app process.
@@ -2613,8 +2658,7 @@ pub async fn open_in_editor(
 ) -> Result<(), AtlasError> {
     migration.inner().clone().run_operation(move || {
         let win_path = to_windows_path(&path);
-        let mut c = hidden("cmd");
-        c.args(["/C", &editor_cmd, &win_path]);
+        let mut c = editor_command(&editor_cmd, &win_path)?;
         Ok(c.spawn()
             .map(|_| ())
             .map_err(|e| format!("Failed to open '{}' with '{}': {}", win_path, editor_cmd, e))?)
@@ -2795,6 +2839,93 @@ mod tests {
         for bad in ["", "-x", ".x", "_x", "a b", "a;calc", "$(calc)", "C:/Users", "/etc", "..", "a:b", "a\nb", "é"] {
             assert!(validate_docker_name(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn an_ampersand_in_a_path_cannot_start_a_second_command() {
+        use std::os::windows::process::CommandExt;
+        let path = "C:\\x\\Dockerfile.&hostname";
+        let lines_from = |mut cmd: Command| {
+            let out = cmd.output().unwrap();
+            String::from_utf8_lossy(&out.stdout).lines().count()
+        };
+
+        let mut unquoted = hidden("cmd");
+        unquoted.args(["/C", "echo", path]);
+        assert_eq!(lines_from(unquoted), 2, "cmd runs the second command without quotes");
+
+        let mut quoted = hidden("cmd");
+        quoted.args(["/C", "echo"]);
+        quoted.raw_arg(quoted_for_cmd(path).unwrap());
+        assert_eq!(lines_from(quoted), 1);
+    }
+
+    #[test]
+    fn only_known_editors_run_and_quotes_in_paths_are_refused() {
+        assert!(editor_command("code", "C:\\x\\a.yml").is_ok());
+        assert!(editor_command("calc & code", "C:\\x\\a.yml").is_err());
+        assert!(editor_command("calc", "C:\\x\\a.yml").is_err());
+        assert!(editor_command("code", "\\\\wsl.localhost\\d\\a\"&calc&\".yml").is_err());
+    }
+
+    #[test]
+    fn wsl_commands_skip_the_linux_shell() {
+        let args: Vec<_> = wsl_exec().args(["cat", "/x"]).get_args().map(|a| a.to_string_lossy().into_owned()).collect();
+        assert_eq!(args, ["-e", "cat", "/x"]);
+        let (cmd, _) = compose_base("/home/me/a;b/compose.yml");
+        assert_eq!(cmd.get_args().next().unwrap(), "-e");
+    }
+
+    // Writes only under /tmp in the default distro, which this starts if it is stopped.
+    #[test]
+    #[ignore = "needs WSL"]
+    fn wsl_paths_stay_plain_text_for_real() {
+        use std::io::Write as _;
+        let dir = format!("/tmp/atlas-wsl-test-{}", std::process::id());
+        let run = |args: &[&str]| assert!(wsl_exec().args(args).status().unwrap().success(), "{args:?}");
+        run(&["mkdir", "-p", &format!("{dir}/app/node_modules"), &format!("{dir}/app/sub")]);
+
+        let name = format!("{dir}/app/a b;echo x;$(echo EXPANDED)&.env");
+        let mut tee = wsl_exec()
+            .args(["tee", &name])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap();
+        tee.stdin.take().unwrap().write_all(b"KEY=1\n").unwrap();
+        assert!(tee.wait().unwrap().success());
+        assert_eq!(read_via_wsl(&name, 1000).unwrap(), b"KEY=1\n");
+
+        run(&["touch", &format!("{dir}/app/Dockerfile"), &format!("{dir}/app/sub/api.dockerfile"), &format!("{dir}/app/node_modules/Dockerfile")]);
+        let found: Vec<String> = wsl_project_files(&format!("{dir}/app"), 3)
+            .into_iter()
+            .filter(|f| f.kind == "dockerfile")
+            .map(|f| f.path)
+            .collect();
+        run(&["rm", "-rf", &dir]);
+
+        assert_eq!(found.len(), 2, "{found:?}");
+        assert!(found.iter().all(|p| !p.contains("node_modules")), "{found:?}");
+    }
+
+    #[test]
+    fn a_failed_command_reports_its_last_error_line() {
+        use std::os::windows::process::ExitStatusExt;
+        let ok = std::process::ExitStatus::from_raw(0);
+        let failed = std::process::ExitStatus::from_raw(1);
+
+        assert!(streaming_result(ok, "a warning on stderr").is_ok());
+        let named = streaming_result(failed, "  port is already allocated\n").unwrap_err();
+        assert_eq!(named.message, "port is already allocated");
+        let unnamed = streaming_result(failed, "").unwrap_err();
+        assert!(unnamed.message.contains("exit code: 1"), "{}", unnamed.message);
+    }
+
+    #[test]
+    fn restore_checks_the_archive_before_it_deletes_anything() {
+        let check = RESTORE_SCRIPT.find("tar tzf").unwrap();
+        let delete = RESTORE_SCRIPT.find("-delete").unwrap();
+        assert!(check < delete);
     }
 
     #[test]

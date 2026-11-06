@@ -147,6 +147,16 @@ test('networks tell Docker\'s own apart, and options read as words', () => {
   assert.equal(rules.networkOptions(network('a')), '')
 })
 
+test('cleanup never offers a pinned image or one in use', () => {
+  const pinned = image('pinned', '1')
+  const dangling = image('<none>', '<none>')
+  const unused = image('unused', '1')
+  const inUse = image('used', '1', { in_use: true })
+  const removable = rules.removableImages([pinned, dangling, unused, inUse], [pinned.id])
+  assert.deepEqual(removable, [dangling, unused])
+  assert.deepEqual(rules.removableImages([image('<none>', '<none>', { id: 'a' })], ['a']), [], 'a pinned dangling image stays too')
+})
+
 test('sorting leaves the list it was given alone', () => {
   const list = [container('b'), container('a')]
   rules.sortContainers(list, 'name', 'asc')

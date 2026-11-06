@@ -466,6 +466,8 @@ export default function ComposeTab({
   const [fileContent, setFileContent]     = useState<string | null>(null)
   const [fileLoading, setFileLoading]     = useState(false)
   const [fileError, setFileError]         = useState<string | null>(null)
+  // Only the newest read may update the viewer, so a slow read of one file cannot appear under another.
+  const fileRequest = useRef(0)
   const [composeBackups, setComposeBackups] = useState<ComposeBackupEntry[]>([])
   const [deletingFile, setDeletingFile]     = useState<string | null>(null)
   const [backupOpen, setBackupOpen]         = useState(false)
@@ -710,6 +712,8 @@ export default function ComposeTab({
     // the preloaded cache, so the sidebar never shows an empty or stale menu.
     useAppStore.getState().setComposeFilesNav(buildFileNav(project, filesByProject[project.name] ?? EMPTY_FILES))
     setSelected(project)
+    fileRequest.current++
+    setFileLoading(false)
     setFileContent(null)
     setFileError(null)
     setBackupMsg(null)
@@ -745,12 +749,14 @@ export default function ComposeTab({
   }
 
   const loadExtraFile = async (path: string) => {
+    const request = ++fileRequest.current
+    setFileLoading(false); setFileError(null)
     if (fileContents[path] !== undefined) return
     try {
       const content = await api.readFileContent(path)
       setFileContents(prev => ({ ...prev, [path]: content }))
     } catch (e) {
-      setFileContents(prev => ({ ...prev, [path]: '' }))
+      if (request === fileRequest.current) setFileError(String(e))
     }
   }
 
@@ -913,10 +919,16 @@ export default function ComposeTab({
 
   const loadFile = async (path: string) => {
     if (!path) return
+    const request = ++fileRequest.current
     setFileLoading(true); setFileError(null); setFileContent(null)
-    try { setFileContent(await api.readFileContent(path)) }
-    catch (e) { setFileError(String(e)) }
-    finally { setFileLoading(false) }
+    try {
+      const content = await api.readFileContent(path)
+      if (request === fileRequest.current) setFileContent(content)
+    } catch (e) {
+      if (request === fileRequest.current) setFileError(String(e))
+    } finally {
+      if (request === fileRequest.current) setFileLoading(false)
+    }
   }
 
   const handleOpenPort = (port: string) => {
@@ -1199,13 +1211,13 @@ export default function ComposeTab({
                   <YamlEditor key={activeFile} value={editDraft} onChange={setEditDraft}
                     initialScrollTop={scrollByFile.current[activeFile] ?? 0} onScrollTop={rememberScroll} />
                 )}
-                {fileType === 'env' && activeFile && (
+                {fileType === 'env' && activeFile && !fileError && (
                   fileContents[activeFile] !== undefined
                     ? <ComposeEnvTab key={activeFile} filePath={activeFile} content={fileContents[activeFile]} yamlContent={fileContent ?? ''}
                         onSaved={newContent => setFileContents(prev => ({ ...prev, [activeFile]: newContent }))} />
                     : <div className="compose-viewer-state">Loading…</div>
                 )}
-                {fileType === 'dockerfile' && activeFile && (
+                {fileType === 'dockerfile' && activeFile && !fileError && (
                   fileContents[activeFile] === undefined
                     ? <div className="compose-viewer-state">Loading…</div>
                     : editMode
