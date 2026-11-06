@@ -42,6 +42,42 @@ test('active WSL work keeps its page and distribution selected', () => {
   assert.equal(store.getState().wslSelectedDistro, 'other-distro')
 })
 
+test('a jump opens the right place, unless WSL work is keeping the user where they are', () => {
+  const s = store.getState()
+  s.jumpToDocker('containers', 'web', true)
+  assert.equal(store.getState().activeView, 'docker')
+  assert.equal(store.getState().dockerTab, 'containers')
+  assert.deepEqual(store.getState().dockerJump, { tab: 'containers', query: 'web', logs: true })
+  s.clearDockerJump()
+  assert.equal(store.getState().dockerJump, null)
+
+  s.jumpToPorts('8000')
+  assert.equal(store.getState().activeView, 'ports')
+  assert.equal(store.getState().portsJump, '8000')
+  s.clearPortsJump()
+
+  s.setActiveView('wsl')
+  s.setWslBusyDistro('test-distro')
+  s.jumpToDocker('images', 'nginx')
+  s.jumpToPorts('8000')
+  assert.equal(store.getState().activeView, 'wsl')
+  assert.equal(store.getState().dockerJump, null)
+  assert.equal(store.getState().portsJump, null)
+  s.setWslBusyDistro(null)
+})
+
+test('column choices are saved for each Docker table, and a jump is not', () => {
+  const s = store.getState()
+  s.setDockerColumns('images', { widths: { name: 300 }, hidden: ['id'] })
+  assert.deepEqual(store.getState().dockerColumns.images, { widths: { name: 300 }, hidden: ['id'] })
+  assert.deepEqual(store.getState().dockerColumns.volumes.hidden, ['project'], 'other tables keep theirs')
+  s.jumpToDocker('images', 'nginx')
+  const state = JSON.parse(persisted).state
+  assert.deepEqual(state.dockerColumns.images.hidden, ['id'])
+  assert.equal(state.dockerJump, undefined)
+  s.clearDockerJump()
+})
+
 test('editor drafts survive navigation and stay isolated by file', () => {
   const s = store.getState()
   s.setEditorDraft('distro-a/wsl.conf', '[boot]\nsystemd=false')

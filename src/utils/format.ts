@@ -17,6 +17,14 @@ export function hostPorts(portStr: string): string[] {
   return [...new Set([...portStr.matchAll(/:(\d+)->/g)].map(m => m[1]).filter(p => p !== '0'))]
 }
 
+/** The host port in an error saying it is taken, as Docker and Windows word it:
+ *  "Bind for 0.0.0.0:8000 failed: port is already allocated". */
+export function portInUse(text: string): number | null {
+  if (!/already allocated|already in use|only one usage of each socket|ports are not available/i.test(text)) return null
+  const match = text.match(/(?:\d{1,3}(?:\.\d{1,3}){3}|\[::\]|::):(\d{1,5})\b/)
+  return match ? Number(match[1]) : null
+}
+
 export function bytesToHuman(b: number): string {
   if (b >= 1e9) return `${(b / 1e9).toFixed(2)} GB`
   if (b >= 1e6) return `${(b / 1e6).toFixed(1)} MB`

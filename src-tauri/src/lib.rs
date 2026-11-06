@@ -50,6 +50,7 @@ pub fn run() {
             docker::docker_containers,
             docker::docker_volumes,
             docker::docker_container_action,
+            docker::docker_desktop_stop,
             docker::docker_volume_remove,
             docker::docker_volumes_prune,
             docker::docker_container_logs,

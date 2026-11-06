@@ -43,7 +43,7 @@ Every disk or Docker operation prints the real command it runs, so you can check
 ### Docker
 
 - **Overview**: engine status, live CPU and memory charts, and a disk usage breakdown
-- **Images, Containers, Volumes, Networks**: browse, inspect, and remove them, start and stop containers, read logs, and open a shell inside a container
+- **Images, Containers, Volumes, Networks**: browse, inspect, and remove them, start and stop containers, read logs, and open a shell inside a container. Each table can sort, resize, and choose its columns. Names link to each other, so a container's image, a volume's containers, and an image's containers are one click away
 - **Compose**: live service status and logs for each project, in-app editing of compose files, Dockerfiles, and `.env`, and a shortcut to open the project in your editor
 - **Prune**: clean up at three levels, with a dry-run estimate before anything is deleted
 - **Backup**: save volumes and Compose projects to a folder you choose, and restore volumes from it
@@ -85,7 +85,7 @@ Every disk or Docker operation prints the real command it runs, so you can check
 
 ### Tools
 
-- **Ports**: see what is listening on each TCP port, on Windows, in Docker containers, and in running WSL distros, and whether other devices can reach it. Close a stuck program after you confirm. You can sort and resize the table, and add columns for when the port started listening, the command line, working folder, memory, the program that started it, addresses, and file path
+- **Ports**: see what is listening on each TCP port, on Windows, in Docker containers, and in running WSL distros, and whether other devices can reach it. Close a stuck program or stop a container from the same row after you confirm, or jump straight to a container's logs. You can sort and resize the table, and add columns for when the port started listening, the command line, working folder, memory, the program that started it, addresses, and file path
 - **File locks**: when Windows won't let you delete or move something, drag it onto the page to see which program is using it, and close that program after you confirm. You can drag several files and folders at once, or paste a path or browse to one
 - **Clipboard**: see what Windows has saved in clipboard history, and what is on the clipboard now. Text stays hidden until you show it, and items that look like passwords or keys are flagged. Search and filter the list, copy an old item back, delete items, or clear them all. Turn history on or off from the page
 - **Clipboard checks**: the page tells you what is getting in the way, such as a policy that blocks history, a disabled clipboard service, a program keeping the clipboard open, or another clipboard program saving its own copy

@@ -3,6 +3,7 @@ import type { DockerStatus, DiskStats, DockerSystemDf, DockerImage, DockerContai
 
 export const dockerCheck          = () => invoke<DockerStatus>('docker_check')
 export const launchDockerDesktop  = () => invoke<void>('launch_docker_desktop')
+export const dockerDesktopStop    = () => invoke<void>('docker_desktop_stop')
 export const getDiskStats         = (path: string) => invoke<DiskStats>('get_disk_stats', { path })
 export const getBackupSize        = (backupDir: string) => invoke<number>('get_backup_size', { backupDir })
 export const dockerSystemDf  = () => invoke<DockerSystemDf>('docker_system_df')

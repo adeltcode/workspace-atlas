@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { RefreshCw, Download, CircleArrowUp, Trash2 } from 'lucide-react'
+import { RefreshCw, Download, CircleArrowUp, Filter, Trash2 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../../store/appStore'
 import { Modal } from '../wsl/components/Dialog'
 import {
   SheetHead, Prerequisite, Button, SearchField, ErrorBanner, Toolbar, EmptyState, Tag,
 } from '../../components/ui'
-import { ColumnsMenu, TableHead, useTableColumns, type TableColumn } from '../../components/TableColumns'
+import { CheckMenu, ColumnsMenu, TableHead, useTableColumns, type TableColumn } from '../../components/TableColumns'
 import * as api from './api'
 import type { Package, PackageUpdate, SourceResult, SourceUpdates, UninstallCheck } from './types'
 
@@ -435,6 +435,17 @@ export default function PackagesView() {
               placeholder="Search packages"
             />
 
+            <CheckMenu
+              label={<><Filter size={13} /> {active.length === 0 ? 'All sources' : active.length === 1 ? labels[active[0]] : `${active.length} sources`}</>}
+              active={active.length > 0}
+              menuLabel="Filter by source"
+              items={listed.map(r => ({ key: r.id, label: r.label, checked: active.includes(r.id), count: r.packages.length, title: r.command }))}
+              onToggle={togglePick}
+              resetLabel="Show all sources"
+              onReset={() => setPicked([])}
+              alignLeft
+            />
+
             <button
               className={clsx('pkg-toggle', outdatedOnly && 'active')}
               onClick={() => setOutdatedOnly(v => !v)}
@@ -456,31 +467,6 @@ export default function PackagesView() {
 
             <span className="img-count">{rows.length} shown</span>
           </Toolbar>
-
-          {/* Independent toggles rather than a segmented control, because
-              several sources can be picked at once. */}
-          <div className="pkg-sources" role="group" aria-label="Filter by source. Pick one or more.">
-            <Button
-              size="sm"
-              className={clsx('pkg-source', active.length === 0 && 'btn--on')}
-              aria-pressed={active.length === 0}
-              onClick={() => setPicked([])}
-            >
-              All <span className="segmented-count num">{all.length}</span>
-            </Button>
-            {listed.map(r => (
-              <Button
-                key={r.id}
-                size="sm"
-                className={clsx('pkg-source', active.includes(r.id) && 'btn--on')}
-                aria-pressed={active.includes(r.id)}
-                onClick={() => togglePick(r.id)}
-                title={`${r.command}\nClick to add or remove this source.`}
-              >
-                {r.label} <span className="segmented-count num">{r.packages.length}</span>
-              </Button>
-            ))}
-          </div>
 
           {rows.length === 0 ? (
             <EmptyState

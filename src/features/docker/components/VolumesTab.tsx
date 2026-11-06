@@ -7,11 +7,20 @@ import * as api from '../api'
 import { useAppStore } from '../../../store/appStore'
 import type { DockerVolume, VolumeBackupEntry, BackupProgress } from '../types'
 import { fmtBytes, formatDate } from '../../../utils/format'
-import { ConfirmRemoveButton } from './TableBits'
-import { SearchField, Segmented, SegmentedItem, EmptyState, ErrorBanner, ConfirmDestructive, Button } from '../../../components/ui'
+import { ConfirmRemoveButton, StatusCell, useDockerJump, useDockerTable } from './TableBits'
+import { CellLink, SearchField, Segmented, SegmentedItem, EmptyState, ErrorBanner, ConfirmDestructive, Button, Toolbar } from '../../../components/ui'
+import { TableHead } from '../../../components/TableColumns'
+import { filterVolumes, matchesVolumeFilter, sortVolumes, type SortDir, type VolumeFilter, type VolumeSortKey } from '../rules'
 
-type UsageFilter = 'all' | 'in-use' | 'unused'
 type VolStatus   = 'running' | 'done' | 'error'
+
+const FILTERS: { key: VolumeFilter; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'in-use', label: 'In use' },
+  { key: 'unused', label: 'Unused' },
+]
+
+const Dash = () => <span className="pkg-dash">-</span>
 
 interface VolumeProgress {
   status:    VolStatus
@@ -74,7 +83,20 @@ export default function VolumesTab({
   onRefresh: () => void
 }) {
   const [search, setSearch]           = useState('')
-  const [usageFilter, setUsageFilter] = useState<UsageFilter>('all')
+  const [usageFilter, setUsageFilter] = useState<VolumeFilter>('all')
+  const [sortKey, setSortKey]         = useState<VolumeSortKey>('name')
+  const [sortDir, setSortDir]         = useState<SortDir>('asc')
+  const table = useDockerTable<VolumeSortKey>('volumes')
+
+  useDockerJump('volumes', ({ query }) => {
+    setSearch(query)
+    setUsageFilter('all')
+  })
+
+  const handleSort = (key: VolumeSortKey) => {
+    if (key === sortKey) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
+    else { setSortKey(key); setSortDir(key === 'size' ? 'desc' : 'asc') }
+  }
 
   // VolumesTab stays permanently mounted (tab-hidden pattern in DockerView).
   // React to volumesFilter store updates even while the tab is not visible.
@@ -203,16 +225,10 @@ export default function VolumesTab({
     } finally { setIsDeletingEntry(null) }
   }
 
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase()
-    return volumes
-      .filter(v => {
-        if (usageFilter === 'in-use') return v.in_use
-        if (usageFilter === 'unused') return !v.in_use
-        return true
-      })
-      .filter(v => !q || v.name.toLowerCase().includes(q) || v.driver.toLowerCase().includes(q))
-  }, [volumes, search, usageFilter])
+  const filtered = useMemo(
+    () => sortVolumes(filterVolumes(volumes, search, usageFilter), sortKey, sortDir),
+    [volumes, search, usageFilter, sortKey, sortDir],
+  )
 
   // `docker volume prune` takes every unused volume on the engine, not the
   // filtered view, so the dialog must name that set and not what is on screen.
@@ -279,33 +295,118 @@ export default function VolumesTab({
     />
   )
 
+  const cell = (column: string, v: DockerVolume) => {
+    const isBusy      = busy === v.name
+    const isExpanded  = expandedVol === v.name
+    const isBackingUp = backingUpSet.has(v.name)
+    const volName     = fmtVolName(v.name)
+    switch (column) {
+      case 'select':
+        return (
+          <td className="img-td img-td-check" onClick={e => e.stopPropagation()}>
+            <input type="checkbox" className="row-checkbox" aria-label={`Select volume ${v.name}`}
+              checked={selectedVols.has(v.name)}
+              onChange={() => toggleVolSelect(v.name)}
+            />
+          </td>
+        )
+      case 'name':
+        return (
+          <td className="img-td" title={v.name}>
+            {/* A row takes no focus or Enter key, so the disclosure it drives is also a real control here. */}
+            <button
+              className="vol-name-cell"
+              onClick={e => { e.stopPropagation(); toggleVolBackups(v.name) }}
+              aria-expanded={isExpanded}
+              aria-controls={`vol-backups-${v.name}`}
+              aria-label={`${isExpanded ? 'Hide' : 'Show'} backups for ${v.name}`}
+            >
+              {isExpanded
+                ? <ChevronDown size={11} className="vol-name-chevron" />
+                : <ChevronRight size={11} className="vol-name-chevron" />
+              }
+              <span className="vol-name-text">{volName.display}</span>
+            </button>
+          </td>
+        )
+      case 'driver':
+        return <td className="img-td img-age">{v.driver}</td>
+      case 'project':
+        return (
+          <td className="img-td img-age">
+            {v.compose_project
+              ? (
+                <CellLink
+                  title={`Open ${v.compose_project} in Compose`}
+                  onClick={() => { const s = useAppStore.getState(); s.setComposePreselect(v.compose_project); s.setDockerTab('compose') }}
+                >
+                  {v.compose_project}
+                </CellLink>
+              )
+              : <Dash />}
+          </td>
+        )
+      case 'used-by':
+        return (
+          <td className="img-td img-age" title={v.containers.join(', ')}>
+            {v.containers.length === 0 && <Dash />}
+            {v.containers.map((name, i) => (
+              <Fragment key={name}>
+                {i > 0 && ', '}
+                <CellLink title={`Show ${name} in Containers`} onClick={() => useAppStore.getState().jumpToDocker('containers', name)}>{name}</CellLink>
+              </Fragment>
+            ))}
+          </td>
+        )
+      case 'size':
+        return <td className="img-td img-age num">{fmtBytes(v.size_bytes)}</td>
+      case 'status':
+        return <td className="img-td img-age"><StatusCell dot={v.in_use ? 'running' : 'stopped'}>{v.in_use ? 'In use' : 'Unused'}</StatusCell></td>
+      default:
+        return (
+          <td className="img-td holder-actions" onClick={e => e.stopPropagation()}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => doBackup(v.name)}
+              disabled={isBackingUp}
+              title={!backupDir ? 'Set a backup folder in Settings' : `Back up '${v.name}'`}
+            >
+              <HardDriveDownload size={12} />
+              {isBackingUp ? 'Backing up…' : 'Back up'}
+            </Button>
+            <ConfirmRemoveButton
+              onConfirm={() => doRemove(v.name)}
+              onArm={() => setActionError(null)}
+              disabled={isBusy || v.in_use}
+              title={v.in_use ? `Cannot remove ${v.name}: it is in use` : `Remove volume ${v.name}`}
+            />
+          </td>
+        )
+    }
+  }
+
   return (
     <div className="img-tab">
-      <div className="img-toolbar">
+      <Toolbar>
         <SearchField
           value={search}
           onChange={setSearch}
           placeholder="Search volumes"
-          label="Search volumes by name or driver"
+          label="Search volumes by name, driver, project, or container"
         />
         <Segmented label="Filter by usage">
-          {(['all', 'in-use', 'unused'] as UsageFilter[]).map(f => (
-            <SegmentedItem key={f} active={usageFilter === f} onClick={() => setUsageFilter(f)}>
-              {f === 'in-use' ? 'In use' : f[0].toUpperCase() + f.slice(1)}
+          {FILTERS.map(({ key, label }) => (
+            <SegmentedItem
+              key={key}
+              active={usageFilter === key}
+              count={volumes.filter(v => matchesVolumeFilter(v, key)).length}
+              onClick={() => setUsageFilter(key)}
+            >
+              {label}
             </SegmentedItem>
           ))}
         </Segmented>
-        {unusedCount > 0 && (
-          <button
-            className="btn-prune-unused"
-            onClick={() => setConfirmPrune(true)}
-            disabled={pruningAll}
-            aria-label={`Remove all ${unusedCount} unused volumes, freeing ${fmtBytes(unusedBytes)}`}
-          >
-            <Trash2 size={11} />
-            {pruningAll ? 'Removing…' : `Remove unused (${unusedCount})`}
-          </button>
-        )}
 
         {selectedVols.size > 0 && (
           <>
@@ -330,204 +431,172 @@ export default function VolumesTab({
           </>
         )}
 
-        <span className="img-count">
-          {filtered.length} volume{filtered.length !== 1 ? 's' : ''}
-        </span>
-      </div>
+        <span className="img-count">{filtered.length} shown</span>
+        {unusedCount > 0 && (
+          <Button
+            variant="danger-outline"
+            onClick={() => setConfirmPrune(true)}
+            disabled={pruningAll}
+            aria-label={`Remove all ${unusedCount} unused volumes, freeing ${fmtBytes(unusedBytes)}`}
+          >
+            <Trash2 size={12} />
+            {pruningAll ? 'Removing…' : `Remove unused (${unusedCount})`}
+          </Button>
+        )}
+      </Toolbar>
 
       {actionError != null && (
         <ErrorBanner className="error-banner--flush" error={actionError} />
       )}
 
-      <div className="img-table-wrap">
-        <table className="img-table">
-          <thead>
-            <tr>
-              <th className="img-th img-th-check">
+      {filtered.length === 0 && (
+        <EmptyState
+          title="No volumes match"
+          description="Try a shorter search or another filter."
+          actions={<Button onClick={() => { setSearch(''); setUsageFilter('all') }}>Show all volumes</Button>}
+        />
+      )}
+
+      {filtered.length > 0 && (
+        <div className="img-table-wrap">
+          <table className="img-table pkg-table" style={{ width: table.tableWidth }}>
+            <TableHead
+              table={table}
+              sortKey={sortKey}
+              sortDir={sortDir}
+              onSort={handleSort}
+              actionsClass="holder-actions"
+              select={(
                 <input type="checkbox" className="row-checkbox" aria-label="Select all volumes"
                   checked={allVolSelected}
                   ref={el => { if (el) el.indeterminate = someVolSelected }}
                   onChange={toggleSelectAllVol}
                 />
-              </th>
-              <th className="img-th img-th-vol-name">Name</th>
-              <th className="img-th">Driver</th>
-              <th className="img-th">Size</th>
-              <th className="img-th">Status</th>
-              <th className="img-th ctr-th-actions">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map(v => {
-              const isBusy       = busy === v.name
-              const isExpanded   = expandedVol === v.name
-              const isBackingUp  = backingUpSet.has(v.name)
-              const vp           = volProgress[v.name]
-              const entries      = volBackups[v.name] ?? []
-              const isSelected   = selectedVols.has(v.name)
-              const volName      = fmtVolName(v.name)
+              )}
+            />
+            <tbody>
+              {filtered.map(v => {
+                const isExpanded = expandedVol === v.name
+                const vp         = volProgress[v.name]
+                const entries    = volBackups[v.name] ?? []
 
-              return (
-                <Fragment key={v.name}>
-                  {/* A row takes no focus or Enter key, so the disclosure it drives is also a real control in the
-                     name cell. */}
-                  <tr
-                    className={clsx('img-row img-row--clickable', isExpanded && 'img-row--expanded', isSelected && 'row-selected')}
-                    onClick={() => toggleVolBackups(v.name)}
-                  >
-                    <td className="img-td img-td-check" onClick={e => e.stopPropagation()}>
-                      <input type="checkbox" className="row-checkbox" aria-label={`Select volume ${v.name}`}
-                        checked={isSelected}
-                        onChange={() => toggleVolSelect(v.name)}
-                      />
-                    </td>
-                    <td className="img-td">
-                      <button
-                        className="vol-name-cell"
-                        onClick={e => { e.stopPropagation(); toggleVolBackups(v.name) }}
-                        aria-expanded={isExpanded}
-                        aria-controls={`vol-backups-${v.name}`}
-                        aria-label={`${isExpanded ? 'Hide' : 'Show'} backups for ${volName.full}`}
-                      >
-                        {isExpanded
-                          ? <ChevronDown size={11} className="vol-name-chevron" />
-                          : <ChevronRight size={11} className="vol-name-chevron" />
-                        }
-                        <span className="vol-name-text" title={volName.full}>{volName.display}</span>
-                      </button>
-                    </td>
-                    <td className="img-td img-age">{v.driver}</td>
-                    <td className="img-td img-age">{fmtBytes(v.size_bytes)}</td>
-                    <td className="img-td">
-                      {v.in_use
-                        ? <span className="badge badge-active">In use</span>
-                        : <span className="badge badge-idle">Unused</span>}
-                    </td>
-                    <td className="img-td ctr-td-actions" onClick={e => e.stopPropagation()}>
-                      <button
-                        className={clsx('ctr-action-btn ctr-action-btn--labeled ctr-action-start', isBackingUp && 'loading')}
-                        onClick={() => doBackup(v.name)}
-                        disabled={isBackingUp}
-                        title={!backupDir ? 'Set a backup folder in Settings' : `Back up '${v.name}'`}
-                      >
-                        <HardDriveDownload size={12} />
-                        {isBackingUp ? 'Backing up…' : 'Back up'}
-                      </button>
-                      <ConfirmRemoveButton
-                        onConfirm={() => doRemove(v.name)}
-                        onArm={() => setActionError(null)}
-                        disabled={isBusy || v.in_use}
-                        title={v.in_use ? `Cannot remove ${v.name}: it is in use` : `Remove volume ${v.name}`}
-                      />
-                    </td>
-                  </tr>
-
-                  {isExpanded && (
-                    <tr className="vol-backup-expand-row">
-                      <td colSpan={6} className="vol-backup-expand-td" id={`vol-backups-${v.name}`}>
-                        <div className="vol-backup-panel">
-
-                          {vp && <ProgressBar p={vp} />}
-
-                          {loadingBackup === v.name && !vp && (
-                            <span className="vol-backup-state">Loading backups…</span>
-                          )}
-
-                          {!backupDir && (
-                            <div className="vol-backup-state vol-backup-no-dir">
-                              No backup folder set.{' '}
-                              <button className="vol-backup-settings-link" onClick={() => setActiveView('settings')}>
-                                Open Settings
-                              </button>{' '}
-                              to set one.
-                            </div>
-                          )}
-
-                          {backupDir && !vp && loadingBackup !== v.name && entries.length === 0 && (
-                            <span className="vol-backup-state">No backups yet. Click Back up to create the first one.</span>
-                          )}
-
-                          {entries.length > 0 && (
-                            <ul className="vol-backup-list">
-                              {entries.map(entry => {
-                                const isConfR = confirmRestore?.filename === entry.filename
-                                const isConfD = confirmDelete?.filename  === entry.filename
-                                return (
-                                  <li key={entry.filename} className={clsx('vol-backup-entry', (isConfR || isConfD) && 'confirming')}>
-                                    {isConfR ? (
-                                      <div className="backup-inline-confirm">
-                                        <span className="backup-confirm-text">Restore will overwrite existing volume data.</span>
-                                        <div className="backup-confirm-actions">
-                                          <button className="btn-filled btn-filled--success btn-sm" onClick={() => doRestore(entry)} disabled={isRestoring}>
-                                            <RotateCcw size={11} /> Restore
-                                          </button>
-                                          <button className="btn-ghost btn-sm" onClick={() => setConfirmRestore(null)}>Cancel</button>
-                                        </div>
-                                      </div>
-                                    ) : isConfD ? (
-                                      <div className="backup-inline-confirm">
-                                        <span className="backup-confirm-text backup-confirm-text--danger">Delete this backup permanently?</span>
-                                        <div className="backup-confirm-actions">
-                                          <button className="btn-filled btn-filled--danger btn-sm" onClick={() => doDeleteEntry(entry)} disabled={isDeletingEntry === entry.filename}>
-                                            <Trash2 size={11} /> Delete
-                                          </button>
-                                          <button className="btn-ghost btn-sm" onClick={() => setConfirmDelete(null)}>Cancel</button>
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <>
-                                        <div className="vol-backup-entry-info">
-                                          <span className="vol-backup-date">{formatDate(entry.created_at)}</span>
-                                          <span className="vol-backup-size">{fmtBytes(entry.size_bytes)}</span>
-                                          <span className="vol-backup-file" title={entry.filename}>
-                                            {truncFilename(entry.filename)}
-                                          </span>
-                                        </div>
-                                        <div className="vol-backup-entry-actions">
-                                          <button
-                                            className="ctr-action-btn"
-                                            onClick={() => revealItemInDir(entry.path).catch(() => {})}
-                                            title="Show in Explorer"
-                                            aria-label={`Open the folder holding ${entry.filename}`}
-                                          >
-                                            <FolderOpen size={12} />
-                                          </button>
-                                          <button
-                                            className="ctr-action-btn ctr-action-start"
-                                            onClick={() => { setConfirmRestore(entry); setConfirmDelete(null) }}
-                                            disabled={isRestoring}
-                                            title="Restore from this backup"
-                                            aria-label={`Restore ${v.name} from ${entry.filename}`}
-                                          >
-                                            <RotateCcw size={12} />
-                                          </button>
-                                          <button
-                                            className="ctr-action-btn ctr-action-remove"
-                                            onClick={() => { setConfirmDelete(entry); setConfirmRestore(null) }}
-                                            disabled={isDeletingEntry === entry.filename}
-                                            title="Delete this backup"
-                                            aria-label={`Delete backup ${entry.filename}`}
-                                          >
-                                            <Trash2 size={12} />
-                                          </button>
-                                        </div>
-                                      </>
-                                    )}
-                                  </li>
-                                )
-                              })}
-                            </ul>
-                          )}
-                        </div>
-                      </td>
+                return (
+                  <Fragment key={v.name}>
+                    <tr
+                      className={clsx('img-row img-row--clickable', isExpanded && 'img-row--expanded', selectedVols.has(v.name) && 'row-selected')}
+                      onClick={() => toggleVolBackups(v.name)}
+                    >
+                      {table.visible.map(column => <Fragment key={column.key}>{cell(column.key, v)}</Fragment>)}
+                      {table.fillFixed && <td className="img-td" aria-hidden="true" />}
                     </tr>
-                  )}
-                </Fragment>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+
+                    {isExpanded && (
+                      <tr className="vol-backup-expand-row">
+                        <td colSpan={table.visible.length + (table.fillFixed ? 1 : 0)} className="vol-backup-expand-td" id={`vol-backups-${v.name}`}>
+                          <div className="vol-backup-panel">
+
+                            {vp && <ProgressBar p={vp} />}
+
+                            {loadingBackup === v.name && !vp && (
+                              <span className="vol-backup-state">Loading backups…</span>
+                            )}
+
+                            {!backupDir && (
+                              <div className="vol-backup-state vol-backup-no-dir">
+                                No backup folder set.{' '}
+                                <button className="vol-backup-settings-link" onClick={() => setActiveView('settings')}>
+                                  Open Settings
+                                </button>{' '}
+                                to set one.
+                              </div>
+                            )}
+
+                            {backupDir && !vp && loadingBackup !== v.name && entries.length === 0 && (
+                              <span className="vol-backup-state">No backups yet. Click Back up to create the first one.</span>
+                            )}
+
+                            {entries.length > 0 && (
+                              <ul className="vol-backup-list">
+                                {entries.map(entry => {
+                                  const isConfR = confirmRestore?.filename === entry.filename
+                                  const isConfD = confirmDelete?.filename  === entry.filename
+                                  return (
+                                    <li key={entry.filename} className={clsx('vol-backup-entry', (isConfR || isConfD) && 'confirming')}>
+                                      {isConfR ? (
+                                        <div className="backup-inline-confirm">
+                                          <span className="backup-confirm-text">Restore will overwrite existing volume data.</span>
+                                          <div className="backup-confirm-actions">
+                                            <button className="btn-filled btn-filled--success btn-sm" onClick={() => doRestore(entry)} disabled={isRestoring}>
+                                              <RotateCcw size={11} /> Restore
+                                            </button>
+                                            <button className="btn-ghost btn-sm" onClick={() => setConfirmRestore(null)}>Cancel</button>
+                                          </div>
+                                        </div>
+                                      ) : isConfD ? (
+                                        <div className="backup-inline-confirm">
+                                          <span className="backup-confirm-text backup-confirm-text--danger">Delete this backup permanently?</span>
+                                          <div className="backup-confirm-actions">
+                                            <button className="btn-filled btn-filled--danger btn-sm" onClick={() => doDeleteEntry(entry)} disabled={isDeletingEntry === entry.filename}>
+                                              <Trash2 size={11} /> Delete
+                                            </button>
+                                            <button className="btn-ghost btn-sm" onClick={() => setConfirmDelete(null)}>Cancel</button>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <>
+                                          <div className="vol-backup-entry-info">
+                                            <span className="vol-backup-date">{formatDate(entry.created_at)}</span>
+                                            <span className="vol-backup-size">{fmtBytes(entry.size_bytes)}</span>
+                                            <span className="vol-backup-file" title={entry.filename}>
+                                              {truncFilename(entry.filename)}
+                                            </span>
+                                          </div>
+                                          <div className="vol-backup-entry-actions">
+                                            <button
+                                              className="ctr-action-btn"
+                                              onClick={() => revealItemInDir(entry.path).catch(() => {})}
+                                              title="Show in Explorer"
+                                              aria-label={`Open the folder holding ${entry.filename}`}
+                                            >
+                                              <FolderOpen size={12} />
+                                            </button>
+                                            <button
+                                              className="ctr-action-btn ctr-action-start"
+                                              onClick={() => { setConfirmRestore(entry); setConfirmDelete(null) }}
+                                              disabled={isRestoring}
+                                              title="Restore from this backup"
+                                              aria-label={`Restore ${v.name} from ${entry.filename}`}
+                                            >
+                                              <RotateCcw size={12} />
+                                            </button>
+                                            <button
+                                              className="ctr-action-btn ctr-action-remove"
+                                              onClick={() => { setConfirmDelete(entry); setConfirmRestore(null) }}
+                                              disabled={isDeletingEntry === entry.filename}
+                                              title="Delete this backup"
+                                              aria-label={`Delete backup ${entry.filename}`}
+                                            >
+                                              <Trash2 size={12} />
+                                            </button>
+                                          </div>
+                                        </>
+                                      )}
+                                    </li>
+                                  )
+                                })}
+                              </ul>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {confirmPrune && (
         <ConfirmDestructive

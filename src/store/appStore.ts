@@ -8,6 +8,9 @@ import type { TerminalLine } from '../types/terminal'
 export type View      = 'dashboard' | 'docker' | 'wsl' | 'sandbox' | 'packages' | 'ports' | 'locks' | 'clipboard' | 'settings'
 export type Theme     = 'dark' | 'light'
 export type DockerTab = 'overview' | 'images' | 'containers' | 'volumes' | 'networks' | 'compose' | 'prune' | 'log'
+export type DockerTableTab = 'containers' | 'images' | 'volumes' | 'networks'
+/** Opens a Docker table already searched for one thing, and optionally with its logs open. */
+export interface DockerJump { tab: DockerTab; query: string; logs?: boolean }
 export type WslView      = 'dashboard' | 'distro' | 'wslconfig' | 'install'
 export type WslDistroTab = 'overview' | 'startup' | 'performance' | 'config'
 
@@ -110,6 +113,15 @@ interface AppState {
   /** Clipboard table: column widths in px by column key, and hidden column keys. */
   clipboardColumns: { widths: Record<string, number>; hidden: string[] }
   setClipboardColumns: (c: { widths: Record<string, number>; hidden: string[] }) => void
+
+  dockerColumns: Record<DockerTableTab, { widths: Record<string, number>; hidden: string[] }>
+  setDockerColumns: (tab: DockerTableTab, c: { widths: Record<string, number>; hidden: string[] }) => void
+  dockerJump: DockerJump | null
+  jumpToDocker: (tab: DockerTab, query: string, logs?: boolean) => void
+  clearDockerJump: () => void
+  portsJump: string | null
+  jumpToPorts: (query: string) => void
+  clearPortsJump: () => void
 
   backupDir: string
   setBackupDir: (dir: string) => void
@@ -251,6 +263,23 @@ export const useAppStore = create<AppState>()(
       setPortColumns: (portColumns) => set({ portColumns }),
       clipboardColumns: { widths: {}, hidden: ['formats'] },
       setClipboardColumns: (clipboardColumns) => set({ clipboardColumns }),
+      dockerColumns: {
+        containers: { widths: {}, hidden: ['project', 'service', 'id'] },
+        images:     { widths: {}, hidden: [] },
+        volumes:    { widths: {}, hidden: ['project'] },
+        networks:   { widths: {}, hidden: ['id'] },
+      },
+      setDockerColumns: (tab, columns) => set(s => ({ dockerColumns: { ...s.dockerColumns, [tab]: columns } })),
+      dockerJump: null,
+      jumpToDocker: (tab, query, logs) => {
+        if (!get().wslBusyDistro) set({ activeView: 'docker', dockerTab: tab, dockerJump: { tab, query, logs } })
+      },
+      clearDockerJump: () => set({ dockerJump: null }),
+      portsJump: null,
+      jumpToPorts: (portsJump) => {
+        if (!get().wslBusyDistro) set({ activeView: 'ports', portsJump })
+      },
+      clearPortsJump: () => set({ portsJump: null }),
 
       backupDir: '',
       setBackupDir: (backupDir) => set({ backupDir }),
@@ -390,6 +419,7 @@ export const useAppStore = create<AppState>()(
         pkgColumns:      s.pkgColumns,
         portColumns:     s.portColumns,
         clipboardColumns: s.clipboardColumns,
+        dockerColumns:   s.dockerColumns,
         backupDir:       s.backupDir,
         dockerKeepList:  s.dockerKeepList,
         dockerLogs:      s.dockerLogs,

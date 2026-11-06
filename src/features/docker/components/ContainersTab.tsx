@@ -1,47 +1,44 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react'
+import { Fragment, useState, useMemo, useRef, useEffect } from 'react'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { Play, Square, Trash2, ChevronDown, FileText, RefreshCw, X, Box } from 'lucide-react'
 import clsx from 'clsx'
 import * as api from '../api'
 import type { DockerContainer } from '../types'
 import { useAppStore } from '../../../store/appStore'
-import { SortHeader, ConfirmRemoveButton } from './TableBits'
-import { SearchField, Segmented, SegmentedItem, EmptyState, ErrorBanner, ConfirmDestructive } from '../../../components/ui'
+import { ConfirmRemoveButton, StatusCell, useDockerJump, useDockerTable } from './TableBits'
+import { Button, CellLink, SearchField, Segmented, SegmentedItem, EmptyState, ErrorBanner, ConfirmDestructive, Toolbar } from '../../../components/ui'
+import { TableHead } from '../../../components/TableColumns'
+import {
+  containerDot, filterContainers, firstPort, matchesContainerFilter, parsePorts, portLabel, sortContainers,
+  type ContainerFilter, type ContainerSortKey, type SortDir,
+} from '../rules'
 
-type SortKey    = 'name' | 'image' | 'state' | 'created_since'
-type SortDir    = 'asc' | 'desc'
-type StateFilter = 'all' | 'running' | 'stopped'
+const FILTERS: { key: ContainerFilter; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'running', label: 'Running' },
+  { key: 'stopped', label: 'Stopped' },
+]
 
-interface PortMapping { host: string; container: string; proto: string }
+const Dash = () => <span className="pkg-dash">-</span>
 
-function parsePorts(raw: string): PortMapping[] {
-  if (!raw) return []
-  const seen = new Set<string>()
-  return raw.split(',')
-    .map(s => s.trim()).filter(Boolean)
-    .flatMap(part => {
-      const m = part.match(/(?:[\d.:]+:)?(\d+)->(\d+)\/(tcp|udp|sctp)/i)
-      if (!m) return []
-      return [{ host: m[1], container: m[2], proto: m[3].toLowerCase() }]
-    })
-    .filter(p => {
-      const key = `${p.host}:${p.container}/${p.proto}`
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
-}
-
-function PortChips({ raw }: { raw: string }) {
-  const ports = parsePorts(raw)
-  if (!ports.length) return <span className="img-colon">-</span>
+function PortLinks({ container }: { container: DockerContainer }) {
+  const ports = parsePorts(container.ports)
+  if (!ports.length) return <Dash />
   return (
-    <div className="ctr-port-chips">
-      {ports.map((p, i) => (
-        <span key={i} className={clsx('ctr-port-chip', p.proto === 'udp' && 'ctr-port-chip--udp')}>
-          {p.host === p.container ? p.host : `${p.host}→${p.container}`}
-        </span>
+    <>
+      {ports.map((port, i) => (
+        <Fragment key={`${port.host}-${port.proto}`}>
+          {i > 0 && ', '}
+          {container.state === 'running' && port.proto === 'tcp'
+            ? (
+              <CellLink title={`Open http://localhost:${firstPort(port)}`} onClick={() => { openUrl(`http://localhost:${firstPort(port)}`).catch(() => {}) }}>
+                {portLabel(port)}
+              </CellLink>
+            )
+            : portLabel(port)}
+        </Fragment>
       ))}
-    </div>
+    </>
   )
 }
 
@@ -124,23 +121,6 @@ function LogViewer({ id, name, onClose }: { id: string; name: string; onClose: (
   )
 }
 
-function StateBadge({ state, sub }: { state: string; sub?: string }) {
-  const s     = state.toLowerCase()
-  const badge =
-    s === 'running'                  ? <span className="badge badge-running">▶ running</span> :
-    s === 'paused'                   ? <span className="badge badge-paused">⏸ paused</span> :
-    s === 'restarting'               ? <span className="badge badge-paused">↺ restarting</span> :
-    s === 'created'                  ? <span className="badge badge-created">created</span> :
-    (s === 'exited' || s === 'dead') ? <span className="badge badge-idle">■ {state}</span> :
-                                       <span className="badge badge-idle">{state || 'unknown'}</span>
-  return (
-    <div className="ctr-status-cell">
-      {badge}
-      {sub && <span className="ctr-status-sub">{sub}</span>}
-    </div>
-  )
-}
-
 export default function ContainersTab({
   containers,
   loading,
@@ -150,37 +130,37 @@ export default function ContainersTab({
   loading:    boolean
   onRefresh:  () => void
 }) {
-  const [sortKey, setSortKey]         = useState<SortKey>('name')
+  const [sortKey, setSortKey]         = useState<ContainerSortKey>('name')
   const [sortDir, setSortDir]         = useState<SortDir>('asc')
   const [search, setSearch]           = useState('')
-  const [stateFilter, setStateFilter] = useState<StateFilter>('all')
+  const [stateFilter, setStateFilter] = useState<ContainerFilter>('all')
   const [busy, setBusy]               = useState<string | null>(null)
-  const [actionError, setActionError] = useState<string | null>(null)
-  const [logsId, setLogsId]           = useState<string | null>(null)
+  // Holds the caught value, so the banner can offer its recovery action.
+  const [actionError, setActionError] = useState<unknown>(null)
+  // By name, because a page that sends the user here knows the name and not the ID.
+  const [logsName, setLogsName]       = useState<string | null>(null)
+  const table = useDockerTable<ContainerSortKey>('containers')
+
+  useDockerJump('containers', ({ query, logs }) => {
+    setSearch(query)
+    setStateFilter('all')
+    if (logs) setLogsName(query)
+    onRefresh()
+  })
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkBusy, setBulkBusy]       = useState(false)
   const [confirmRemove, setConfirmRemove] = useState(false)
 
-  const handleSort = (key: SortKey) => {
+  const handleSort = (key: ContainerSortKey) => {
     if (key === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-    else { setSortKey(key); setSortDir('asc') }
+    else { setSortKey(key); setSortDir(key === 'created' ? 'desc' : 'asc') }
   }
 
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase()
-    return [...containers]
-      .filter(c => {
-        if (stateFilter === 'running') return c.state === 'running'
-        if (stateFilter === 'stopped') return c.state !== 'running'
-        return true
-      })
-      .filter(c => !q || c.name.toLowerCase().includes(q) || c.image.toLowerCase().includes(q) || c.id.includes(q))
-      .sort((a, b) => {
-        const cmp = a[sortKey].localeCompare(b[sortKey])
-        return sortDir === 'asc' ? cmp : -cmp
-      })
-  }, [containers, sortKey, sortDir, search, stateFilter])
+  const filtered = useMemo(
+    () => sortContainers(filterContainers(containers, search, stateFilter), sortKey, sortDir),
+    [containers, sortKey, sortDir, search, stateFilter],
+  )
 
   const toggleSelect    = (id: string) => setSelectedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
   const allSelected     = selectedIds.size > 0 && selectedIds.size === filtered.length
@@ -252,7 +232,7 @@ export default function ContainersTab({
       onRefresh()
     } catch (e) {
       addTerminalLine(`  ✗ ${String(e)}`, 'error')
-      setActionError(String(e))
+      setActionError(e)
     }
     finally { setBusy(null) }
   }
@@ -266,19 +246,112 @@ export default function ContainersTab({
     />
   )
 
+  const cell = (column: string, c: DockerContainer) => {
+    const isRunning = c.state === 'running'
+    const isBusy    = busy === c.id
+    const showLogs  = logsName === c.name
+    switch (column) {
+      case 'select':
+        return (
+          <td className="img-td img-td-check" onClick={e => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              className="row-checkbox"
+              aria-label={`Select container ${c.name}`}
+              checked={selectedIds.has(c.id)}
+              onChange={() => toggleSelect(c.id)}
+            />
+          </td>
+        )
+      case 'name':
+        return (
+          <td className="img-td" title={c.name}>
+            <button
+              className="ctr-name-cell"
+              onClick={e => { e.stopPropagation(); setLogsName(showLogs ? null : c.name) }}
+              aria-label={`Logs for ${c.name}`}
+              aria-expanded={showLogs}
+              aria-controls={`container-logs-${c.id}`}
+            >
+              <ChevronDown size={11} className={clsx('ctr-logs-chevron', showLogs && 'open')} />
+              <span className="img-repo">{c.name || <em className="img-colon">unnamed</em>}</span>
+            </button>
+          </td>
+        )
+      case 'image':
+        return (
+          <td className="img-td img-age">
+            <CellLink title={`Show ${c.image} in Images`} onClick={() => useAppStore.getState().jumpToDocker('images', c.image)}>{c.image}</CellLink>
+          </td>
+        )
+      case 'status':
+        return <td className="img-td img-age" title={c.state}><StatusCell dot={containerDot(c.state)}>{c.status || c.state}</StatusCell></td>
+      case 'ports':
+        return <td className="img-td img-age num" title={c.ports}><PortLinks container={c} /></td>
+      case 'project':
+        return (
+          <td className="img-td img-age">
+            {c.compose_project
+              ? (
+                <CellLink
+                  title={`Open ${c.compose_project} in Compose`}
+                  onClick={() => { const s = useAppStore.getState(); s.setComposePreselect(c.compose_project); s.setDockerTab('compose') }}
+                >
+                  {c.compose_project}
+                </CellLink>
+              )
+              : <Dash />}
+          </td>
+        )
+      case 'service':
+        return <td className="img-td img-age">{c.compose_service ?? <Dash />}</td>
+      case 'created':
+        return <td className="img-td img-age">{c.created_since}</td>
+      case 'id':
+        return <td className="img-td img-id" title={c.id}>{c.id.slice(0, 12)}</td>
+      default:
+        return (
+          <td className="img-td holder-actions" onClick={e => e.stopPropagation()}>
+            {isRunning
+              ? (
+                <Button size="sm" icon variant="ghost" onClick={() => doAction(c.id, 'stop')} disabled={isBusy} title={`Stop ${c.name}`} aria-label={`Stop ${c.name}`}>
+                  <Square size={13} />
+                </Button>
+              )
+              : (
+                <Button size="sm" icon variant="ghost" onClick={() => doAction(c.id, 'start')} disabled={isBusy} title={`Start ${c.name}`} aria-label={`Start ${c.name}`}>
+                  <Play size={13} />
+                </Button>
+              )}
+            <ConfirmRemoveButton
+              onConfirm={() => doAction(c.id, 'remove')}
+              onArm={() => setActionError(null)}
+              disabled={isBusy || isRunning}
+              title={isRunning ? `Stop ${c.name} first to remove it` : `Remove ${c.name}`}
+            />
+          </td>
+        )
+    }
+  }
+
   return (
     <div className="img-tab">
-      <div className="img-toolbar">
+      <Toolbar>
         <SearchField
           value={search}
           onChange={setSearch}
           placeholder="Search containers"
-          label="Search containers by name, image, or ID"
+          label="Search containers by name, image, ID, project, or port"
         />
         <Segmented label="Filter by state">
-          {(['all', 'running', 'stopped'] as StateFilter[]).map(f => (
-            <SegmentedItem key={f} active={stateFilter === f} onClick={() => setStateFilter(f)}>
-              {f[0].toUpperCase() + f.slice(1)}
+          {FILTERS.map(({ key, label }) => (
+            <SegmentedItem
+              key={key}
+              active={stateFilter === key}
+              count={containers.filter(c => matchesContainerFilter(c, key)).length}
+              onClick={() => setStateFilter(key)}
+            >
+              {label}
             </SegmentedItem>
           ))}
         </Segmented>
@@ -311,18 +384,29 @@ export default function ContainersTab({
           </>
         )}
 
-        <span className="img-count">{filtered.length} container{filtered.length !== 1 ? 's' : ''}</span>
-      </div>
+        <span className="img-count">{filtered.length} shown</span>
+      </Toolbar>
 
-      {actionError && (
-        <ErrorBanner className="error-banner--flush" error={actionError} />
+      {actionError != null && <ErrorBanner className="error-banner--flush" error={actionError} />}
+
+      {filtered.length === 0 && (
+        <EmptyState
+          title="No containers match"
+          description="Try a shorter search or another filter."
+          actions={<Button onClick={() => { setSearch(''); setStateFilter('all') }}>Show all containers</Button>}
+        />
       )}
 
-      <div className="img-table-wrap">
-        <table className="img-table">
-          <thead>
-            <tr>
-              <th className="img-th img-th-check">
+      {filtered.length > 0 && (
+        <div className="img-table-wrap">
+          <table className="img-table pkg-table" style={{ width: table.tableWidth }}>
+            <TableHead
+              table={table}
+              sortKey={sortKey}
+              sortDir={sortDir}
+              onSort={handleSort}
+              actionsClass="holder-actions"
+              select={(
                 <input
                   type="checkbox"
                   className="row-checkbox"
@@ -331,88 +415,36 @@ export default function ContainersTab({
                   ref={el => { if (el) el.indeterminate = someSelected }}
                   onChange={toggleSelectAll}
                 />
-              </th>
-              <SortHeader label="Name"    col="name"          sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
-              <SortHeader label="Image"   col="image"         sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
-              <SortHeader label="Status"  col="state"         sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
-              <th className="img-th">Ports</th>
-              <SortHeader label="Created" col="created_since" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
-              <th className="img-th ctr-th-actions">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map(c => {
-              const isRunning    = c.state === 'running'
-              const isBusy       = busy === c.id
-              const showLogs     = logsId === c.id
-              const isSelected   = selectedIds.has(c.id)
-
-              return (
-                <React.Fragment key={c.id}>
-                  <tr
-                    className={clsx('img-row img-row--clickable', showLogs && 'row-logs-open', isSelected && 'row-selected')}
-                    onClick={() => setLogsId(showLogs ? null : c.id)}
-                    title="Click to view logs"
-                  >
-                    <td className="img-td img-td-check" onClick={e => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        className="row-checkbox"
-                        aria-label={`Select container ${c.name}`}
-                        checked={isSelected}
-                        onChange={() => toggleSelect(c.id)}
-                      />
-                    </td>
-                    <td className="img-td">
-                      <button
-                        className="ctr-name-cell"
-                        onClick={e => { e.stopPropagation(); setLogsId(showLogs ? null : c.id) }}
-                        aria-label={`Logs for ${c.name}`}
-                        aria-expanded={showLogs}
-                        aria-controls={`container-logs-${c.id}`}
-                      >
-                        <ChevronDown size={11} className={clsx('ctr-logs-chevron', showLogs && 'open')} />
-                        <span className="img-repo">{c.name || <em className="img-colon">unnamed</em>}</span>
-                      </button>
-                    </td>
-                    <td className="img-td img-age">{c.image}</td>
-                    <td className="img-td"><StateBadge state={c.state} sub={c.status} /></td>
-                    <td className="img-td"><PortChips raw={c.ports} /></td>
-                    <td className="img-td img-age">{c.created_since}</td>
-                    <td className="img-td ctr-td-actions" onClick={e => e.stopPropagation()}>
-                      {isRunning ? (
-                        <button className="ctr-action-btn ctr-action-stop" onClick={() => doAction(c.id, 'stop')}
-                          disabled={isBusy} title={`Stop ${c.name}`} aria-label={`Stop ${c.name}`}>
-                          <Square size={12} />
-                        </button>
-                      ) : (
-                        <button className="ctr-action-btn ctr-action-start" onClick={() => doAction(c.id, 'start')}
-                          disabled={isBusy} title={`Start ${c.name}`} aria-label={`Start ${c.name}`}>
-                          <Play size={12} />
-                        </button>
-                      )}
-                      <ConfirmRemoveButton
-                        onConfirm={() => doAction(c.id, 'remove')}
-                        onArm={() => setActionError(null)}
-                        disabled={isBusy || isRunning}
-                        title={isRunning ? `Stop ${c.name} first to remove it` : `Remove ${c.name}`}
-                      />
-                    </td>
-                  </tr>
-
-                  {showLogs && (
-                    <tr className="log-viewer-row" id={`container-logs-${c.id}`}>
-                      <td colSpan={7} className="log-viewer-cell">
-                        <LogViewer id={c.id} name={c.name || c.id.slice(0, 12)} onClose={() => setLogsId(null)} />
-                      </td>
+              )}
+            />
+            <tbody>
+              {filtered.map(c => {
+                const showLogs = logsName === c.name
+                return (
+                  <Fragment key={c.id}>
+                    <tr
+                      className={clsx('img-row img-row--clickable', showLogs && 'row-logs-open', selectedIds.has(c.id) && 'row-selected')}
+                      onClick={() => setLogsName(showLogs ? null : c.name)}
+                      title="Click to view logs"
+                    >
+                      {table.visible.map(column => <Fragment key={column.key}>{cell(column.key, c)}</Fragment>)}
+                      {table.fillFixed && <td className="img-td" aria-hidden="true" />}
                     </tr>
-                  )}
-                </React.Fragment>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+
+                    {showLogs && (
+                      <tr className="log-viewer-row" id={`container-logs-${c.id}`}>
+                        <td colSpan={table.visible.length + (table.fillFixed ? 1 : 0)} className="log-viewer-cell">
+                          <LogViewer id={c.id} name={c.name || c.id.slice(0, 12)} onClose={() => setLogsName(null)} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {confirmRemove && (
         <ConfirmDestructive

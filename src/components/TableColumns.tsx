@@ -69,13 +69,15 @@ export function useTableColumns<K extends string>({ columns, fill, prefs, read, 
 
 /** The `<colgroup>` and `<thead>` of a table with resizable, sortable columns. Put it inside
  *  `<table className="img-table pkg-table" style={{ width: table.tableWidth }}>`. */
-export function TableHead<K extends string>({ table, sortKey, sortDir, onSort, actionsClass }: {
+export function TableHead<K extends string>({ table, sortKey, sortDir, onSort, actionsClass, select }: {
   table: ReturnType<typeof useTableColumns<K>>
   sortKey: K
   sortDir: 'asc' | 'desc'
   onSort: (key: K) => void
   /** Header class for the `actions` column. */
   actionsClass: string
+  /** The header checkbox of a column keyed `select`, which cannot be resized. */
+  select?: React.ReactNode
 }) {
   return (
     <>
@@ -88,6 +90,7 @@ export function TableHead<K extends string>({ table, sortKey, sortDir, onSort, a
       <thead>
         <tr>
           {table.visible.map(c => {
+            if (c.key === 'select') return <th key={c.key} className="img-th img-th-check">{select}</th>
             const handle = (
               <ResizeHandle
                 label={c.label}
@@ -169,6 +172,31 @@ export function ColumnsMenu({ columns, hidden, onToggle, onReset }: {
   onToggle: (key: string) => void
   onReset: () => void
 }) {
+  return (
+    <CheckMenu
+      label={<><Columns3 size={13} /> Columns</>}
+      menuLabel="Columns"
+      items={columns.filter(c => c.hideable).map(c => ({ key: c.key, label: c.label, checked: !hidden.includes(c.key) }))}
+      onToggle={onToggle}
+      resetLabel="Reset columns"
+      onReset={onReset}
+    />
+  )
+}
+
+/** A button that opens a list of checkboxes, so a long list takes one row of the page. */
+export function CheckMenu({ label, active, menuLabel, items, onToggle, resetLabel, onReset, alignLeft }: {
+  label: React.ReactNode
+  /** Marks the button while the choices are narrowing what the page shows. */
+  active?: boolean
+  menuLabel: string
+  items: { key: string; label: string; checked: boolean; count?: number; title?: string }[]
+  onToggle: (key: string) => void
+  resetLabel: string
+  onReset: () => void
+  /** For a button near the left of the page, where a panel opening leftward would be cut off. */
+  alignLeft?: boolean
+}) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -183,23 +211,21 @@ export function ColumnsMenu({ columns, hidden, onToggle, onReset }: {
 
   return (
     <div className="menu" ref={ref}>
-      <Button onClick={() => setOpen(o => !o)} aria-haspopup="menu" aria-expanded={open}>
-        <Columns3 size={13} /> Columns
+      <Button className={clsx(active && 'btn--on')} onClick={() => setOpen(o => !o)} aria-haspopup="menu" aria-expanded={open}>
+        {label}
       </Button>
       {open && (
-        <div className="menu-panel" role="menu" aria-label="Columns">
-          {columns.filter(c => c.hideable).map(c => {
-            const on = !hidden.includes(c.key)
-            return (
-              <button key={c.key} className="menu-item" role="menuitemcheckbox" aria-checked={on} onClick={() => onToggle(c.key)}>
-                {on ? <Check size={14} /> : <span className="menu-check" />}
-                {c.label}
-              </button>
-            )
-          })}
+        <div className={clsx('menu-panel', alignLeft && 'menu-panel--left')} role="menu" aria-label={menuLabel}>
+          {items.map(item => (
+            <button key={item.key} className="menu-item" role="menuitemcheckbox" aria-checked={item.checked} title={item.title} onClick={() => onToggle(item.key)}>
+              {item.checked ? <Check size={14} /> : <span className="menu-check" />}
+              {item.label}
+              {item.count !== undefined && <span className="menu-count num">{item.count}</span>}
+            </button>
+          ))}
           <div className="menu-sep" role="separator" />
           <button className="menu-item" role="menuitem" onClick={() => { onReset(); setOpen(false) }}>
-            <RotateCcw size={14} /> Reset columns
+            <RotateCcw size={14} /> {resetLabel}
           </button>
         </div>
       )}

@@ -3,11 +3,11 @@ import { RefreshCw } from 'lucide-react'
 import { useAppStore } from '../../store/appStore'
 import { useVisiblePoll } from '../../hooks/useVisiblePoll'
 import { bytesToHuman, timeAgo } from '../../utils/format'
-import { Button, EmptyState, ErrorBanner, SearchField, Segmented, SegmentedItem, SheetHead, Tag, Toolbar } from '../../components/ui'
+import { Button, CellLink, EmptyState, ErrorBanner, SearchField, Segmented, SegmentedItem, SheetHead, Tag, Toolbar } from '../../components/ui'
 import { ColumnsMenu, TableHead, useTableColumns, type TableColumn } from '../../components/TableColumns'
 import * as api from './api'
 import type { PortEntry, PortList } from './api'
-import { addressList, filterPorts, reachableLabel, runsIn, sinceTitle, sortPorts, type PortFilter, type PortSortKey } from './rules'
+import { addressList, filterPorts, fixDone, reachableLabel, runsIn, sinceTitle, sortPorts, type PortFilter, type PortSortKey } from './rules'
 import { CloseProgramDialog, HolderAction } from './HolderBits'
 
 const POLL_MS = 10_000
@@ -33,6 +33,24 @@ const COLUMNS: TableColumn<PortSortKey>[] = [
 
 const Dash = () => <span className="pkg-dash">-</span>
 
+function RunsIn({ entry }: { entry: PortEntry }) {
+  const { process, source } = entry
+  if (source === 'docker') {
+    return <CellLink title={`Show ${process.name} in Docker`} onClick={() => useAppStore.getState().jumpToDocker('containers', process.name)}>{runsIn(entry)}</CellLink>
+  }
+  if (source === 'wsl' && process.distro) {
+    const distro = process.distro
+    const open = () => {
+      const store = useAppStore.getState()
+      store.setActiveView('wsl')
+      store.setWslSelectedDistro(distro)
+      store.setWslView('distro')
+    }
+    return <CellLink title={`Open ${distro}`} onClick={open}>{runsIn(entry)}</CellLink>
+  }
+  return <>{runsIn(entry)}</>
+}
+
 function PortCell({ column, entry, onClose }: { column: string; entry: PortEntry; onClose: () => void }) {
   const text = (value: string | null, className = 'img-td img-age') => (
     <td className={className} title={value ?? undefined}>{value ?? <Dash />}</td>
@@ -41,7 +59,7 @@ function PortCell({ column, entry, onClose }: { column: string; entry: PortEntry
     case 'port':      return <td className="img-td holder-port">{entry.port}</td>
     case 'program':   return <td className="img-td img-repo" title={entry.process.path ?? entry.process.name}>{entry.process.name}</td>
     case 'pid':       return <td className="img-td img-age num">{entry.process.pid || <Dash />}</td>
-    case 'runs-in':   return text(runsIn(entry))
+    case 'runs-in':   return <td className="img-td img-age"><RunsIn entry={entry} /></td>
     case 'reachable': return <td className="img-td img-age" title={addressList(entry)}>{reachableLabel(entry)}</td>
     case 'since':
       return (
@@ -102,6 +120,14 @@ export default function PortsView() {
     }
   }, [])
 
+  const portsJump = useAppStore(s => s.portsJump)
+  useEffect(() => {
+    if (portsJump === null) return
+    useAppStore.getState().clearPortsJump()
+    setQuery(portsJump)
+    setShow('all')
+  }, [portsJump])
+
   useEffect(() => { load() }, [load])
   useVisiblePoll(() => { if (!loading.current) load() }, POLL_MS, !closing)
 
@@ -114,7 +140,8 @@ export default function PortsView() {
   const rows = useMemo(() => sortPorts(filterPorts(all, query, show), sortKey, sortDir), [all, query, show, sortKey, sortDir])
 
   const holdsText = ({ process }: PortEntry) => {
-    const ports = all.filter(e => e.process.pid === process.pid && e.process.distro === process.distro).map(e => e.port)
+    // Every container has PID 0, so the name is what tells them apart.
+    const ports = all.filter(e => e.process.pid === process.pid && e.process.name === process.name && e.process.distro === process.distro).map(e => e.port)
     return `Using ${ports.length === 1 ? 'port' : 'ports'} ${ports.join(', ')}`
   }
 
@@ -123,13 +150,13 @@ export default function PortsView() {
     await new Promise(resolve => setTimeout(resolve, AFTER_CLOSE_MS))
     const next = await load()
     if (!next) {
-      setResult({ tone: 'ok', text: `Closed ${closed.process.name}` })
+      setResult({ tone: 'ok', text: fixDone(closed.process) })
       return
     }
     const holder = next.entries.find(e => e.port === closed.port)
     setResult(holder
-      ? { tone: 'warn', text: `Closed ${closed.process.name}, but ${holder.process.name} is now using port ${closed.port}` }
-      : { tone: 'ok', text: `Closed ${closed.process.name}. Port ${closed.port} is free.` })
+      ? { tone: 'warn', text: `${fixDone(closed.process)}, but ${holder.process.name} is now using port ${closed.port}` }
+      : { tone: 'ok', text: `${fixDone(closed.process)}. Port ${closed.port} is free.` })
   }
 
   return (

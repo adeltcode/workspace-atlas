@@ -1,9 +1,18 @@
 import { useState } from 'react'
 import { useAppStore } from '../../store/appStore'
 import { Button, ConfirmDestructive } from '../../components/ui'
+import { dockerContainerAction, dockerDesktopStop } from '../docker/api'
+import { wslShutdown } from '../wsl/api'
 import * as api from './api'
 import type { ProcessInfo } from './api'
-import { canClose, closeCommand, NOT_CLOSABLE } from './rules'
+import { closeCommand, FIX_BUTTON, fixDialog, fixDone, fixFor, isContainer, NOT_CLOSABLE, type HolderFix } from './rules'
+
+const RUN_FIX: Record<HolderFix, (process: ProcessInfo) => Promise<void>> = {
+  close: api.processClose,
+  'stop-container': process => dockerContainerAction(process.name, 'stop'),
+  'stop-docker': dockerDesktopStop,
+  'stop-wsl': wslShutdown,
+}
 
 export function ProgramCell({ process }: { process: ProcessInfo }) {
   return (
@@ -20,17 +29,22 @@ export function HolderAction({ process, holds, onClose }: {
   holds: string
   onClose: () => void
 }) {
-  const setActiveView = useAppStore(s => s.setActiveView)
-  if (canClose(process)) {
-    return (
-      <Button size="sm" variant="danger-outline" aria-label={`Close ${process.name}, PID ${process.pid}, ${holds}`} onClick={onClose}>
-        Close
+  const jumpToDocker = useAppStore(s => s.jumpToDocker)
+  const fix = fixFor(process)
+  if (!fix) return <span className="holder-note">{NOT_CLOSABLE[process.owner]}</span>
+  const pid = process.pid ? `, PID ${process.pid}` : ''
+  return (
+    <>
+      {isContainer(process) && (
+        <Button size="sm" variant="ghost" aria-label={`Show logs for ${process.name}`} onClick={() => jumpToDocker('containers', process.name, true)}>
+          Logs
+        </Button>
+      )}
+      <Button size="sm" variant="danger-outline" aria-label={`${FIX_BUTTON[fix]} ${process.name}${pid}, ${holds}`} onClick={onClose}>
+        {FIX_BUTTON[fix]}
       </Button>
-    )
-  }
-  if (process.owner === 'docker') return <Button size="sm" variant="ghost" onClick={() => setActiveView('docker')}>Open Docker</Button>
-  if (process.owner === 'wsl') return <Button size="sm" variant="ghost" onClick={() => setActiveView('wsl')}>Open WSL</Button>
-  return <span className="holder-note">{NOT_CLOSABLE[process.owner]}</span>
+    </>
+  )
 }
 
 export function CloseProgramDialog({ process, holds, onClosed, onFailed, onCancel }: {
@@ -43,35 +57,38 @@ export function CloseProgramDialog({ process, holds, onClosed, onFailed, onCance
 }) {
   const [busy, setBusy] = useState(false)
   const command = closeCommand(process)
+  const dialog = fixDialog(process)
+  const fix = fixFor(process) ?? 'close'
 
   const run = async () => {
-    const { addTerminalLine, addActivity } = useAppStore.getState()
-    const detail = `${process.name} (PID ${process.pid}). ${holds}`
+    const { addTerminalLine, addActivity, clearDockerCache } = useAppStore.getState()
+    const pid = process.pid ? ` (PID ${process.pid})` : ''
+    const detail = `${process.name}${pid}. ${holds}`
     setBusy(true)
     addTerminalLine(`$ ${command}`, 'cmd')
     try {
-      await api.processClose(process)
-      addTerminalLine(`  ✓ Closed ${process.name}`, 'success')
-      addActivity({ module: 'system', action: 'Close program', outcome: 'success', detail })
+      await RUN_FIX[fix](process)
+      // The Docker page would otherwise show its cached list, with this still running.
+      if (fix === 'stop-container' || fix === 'stop-docker') clearDockerCache()
+      addTerminalLine(`  ✓ ${fixDone(process)}`, 'success')
+      addActivity({ module: 'system', action: dialog.confirmLabel, outcome: 'success', detail })
       onClosed()
     } catch (e) {
       addTerminalLine(`  ✗ ${String(e)}`, 'error')
-      addActivity({ module: 'system', action: 'Close program', outcome: 'failure', detail: `${detail}: ${String(e)}` })
+      addActivity({ module: 'system', action: dialog.confirmLabel, outcome: 'failure', detail: `${detail}: ${String(e)}` })
       onFailed(e)
     }
   }
 
   return (
     <ConfirmDestructive
-      title={`Close ${process.name}?`}
-      consequence={process.distro
-        ? `Linux asks this program in ${process.distro} to stop. Anything it has not saved may be lost.`
-        : 'Windows ends this program right away, without letting it save. Anything it has not saved is lost.'}
+      title={dialog.title}
+      consequence={dialog.consequence}
       command={command}
-      items={[{ name: process.path ?? process.name, meta: `PID ${process.pid}` }]}
+      items={[{ name: process.path ?? process.name, meta: process.pid ? `PID ${process.pid}` : undefined }]}
       summary={holds}
-      confirmLabel="Close program"
-      busyLabel="Closing…"
+      confirmLabel={dialog.confirmLabel}
+      busyLabel={dialog.busyLabel}
       onConfirm={run}
       onCancel={onCancel}
       busy={busy}
