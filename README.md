@@ -5,7 +5,7 @@
 <h1 align="center">Workspace Atlas</h1>
 
 <p align="center">
-  A Windows app for managing Docker, WSL 2, packages, ports, file locks, and Windows Sandbox.
+  A Windows app for managing Docker, WSL 2, packages, ports, file locks, clipboard history, dev caches, and Windows Sandbox.
 </p>
 
 <p align="center">
@@ -275,6 +275,8 @@ src-tauri/src/
   packages.rs             Package scans, upgrades, uninstall
   sandbox.rs              Windows Sandbox start, stop, and list through wsb
   holders.rs              Which programs hold a port or file, and closing them
+  caches.rs               Finding and clearing dev caches
+  clipboard.rs            Windows clipboard history
   system.rs               Host CPU, RAM, and disk via sysinfo
   shell.rs                Command execution and streamed output events
   config.rs               Settings export and import
