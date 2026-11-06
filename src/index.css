@@ -7332,6 +7332,11 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .holder-item { display: block; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .holder-actions { width: 124px; text-align: right; white-space: nowrap; }
 .holder-actions > .btn:not(.btn--icon) + .btn { margin-left: var(--space-1); }
+/* Pinned, so resizing a column or the sidebar cannot push the row actions out of view. */
+.pkg-table .holder-actions { position: sticky; right: 0; background: var(--color-bg-secondary); }
+.pkg-table th.holder-actions { z-index: calc(var(--z-sticky) + 1); }
+.pkg-table .img-row:hover td.holder-actions { background: var(--color-bg-hover); }
+.pkg-table .row-selected td.holder-actions { background: color-mix(in srgb, var(--color-accent) 12%, var(--color-bg-secondary)) !important; }
 .cell-link { max-width: 100%; padding: 0; overflow: hidden; background: none; border: none; font: inherit; color: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; cursor: pointer; }
 .cell-link:hover { color: var(--color-accent); text-decoration: underline; }
 .table-dot { display: inline-block; margin-right: var(--space-2); vertical-align: middle; }

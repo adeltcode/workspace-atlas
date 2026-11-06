@@ -24,7 +24,7 @@ const FILTERS: { key: ClipboardFilter; label: string }[] = [
   { key: 'text', label: 'Text' },
   { key: 'image', label: 'Images' },
   { key: 'link', label: 'Links' },
-  { key: 'secret', label: 'May be secret' },
+  { key: 'secret', label: 'Possible secrets' },
 ]
 
 /** The defaults that start visible add up to about 760, which fits the table at a 1280px window. */
@@ -38,11 +38,11 @@ const COLUMNS: TableColumn<ClipboardSortKey>[] = [
 ]
 
 const ACTIONS: Record<ClipboardAction, { label: string; icon: React.ElementType }> = {
-  'turn-on': { label: 'Turn on history', icon: Power },
-  'try-again': { label: 'Try turning on again', icon: Power },
-  'remove-block': { label: 'Remove block and turn on…', icon: Power },
+  'turn-on': { label: 'Enable history', icon: Power },
+  'try-again': { label: 'Retry', icon: Power },
+  'remove-block': { label: 'Remove policy and enable…', icon: Power },
   'restart-service': { label: 'Restart service…', icon: RefreshCw },
-  'enable-service': { label: 'Turn service back on…', icon: Power },
+  'enable-service': { label: 'Enable service…', icon: Power },
   'open-settings': { label: 'Open Windows Settings', icon: Settings },
 }
 
@@ -59,7 +59,7 @@ function ContentPreview({ text, kind, visible, secret }: { text: string; kind: s
           </>
         )
         : <span className="clipboard-hidden" role="img" aria-label="Hidden">{HIDDEN_TEXT}</span>}
-      {secret && <span className="clipboard-secret" title="May be secret"><KeyRound size={13} role="img" aria-label="May be secret" /></span>}
+      {secret && <span className="clipboard-secret" title="Possible secret"><KeyRound size={13} role="img" aria-label="Possible secret" /></span>}
     </span>
   )
 }
@@ -97,10 +97,10 @@ function CurrentRow({ current, disabled, onClear }: { current: CurrentClipboard;
   const empty = current.formats.length === 0
   const kind = kindOf(current)
   const owner = current.owner && current.owner.owner !== 'windows' ? current.owner.name : null
-  const facts = [sizeLabel(current), owner && `from ${owner}`, current.kept_out_of_history && 'Kept out of history'].filter(Boolean).join(' · ')
+  const facts = [sizeLabel(current), owner && `from ${owner}`, current.kept_out_of_history && 'Excluded from history'].filter(Boolean).join(' · ')
   return (
-    <section className="clipboard-now" aria-label="On the clipboard now">
-      <span className="clipboard-now-label">On the clipboard now</span>
+    <section className="clipboard-now" aria-label="Current clipboard">
+      <span className="clipboard-now-label">Current clipboard</span>
       {empty
         ? <span className="clipboard-muted">Nothing</span>
         : (
@@ -116,7 +116,7 @@ function CurrentRow({ current, disabled, onClear }: { current: CurrentClipboard;
                 size="sm"
                 icon
                 variant="ghost"
-                aria-label={`${visible ? 'Hide' : 'Show'} what is on the clipboard`}
+                aria-label={`${visible ? 'Hide' : 'Show'} current clipboard content`}
                 title={visible ? 'Hide' : 'Show'}
                 onClick={() => setVisible(v => !v)}
               >
@@ -241,7 +241,7 @@ export default function ClipboardView() {
   const turnOn = () => act({
     label: 'Turn on clipboard history',
     command: historyCommand(true),
-    done: 'Clipboard history is on',
+    done: 'Clipboard history enabled',
     work: () => api.clipboardSetHistory(true),
   })
 
@@ -249,7 +249,7 @@ export default function ClipboardView() {
     await act({
       label: 'Turn off clipboard history',
       command: historyCommand(false),
-      done: clearFirst ? 'Cleared and turned off' : 'Clipboard history is off',
+      done: clearFirst ? 'History cleared and disabled' : 'Clipboard history disabled',
       work: async () => {
         if (clearFirst) await api.clipboardClearHistory()
         await api.clipboardSetHistory(false)
@@ -272,7 +272,7 @@ export default function ClipboardView() {
     await act({
       label: 'Remove clipboard history block',
       command: REMOVE_BLOCK_COMMAND,
-      done: 'Block removed and history is on',
+      done: 'Policy removed and history enabled',
       work: api.clipboardRemoveBlock,
     })
     setDialog(null)
@@ -292,7 +292,7 @@ export default function ClipboardView() {
     await act({
       label: 'Turn on clipboard service',
       command: ENABLE_SERVICE_COMMAND,
-      done: 'Service turned back on. Sign out of Windows and back in to finish.',
+      done: 'Service enabled. Sign out and back in to start it.',
       work: api.clipboardEnableService,
     })
     setDialog(null)
@@ -351,7 +351,7 @@ export default function ClipboardView() {
         return (
           <td className="img-td clipboard-content">
             {item.text === null
-              ? <span className="clipboard-muted">{item.has_image ? 'Open to see the image' : 'No plain text'}</span>
+              ? <span className="clipboard-muted">{item.has_image ? 'Open to view image' : 'No plain text'}</span>
               : <ContentPreview text={item.text} kind={kind} visible={isVisible(item)} secret={looksSecret(item)} />}
           </td>
         )
@@ -406,7 +406,7 @@ export default function ClipboardView() {
               onChange={on => (on ? turnOn() : setDialog('turn-off'))}
             />
           )}
-          subtitle="Windows keeps the 25 newest items, and a restart clears them. It does not save files, or items a program asks it to keep out, as password managers do."
+          subtitle="Windows clipboard history retains the 25 most recent items until restart. Files and items marked as excluded, such as passwords, are not stored."
           actions={
             <>
               {notes.length > 0 && (
@@ -504,7 +504,7 @@ export default function ClipboardView() {
                 </Segmented>
                 <span className="toolbar-spacer" />
                 <Button
-                  title="Anything that looks like a secret stays hidden until you show it by itself."
+                  title="Possible secrets stay hidden until shown individually."
                   onClick={() => setShowAll(on => !on)}
                 >
                   {showAll ? <EyeOff size={12} /> : <Eye size={12} />} {showAll ? 'Hide text' : 'Show text'}
@@ -513,12 +513,12 @@ export default function ClipboardView() {
 
               {rows.length === 0 && (
                 <EmptyState
-                  title={items.length === 0 ? 'Nothing saved yet' : 'No items match'}
+                  title={items.length === 0 ? 'History is empty' : 'No items match'}
                   description={items.length === 0
-                    ? 'Copy some text or an image, and it appears here.'
-                    : 'Try another search or filter.'}
+                    ? 'Copied text and images appear here.'
+                    : 'Adjust the search or filters.'}
                   actions={items.length > 0
-                    ? <Button onClick={() => { setQuery(''); setFilter('all') }}>Show all items</Button>
+                    ? <Button onClick={() => { setQuery(''); setFilter('all') }}>Clear filters</Button>
                     : undefined}
                 />
               )}
@@ -565,22 +565,22 @@ export default function ClipboardView() {
 
       {dialog === 'turn-off' && (
         <ConfirmDestructive
-          title="Turn off clipboard history?"
-          consequence="Windows stops saving what you copy, and the clipboard is emptied. Saved items are not deleted: they come back if you turn history on again before you restart. To delete them now, use Clear and turn off."
+          title="Disable clipboard history?"
+          consequence="Windows stops recording clipboard items and clears the current clipboard. Saved items are retained and return if history is re-enabled before restart. To delete them now, use Clear and disable."
           command={historyCommand(false)}
-          confirmLabel="Turn off"
-          busyLabel="Turning off…"
+          confirmLabel="Disable"
+          busyLabel="Disabling…"
           busy={busy}
           onConfirm={() => turnOff(false)}
           onCancel={() => setDialog(null)}
-          escape={<Button disabled={busy} onClick={() => turnOff(true)}>Clear and turn off</Button>}
+          escape={<Button disabled={busy} onClick={() => turnOff(true)}>Clear and disable</Button>}
         />
       )}
 
       {dialog === 'clear' && (
         <ConfirmDestructive
           title="Clear clipboard history?"
-          consequence={`This deletes ${items.length === 1 ? 'the saved item' : `all ${items.length} saved items`} and empties the clipboard. They cannot be brought back. Other clipboard programs keep their own copies.`}
+          consequence={`Permanently deletes ${items.length === 1 ? 'the saved item' : `all ${items.length} saved items`} and clears the current clipboard. Other clipboard programs keep their own copies.`}
           command={CLEAR_HISTORY_COMMAND}
           confirmLabel="Clear history"
           busyLabel="Clearing…"
@@ -592,10 +592,10 @@ export default function ClipboardView() {
 
       {dialog === 'remove-block' && (
         <ConfirmDestructive
-          title="Remove the block on clipboard history?"
-          consequence="A policy on this PC stops Windows from saving what you copy. A cleanup tool may have set it, or whoever manages this PC. Windows asks for administrator approval, then history turns on. If an organization manages this PC, ask them first, because the block may come back."
+          title="Remove the clipboard history policy?"
+          consequence="AllowClipboardHistory stops Windows from recording clipboard items. It may have been set by a cleanup tool or an administrator. Windows prompts for administrator approval, then history is enabled. On a managed device, check with the administrator first, because the policy may be reapplied."
           command={REMOVE_BLOCK_COMMAND}
-          confirmLabel="Remove block and turn on"
+          confirmLabel="Remove policy and enable"
           busyLabel="Waiting for approval…"
           busy={busy}
           onConfirm={removeBlock}
@@ -606,7 +606,7 @@ export default function ClipboardView() {
       {dialog === 'restart-service' && (
         <ConfirmDestructive
           title="Restart the clipboard service?"
-          consequence="Windows asks for administrator approval, then restarts the service. Saved items are lost, and what is on the clipboard now stays."
+          consequence="Windows prompts for administrator approval, then restarts the service. Saved items are lost. The current clipboard is kept."
           command={RESTART_SERVICE_COMMAND}
           confirmLabel="Restart service"
           busyLabel="Waiting for approval…"
@@ -618,10 +618,10 @@ export default function ClipboardView() {
 
       {dialog === 'enable-service' && (
         <ConfirmDestructive
-          title="Turn the clipboard service back on?"
-          consequence="Windows asks for administrator approval, then sets the service to start by itself. It starts the next time you sign in, so sign out of Windows and back in afterwards."
+          title="Enable the clipboard service?"
+          consequence="Windows prompts for administrator approval, then sets the service startup type to Automatic. It starts at next sign-in, so sign out and back in afterward."
           command={ENABLE_SERVICE_COMMAND}
-          confirmLabel="Turn service back on"
+          confirmLabel="Enable service"
           busyLabel="Waiting for approval…"
           busy={busy}
           onConfirm={enableService}

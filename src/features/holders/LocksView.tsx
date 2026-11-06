@@ -57,7 +57,7 @@ export default function LocksView() {
     const next = reports && await scan(reports.map(r => r.path))
     const stillHeld = next?.some(r => r.holders.some(h => h.process.pid === closed.process.pid))
     setResult(stillHeld
-      ? { tone: 'warn', text: `${closed.process.name} is still using this` }
+      ? { tone: 'warn', text: `${closed.process.name} still holds a lock` }
       : { tone: 'ok', text: fixDone(closed.process) })
   }
 
@@ -70,7 +70,7 @@ export default function LocksView() {
             { label: 'File locks' },
           ]}
           title="File locks"
-          subtitle="See which programs are using a file or folder when Windows will not let you delete or move it."
+          subtitle="Identify processes holding a lock on a file or folder."
         />
       </div>
 
@@ -109,7 +109,7 @@ export default function LocksView() {
           {!reports && !error && !scanning && (
             <FileDropPrompt
               title="Drop files or folders here"
-              description="Or paste a path or browse to one. A folder includes everything inside it, so you can check a project before deleting it."
+              description="Or enter a path. Folders are checked recursively."
             />
           )}
 
@@ -117,15 +117,15 @@ export default function LocksView() {
             <>
               <p className="holder-summary">{checkedSummary(reports)}</p>
               {reports.some(r => !r.complete) && (
-                <ErrorBanner className="error-banner--flush" title="This check is not complete">
-                  Windows took too long to answer, so a program could be missing from this list.
+                <ErrorBanner className="error-banner--flush" title="Incomplete results">
+                  The check timed out, so some processes may be missing.
                 </ErrorBanner>
               )}
 
               {reports.every(r => r.holders.length === 0) ? (
                 <EmptyState
-                  title="Windows reports no programs using this"
-                  description="If a delete still fails, try again, because the program may have released it by now. Windows may not report every program."
+                  title="No locks found"
+                  description="Windows reported no process holding this item. Some processes may not be reported."
                 />
               ) : (
                 <div className="img-table-wrap">

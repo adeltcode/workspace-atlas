@@ -242,7 +242,7 @@ export default function ContainersTab({
     <EmptyState
       icon={Box}
       title="No containers on this engine"
-      description="Start a Compose project or run a container, and it appears here, running or not."
+      description="Start a Compose project or run a container to list it here."
     />
   )
 
@@ -392,8 +392,8 @@ export default function ContainersTab({
       {filtered.length === 0 && (
         <EmptyState
           title="No containers match"
-          description="Try a shorter search or another filter."
-          actions={<Button onClick={() => { setSearch(''); setStateFilter('all') }}>Show all containers</Button>}
+          description="Adjust the search or filters."
+          actions={<Button onClick={() => { setSearch(''); setStateFilter('all') }}>Clear filters</Button>}
         />
       )}
 
@@ -451,9 +451,9 @@ export default function ContainersTab({
           title={`Remove ${selectedStopped.length} container${selectedStopped.length === 1 ? '' : 's'}?`}
           consequence={
             <>
-              This deletes the containers and anything written inside them that is not on a
-              volume, including their logs. Images and volumes are untouched, so a Compose
-              project can recreate these, but a container built by hand cannot.
+              Deletes the containers, their logs, and any data not stored on a volume. Images
+              and volumes are not affected. Compose projects can recreate their containers.
+              Manually created containers cannot be recreated.
             </>
           }
           command={`docker rm ${selectedStopped.map(c => c.id.slice(0, 12)).join(' ')}`}

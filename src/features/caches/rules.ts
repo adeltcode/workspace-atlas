@@ -8,13 +8,13 @@ export const IDLE_DAYS = 30
 const DAY_SECONDS = 86_400
 
 export const KIND_LABEL: Record<CacheKind, string> = {
-  'node-modules': 'Node packages',
-  'rust-target': 'Rust build',
-  'maven-target': 'Maven build',
+  'node-modules': 'Node modules',
+  'rust-target': 'Cargo target',
+  'maven-target': 'Maven target',
   'gradle-build': 'Gradle build',
-  'python-venv': 'Python environment',
+  'python-venv': 'Python venv',
   'python-bytecode': 'Python bytecode',
-  shared: 'Shared cache',
+  shared: 'Global cache',
 }
 
 export const itemKey = (item: CacheItem) => item.paths[0]
@@ -23,7 +23,7 @@ export const isIdle = (item: CacheItem, nowSeconds: number) =>
   item.last_used !== null && nowSeconds - item.last_used > IDLE_DAYS * DAY_SECONDS
 
 /** Whether `restore` is something to type, rather than a sentence about what happens. */
-export const restoreIsCommand = (item: CacheItem) => item.kind !== 'shared' && item.kind !== 'python-bytecode'
+export const restoreIsCommand = (item: CacheItem) => item.kind !== 'python-bytecode'
 
 export function filterItems(items: CacheItem[], query: string, filter: CacheFilter, kinds: string[], nowSeconds: number): CacheItem[] {
   const q = query.trim().toLowerCase()
@@ -88,6 +88,6 @@ export function clearSummary(items: CacheItem[], result: ClearResult): string {
   const cleared = items.filter(item => item.paths.every(path => gone.has(path))).length
   const freed = result.drives
     .filter(drive => drive.freed_bytes > 0)
-    .map(drive => `${drive.drive} has ${bytesToHuman(drive.freed_bytes)} more free`)
+    .map(drive => `Reclaimed ${bytesToHuman(drive.freed_bytes)} on ${drive.drive}`)
   return [`Cleared ${cacheCount(cleared)}`, ...freed].join('. ') + '.'
 }

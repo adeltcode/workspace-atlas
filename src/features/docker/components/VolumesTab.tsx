@@ -291,7 +291,7 @@ export default function VolumesTab({
     <EmptyState
       icon={Database}
       title="No volumes on this engine"
-      description="Volumes hold the data your containers keep between restarts. One appears here as soon as a container or Compose project creates it."
+      description="Volumes persist container data across restarts. They appear here when a container or Compose project creates them."
     />
   )
 
@@ -452,8 +452,8 @@ export default function VolumesTab({
       {filtered.length === 0 && (
         <EmptyState
           title="No volumes match"
-          description="Try a shorter search or another filter."
-          actions={<Button onClick={() => { setSearch(''); setUsageFilter('all') }}>Show all volumes</Button>}
+          description="Adjust the search or filters."
+          actions={<Button onClick={() => { setSearch(''); setUsageFilter('all') }}>Clear filters</Button>}
         />
       )}
 
@@ -603,9 +603,8 @@ export default function VolumesTab({
           title={`Remove ${unusedCount} unused volume${unusedCount === 1 ? '' : 's'}?`}
           consequence={
             <>
-              Volumes hold data that containers keep across restarts, such as databases,
-              uploads, and caches. Removing them deletes that data from this machine, and
-              nothing here can bring it back.
+              Volumes persist container data such as databases, uploads, and caches. Removing
+              them permanently deletes that data.
             </>
           }
           command="docker volume prune -f"

@@ -44,7 +44,7 @@ export default function Dashboard() {
   const reclaim = df ? ([
     { key: 'images', label: 'Docker images', icon: Layers,   raw: df.images.reclaimable,      tab: 'images'  as DockerTab, sub: `${df.images.total} images, ${df.images.total - df.images.active} unused` },
     { key: 'cache',  label: 'Build cache',   icon: Layers,   raw: df.build_cache.reclaimable, tab: 'prune'   as DockerTab, sub: 'Safe to remove entirely' },
-    { key: 'vols',   label: 'Docker volumes', icon: Database, raw: df.volumes.reclaimable,    tab: 'volumes' as DockerTab, sub: 'May contain data you want' },
+    { key: 'vols',   label: 'Docker volumes', icon: Database, raw: df.volumes.reclaimable,    tab: 'volumes' as DockerTab, sub: 'May contain application data' },
   ]).filter(r => r.raw && !/^0\s*B/i.test(r.raw)) : []
 
   const running = distros.filter(d => d.running).length

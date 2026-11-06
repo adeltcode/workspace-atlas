@@ -186,13 +186,13 @@ export function historyState(status: ClipboardStatus): HistoryState {
 
 const OTHER_PROGRAM_NOTE: Record<OtherProgramKind, (historyOn: boolean) => string> = {
   'keeps-history': historyOn => (historyOn
-    ? 'It keeps its own copy of what you copy, so your copies are saved twice. Deleting or clearing here does not touch its copy.'
-    : 'It keeps its own copy of what you copy, even while Windows history is off. This page cannot show its copy.'),
+    ? 'Stores its own clipboard history, so items are saved twice. Deleting or clearing here does not affect its copy.'
+    : 'Stores its own clipboard history even while Windows history is off. This page cannot read it.'),
   'uses-windows-history': historyOn => (historyOn
-    ? 'It can show this same history.'
-    : 'It can show Windows clipboard history, but it has nothing to show while history is off.'),
-  'shares-clipboard': () => 'It shares your clipboard with another device or virtual machine, so what you copy may also go there.',
-  'clears-clipboard': () => 'It may empty the clipboard after you copy a password, and may keep passwords out of history.',
+    ? 'Reads the same Windows clipboard history.'
+    : 'Reads Windows clipboard history, which is empty while history is off.'),
+  'shares-clipboard': () => 'Synchronizes the clipboard with another device or virtual machine.',
+  'clears-clipboard': () => 'May clear the clipboard after a password is copied, and may exclude passwords from history.',
 }
 
 export type ClipboardAction = 'turn-on' | 'try-again' | 'remove-block' | 'restart-service' | 'enable-service' | 'open-settings'
@@ -212,37 +212,37 @@ export function problemFor(status: ClipboardStatus): HistoryProblem | null {
     case 'off':
       return {
         title: 'Clipboard history is off',
-        detail: 'Windows only keeps the last thing you copied. Turn history on to keep the 25 newest items.',
+        detail: 'Windows retains only the current clipboard item. Enable history to retain the 25 most recent items.',
         actions: ['turn-on'],
       }
     case 'blocked':
       return status.block_is_managed
         ? {
-          title: 'Your organization blocks clipboard history on this PC',
-          detail: 'A device management service set this policy, so it would come back if it were removed. Ask whoever manages this PC.',
+          title: 'Clipboard history is blocked by device management',
+          detail: 'A device management service sets this policy and would reapply it if removed. Contact the device administrator.',
           actions: ['open-settings'],
         }
         : {
-          title: 'A policy on this PC blocks clipboard history',
-          detail: 'Windows is not saving what you copy, and it ignores the on and off setting until the policy is gone. A cleanup tool, or whoever manages this PC, may have set it.',
+          title: 'Clipboard history is blocked by policy',
+          detail: 'AllowClipboardHistory is set to 0, so Windows ignores the history setting until the policy is removed. It may have been set by a cleanup tool or an administrator.',
           actions: ['remove-block', 'open-settings'],
         }
     case 'not-applied':
       return {
-        title: 'Clipboard history is not working',
-        detail: 'The setting is on, but the clipboard service is not using it. Try turning it on again. If that does not work, restart the service.',
+        title: 'Clipboard history is not active',
+        detail: 'The setting is enabled, but the clipboard service has not applied it. Retry, or restart the service.',
         actions: ['try-again', 'restart-service'],
       }
     case 'service-off':
       return status.service_disabled
         ? {
           title: 'The clipboard service is disabled',
-          detail: 'Windows cannot keep history without it, but the last thing you copied still works. A cleanup tool may have turned it off. After you turn it back on, sign out of Windows and back in.',
+          detail: 'History requires the clipboard service (cbdhsvc). The current clipboard still works. A cleanup tool may have disabled it. After enabling it, sign out and back in.',
           actions: ['enable-service'],
         }
         : {
-          title: 'Sign out of Windows and back in to start the clipboard service',
-          detail: 'The service is set to start again, but Windows only starts it when you sign in. The last thing you copied still works.',
+          title: 'Sign out to start the clipboard service',
+          detail: 'The service is enabled, but Windows starts it only at sign-in. The current clipboard still works.',
           actions: [],
         }
   }
@@ -269,7 +269,7 @@ export function noticesFor(status: ClipboardStatus): ClipboardNotice[] {
       key: 'held',
       tone: 'warn',
       title: `${status.held_by.name} has the clipboard open`,
-      detail: 'Other programs cannot copy or paste until it lets go.',
+      detail: 'Copy and paste are blocked in other programs until it closes the clipboard.',
       program: status.held_by,
     })
   }
@@ -277,8 +277,8 @@ export function noticesFor(status: ClipboardStatus): ClipboardNotice[] {
     notices.push({
       key: 'blocked-later',
       tone: 'warn',
-      title: 'A policy on this PC blocks clipboard history',
-      detail: 'History is on for now, but it stops the next time the setting changes.',
+      title: 'Clipboard history is blocked by policy',
+      detail: 'History remains active until the setting next changes.',
     })
   }
   if (status.service_disabled && !status.service_stopped) {
@@ -286,7 +286,7 @@ export function noticesFor(status: ClipboardStatus): ClipboardNotice[] {
       key: 'service',
       tone: 'warn',
       title: 'The clipboard service is disabled',
-      detail: 'It is still running, but history stops the next time you sign in.',
+      detail: 'It is still running, but history stops at next sign-in.',
       action: 'enable-service',
     })
   }
@@ -295,7 +295,7 @@ export function noticesFor(status: ClipboardStatus): ClipboardNotice[] {
       key: 'sync',
       tone: 'warn',
       title: 'Clipboard sync is on',
-      detail: 'What you copy can go to your other devices through your Microsoft account.',
+      detail: 'Clipboard items can sync to other devices through the Microsoft account.',
       action: 'open-settings',
     })
   }
@@ -312,8 +312,8 @@ export function noticesFor(status: ClipboardStatus): ClipboardNotice[] {
     notices.push({
       key: 'win-v',
       tone: 'info',
-      title: 'The Win+V shortcut is turned off',
-      detail: "Windows' own clipboard panel will not open with it. This page still works.",
+      title: 'The Win+V shortcut is disabled',
+      detail: 'The Windows clipboard panel cannot be opened with it. This page is not affected.',
     })
   }
   return notices

@@ -180,7 +180,7 @@ fn classify_dir(path: &Path, siblings: &HashSet<String>) -> Option<Found> {
         "node_modules" if has(&["package.json"]) => {
             let restore = node_restore(path.parent()?)?;
             let note = path.join(".pnpm").is_dir().then(|| {
-                "pnpm shares these files with its store, so clearing this can free much less than the size shown.".to_string()
+                "pnpm hard-links these files from its store, so clearing this may free much less than the size shown.".to_string()
             });
             Some(Found { kind: CacheKind::NodeModules, restore: Some(restore), note })
         }
@@ -197,11 +197,11 @@ fn classify_dir(path: &Path, siblings: &HashSet<String>) -> Option<Found> {
                 kind: CacheKind::PythonVenv,
                 restore: restore.map(str::to_string),
                 note: restore.is_none().then(|| {
-                    "No requirements file sits next to it, so you would have to reinstall its packages by hand.".to_string()
+                    "No dependency manifest found. Packages must be reinstalled manually.".to_string()
                 }),
             })
         }
-        "__pycache__" if only_bytecode(path) => found(CacheKind::PythonBytecode, "Comes back by itself"),
+        "__pycache__" if only_bytecode(path) => found(CacheKind::PythonBytecode, "Automatic"),
         _ => None,
     }
 }
@@ -223,30 +223,30 @@ fn shared_caches(env: &dyn Fn(&str) -> Option<String>) -> Vec<SharedCache> {
 
     let cargo = override_or("CARGO_HOME", in_home(".cargo"));
     vec![
-        SharedCache { name: "npm cache", paths: one(override_or("npm_config_cache", in_local("npm-cache"))), restore: "Next npm install", note: None },
+        SharedCache { name: "npm cache", paths: one(override_or("npm_config_cache", in_local("npm-cache"))), restore: "npm install", note: None },
         SharedCache {
             name: "pnpm store",
             paths: one(in_local("pnpm\\store")),
-            restore: "Next pnpm install",
-            note: Some("pnpm links these files into your projects, so files they share are only freed once those projects are cleared too."),
+            restore: "pnpm install",
+            note: Some("Files hard-linked into projects are not freed until those projects' node_modules folders are also cleared."),
         },
-        SharedCache { name: "Yarn cache", paths: one(in_local("Yarn\\Cache")), restore: "Next yarn install", note: None },
-        SharedCache { name: "pip cache", paths: one(override_or("PIP_CACHE_DIR", in_local("pip\\Cache"))), restore: "Next pip install", note: None },
-        SharedCache { name: "uv cache", paths: one(override_or("UV_CACHE_DIR", in_local("uv\\cache"))), restore: "Next uv sync", note: None },
+        SharedCache { name: "Yarn cache", paths: one(in_local("Yarn\\Cache")), restore: "yarn install", note: None },
+        SharedCache { name: "pip cache", paths: one(override_or("PIP_CACHE_DIR", in_local("pip\\Cache"))), restore: "pip install", note: None },
+        SharedCache { name: "uv cache", paths: one(override_or("UV_CACHE_DIR", in_local("uv\\cache"))), restore: "uv sync", note: None },
         SharedCache {
-            name: "Cargo downloads",
+            name: "Cargo registry",
             paths: cargo.iter().flat_map(|d| [d.join("registry"), d.join("git")]).collect(),
-            restore: "Next cargo build",
+            restore: "cargo build",
             note: None,
         },
-        SharedCache { name: "Gradle cache", paths: one(override_or("GRADLE_USER_HOME", in_home(".gradle")).map(|d| d.join("caches"))), restore: "Next Gradle build", note: None },
+        SharedCache { name: "Gradle cache", paths: one(override_or("GRADLE_USER_HOME", in_home(".gradle")).map(|d| d.join("caches"))), restore: "gradle build", note: None },
         SharedCache {
-            name: "Maven repository",
+            name: "Maven local repository",
             paths: one(in_home(".m2\\repository")),
-            restore: "Next Maven build",
-            note: Some("It also holds anything you built with mvn install, which only comes back by building it again."),
+            restore: "mvn package",
+            note: Some("Also contains artifacts installed with mvn install, which must be rebuilt."),
         },
-        SharedCache { name: "NuGet packages", paths: one(override_or("NUGET_PACKAGES", in_home(".nuget\\packages"))), restore: "Next dotnet restore", note: None },
+        SharedCache { name: "NuGet global packages", paths: one(override_or("NUGET_PACKAGES", in_home(".nuget\\packages"))), restore: "dotnet restore", note: None },
     ]
 }
 
@@ -457,7 +457,7 @@ fn scan(roots: &[String], env: &dyn Fn(&str) -> Option<String>, stop: &AtomicBoo
         if let Some(store) = pnpm_store_on(&path).filter(|s| !stores_seen.iter().any(|seen| same_path(seen, s))) {
             let note = shared_caches(env).into_iter().find(|c| c.name == "pnpm store").and_then(|c| c.note);
             let name = format!("pnpm store on {}", store.ancestors().last().map(|d| d.to_string_lossy().trim_end_matches('\\').to_string()).unwrap_or_default());
-            scanner.add_shared(&name, std::slice::from_ref(&store), "Next pnpm install", note);
+            scanner.add_shared(&name, std::slice::from_ref(&store), "pnpm install", note);
             stores_seen.push(store);
         }
         scanner.walk(&path, None);
@@ -472,7 +472,7 @@ fn scan(roots: &[String], env: &dyn Fn(&str) -> Option<String>, stop: &AtomicBoo
 fn check_can_clear(text: &str, env: &dyn Fn(&str) -> Option<String>) -> Result<Option<PathBuf>, AtlasError> {
     let path = PathBuf::from(text);
     if !path.is_absolute() || path.components().any(|c| matches!(c, Component::ParentDir)) {
-        return Err(AtlasError::invalid(format!("{text} is not a full folder path, so nothing was cleared.")));
+        return Err(AtlasError::invalid(format!("{text} is not an absolute path. Nothing was cleared.")));
     }
     let meta = match fs::symlink_metadata(&path) {
         Ok(meta) => meta,
@@ -480,12 +480,12 @@ fn check_can_clear(text: &str, env: &dyn Fn(&str) -> Option<String>) -> Result<O
         Err(e) => return Err(e.into()),
     };
     if meta.is_symlink() || !meta.is_dir() {
-        return Err(AtlasError::invalid(format!("{text} is a link or a file, so nothing was cleared.")));
+        return Err(AtlasError::invalid(format!("{text} is a symbolic link or a file. Nothing was cleared.")));
     }
     if is_shared_cache(&path, env) {
         return Ok(Some(path));
     }
-    let not_a_cache = || AtlasError::invalid(format!("{text} does not look like a cache any more, so nothing was cleared.")).hint("Rescan to see the current list.");
+    let not_a_cache = || AtlasError::invalid(format!("{text} is no longer recognized as a cache. Nothing was cleared.")).hint("Rescan to refresh the list.");
     let parent = path.parent().ok_or_else(not_a_cache)?;
     if inside_off_limits(parent) || classify_dir(&path, &names_in(parent)).is_none() {
         return Err(not_a_cache());
@@ -532,7 +532,7 @@ fn clear(paths: &[String], env: &dyn Fn(&str) -> Option<String>, on_step: &mut d
             Some(target) => fs::remove_dir_all(target).map_err(|e| {
                 let mut error = classify(&e.to_string());
                 if matches!(error.kind, ErrorKind::Busy | ErrorKind::Permission) {
-                    error = error.hint("A dev server, editor, or terminal may be using it. Stop it, then clear it again.");
+                    error = error.hint("A dev server, editor, or terminal may be holding it open. Stop the process, then retry.");
                 }
                 error
             }),
@@ -747,7 +747,7 @@ mod tests {
         assert_eq!(api.note, None);
         let tool = item(&result, "tool", CacheKind::PythonVenv).unwrap();
         assert_eq!(tool.restore, None);
-        assert!(tool.note.as_deref().unwrap().contains("by hand"));
+        assert!(tool.note.as_deref().unwrap().contains("manually"));
         assert!(result.items.iter().all(|i| i.name != "config"), "a folder named env is not always an environment");
     }
 
@@ -967,7 +967,7 @@ mod tests {
 
         let result = scan(&[], &env, &AtomicBool::new(false), &mut |_, _| {});
         let names: Vec<&str> = result.items.iter().map(|i| i.name.as_str()).collect();
-        assert_eq!(names, vec!["npm cache", "pip cache", "Cargo downloads"]);
+        assert_eq!(names, vec!["npm cache", "pip cache", "Cargo registry"]);
         assert_eq!(result.items[2].size_bytes, 35);
         assert_eq!(result.items[2].paths.len(), 2);
 
@@ -988,7 +988,7 @@ mod tests {
         };
         let caches = shared_caches(&env);
         assert_eq!(caches[0].paths, vec![PathBuf::from("D:\\caches\\npm")]);
-        assert!(caches.iter().find(|c| c.name == "Cargo downloads").unwrap().paths.contains(&PathBuf::from("D:\\cargo\\registry")));
+        assert!(caches.iter().find(|c| c.name == "Cargo registry").unwrap().paths.contains(&PathBuf::from("D:\\cargo\\registry")));
         assert!(is_shared_cache(Path::new("d:\\caches\\NPM\\"), &env));
         assert!(!is_shared_cache(Path::new("D:\\caches"), &env));
     }
