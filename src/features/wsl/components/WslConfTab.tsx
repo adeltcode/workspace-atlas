@@ -46,7 +46,7 @@ export default function WslConfTab({ distros, runningNames, onAfterShutdown }: {
     <div className="wslconf">
       <p className="wslconf-context">
         Editing <code>/etc/wsl.conf</code> inside <strong>{distro}</strong> (writes as root). Switch distro from
-        the sidebar. Machine-wide settings live in{' '}
+        the sidebar. Machine-wide settings are in{' '}
         <button className="wsl-link" onClick={() => setWslView('wslconfig')}>.wslconfig</button>.
       </p>
       {distro && (

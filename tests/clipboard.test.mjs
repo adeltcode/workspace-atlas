@@ -168,7 +168,7 @@ test('a problem says why history is not running, and only offers a fix that can 
   assert.deepEqual(actions({ user_setting: false }), ['turn-on'])
   assert.deepEqual(actions({ blocked_by_policy: true }), ['remove-block', 'open-settings'])
   assert.deepEqual(actions({ blocked_by_policy: true, block_is_managed: true }), ['open-settings'])
-  assert.match(problem({ blocked_by_policy: true, block_is_managed: true }).title, /organization/)
+  assert.match(problem({ blocked_by_policy: true, block_is_managed: true }).title, /device management/)
   assert.deepEqual(actions({ user_setting: true }), ['try-again', 'restart-service'])
   assert.deepEqual(actions({ service_disabled: true, service_stopped: true }), ['enable-service'])
   assert.deepEqual(actions({ service_stopped: true }), [])
@@ -209,11 +209,11 @@ test('another clipboard program is explained for the state history is in', () =>
   assert.equal(on[1].tone, 'info')
   assert.equal(on[1].program, undefined)
   assert.match(on[2].detail, /another device/)
-  assert.match(on[3].detail, /empty the clipboard/)
+  assert.match(on[3].detail, /clear the clipboard/)
 
   const off = rules.noticesFor(status({ history_on: false, user_setting: false, other_programs: [ditto, paste] }))
   assert.match(off[0].detail, /even while Windows history is off/)
-  assert.match(off[1].detail, /nothing to show/)
+  assert.match(off[1].detail, /empty while history is off/)
 })
 
 test('the setting command works for both directions', () => {

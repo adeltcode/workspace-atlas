@@ -23,8 +23,8 @@ const COLUMNS: TableColumn<CacheSortKey>[] = [
   { key: 'type',     label: 'Type',            width: 140, sort: 'type',     hideable: true },
   { key: 'size',     label: 'Size',            width: 90,  sort: 'size',     hideable: true },
   { key: 'files',    label: 'Files',           width: 90,  sort: 'files',    hideable: true },
-  { key: 'used',     label: 'Last used',       width: 120, sort: 'used',     hideable: true },
-  { key: 'restore',  label: 'Bring back with', width: 160, sort: 'restore',  hideable: true },
+  { key: 'used',     label: 'Last modified',   width: 120, sort: 'used',     hideable: true },
+  { key: 'restore',  label: 'Regenerate with', width: 160, sort: 'restore',  hideable: true },
   { key: 'location', label: 'Location',        width: 190, sort: 'location', hideable: true },
   { key: 'actions',  label: 'Actions',         width: 84 },
 ]
@@ -173,7 +173,7 @@ export default function CachesView() {
       case 'restore':
         return item.restore
           ? <td className={`img-td img-age ${restoreIsCommand(item) ? 'holder-code' : ''}`} title={item.restore}>{item.restore}</td>
-          : <td className="img-td img-age">By hand</td>
+          : <td className="img-td img-age">Manual</td>
       case 'location':
         return <td className="img-td img-age holder-code" title={item.paths.join('\n')}>{location}{item.paths.length > 1 && ` and ${item.paths.length - 1} more`}</td>
       default:
@@ -216,10 +216,10 @@ export default function CachesView() {
           title="Dev caches"
           status={(scan || scanning) && (
             <span className="pill">
-              {scanning ? 'Scanning…' : `${bytesToHuman(totalBytes(items))} found`}
+              {scanning ? 'Scanning…' : `${bytesToHuman(totalBytes(items))} total`}
             </span>
           )}
-          subtitle="Find dependency and build folders your projects can rebuild, and clear the ones you do not need."
+          subtitle="Reclaim disk space from dependency directories, build artifacts, and package manager caches."
           actions={
             <>
               <ColumnsMenu
@@ -230,7 +230,7 @@ export default function CachesView() {
               />
               {scanning
                 ? <Button onClick={() => { api.cachesScanStop().catch(setActionError) }}><Square size={12} /> Stop</Button>
-                : <Button disabled={busy} onClick={runCacheScan}><RefreshCw size={12} /> Scan again</Button>}
+                : <Button disabled={busy} onClick={runCacheScan}><RefreshCw size={12} /> Rescan</Button>}
               <Button variant="danger-outline" disabled={busy || chosen.length === 0} onClick={() => setConfirming(chosen)}>
                 <Trash2 size={12} /> {chosen.length === 0 ? 'Clear selected' : `Clear ${cacheCount(chosen.length)} (${bytesToHuman(totalBytes(chosen))})`}…
               </Button>
@@ -240,7 +240,7 @@ export default function CachesView() {
       </div>
 
       <div className="page-fill">
-        <FileDropZone className="img-tab" label="Drop to scan this folder" disabled={busy || confirming !== null} onDrop={addRoots}>
+        <FileDropZone className="img-tab" label="Drop to add this folder" disabled={busy || confirming !== null} onDrop={addRoots}>
           <Toolbar className="cache-toolbar">
             <SearchField value={query} onChange={setQuery} placeholder="Search caches" label="Search by name, type, or location" />
             <Button className="cache-folders-button" popoverTarget="cache-folders">
@@ -250,7 +250,7 @@ export default function CachesView() {
               {roots.map(root => (
                 <div key={root} className="cache-folder">
                   <span className="cache-folder-path holder-code" title={root}>{root}</span>
-                  <Button size="sm" icon variant="ghost" disabled={busy} aria-label={`Stop scanning ${root}`} title="Remove" onClick={() => removeRoot(root)}>
+                  <Button size="sm" icon variant="ghost" disabled={busy} aria-label={`Remove ${root} from the scan`} title="Remove" onClick={() => removeRoot(root)}>
                     <X size={13} />
                   </Button>
                 </div>
@@ -278,10 +278,10 @@ export default function CachesView() {
               <SegmentedItem
                 active={filter === 'idle'}
                 count={items.filter(item => isIdle(item, now)).length}
-                title={`Not used in the last ${IDLE_DAYS} days`}
+                title={`Not modified in the last ${IDLE_DAYS} days`}
                 onClick={() => setFilter('idle')}
               >
-                Idle
+                Stale
               </SegmentedItem>
             </Segmented>
             <span className="img-count">{rows.length} shown · {bytesToHuman(totalBytes(rows))}</span>
@@ -289,16 +289,16 @@ export default function CachesView() {
 
           {scanning && (
             <p className="cache-progress holder-summary" role="status" title={progress.folder}>
-              Found {progress.found} so far. {progress.folder && `Checking ${progress.folder}`}
+              {progress.found} found. {progress.folder && `Scanning ${progress.folder}`}
             </p>
           )}
-          {scan?.stopped && !scanning && <p className="holder-summary">You stopped the scan, so this list is not complete.</p>}
+          {scan?.stopped && !scanning && <p className="holder-summary">Scan stopped. Results are incomplete.</p>}
 
           {scanError != null && <ErrorBanner className="error-banner--flush" title="Could not scan for caches" error={scanError} />}
           {actionError != null && <ErrorBanner className="error-banner--flush" title="That did not work" error={actionError} />}
           {scan && scan.skipped_roots.length > 0 && !scanning && (
-            <ErrorBanner className="error-banner--flush" title="Some folders were not checked">
-              {scan.skipped_roots.join(', ')} could not be found, or holds programs rather than projects, such as AppData or Program Files.
+            <ErrorBanner className="error-banner--flush" title="Some folders were skipped">
+              {scan.skipped_roots.join(', ')}: not found, or excluded from scanning (AppData, Program Files, and dot-prefixed folders).
             </ErrorBanner>
           )}
           {failures.slice(0, MAX_FAILURES_SHOWN).map(failure => (
@@ -306,35 +306,35 @@ export default function CachesView() {
           ))}
           {failures.length > 0 && (
             <p className="holder-summary">
-              {failures.length > MAX_FAILURES_SHOWN && `And ${failures.length - MAX_FAILURES_SHOWN} more. `}
-              A folder that could not be cleared may be missing some files, so run its install or build command before you use it. Scan again for its new size.
+              {failures.length > MAX_FAILURES_SHOWN && `${failures.length - MAX_FAILURES_SHOWN} more not shown. `}
+              A partially cleared folder may be incomplete. Run its regenerate command before using it, then rescan to update its size.
             </p>
           )}
 
           {roots.length === 0 && !scanning && (
             <FileDropPrompt
               row
-              title="Drop your projects folder here"
-              description="This list only has the shared caches until you add the folder your projects live in."
+              title="Add a project folder"
+              description="Only global caches are listed. Add a project folder to scan for node_modules, build artifacts, and virtual environments."
               actions={<Button disabled={busy} onClick={chooseRoot}><Plus size={12} /> Add folder…</Button>}
             />
           )}
 
-          {!scan && scanning && <div className="img-loading">Looking for caches…</div>}
+          {!scan && scanning && <div className="img-loading">Scanning…</div>}
 
           {scan && !scanning && items.length === 0 && roots.length > 0 && (
             <EmptyState
               icon={Eraser}
               title="No caches found"
-              description="None of these folders hold dependency or build folders this page knows about."
+              description="No dependency directories or build artifacts were detected in the selected folders."
             />
           )}
 
           {items.length > 0 && rows.length === 0 && (
             <EmptyState
               title="No caches match"
-              description="Try a shorter search or another filter."
-              actions={<Button onClick={() => { setQuery(''); setFilter('all'); setKinds([]) }}>Show all caches</Button>}
+              description="Adjust the search or filters."
+              actions={<Button onClick={() => { setQuery(''); setFilter('all'); setKinds([]) }}>Clear filters</Button>}
             />
           )}
 
@@ -351,7 +351,7 @@ export default function CachesView() {
                     <input
                       type="checkbox"
                       className="row-checkbox"
-                      aria-label="Select every cache shown"
+                      aria-label="Select all shown caches"
                       checked={allShownSelected}
                       ref={el => { if (el) el.indeterminate = someShownSelected }}
                       onChange={toggleShown}
@@ -379,7 +379,7 @@ export default function CachesView() {
           title={`Clear ${cacheCount(confirming.length)}?`}
           consequence={(
             <>
-              These are deleted for good, not moved to the Recycle Bin. Your own files are not touched, and each one comes back with the command in its row. Bigger projects can take minutes to rebuild.
+              These folders are permanently deleted and do not go to the Recycle Bin. Source files are not affected. Use the listed command to regenerate each one. Large projects can take several minutes to rebuild.
               {notes.map(note => <span key={note} className="cache-dialog-note">{note}</span>)}
             </>
           )}

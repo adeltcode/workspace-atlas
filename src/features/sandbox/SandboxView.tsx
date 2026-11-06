@@ -17,16 +17,16 @@ const POLL_MS = 10_000
 const WINDOW_APPEARS_MS = 1_500
 const MEMORY_GB = [8, 16]
 const DEFAULT_MEMORY_GB = 4
-const NOTHING_HOVERED = 'Nothing is shared unless you tick it.'
-const WHAT_OPENS = '.exe, .msi, .bat, and .cmd files start straight away. Other files appear in a folder.'
+const NOTHING_HOVERED = 'All sharing is off by default.'
+const WHAT_OPENS = '.exe, .msi, .bat, and .cmd files run immediately. Other files open in a folder.'
 
 const SWITCHES: { key: keyof SandboxSwitches; label: string; help: string; icon: React.ElementType }[] = [
-  { key: 'networking', label: 'Network', help: 'Lets programs reach the internet and your local network.', icon: Globe },
-  { key: 'clipboard', label: 'Clipboard', help: 'Lets you copy and paste with your PC. Programs can read what you copy.', icon: Clipboard },
-  { key: 'microphone', label: 'Microphone', help: 'Lets programs listen through your microphone.', icon: Mic },
-  { key: 'camera', label: 'Camera', help: 'Lets programs see through your camera.', icon: Camera },
-  { key: 'printers', label: 'Printers', help: 'Lets programs print to your printers.', icon: Printer },
-  { key: 'graphics', label: 'Graphics card', help: 'Programs may run faster, but the sandbox is less isolated.', icon: Gpu },
+  { key: 'networking', label: 'Network', help: 'Allows internet and local network access.', icon: Globe },
+  { key: 'clipboard', label: 'Clipboard', help: 'Enables copy and paste with the host. Programs inside can read the host clipboard.', icon: Clipboard },
+  { key: 'microphone', label: 'Microphone', help: 'Gives programs access to the host microphone.', icon: Mic },
+  { key: 'camera', label: 'Camera', help: 'Gives programs access to the host camera.', icon: Camera },
+  { key: 'printers', label: 'Printers', help: 'Gives programs access to host printers.', icon: Printer },
+  { key: 'graphics', label: 'Graphics card', help: 'Enables GPU acceleration, but reduces isolation.', icon: Gpu },
 ]
 
 const ALL_OFF: SandboxSwitches = { networking: false, microphone: false, camera: false, clipboard: false, printers: false, graphics: false }
@@ -136,13 +136,13 @@ function RunningSandbox({ id, status }: { id: string; status: SandboxStatus }) {
           label="Network"
           loading={!details}
           value={!details?.network_known ? 'Unknown' : details.ip_address ? 'On' : 'Off'}
-          sub={details?.network_known ? details.ip_address ?? 'No internet or local network' : undefined}
+          sub={details?.network_known ? details.ip_address ?? 'No network access' : undefined}
         />
       </StatRow>
 
       <div className="sandbox-facts">
         {!shared && items.length === 0
-          ? <span>Not known what else is shared. It was not started from this window.</span>
+          ? <span>Other shared resources are unknown, because this sandbox was not started from this app.</span>
           : (
             <>
               <span>Also shared:</span>
@@ -256,7 +256,7 @@ export default function SandboxView() {
   const start = async (openFile: string | null = null) => {
     const { setSandboxStarting, setSandboxShared, addActivity } = useAppStore.getState()
     const on = SWITCHES.filter(s => switches[s.key])
-    const sharing = folder ? `${writable ? 'Can change' : 'Read-only'}: ${folder}` : 'No shared folder'
+    const sharing = folder ? `${writable ? 'Read-write' : 'Read-only'}: ${folder}` : 'No shared folder'
     const memory = memoryGb ? `${memoryGb} GB` : 'Windows default'
     const detail = `${openFile ? `Opened: ${openFile}. ` : ''}Shared: ${on.map(s => s.label).join(', ') || 'nothing'}. ${sharing}. Memory: ${memory}`
     setActionError(null)
@@ -342,22 +342,22 @@ export default function SandboxView() {
   const kindsOf = (paths: string[]) => api.sandboxPathKinds(paths).catch(() => paths.map(() => 'file' as const))
 
   const describeDrop = async (paths: string[]): Promise<DropHint> => {
-    if (starting) return { icon: LoaderCircle, tone: 'blocked', title: 'The sandbox is busy', note: 'Nothing happens if you drop now.' }
-    if (paths.length !== 1) return { icon: Ban, tone: 'blocked', title: 'Drop one item at a time', note: `${paths.length} items are selected. Nothing happens if you drop them.` }
+    if (starting) return { icon: LoaderCircle, tone: 'blocked', title: 'Sandbox is busy', note: 'Drop is disabled.' }
+    if (paths.length !== 1) return { icon: Ban, tone: 'blocked', title: 'Only one item is supported', note: `${paths.length} items selected. Drop is disabled.` }
 
     const name = shortName(paths[0])
     const [kind] = await kindsOf(paths)
-    if (kind === 'missing') return { icon: Ban, tone: 'blocked', title: `Cannot find ${name}`, note: 'Nothing happens if you drop it.' }
+    if (kind === 'missing') return { icon: Ban, tone: 'blocked', title: `Cannot find ${name}`, note: 'Drop is disabled.' }
     if (kind === 'folder') {
       return current
-        ? { icon: FolderOpen, title: `Share ${name} with the next sandbox`, note: 'Read-only. The running sandbox does not get it.' }
-        : { icon: FolderOpen, title: `Share ${name} with the new sandbox`, note: 'Read-only. Programs can read every file in it. Nothing starts yet.' }
+        ? { icon: FolderOpen, title: `Share ${name} with the next sandbox`, note: 'Read-only. Not applied to the running sandbox.' }
+        : { icon: FolderOpen, title: `Share ${name} with the new sandbox`, note: 'Read-only. All files in it are readable. Does not start a sandbox.' }
     }
 
-    const how = kind === 'program' ? 'A read-only copy. It starts straight away.' : 'A read-only copy. It appears in a folder.'
-    if (current && replaceRunning) return { icon: AlertTriangle, tone: 'danger', title: `Stop this sandbox and open ${name} in a new one`, note: 'You confirm first. Everything inside is deleted.' }
+    const how = kind === 'program' ? 'Read-only copy. Runs immediately.' : 'Read-only copy. Opens in a folder.'
+    if (current && replaceRunning) return { icon: AlertTriangle, tone: 'danger', title: `Stop this sandbox and open ${name} in a new one`, note: 'Requires confirmation. All sandbox contents are deleted.' }
     if (current) return { icon: AppWindow, title: `Open ${name} in the running sandbox`, note: how }
-    if (folder && writable) return { icon: AlertTriangle, tone: 'danger', title: `Start a sandbox and open ${name}`, note: `Programs can change your real files in ${shortName(folder)}.` }
+    if (folder && writable) return { icon: AlertTriangle, tone: 'danger', title: `Start a sandbox and open ${name}`, note: `Programs can modify files in ${shortName(folder)}.` }
     return { icon: Play, title: `Start a sandbox and open ${name}`, note: how }
   }
 
@@ -386,10 +386,10 @@ export default function SandboxView() {
 
   const opensInNew = !current || replaceRunning
   const openHelp = !current
-    ? `A read-only copy opens in a new sandbox with the settings on this page. ${WHAT_OPENS}`
+    ? `Opens a read-only copy in a new sandbox using these settings. ${WHAT_OPENS}`
     : replaceRunning
-      ? `A read-only copy opens in a new sandbox with the settings on this page, after you confirm. ${WHAT_OPENS}`
-      : `A read-only copy opens in the running sandbox. Programs already inside can read it. ${WHAT_OPENS}`
+      ? `After confirmation, opens a read-only copy in a new sandbox using these settings. ${WHAT_OPENS}`
+      : `Opens a read-only copy in the running sandbox. Programs inside can read it. ${WHAT_OPENS}`
 
   const on = SWITCHES.filter(s => switches[s.key]).map(s => s.label)
   const sharedNames = [...on, ...(folder ? [shortName(folder)] : [])]
@@ -455,7 +455,7 @@ export default function SandboxView() {
                 <input type="checkbox" checked={writable} aria-describedby="sandbox-writable-help" onChange={e => setWritable(e.target.checked)} />
                 <span>
                   Let programs change this folder
-                  <span id="sandbox-writable-help" className="sandbox-help">Programs can edit or delete your real files in this folder.</span>
+                  <span id="sandbox-writable-help" className="sandbox-help">Programs can modify or delete files in this folder on the host.</span>
                 </span>
               </label>
             </>
@@ -489,14 +489,14 @@ export default function SandboxView() {
         />
         {opensInNew && folder && writable && (
           <Tag tone="warn" className="sandbox-warning">
-            <Pencil size={11} aria-hidden="true" /> Programs can change your real files in {shortName(folder)}
+            <Pencil size={11} aria-hidden="true" /> Programs can modify files in {shortName(folder)}
           </Tag>
         )}
         <label className="sandbox-check">
           <input type="checkbox" checked={replaceRunning} aria-describedby="sandbox-replace-help" onChange={e => setReplaceRunning(e.target.checked)} />
           <span>
             Open in a new sandbox
-            <span id="sandbox-replace-help" className="sandbox-help">Stops a running sandbox first and deletes everything inside. You confirm first.</span>
+            <span id="sandbox-replace-help" className="sandbox-help">Stops the running sandbox and deletes its contents, after confirmation.</span>
           </span>
         </label>
       </div>
@@ -513,7 +513,7 @@ export default function SandboxView() {
               { label: 'Windows Sandbox' },
             ]}
             title="Windows Sandbox"
-            subtitle="A clean, throwaway copy of Windows for trying programs. Everything inside is deleted when it stops."
+            subtitle="An isolated, disposable Windows environment for running untrusted programs. All contents are deleted when it stops."
             status={(status?.available || loadError != null) && (
               <span className="pill" role="status">
                 <span className={clsx('rail-dot', pill.dot)} />
@@ -531,12 +531,12 @@ export default function SandboxView() {
 
           {status?.available === false && (
             <Prerequisite
-              title="Windows Sandbox is not ready on this PC"
-              description="This page uses the wsb command. It needs Windows Pro, Enterprise, or Education with Windows Sandbox turned on. If it is already on, update Windows, because older versions do not include wsb."
+              title="Windows Sandbox is not available"
+              description="This page uses the wsb command, which requires Windows Pro, Enterprise, or Education with Windows Sandbox enabled. If it is already enabled, update Windows, because older versions do not include wsb."
               steps={[
                 'Open PowerShell as administrator and run the command below.',
-                'Restart your PC.',
-                'Come back here and choose Check again.',
+                'Restart Windows.',
+                'Return here and select Check again.',
               ]}
               command="Enable-WindowsOptionalFeature -Online -FeatureName Containers-DisposableClientVM -All"
               actions={<Button onClick={load}>Check again</Button>}
@@ -570,7 +570,7 @@ export default function SandboxView() {
       {stopTarget && (
         <ConfirmDestructive
           title="Stop this sandbox?"
-          consequence="Windows shuts it down and deletes everything inside it, including anything you installed or saved there. Changes already made to a shared folder stay on your PC."
+          consequence="Shuts down the sandbox and deletes all of its contents. Changes already written to shared folders are kept on the host."
           command={`wsb stop --id ${stopTarget}`}
           confirmLabel="Stop sandbox"
           busyLabel="Stopping…"
@@ -583,7 +583,7 @@ export default function SandboxView() {
       {replaceTarget && (
         <ConfirmDestructive
           title={`Stop this sandbox and open ${shortName(replaceTarget.file)}?`}
-          consequence={`Windows shuts it down and deletes everything inside it, including anything you installed or saved there. Changes already made to a shared folder stay on your PC. Then ${shortName(replaceTarget.file)} opens in a new sandbox.`}
+          consequence={`Shuts down the sandbox and deletes all of its contents. Changes already written to shared folders are kept on the host. ${shortName(replaceTarget.file)} then opens in a new sandbox.`}
           command={`wsb stop --id ${replaceTarget.id}`}
           confirmLabel="Stop and open"
           busyLabel="Stopping…"

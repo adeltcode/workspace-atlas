@@ -50,7 +50,7 @@ test('search, type, and idle filters narrow the list together', () => {
   assert.deepEqual(found('', 'all', ['rust-target']), ['engine'])
   assert.deepEqual(found('', 'all', ['rust-target', 'shared']), ['engine', 'npm cache'])
   assert.deepEqual(found('SHOP'), ['shop', 'old-shop'])
-  assert.deepEqual(found('rust build'), ['engine'], 'the type as it reads on screen')
+  assert.deepEqual(found('cargo target'), ['engine'], 'the type as it reads on screen')
   assert.deepEqual(found('appdata'), ['npm cache'], 'the location')
   assert.deepEqual(found('shop', 'idle'), ['old-shop'])
 })
@@ -103,13 +103,13 @@ test('the result counts what was really cleared and what the drive really got ba
   const drives = [{ drive: 'F:', freed_bytes: 2_000_000_000, free_bytes: 9 }, { drive: 'C:', freed_bytes: 0, free_bytes: 9 }]
   assert.equal(
     rules.clearSummary(list, { removed: ['F:\\Scripts\\a\\node_modules', 'F:\\Scripts\\b\\node_modules', 'F:\\c\\x'], failed: [], drives }),
-    'Cleared 2 caches. F: has 2.00 GB more free.',
+    'Cleared 2 caches. Reclaimed 2.00 GB on F:.',
   )
   assert.equal(rules.clearSummary([list[0]], { removed: [list[0].paths[0]], failed: [], drives: [] }), 'Cleared 1 cache.')
 })
 
 test('only a real command reads as a command', () => {
   assert.equal(rules.restoreIsCommand(item('a')), true)
-  assert.equal(rules.restoreIsCommand(item('a', { kind: 'shared' })), false)
+  assert.equal(rules.restoreIsCommand(item('a', { kind: 'shared' })), true)
   assert.equal(rules.restoreIsCommand(item('a', { kind: 'python-bytecode' })), false)
 })

@@ -53,21 +53,21 @@ export function fixDialog(process: ProcessInfo): { title: string; consequence: s
     case 'stop-container':
       return {
         title: `Stop ${process.name}?`,
-        consequence: 'Docker stops this container and frees its ports. Its files stay, and you can start it again from the Docker page.',
+        consequence: 'Docker stops this container and releases its published ports. Container data is preserved, and the container can be restarted from the Docker page.',
         confirmLabel: 'Stop container',
         busyLabel: 'Stopping…',
       }
     case 'stop-docker':
       return {
         title: 'Stop Docker Desktop?',
-        consequence: `${process.name} is part of Docker Desktop, so the only way to free this is to stop Docker Desktop. Every running container stops with it. You can start it again from the Docker page.`,
+        consequence: `${process.name} is a Docker Desktop process. Releasing this requires stopping Docker Desktop, which also stops all running containers. Docker Desktop can be restarted from the Docker page.`,
         confirmLabel: 'Stop Docker Desktop',
         busyLabel: 'Stopping…',
       }
     case 'stop-wsl':
       return {
         title: 'Shut down WSL?',
-        consequence: `${process.name} is part of WSL, so the only way to free this is to shut WSL down. Every running distro stops, and anything they have not saved is lost. Docker Desktop also stops working if it runs on WSL.`,
+        consequence: `${process.name} is a WSL process. Releasing this requires shutting down WSL, which stops all running distros and discards their unsaved work. Docker Desktop also stops if it uses the WSL 2 backend.`,
         confirmLabel: 'Shut down WSL',
         busyLabel: 'Shutting down…',
       }
@@ -75,8 +75,8 @@ export function fixDialog(process: ProcessInfo): { title: string; consequence: s
       return {
         title: `Close ${process.name}?`,
         consequence: process.distro
-          ? `Linux asks this program in ${process.distro} to stop. Anything it has not saved may be lost.`
-          : 'Windows ends this program right away, without letting it save. Anything it has not saved is lost.',
+          ? `Sends SIGTERM to this process in ${process.distro}. Unsaved data may be lost.`
+          : 'Terminates this process immediately. Unsaved data is lost.',
         confirmLabel: 'Close program',
         busyLabel: 'Closing…',
       }
@@ -85,9 +85,9 @@ export function fixDialog(process: ProcessInfo): { title: string; consequence: s
 
 /** Shown instead of a button when nothing here can free what the program holds. */
 export const NOT_CLOSABLE: Partial<Record<ProcessOwner, string>> = {
-  admin: 'Needs administrator',
-  'distro-system': 'Part of the distro',
-  windows: 'Part of Windows',
+  admin: 'Requires administrator',
+  'distro-system': 'Distro system process',
+  windows: 'Windows system process',
   'this-app': 'This app',
   unknown: 'Not available',
 }
@@ -95,10 +95,10 @@ export const NOT_CLOSABLE: Partial<Record<ProcessOwner, string>> = {
 const HIDDEN_FROM_PROGRAMS: ProcessOwner[] = ['windows', 'distro-system', 'unknown']
 
 export const HOLD_REASON: Record<HoldReason, string> = {
-  'open-file': 'Has a file open',
-  'folder-open': 'Has a folder open or is working in it',
-  'loaded-file': 'Has a file loaded',
-  'running-from-here': 'Running from this location',
+  'open-file': 'Open file handle',
+  'folder-open': 'Open directory handle or working directory',
+  'loaded-file': 'Loaded module',
+  'running-from-here': 'Executable in this location',
 }
 
 /** The last part of a path, which is enough to tell dropped items apart in a table. */
@@ -107,10 +107,10 @@ export const itemName = (path: string) => path.replace(/[\\/]+$/, '').split(/[\\
 export function checkedSummary(reports: LockReport[]): string {
   const hasFolder = reports.some(r => r.is_folder)
   const checked = reports.length === 1
-    ? `Checked ${reports[0].path}${hasFolder ? ' and everything inside it' : ''}.`
-    : `Checked ${reports.length} items${hasFolder ? ', including everything inside the folders' : ''}.`
+    ? `Checked ${reports[0].path}${hasFolder ? ' recursively' : ''}.`
+    : `Checked ${reports.length} items${hasFolder ? ', including folder contents' : ''}.`
   return hasFolder
-    ? `${checked} A program running as administrator only shows up when you check the exact file it is using.`
+    ? `${checked} Processes running as administrator are detected only when checking the exact file.`
     : checked
 }
 
@@ -120,7 +120,7 @@ export function runsIn(entry: PortEntry): string {
 }
 
 export const reachableLabel = (entry: PortEntry) =>
-  entry.reachable === 'this-pc' ? 'This PC only' : 'Your network'
+  entry.reachable === 'this-pc' ? 'Localhost' : 'Network'
 
 export const addressList = (entry: PortEntry) => entry.addresses.join(', ')
 

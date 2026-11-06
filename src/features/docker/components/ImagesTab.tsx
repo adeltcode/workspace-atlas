@@ -14,8 +14,8 @@ import {
 const FILTERS: { key: ImageFilter; label: string; title?: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'in-use', label: 'In use' },
-  { key: 'unused', label: 'Unused', title: 'Images with a name that no container uses' },
-  { key: 'dangling', label: 'Dangling', title: 'Images with no name that no container uses' },
+  { key: 'unused', label: 'Unused', title: 'Tagged images not used by any container' },
+  { key: 'dangling', label: 'Dangling', title: 'Untagged images not used by any container' },
   { key: 'pinned', label: 'Pinned', title: 'Pinned images are never pruned' },
 ]
 
@@ -57,7 +57,7 @@ export default function ImagesTab({ images, containers, loading }: { images: Doc
     <EmptyState
       icon={Layers}
       title="No images on this engine"
-      description="Nothing has been pulled or built yet. Pull one with docker pull, or start a Compose project and its images appear here."
+      description="No images have been pulled or built. Run docker pull or start a Compose project."
     />
   )
 
@@ -141,8 +141,8 @@ export default function ImagesTab({ images, containers, loading }: { images: Doc
       {rows.length === 0 && (
         <EmptyState
           title="No images match"
-          description="Try a shorter search or another filter."
-          actions={<Button onClick={() => { setSearch(''); setFilter('all') }}>Show all images</Button>}
+          description="Adjust the search or filters."
+          actions={<Button onClick={() => { setSearch(''); setFilter('all') }}>Clear filters</Button>}
         />
       )}
 

@@ -366,9 +366,9 @@ export function ErrorBanner({ title, error, action, lockedPath, className, detai
         {(action || e?.kind === 'busy' || lockedPath || takenPort) && (
           <div className="error-actions">
             {action}
-            {takenPort && <Button size="sm" onClick={() => useAppStore.getState().jumpToPorts(String(takenPort))}>See what is using port {takenPort}</Button>}
+            {takenPort && <Button size="sm" onClick={() => useAppStore.getState().jumpToPorts(String(takenPort))}>View port {takenPort} in Ports</Button>}
             {lockedPath
-              ? <Button size="sm" onClick={() => useAppStore.getState().jumpToLocks(lockedPath)}>See what is using it</Button>
+              ? <Button size="sm" onClick={() => useAppStore.getState().jumpToLocks(lockedPath)}>View in File locks</Button>
               : e?.kind === 'busy' && <Button size="sm" onClick={() => useAppStore.getState().setActiveView('locks')}>Open File locks</Button>}
           </div>
         )}

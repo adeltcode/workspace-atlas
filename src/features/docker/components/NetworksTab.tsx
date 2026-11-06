@@ -102,7 +102,7 @@ export default function NetworksTab({ refreshTick }: { refreshTick: number }) {
         return (
           <td className="img-td holder-actions">
             {isBuiltInNetwork(n)
-              ? <span className="holder-note" title="Docker's own networks cannot be removed">Built-in</span>
+              ? <span className="holder-note" title="Built-in networks cannot be removed">Built-in</span>
               : (
                 <ConfirmRemoveButton
                   onConfirm={() => doRemove(n.id)}
@@ -146,8 +146,8 @@ export default function NetworksTab({ refreshTick }: { refreshTick: number }) {
       {rows.length === 0 && error == null && (
         <EmptyState
           title="No networks match"
-          description="Try a shorter search or another filter."
-          actions={<Button onClick={() => { setSearch(''); setFilter('all') }}>Show all networks</Button>}
+          description="Adjust the search or filters."
+          actions={<Button onClick={() => { setSearch(''); setFilter('all') }}>Clear filters</Button>}
         />
       )}
 

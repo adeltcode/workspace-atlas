@@ -17,17 +17,17 @@ const AFTER_CLOSE_MS = 400
 /** The defaults that start visible add up to about 930, which fits the table at a 1280px window. */
 const COLUMNS: TableColumn<PortSortKey>[] = [
   { key: 'port',      label: 'Port',            width: 76,  sort: 'port' },
-  { key: 'program',   label: 'Program',         width: 180, sort: 'program' },
+  { key: 'program',   label: 'Process',         width: 180, sort: 'program' },
   { key: 'pid',       label: 'PID',             width: 76,  sort: 'pid',       hideable: true },
   { key: 'runs-in',   label: 'Runs in',         width: 150, sort: 'runs-in',   hideable: true },
   { key: 'reachable', label: 'Reachable from',  width: 144, sort: 'reachable', hideable: true },
   { key: 'since',     label: 'Listening since', width: 140, sort: 'since',     hideable: true },
   { key: 'command',   label: 'Command line',    width: 320, sort: 'command',   hideable: true },
-  { key: 'folder',    label: 'Working folder',  width: 240, sort: 'folder',    hideable: true },
+  { key: 'folder',    label: 'Working directory', width: 240, sort: 'folder',    hideable: true },
   { key: 'memory',    label: 'Memory',          width: 90,  sort: 'memory',    hideable: true },
-  { key: 'parent',    label: 'Started by',      width: 130, sort: 'parent',    hideable: true },
-  { key: 'address',   label: 'Addresses',       width: 170, sort: 'address',   hideable: true },
-  { key: 'path',      label: 'File path',       width: 280, sort: 'path',      hideable: true },
+  { key: 'parent',    label: 'Parent process',  width: 130, sort: 'parent',    hideable: true },
+  { key: 'address',   label: 'Bind addresses',  width: 170, sort: 'address',   hideable: true },
+  { key: 'path',      label: 'Executable path', width: 280, sort: 'path',      hideable: true },
   { key: 'actions',   label: 'Actions',         width: 160 },
 ]
 
@@ -168,7 +168,7 @@ export default function PortsView() {
             { label: 'Ports' },
           ]}
           title="Ports"
-          subtitle="Programs listening for connections on this PC, in Docker, and in running WSL distros."
+          subtitle="Listening TCP ports on Windows, in Docker containers, and in running WSL distros."
           actions={
             <>
               <ColumnsMenu
@@ -190,7 +190,7 @@ export default function PortsView() {
               value={query}
               onChange={setQuery}
               placeholder="Search ports"
-              label="Search by port, program, PID, command, or folder"
+              label="Search by port, process, PID, command line, or working directory"
             />
             <Segmented label="Show ports">
               <SegmentedItem active={show === 'programs'} count={filterPorts(all, '', 'programs').length} onClick={() => setShow('programs')}>
@@ -213,10 +213,10 @@ export default function PortsView() {
 
           {list !== null && rows.length === 0 && (
             <EmptyState
-              title={query ? 'No ports match this search' : 'No programs are listening'}
+              title={query ? 'No ports match this search' : 'No listening ports'}
               description={query
-                ? 'Search by port number, program name, PID, command, or folder, or clear the search to see every port.'
-                : 'When a server or dev tool starts listening, it appears here.'}
+                ? 'Search by port, process name, PID, command line, or working directory.'
+                : 'Ports appear here when a process starts listening.'}
               actions={query ? <Button onClick={() => setQuery('')}>Clear search</Button> : undefined}
             />
           )}

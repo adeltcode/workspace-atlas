@@ -355,7 +355,7 @@ export default function PackagesView() {
           { label: 'Packages' },
         ]}
         title="Packages"
-        subtitle="Everything your package managers have installed on this machine."
+        subtitle="Packages installed through package managers on this machine."
         status={results && (
           <span className="pill">
             <span className={clsx('rail-dot', found.length ? 'running' : 'stopped')} />

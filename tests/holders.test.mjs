@@ -57,13 +57,13 @@ test('a dropped item is named by the last part of its path', () => {
 
 test('the summary says what was checked, for one item or several', () => {
   const report = (path, is_folder) => ({ path, is_folder, complete: true, holders: [] })
-  const adminNote = 'A program running as administrator'
+  const adminNote = 'Processes running as administrator'
   assert.equal(rules.checkedSummary([report('C:\\a.log', false)]), 'Checked C:\\a.log.')
   const folder = rules.checkedSummary([report('C:\\dev', true)])
-  assert.ok(folder.startsWith('Checked C:\\dev and everything inside it.') && folder.includes(adminNote))
+  assert.ok(folder.startsWith('Checked C:\\dev recursively.') && folder.includes(adminNote))
   assert.equal(rules.checkedSummary([report('C:\\a.log', false), report('C:\\b.log', false)]), 'Checked 2 items.')
   const mixed = rules.checkedSummary([report('C:\\a.log', false), report('C:\\dev', true)])
-  assert.ok(mixed.startsWith('Checked 2 items, including everything inside the folders.') && mixed.includes(adminNote))
+  assert.ok(mixed.startsWith('Checked 2 items, including folder contents.') && mixed.includes(adminNote))
 })
 
 test('the Programs filter hides system rows, and All keeps them', () => {
@@ -152,15 +152,15 @@ test('every holder gets the fix that really frees what it holds', () => {
 test('the dialog and the result say what happens to that kind of holder', () => {
   const container = proc('web-nginx', 0, 'docker')
   assert.equal(rules.fixDialog(container).title, 'Stop web-nginx?')
-  assert.match(rules.fixDialog(container).consequence, /start it again/)
+  assert.match(rules.fixDialog(container).consequence, /can be restarted/)
   assert.equal(rules.fixDone(container), 'Stopped web-nginx')
 
   const desktop = proc('com.docker.backend.exe', 900, 'docker')
-  assert.match(rules.fixDialog(desktop).consequence, /Every running container stops/)
+  assert.match(rules.fixDialog(desktop).consequence, /stops all running containers/)
   assert.equal(rules.fixDone(desktop), 'Stopped Docker Desktop')
 
   const relay = proc('wslrelay.exe', 900, 'wsl')
-  assert.match(rules.fixDialog(relay).consequence, /Every running distro stops/)
+  assert.match(rules.fixDialog(relay).consequence, /stops all running distros/)
   assert.equal(rules.fixDone(relay), 'Shut down WSL')
 
   assert.match(rules.fixDialog(proc('node', 1, 'wsl', 'kali')).consequence, /in kali/)
@@ -179,10 +179,10 @@ test('a file-in-use error offers the File locks page, and other errors do not', 
   const render = (kind, message = 'Failed') => renderToStaticMarkup(createElement(ui.ErrorBanner, { error: { kind, message } }))
   assert.match(render('busy'), /Open File locks/)
   assert.doesNotMatch(render('permission'), /Open File locks/)
-  assert.match(render('unknown', 'Bind for 0.0.0.0:8000 failed: port is already allocated'), /See what is using port 8000/)
-  assert.doesNotMatch(render('unknown'), /See what is using/)
+  assert.match(render('unknown', 'Bind for 0.0.0.0:8000 failed: port is already allocated'), /View port 8000 in Ports/)
+  assert.doesNotMatch(render('unknown'), /in Ports/)
   const named = renderToStaticMarkup(createElement(ui.ErrorBanner, { error: { kind: 'busy', message: 'Failed' }, lockedPath: 'C:\\x' }))
-  assert.match(named, /See what is using it/)
+  assert.match(named, /View in File locks/)
   assert.doesNotMatch(named, /Open File locks/, 'one way out, not two')
 })
 

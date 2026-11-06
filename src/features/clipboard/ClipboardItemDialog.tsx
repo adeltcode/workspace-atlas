@@ -48,7 +48,7 @@ export function ClipboardItemDialog({ item, onCopy, onCopyText, onDelete, onClos
       <div className="modal modal--wide clipboard-dialog">
         <div className="modal-header">
           <h2 className="modal-title">{KIND_LABEL[kind]}</h2>
-          {looksSecret(item) && <Tag tone="warn">May be secret</Tag>}
+          {looksSecret(item) && <Tag tone="warn">Possible secret</Tag>}
         </div>
 
         <p className="clipboard-facts">
