@@ -169,10 +169,6 @@ export default function WslDashboardTab({ distros, onReload }: {
   }, [shouldPoll, load])
   useVisiblePoll(load, POLL_MS, shouldPoll)
 
-  if (distros.length === 0) {
-    return <p className="empty-state" style={{ marginTop: 8 }}>No distros found.</p>
-  }
-
   const memUsedKb  = metrics ? metrics.mem_total_kb - metrics.mem_available_kb : 0
   const memPct     = metrics && metrics.mem_total_kb > 0 ? (memUsedKb / metrics.mem_total_kb) * 100 : null
   const swapUsedKb = metrics ? metrics.swap_total_kb - metrics.swap_free_kb : 0

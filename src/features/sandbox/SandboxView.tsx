@@ -502,23 +502,17 @@ export default function SandboxView() {
   return (
     <div className="view-container">
       <FileDropZone className="sandbox-drop" label={describeDrop} disabled={!status?.available || stopTarget !== null || replaceTarget !== null} onDrop={dropItems}>
-        <div className="page-head">
-          <SheetHead
-            crumbs={[
-              { label: 'Overview', onClick: () => useAppStore.getState().setActiveView('dashboard') },
-              { label: 'Windows Sandbox' },
-            ]}
-            title="Windows Sandbox"
-            subtitle="An isolated, disposable Windows environment for running untrusted programs. All contents are deleted when it stops."
-            status={(status?.available || loadError != null) && (
-              <span className="pill" role="status">
-                <span className={clsx('rail-dot', pill.dot)} />
-                {pill.text}
-              </span>
-            )}
-            actions={headActions}
-          />
-        </div>
+        <SheetHead
+          title="Windows Sandbox"
+          subtitle="An isolated, disposable Windows environment for running untrusted programs. All contents are deleted when it stops."
+          status={(status?.available || loadError != null) && (
+            <span className="pill" role="status">
+              <span className={clsx('rail-dot', pill.dot)} />
+              {pill.text}
+            </span>
+          )}
+          actions={headActions}
+        />
 
         <div className="page-scroll">
           {loadError != null && <ErrorBanner title="Could not check Windows Sandbox" error={loadError} />}

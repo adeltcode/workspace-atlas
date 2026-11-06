@@ -4,12 +4,17 @@ import { createRequire } from 'node:module'
 import test from 'node:test'
 import ts from 'typescript'
 
-const require = createRequire(import.meta.url)
-const source = readFileSync(new URL('../src/features/clipboard/rules.ts', import.meta.url), 'utf8')
-const rules = {}
-new Function('require', 'exports', ts.transpileModule(source, {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-}).outputText)(require, rules)
+const nodeRequire = createRequire(import.meta.url)
+const compile = (url, require) => {
+  const exports = {}
+  new Function('require', 'exports', ts.transpileModule(readFileSync(url, 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText)(require, exports)
+  return exports
+}
+const sortRows = compile(new URL('../src/utils/sortRows.ts', import.meta.url))
+const rules = compile(new URL('../src/features/clipboard/rules.ts', import.meta.url),
+  name => (name === '../../utils/sortRows' ? sortRows : nodeRequire(name)))
 
 const item = (text, more = {}) => ({
   id: text ?? 'none',

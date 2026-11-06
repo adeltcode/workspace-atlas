@@ -1,13 +1,8 @@
-import { Shield, Layers, Zap, CheckCircle, XCircle, Trash2 } from 'lucide-react'
+import { CheckCircle, XCircle, Trash2 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../../../store/appStore'
 import type { LogEntry } from '../types'
-
-const LEVEL_META = {
-  1: { icon: Shield, label: 'Safe',    color: 'success' },
-  2: { icon: Layers, label: 'Deep',    color: 'warning' },
-  3: { icon: Zap,    label: 'Nuclear', color: 'danger'  },
-} as const
+import { LEVELS } from './PruneTab'
 
 function formatTime(ts: number) {
   return new Intl.DateTimeFormat('en-US', {
@@ -16,7 +11,7 @@ function formatTime(ts: number) {
 }
 
 function LogCard({ entry }: { entry: LogEntry }) {
-  const meta = LEVEL_META[entry.level as keyof typeof LEVEL_META]
+  const meta = LEVELS.find(l => l.level === entry.level)
   if (!meta) return null
   const { icon: Icon, label, color } = meta
 

@@ -1,3 +1,4 @@
+import { sortRows, type SortDir } from '../../utils/sortRows'
 import type { ProcessInfo } from '../holders/api'
 import type { ClipboardItem, ClipboardStatus, HistoryEntry, ItemContent, OtherProgramKind } from './api'
 
@@ -154,17 +155,9 @@ function sortValue(item: ClipboardItem, key: ClipboardSortKey): string | number 
   }
 }
 
-/** Unknown values sort last in both directions, and ties fall back to the newest first. */
-export function sortItems(items: ClipboardItem[], key: ClipboardSortKey, dir: 'asc' | 'desc'): ClipboardItem[] {
-  return [...items].sort((a, b) => {
-    const va = sortValue(a, key), vb = sortValue(b, key)
-    const newest = b.copied_at - a.copied_at
-    if (va === null || vb === null) return va === vb ? newest : va === null ? 1 : -1
-    const cmp = typeof va === 'number' && typeof vb === 'number'
-      ? va - vb
-      : String(va).localeCompare(String(vb), undefined, { sensitivity: 'base', numeric: true })
-    return (dir === 'asc' ? cmp : -cmp) || newest
-  })
+/** Ties fall back to the newest first. */
+export function sortItems(items: ClipboardItem[], key: ClipboardSortKey, dir: SortDir): ClipboardItem[] {
+  return sortRows(items, item => sortValue(item, key), (a, b) => b.copied_at - a.copied_at, dir)
 }
 
 /** The backend leaves out the content of items the page already has. */

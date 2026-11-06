@@ -59,11 +59,10 @@ export interface ComposeLogContext {
   initialService: string | null
 }
 
-interface AppState {
+export interface AppState {
   theme: Theme
   activeView: View
   dockerTab: DockerTab
-  setTheme: (theme: Theme) => void
   toggleTheme: () => void
   setActiveView: (view: View) => void
   setDockerTab: (tab: DockerTab) => void
@@ -76,8 +75,6 @@ interface AppState {
   setWslSelectedDistro: (name: string | null) => void
   wslDistrosNav: WslDistroNav[]
   setWslDistrosNav: (distros: WslDistroNav[]) => void
-  wslBadges: { distros: string } | null
-  setWslBadges: (b: { distros: string } | null) => void
   wslImportOpen: boolean
   setWslImportOpen: (open: boolean) => void
   /** Distro mid lifecycle action (start, stop, restart). In-distro pollers must skip it, so a probe
@@ -178,7 +175,6 @@ interface AppState {
 
   activityLog: ActivityEntry[]
   addActivity: (entry: Omit<ActivityEntry, 'id' | 'ts'>) => void
-  clearActivity: () => void
 
   wslBenchmarks: Record<string, Array<{ ts: number; boot_ms: number }>>
   addWslBenchmark: (distro: string, bootMs: number) => void
@@ -231,7 +227,6 @@ export const useAppStore = create<AppState>()(
       theme: getSystemTheme(),
       activeView: 'dashboard',
       dockerTab: 'overview',
-      setTheme:      (theme) => { applyTheme(theme); set({ theme }) },
       toggleTheme:   () => { const next = get().theme === 'dark' ? 'light' : 'dark'; applyTheme(next); set({ theme: next }) },
       setActiveView: (view) => { if (!get().wslBusyDistro) set({ activeView: view }) },
       setDockerTab:  (dockerTab) => set({ dockerTab }),
@@ -244,8 +239,6 @@ export const useAppStore = create<AppState>()(
       setWslSelectedDistro: (wslSelectedDistro) => { if (!get().wslBusyDistro) set({ wslSelectedDistro }) },
       wslDistrosNav:        [],
       setWslDistrosNav:     (wslDistrosNav) => set({ wslDistrosNav }),
-      wslBadges:            null,
-      setWslBadges:         (wslBadges) => set({ wslBadges }),
       wslImportOpen:        false,
       setWslImportOpen:     (wslImportOpen) => set({ wslImportOpen }),
       wslBusyDistro:        null,
@@ -365,7 +358,6 @@ export const useAppStore = create<AppState>()(
             ...s.activityLog,
           ].slice(0, MAX_ACTIVITY),
         })),
-      clearActivity: () => set({ activityLog: [] }),
 
       wslBenchmarks: {},
       addWslBenchmark: (distro, bootMs) =>

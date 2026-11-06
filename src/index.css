@@ -4651,92 +4651,10 @@ select:focus-visible,
   white-space: nowrap;
 }
 
-.wsl-switcher { position: relative; margin-left: 6px; }
-.wsl-switcher-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 28px;
-  padding: 0 9px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-secondary);
-  color: var(--color-text-primary);
-  font-size: var(--text-base);
-  font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
-  transition: border-color var(--transition-fast), background var(--transition-fast);
-}
-.wsl-switcher-trigger:hover { border-color: var(--color-accent); background: var(--color-bg-hover); }
-.wsl-switcher-trigger--open { border-color: var(--color-accent); background: var(--color-bg-hover); }
-.wsl-switcher-disc { color: var(--color-text-tertiary); flex-shrink: 0; }
-.wsl-switcher-name { white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
-.wsl-switcher-caret { color: var(--color-text-tertiary); flex-shrink: 0; transition: transform var(--transition-fast); }
-.wsl-switcher-caret--open { transform: rotate(180deg); }
-
-.wsl-switcher-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-.wsl-switcher-dot.running { background: var(--color-success); box-shadow: 0 0 0 2px var(--color-success-subtle); }
-.wsl-switcher-dot.stopped { background: var(--color-text-tertiary); }
-
-.wsl-switcher-tag {
-  font-size: var(--text-2xs);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--color-text-tertiary);
-  background: var(--color-bg-tertiary);
-  border-radius: var(--radius-full, var(--radius-full));
-  padding: 1px 6px;
-  flex-shrink: 0;
-}
-
-.wsl-switcher-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  min-width: 248px;
-  padding: 5px;
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: 0 14px 36px color-mix(in srgb, var(--shadow-ink) 45%, transparent);
-  z-index: 60;
-  animation: wsl-switcher-in 0.12s ease;
-}
 @keyframes wsl-switcher-in {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: none; }
 }
-.wsl-switcher-menu-head {
-  font-size: var(--text-2xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--color-text-tertiary);
-  padding: 6px 9px 5px;
-}
-.wsl-switcher-item {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  padding: 8px 9px;
-  border: none;
-  background: none;
-  border-radius: var(--radius-sm);
-  color: var(--color-text-primary);
-  font-size: var(--text-base);
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: background var(--transition-fast);
-}
-.wsl-switcher-item:hover { background: var(--color-bg-hover); }
-.wsl-switcher-item--active { background: var(--color-accent-subtle); }
-.wsl-switcher-item-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.wsl-switcher-item-state { margin-left: auto; font-size: var(--text-xs); color: var(--color-text-tertiary); }
-.wsl-switcher-check { color: var(--color-accent); flex-shrink: 0; }
 
 .wsl-home-panel { margin-top: 14px; }
 
@@ -6321,8 +6239,7 @@ select:focus-visible,
   border-bottom: 1px solid var(--color-border);
   color: inherit;
 }
-.panel-head--link { cursor: pointer; transition: background var(--transition-fast); }
-.panel-head--link:hover { background: var(--color-bg-hover); }
+
 .panel-title {
   font-size: var(--text-2xs);
   font-weight: 600;
@@ -6332,7 +6249,7 @@ select:focus-visible,
 }
 .panel-meta { font-size: var(--text-2xs); color: var(--color-text-tertiary); font-variant-numeric: tabular-nums; }
 .panel-actions { margin-left: auto; display: flex; align-items: center; gap: var(--space-2); }
-.panel-head-arrow { margin-left: auto; color: var(--color-text-tertiary); flex-shrink: 0; }
+
 .panel-body, .panel--pad { padding: var(--space-3) var(--space-4); }
 .disclosure-head { cursor: pointer; list-style: none; transition: background var(--transition-fast); }
 .disclosure-head::-webkit-details-marker { display: none; }

@@ -68,16 +68,10 @@ export default function LocksView() {
 
   return (
     <div className="view-container">
-      <div className="page-head">
-        <SheetHead
-          crumbs={[
-            { label: 'Overview', onClick: () => useAppStore.getState().setActiveView('dashboard') },
-            { label: 'File locks' },
-          ]}
-          title="File locks"
-          subtitle="Identify processes holding a lock on a file or folder."
-        />
-      </div>
+      <SheetHead
+        title="File locks"
+        subtitle="Identify processes holding a lock on a file or folder."
+      />
 
       <div className="page-fill">
         <FileDropZone

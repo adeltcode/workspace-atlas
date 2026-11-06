@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { RefreshCw, Upload } from 'lucide-react'
-import clsx from 'clsx'
+import { useRefreshKey } from '../hooks/useRefreshKey'
 import { useAppStore, type WslDistroTab } from '../store/appStore'
 import { useVisiblePoll } from '../hooks/useVisiblePoll'
 import { useWslData } from '../features/wsl/hooks'
@@ -8,7 +8,7 @@ import WslHome from '../features/wsl/components/WslHome'
 import WslDistroPage from '../features/wsl/components/WslDistroPage'
 import WslConfigTab from '../features/wsl/components/WslConfigTab'
 import WslInstallWizard from '../features/wsl/components/WslInstallWizard'
-import { SheetHead, Prerequisite, Button, ErrorBanner } from '../components/ui'
+import { SheetHead, Prerequisite, Button, ErrorBanner, StatusPill } from '../components/ui'
 import KeepAlive from '../components/KeepAlive'
 
 const DISTRO_TAB_SUBTITLES: Record<WslDistroTab, string> = {
@@ -33,12 +33,7 @@ export default function WslView() {
     useAppStore.getState().setWslDistrosNav(
       distros.map(d => ({ name: d.name, running: d.running, is_default: d.is_default })),
     )
-    useAppStore.getState().setWslBadges(
-      distros.length
-        ? { distros: runningCnt > 0 ? `${runningCnt}/${distros.length}` : String(distros.length) }
-        : null,
-    )
-  }, [distros, runningCnt])
+  }, [distros])
 
   // Default the global selection to the default distro (or first), and keep it
   // valid if the current selection disappears (e.g. after migrate/unregister).
@@ -49,15 +44,7 @@ export default function WslView() {
     }
   }, [distros, selected, setSelected])
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'r' && !e.shiftKey) {
-        e.preventDefault(); reload()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [reload])
+  useRefreshKey(reload)
 
   // A cheap 5 s running-state poll catches start and stop; a full silent refresh on navigation and
   // focus catches distros added or removed outside the app. Mount is skipped: useWslData already loaded.
@@ -82,7 +69,6 @@ export default function WslView() {
 
   return (
     <div className="view-container wsl-view">
-      <div className="page-head">
       <SheetHead
         crumbs={[
           { label: 'Overview', onClick: () => useAppStore.getState().setActiveView('dashboard') },
@@ -94,17 +80,15 @@ export default function WslView() {
         subtitle={subtitle}
         status={
           wslView === 'distro' && selectedDistro ? (
-            <span className="pill">
-              <span className={clsx('rail-dot', selectedDistro.running ? 'running' : 'stopped')} />
+            <StatusPill on={selectedDistro.running}>
               {selectedDistro.running ? 'Running' : 'Stopped'} · WSL {selectedDistro.version === 1 ? '1' : '2'}
-            </span>
+            </StatusPill>
           ) : status && (
-            <span className="pill">
-              <span className={clsx('rail-dot', available ? 'running' : 'stopped')} />
+            <StatusPill on={available}>
               {available
                 ? `${distros.length} distro${distros.length !== 1 ? 's' : ''}${runningCnt ? `, ${runningCnt} running` : ''}`
                 : 'not installed'}
-            </span>
+            </StatusPill>
           )
         }
         actions={
@@ -121,7 +105,6 @@ export default function WslView() {
           </>
         }
       />
-      </div>
 
       <div className="page-scroll">
       {error && <ErrorBanner>{error}</ErrorBanner>}

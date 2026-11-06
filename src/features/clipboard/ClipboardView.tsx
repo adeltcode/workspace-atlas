@@ -1,10 +1,11 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, ClipboardList, Copy, Eye, EyeOff, Info, KeyRound, Maximize2, Power, RefreshCw, Settings, Trash2 } from 'lucide-react'
+import { toggled } from '../../utils/toggled'
 import { useAppStore } from '../../store/appStore'
 import { useVisiblePoll } from '../../hooks/useVisiblePoll'
 import { timeAgo } from '../../utils/format'
-import { Button, ConfirmDestructive, EmptyState, ErrorBanner, SearchField, Segmented, SegmentedItem, SheetHead, Switch, Toast, Toolbar } from '../../components/ui'
-import { ColumnsMenu, TableHead, useTableColumns, type TableColumn } from '../../components/TableColumns'
+import { Button, ConfirmDestructive, EmptyState, ErrorBanner, SearchField, SheetHead, Switch, Toast, Toolbar, FilterSegments } from '../../components/ui'
+import { ColumnsMenu, TableHead, useTableColumns, type TableColumn, useTableSort } from '../../components/TableColumns'
 import { CloseProgramDialog, HolderAction } from '../holders/HolderBits'
 import type { ProcessInfo } from '../holders/api'
 import * as api from './api'
@@ -140,8 +141,7 @@ export default function ClipboardView() {
   const [result, setResult] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<ClipboardFilter>('all')
-  const [sortKey, setSortKey] = useState<ClipboardSortKey>('copied')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const { sortKey, sortDir, handleSort } = useTableSort<ClipboardSortKey>('copied', 'desc', ['copied', 'size'])
   const [showAll, setShowAll] = useState(false)
   const [shown, setShown] = useState<ReadonlySet<string>>(new Set())
   const [openItem, setOpenItem] = useState<ClipboardItem | null>(null)
@@ -155,14 +155,11 @@ export default function ClipboardView() {
   const reading = useRef(false)
   const checkingStatus = useRef(false)
 
-  const clipboardColumns = useAppStore(s => s.clipboardColumns)
-  const setClipboardColumns = useAppStore(s => s.setClipboardColumns)
   const table = useTableColumns<ClipboardSortKey>({
     columns: COLUMNS,
     fill: 'content',
-    prefs: clipboardColumns,
-    read: () => useAppStore.getState().clipboardColumns,
-    save: setClipboardColumns,
+    select: s => s.clipboardColumns,
+    save: prefs => useAppStore.getState().setClipboardColumns(prefs),
   })
 
   const loadStatus = useCallback(async () => {
@@ -205,11 +202,6 @@ export default function ClipboardView() {
   useEffect(() => { refresh() }, [refresh])
   useVisiblePoll(readHistory, READ_MS, !busy)
   useVisiblePoll(loadStatus, STATUS_MS, !busy)
-
-  const handleSort = (key: ClipboardSortKey) => {
-    if (key === sortKey) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
-    else { setSortKey(key); setSortDir(key === 'copied' || key === 'size' ? 'desc' : 'asc') }
-  }
 
   /** Clipboard text never goes to the terminal or the activity log, only what was done. */
   const act = async ({ label, command, done, work }: {
@@ -322,12 +314,7 @@ export default function ClipboardView() {
     await act({ label: 'Delete from clipboard history', done: 'Item deleted', work: () => api.clipboardDeleteItem(item.id) })
   }
 
-  const toggleShown = (id: string) => setShown(previous => {
-    const next = new Set(previous)
-    if (next.has(id)) next.delete(id)
-    else next.add(id)
-    return next
-  })
+  const toggleShown = (id: string) => setShown(previous => toggled(previous, id))
 
   // Anything that looks like a secret stays hidden under "Show text", in case the screen is being shared.
   const isVisible = (item: ClipboardItem) => shown.has(item.id) || (showAll && !looksSecret(item))
@@ -390,60 +377,49 @@ export default function ClipboardView() {
 
   return (
     <div className="view-container">
-      <div className="page-head">
-        <SheetHead
-          crumbs={[
-            { label: 'Overview', onClick: () => useAppStore.getState().setActiveView('dashboard') },
-            { label: 'Clipboard' },
-          ]}
-          title="Clipboard"
-          status={status && (
-            <Switch
-              label="History"
-              on={state === 'on'}
-              disabled={busy || (state !== 'on' && state !== 'off')}
-              title={state === 'on' || state === 'off' ? undefined : problem?.title}
-              onChange={on => (on ? turnOn() : setDialog('turn-off'))}
-            />
-          )}
-          subtitle="Windows clipboard history retains the 25 most recent items until restart. Files and items marked as excluded, such as passwords, are not stored."
-          actions={
-            <>
-              {notes.length > 0 && (
-                <>
-                  <Button className="clipboard-notes-button" popoverTarget="clipboard-notes">
-                    <Info size={13} /> {countLabel(notes.length, 'note')}
-                  </Button>
-                  <ul id="clipboard-notes" className="menu-panel clipboard-notes" popover="auto" aria-label="Notes">
-                    {notes.map(notice => (
-                      <NoticeRow
-                        key={notice.key}
-                        notice={notice}
-                        canAct={!busy}
-                        onAction={runAction}
-                        onCloseProgram={program => { setActionError(null); setClosing(program) }}
-                      />
-                    ))}
-                  </ul>
-                </>
-              )}
-              {state === 'on' && (
-                <>
-                  <ColumnsMenu
-                    columns={COLUMNS}
-                    hidden={clipboardColumns.hidden}
-                    onToggle={table.toggle}
-                    onReset={() => setClipboardColumns(useAppStore.getInitialState().clipboardColumns)}
-                  />
-                  <Button variant="danger-outline" disabled={busy || items.length === 0} onClick={() => setDialog('clear')}>
-                    <Trash2 size={12} /> Clear history…
-                  </Button>
-                </>
-              )}
-            </>
-          }
-        />
-      </div>
+      <SheetHead
+        title="Clipboard"
+        status={status && (
+          <Switch
+            label="History"
+            on={state === 'on'}
+            disabled={busy || (state !== 'on' && state !== 'off')}
+            title={state === 'on' || state === 'off' ? undefined : problem?.title}
+            onChange={on => (on ? turnOn() : setDialog('turn-off'))}
+          />
+        )}
+        subtitle="Windows clipboard history retains the 25 most recent items until restart. Files and items marked as excluded, such as passwords, are not stored."
+        actions={
+          <>
+            {notes.length > 0 && (
+              <>
+                <Button className="clipboard-notes-button" popoverTarget="clipboard-notes">
+                  <Info size={13} /> {countLabel(notes.length, 'note')}
+                </Button>
+                <ul id="clipboard-notes" className="menu-panel clipboard-notes" popover="auto" aria-label="Notes">
+                  {notes.map(notice => (
+                    <NoticeRow
+                      key={notice.key}
+                      notice={notice}
+                      canAct={!busy}
+                      onAction={runAction}
+                      onCloseProgram={program => { setActionError(null); setClosing(program) }}
+                    />
+                  ))}
+                </ul>
+              </>
+            )}
+            {state === 'on' && (
+              <>
+                <ColumnsMenu table={table} />
+                <Button variant="danger-outline" disabled={busy || items.length === 0} onClick={() => setDialog('clear')}>
+                  <Trash2 size={12} /> Clear history…
+                </Button>
+              </>
+            )}
+          </>
+        }
+      />
 
       <div className="page-fill">
         <div className="img-tab clipboard-tab">
@@ -490,18 +466,7 @@ export default function ClipboardView() {
             <>
               <Toolbar className="clipboard-toolbar">
                 <SearchField value={query} onChange={setQuery} placeholder="Search clipboard" label="Search saved text and types" />
-                <Segmented label="Show items">
-                  {FILTERS.map(({ key, label }) => (
-                    <SegmentedItem
-                      key={key}
-                      active={filter === key}
-                      count={filterItems(items, '', key).length}
-                      onClick={() => setFilter(key)}
-                    >
-                      {label}
-                    </SegmentedItem>
-                  ))}
-                </Segmented>
+                <FilterSegments label="Show items" options={FILTERS} value={filter} onChange={setFilter} count={key => filterItems(items, '', key).length} />
                 <span className="toolbar-spacer" />
                 <Button
                   title="Possible secrets stay hidden until shown individually."

@@ -3,11 +3,11 @@ import * as api from '../api'
 import type { DockerNetwork } from '../types'
 import { useAppStore } from '../../../store/appStore'
 import { ConfirmRemoveButton, useDockerJump, useDockerTable } from './TableBits'
-import { SearchField, EmptyState, Button, ErrorBanner, Segmented, SegmentedItem, Toolbar } from '../../../components/ui'
-import { TableHead } from '../../../components/TableColumns'
+import { SearchField, ErrorBanner, Toolbar, FilterSegments, NoMatches } from '../../../components/ui'
+import { TableHead, useTableSort } from '../../../components/TableColumns'
 import {
   filterNetworks, isBuiltInNetwork, matchesNetworkFilter, networkOptions, sortNetworks,
-  type NetworkFilter, type NetworkSortKey, type SortDir,
+  type NetworkFilter, type NetworkSortKey,
 } from '../rules'
 
 /** Format an ISO date string as relative ("3 months ago") for recent dates,
@@ -41,8 +41,7 @@ export default function NetworksTab({ refreshTick }: { refreshTick: number }) {
   const [error, setError]             = useState<unknown>(null)
   const [search, setSearch]           = useState('')
   const [filter, setFilter]           = useState<NetworkFilter>('all')
-  const [sortKey, setSortKey]         = useState<NetworkSortKey>('name')
-  const [sortDir, setSortDir]         = useState<SortDir>('asc')
+  const { sortKey, sortDir, handleSort } = useTableSort<NetworkSortKey>('name', 'asc', ['created'])
   const [busy, setBusy]               = useState<string | null>(null)
   const [actionError, setActionError] = useState<unknown>(null)
   const table = useDockerTable<NetworkSortKey>('networks')
@@ -62,11 +61,6 @@ export default function NetworksTab({ refreshTick }: { refreshTick: number }) {
       .finally(() => { if (current) setLoading(false) })
     return () => { current = false }
   }, [refreshTick])
-
-  const handleSort = (key: NetworkSortKey) => {
-    if (key === sortKey) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
-    else { setSortKey(key); setSortDir(key === 'created' ? 'desc' : 'asc') }
-  }
 
   const doRemove = async (id: string) => {
     setBusy(id); setActionError(null)
@@ -125,18 +119,7 @@ export default function NetworksTab({ refreshTick }: { refreshTick: number }) {
           placeholder="Search networks"
           label="Search networks by name, driver, or ID"
         />
-        <Segmented label="Filter networks">
-          {FILTERS.map(({ key, label }) => (
-            <SegmentedItem
-              key={key}
-              active={filter === key}
-              count={networks.filter(n => matchesNetworkFilter(n, key)).length}
-              onClick={() => setFilter(key)}
-            >
-              {label}
-            </SegmentedItem>
-          ))}
-        </Segmented>
+        <FilterSegments label="Filter networks" options={FILTERS} value={filter} onChange={setFilter} count={key => networks.filter(n => matchesNetworkFilter(n, key)).length} />
         <span className="img-count">{rows.length} shown</span>
       </Toolbar>
 
@@ -144,11 +127,7 @@ export default function NetworksTab({ refreshTick }: { refreshTick: number }) {
       {actionError != null && <ErrorBanner className="error-banner--flush" title="Could not remove the network" error={actionError} />}
 
       {rows.length === 0 && error == null && (
-        <EmptyState
-          title="No networks match"
-          description="Adjust the search or filters."
-          actions={<Button onClick={() => { setSearch(''); setFilter('all') }}>Clear filters</Button>}
-        />
+        <NoMatches noun="networks" onClear={() => { setSearch(''); setFilter('all') }} />
       )}
 
       {rows.length > 0 && (

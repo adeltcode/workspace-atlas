@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RefreshCw, Download, CircleArrowUp, Filter, Trash2 } from 'lucide-react'
+import { useRefreshKey } from '../../hooks/useRefreshKey'
 import clsx from 'clsx'
 import { useAppStore } from '../../store/appStore'
 import { Modal } from '../wsl/components/Dialog'
-import {
-  SheetHead, Prerequisite, Button, SearchField, ErrorBanner, Toolbar, EmptyState, Tag,
-} from '../../components/ui'
-import { CheckMenu, ColumnsMenu, TableHead, useTableColumns, type TableColumn } from '../../components/TableColumns'
+import { SheetHead, Prerequisite, Button, SearchField, ErrorBanner, Toolbar, EmptyState, Tag, StatusPill } from '../../components/ui'
+import { CheckMenu, ColumnsMenu, TableHead, useTableColumns, type TableColumn, useTableSort } from '../../components/TableColumns'
 import { useAsyncAction } from '../../hooks/useAsyncAction'
+import { compareText, sortRows } from '../../utils/sortRows'
 import * as api from './api'
 import { isFresh, loadScan, saveScan } from './savedScan'
 import type { Package, PackageUpdate, SourceResult, SourceUpdates, UninstallCheck } from './types'
@@ -63,8 +63,7 @@ export default function PackagesView() {
   // Picked source ids. Empty means all.
   const [picked, setPicked]   = useState<string[]>([])
   const [outdatedOnly, setOutdatedOnly] = useState(false)
-  const [sortKey, setSortKey] = useState<SortKey>('name')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const { sortKey, sortDir, handleSort } = useTableSort<SortKey>('name', 'asc')
   const [exporting, setExporting] = useState(false)
   const [confirm, setConfirm]     = useState<Package | null>(null)
   const [removing, setRemoving]   = useState<{
@@ -86,14 +85,11 @@ export default function PackagesView() {
   // rescan does not wipe it.
   const [updates, setUpdates] = useState<Record<string, PackageUpdate[]>>({})
 
-  const pkgColumns    = useAppStore(s => s.pkgColumns)
-  const setPkgColumns = useAppStore(s => s.setPkgColumns)
   const table = useTableColumns<SortKey>({
     columns: COLUMNS,
     fill: 'name',
-    prefs: pkgColumns,
-    read: () => useAppStore.getState().pkgColumns,
-    save: setPkgColumns,
+    select: s => s.pkgColumns,
+    save: prefs => useAppStore.getState().setPkgColumns(prefs),
   })
   const { shows } = table
 
@@ -120,15 +116,7 @@ export default function PackagesView() {
     saveScan({ results, scannedAt: scannedAt.current })
   }, [results])
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'r' && !e.shiftKey) {
-        e.preventDefault(); scan()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [scan])
+  useRefreshKey(scan)
 
   const found   = useMemo(() => (results ?? []).filter(r => r.installed), [results])
   const missing = useMemo(() => (results ?? []).filter(r => !r.installed), [results])
@@ -151,32 +139,16 @@ export default function PackagesView() {
   const togglePick = (id: string) =>
     setPicked(p => (p.includes(id) ? p.filter(x => x !== id) : [...p, id]))
 
-  const handleSort = (key: SortKey) => {
-    if (key === sortKey) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
-    else { setSortKey(key); setSortDir('asc') }
-  }
-
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase()
-    const byName = (a: Package, b: Package) =>
-      a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
     const value = (p: Package) =>
-      sortKey === 'updated' ? p.updated : sortKey === 'source' ? labels[p.source] ?? p.source : p[sortKey]
-    return all
+      (sortKey === 'updated' ? p.updated : sortKey === 'source' ? labels[p.source] ?? p.source : p[sortKey]) || null
+    const shown = all
       .filter(p => active.length === 0 || active.includes(p.source))
       .filter(p => !outdatedOnly || p.available)
       .filter(p => !q || p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q))
-      .sort((a, b) => {
-        const va = value(a), vb = value(b)
-        // Unknown dates and publishers sort last in both directions.
-        if (!va !== !vb) return va ? -1 : 1
-        const cmp = typeof va === 'number' && typeof vb === 'number'
-          ? va - vb
-          : String(va ?? '').localeCompare(String(vb ?? ''), undefined, { sensitivity: 'base' })
-        // Ties fall back to name so sorting by source or version groups rows
-        // instead of leaving them in scan order.
-        return (sortDir === 'asc' ? cmp : -cmp) || byName(a, b)
-      })
+    // Ties fall back to name so sorting by source or version groups rows instead of leaving them in scan order.
+    return sortRows(shown, value, (a, b) => compareText(a.name, b.name), sortDir)
   }, [all, labels, query, active, outdatedOnly, sortKey, sortDir])
 
   // Exports exactly what the table currently shows, so a filtered view exports
@@ -362,31 +334,20 @@ export default function PackagesView() {
 
   return (
     <div className="view-container">
-      <div className="page-head">
       <SheetHead
-        crumbs={[
-          { label: 'Overview', onClick: () => useAppStore.getState().setActiveView('dashboard') },
-          { label: 'Packages' },
-        ]}
         title="Packages"
         subtitle="Packages installed through package managers on this machine."
         status={results && (
-          <span className="pill">
-            <span className={clsx('rail-dot', found.length ? 'running' : 'stopped')} />
+          <StatusPill on={found.length > 0}>
             {found.length
               ? `${all.length} installed across ${found.length} source${found.length !== 1 ? 's' : ''}`
               : 'no package managers found'}
-          </span>
+          </StatusPill>
         )}
         actions={
           <>
             {found.length > 0 && (
-              <ColumnsMenu
-                columns={COLUMNS}
-                hidden={pkgColumns.hidden}
-                onToggle={table.toggle}
-                onReset={() => setPkgColumns(useAppStore.getInitialState().pkgColumns)}
-              />
+              <ColumnsMenu table={table} />
             )}
             {found.length > 0 && (
               <Button
@@ -410,7 +371,6 @@ export default function PackagesView() {
           </>
         }
       />
-      </div>
 
       <div className={found.length > 0 ? 'page-fill' : 'page-scroll'}>
       {error && <ErrorBanner>{error}</ErrorBanner>}

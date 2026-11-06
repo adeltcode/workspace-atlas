@@ -1,18 +1,47 @@
-import { LayoutDashboard, Box, ClipboardList, Eraser, HardDrive, FlaskConical, Package, Plug, Lock, Settings, Keyboard } from 'lucide-react'
+import { LayoutDashboard, Box, ClipboardList, Eraser, HardDrive, FlaskConical, Package, Plug, Lock, Settings, Keyboard, type LucideIcon } from 'lucide-react'
 import clsx from 'clsx'
-import { useAppStore, type DockerTab, type WslView } from '../store/appStore'
+import { useAppStore, type DockerTab, type View, type WslView } from '../store/appStore'
+import { DOCKER_TABS } from '../features/docker/tabs'
 import { composeStatusLabel } from '../utils/format'
 
-const DOCKER_TABS: { id: DockerTab; label: string }[] = [
-  { id: 'overview',   label: 'Overview'   },
-  { id: 'images',     label: 'Images'     },
-  { id: 'containers', label: 'Containers' },
-  { id: 'volumes',    label: 'Volumes'    },
-  { id: 'networks',   label: 'Networks'   },
-  { id: 'compose',    label: 'Compose'    },
-  { id: 'prune',      label: 'Prune'      },
-  { id: 'log',        label: 'Run log'    },
-]
+function RailItem({ view, icon: Icon, label, count }: { view: View; icon: LucideIcon; label: string; count?: string | false | null }) {
+  const active = useAppStore(s => s.activeView === view)
+  const setActiveView = useAppStore(s => s.setActiveView)
+  return (
+    <button
+      className={clsx('rail-item', active && 'active')}
+      onClick={() => setActiveView(view)}
+      aria-current={active ? 'page' : undefined}
+    >
+      <span className="rail-icon"><Icon size={15} /></span>
+      <span className="rail-label">{label}</span>
+      {count && <span className="rail-count">{count}</span>}
+    </button>
+  )
+}
+
+function RailKid({ active, onClick, ariaLabel, dot, label, note }: {
+  active: boolean
+  onClick: () => void
+  ariaLabel?: string
+  dot?: string
+  label: string
+  note?: string | false
+}) {
+  return (
+    <button
+      className={clsx('rail-kid', active && 'active')}
+      onClick={onClick}
+      style={{ width: '100%' }}
+      aria-current={active ? 'page' : undefined}
+      aria-label={ariaLabel}
+    >
+      {dot && <span className={clsx('rail-dot', dot)} />}
+      <span className="rail-kid-label">{label}</span>
+      {note && <span className="rail-frac">{note}</span>}
+    </button>
+  )
+}
 
 export default function Sidebar() {
   const activeView    = useAppStore(s => s.activeView)
@@ -26,8 +55,10 @@ export default function Sidebar() {
   const setWslView    = useAppStore(s => s.setWslView)
   const wslSelectedDistro = useAppStore(s => s.wslSelectedDistro)
   const wslDistrosNav = useAppStore(s => s.wslDistrosNav)
-  const wslBadges     = useAppStore(s => s.wslBadges)
   const setShortcutsOpen = useAppStore(s => s.setShortcutsOpen)
+
+  const wslRunning = wslDistrosNav.filter(d => d.running).length
+  const wslCount = wslRunning > 0 ? `${wslRunning}/${wslDistrosNav.length}` : String(wslDistrosNav.length)
 
   const goDockerTab = (id: DockerTab) => { setActiveView('docker'); setDockerTab(id) }
   const goWslView   = (v: WslView)    => { setActiveView('wsl'); setWslView(v) }
@@ -53,59 +84,33 @@ export default function Sidebar() {
   return (
     <nav className="sidebar" aria-label="Modules">
       <div className="rail-group">
-        <button
-          className={clsx('rail-item', activeView === 'dashboard' && 'active')}
-          onClick={() => setActiveView('dashboard')}
-          aria-current={activeView === 'dashboard' ? 'page' : undefined}
-        >
-          <span className="rail-icon"><LayoutDashboard size={15} /></span>
-          <span className="rail-label">Overview</span>
-        </button>
+        <RailItem view="dashboard" icon={LayoutDashboard} label="Overview" />
       </div>
 
       <span className="rail-section">Environments</span>
       <div className="rail-group">
-        <button
-          className={clsx('rail-item', activeView === 'docker' && 'active')}
-          onClick={() => setActiveView('docker')}
-          aria-current={activeView === 'docker' ? 'page' : undefined}
-        >
-          <span className="rail-icon"><Box size={15} /></span>
-          <span className="rail-label">Docker</span>
-          {dockerBadges?.containers && <span className="rail-count">{dockerBadges.containers}</span>}
-        </button>
+        <RailItem view="docker" icon={Box} label="Docker" count={dockerBadges?.containers} />
 
         {activeView === 'docker' && (
           <div className="rail-kids">
             {DOCKER_TABS.map(({ id, label }) => (
               <div key={id}>
-                <button
-                  className={clsx('rail-kid', dockerTab === id && 'active')}
-                  onClick={() => goDockerTab(id)}
-                  style={{ width: '100%' }}
-                  aria-current={dockerTab === id ? 'page' : undefined}
-                >
-                  <span className="rail-kid-label">{label}</span>
-                  {tabCount(id) && <span className="rail-frac">{tabCount(id)}</span>}
-                </button>
+                <RailKid active={dockerTab === id} onClick={() => goDockerTab(id)} label={label} note={tabCount(id)} />
 
                 {id === 'compose' && dockerTab === 'compose' && composeProjectsNav.length > 0 && (
                   <div className="rail-kids">
                     {composeProjectsNav.map(p => {
                       const { dot, running, total } = composeStatusLabel(p.status)
                       return (
-                        <button
+                        <RailKid
                           key={p.name}
-                          className={clsx('rail-kid', composeActiveProject === p.name && 'active')}
+                          active={composeActiveProject === p.name}
                           onClick={() => goComposeProject(p.name)}
-                          style={{ width: '100%' }}
-                          aria-current={composeActiveProject === p.name ? 'page' : undefined}
-                          aria-label={total > 0 ? `${p.name}, ${running} of ${total} services running` : p.name}
-                        >
-                          <span className={clsx('rail-dot', dot)} />
-                          <span className="rail-kid-label">{p.name}</span>
-                          {total > 0 && <span className="rail-frac">{running}/{total}</span>}
-                        </button>
+                          ariaLabel={total > 0 ? `${p.name}, ${running} of ${total} services running` : p.name}
+                          dot={dot}
+                          label={p.name}
+                          note={total > 0 && `${running}/${total}`}
+                        />
                       )
                     })}
                   </div>
@@ -115,116 +120,42 @@ export default function Sidebar() {
           </div>
         )}
 
-        <button
-          className={clsx('rail-item', activeView === 'wsl' && 'active')}
-          onClick={() => setActiveView('wsl')}
-          aria-current={activeView === 'wsl' ? 'page' : undefined}
-        >
-          <span className="rail-icon"><HardDrive size={15} /></span>
-          <span className="rail-label">WSL</span>
-          {wslBadges?.distros && <span className="rail-count">{wslBadges.distros}</span>}
-        </button>
+        <RailItem view="wsl" icon={HardDrive} label="WSL" count={wslDistrosNav.length > 0 && wslCount} />
 
         {activeView === 'wsl' && (
           <div className="rail-kids">
             {wslDistrosNav.map(d => (
-              <button
+              <RailKid
                 key={d.name}
-                className={clsx('rail-kid', wslView === 'distro' && wslSelectedDistro === d.name && 'active')}
+                active={wslView === 'distro' && wslSelectedDistro === d.name}
                 onClick={() => goWslDistro(d.name)}
-                style={{ width: '100%' }}
-                aria-current={wslView === 'distro' && wslSelectedDistro === d.name ? 'page' : undefined}
                 // The dot is the only visual sign of running state, so the label must say it too.
-                aria-label={`${d.name}, ${d.running ? 'running' : 'stopped'}${d.is_default ? ', default' : ''}`}
-              >
-                <span className={clsx('rail-dot', d.running ? 'running' : 'stopped')} />
-                <span className="rail-kid-label">{d.name}</span>
-                {d.is_default && <span className="rail-frac">default</span>}
-              </button>
+                ariaLabel={`${d.name}, ${d.running ? 'running' : 'stopped'}${d.is_default ? ', default' : ''}`}
+                dot={d.running ? 'running' : 'stopped'}
+                label={d.name}
+                note={d.is_default && 'default'}
+              />
             ))}
-            <button
-              className={clsx('rail-kid', wslView === 'install' && 'active')}
-              onClick={() => goWslView('install')}
-              style={{ width: '100%' }}
-              aria-current={wslView === 'install' ? 'page' : undefined}
-            >
-              <span className="rail-kid-label">Install distro</span>
-            </button>
-            <button
-              className={clsx('rail-kid', wslView === 'wslconfig' && 'active')}
-              onClick={() => goWslView('wslconfig')}
-              style={{ width: '100%' }}
-              aria-current={wslView === 'wslconfig' ? 'page' : undefined}
-            >
-              <span className="rail-kid-label">.wslconfig</span>
-            </button>
+            <RailKid active={wslView === 'install'} onClick={() => goWslView('install')} label="Install distro" />
+            <RailKid active={wslView === 'wslconfig'} onClick={() => goWslView('wslconfig')} label=".wslconfig" />
           </div>
         )}
 
-        <button
-          className={clsx('rail-item', activeView === 'sandbox' && 'active')}
-          onClick={() => setActiveView('sandbox')}
-          aria-current={activeView === 'sandbox' ? 'page' : undefined}
-        >
-          <span className="rail-icon"><FlaskConical size={15} /></span>
-          <span className="rail-label">Sandbox</span>
-        </button>
+        <RailItem view="sandbox" icon={FlaskConical} label="Sandbox" />
       </div>
 
       <span className="rail-section">Tools</span>
       <div className="rail-group">
-        <button
-          className={clsx('rail-item', activeView === 'ports' && 'active')}
-          onClick={() => setActiveView('ports')}
-          aria-current={activeView === 'ports' ? 'page' : undefined}
-        >
-          <span className="rail-icon"><Plug size={15} /></span>
-          <span className="rail-label">Ports</span>
-        </button>
-        <button
-          className={clsx('rail-item', activeView === 'locks' && 'active')}
-          onClick={() => setActiveView('locks')}
-          aria-current={activeView === 'locks' ? 'page' : undefined}
-        >
-          <span className="rail-icon"><Lock size={15} /></span>
-          <span className="rail-label">File locks</span>
-        </button>
-        <button
-          className={clsx('rail-item', activeView === 'clipboard' && 'active')}
-          onClick={() => setActiveView('clipboard')}
-          aria-current={activeView === 'clipboard' ? 'page' : undefined}
-        >
-          <span className="rail-icon"><ClipboardList size={15} /></span>
-          <span className="rail-label">Clipboard</span>
-        </button>
-        <button
-          className={clsx('rail-item', activeView === 'caches' && 'active')}
-          onClick={() => setActiveView('caches')}
-          aria-current={activeView === 'caches' ? 'page' : undefined}
-        >
-          <span className="rail-icon"><Eraser size={15} /></span>
-          <span className="rail-label">Dev caches</span>
-        </button>
+        <RailItem view="ports" icon={Plug} label="Ports" />
+        <RailItem view="locks" icon={Lock} label="File locks" />
+        <RailItem view="clipboard" icon={ClipboardList} label="Clipboard" />
+        <RailItem view="caches" icon={Eraser} label="Dev caches" />
       </div>
 
       <span className="rail-section">System</span>
       <div className="rail-group">
-        <button
-          className={clsx('rail-item', activeView === 'packages' && 'active')}
-          onClick={() => setActiveView('packages')}
-          aria-current={activeView === 'packages' ? 'page' : undefined}
-        >
-          <span className="rail-icon"><Package size={15} /></span>
-          <span className="rail-label">Packages</span>
-        </button>
-        <button
-          className={clsx('rail-item', activeView === 'settings' && 'active')}
-          onClick={() => setActiveView('settings')}
-          aria-current={activeView === 'settings' ? 'page' : undefined}
-        >
-          <span className="rail-icon"><Settings size={15} /></span>
-          <span className="rail-label">Settings</span>
-        </button>
+        <RailItem view="packages" icon={Package} label="Packages" />
+        <RailItem view="settings" icon={Settings} label="Settings" />
       </div>
 
       <div className="rail-foot rail-group">

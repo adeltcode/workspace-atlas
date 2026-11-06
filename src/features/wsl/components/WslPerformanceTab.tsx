@@ -3,7 +3,7 @@ import clsx from 'clsx'
 import { Timer, Gauge, Play, ShieldAlert, Lightbulb } from 'lucide-react'
 import { useAppStore } from '../../../store/appStore'
 import * as api from '../api'
-import type { WslDistro, ShellProfile } from '../types'
+import type { ShellProfile } from '../types'
 import { Modal } from './Dialog'
 import { Panel, Button } from '../../../components/ui'
 
@@ -15,8 +15,7 @@ function fmtMs(ms: number): string {
   return ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${ms} ms`
 }
 
-export default function WslPerformanceTab({ distros, onReload }: {
-  distros: WslDistro[]
+export default function WslPerformanceTab({ onReload }: {
   onReload: () => Promise<void> | void
 }) {
   const selected = useAppStore(s => s.wslSelectedDistro) ?? ''
@@ -74,10 +73,6 @@ export default function WslPerformanceTab({ distros, onReload }: {
       setProfiling(false)
       setBusyDistro(null)
     }
-  }
-
-  if (distros.length === 0) {
-    return <p className="empty-state" style={{ marginTop: 24 }}>No distros found.</p>
   }
 
   const maxBoot = Math.max(1, ...history.map(h => h.boot_ms))

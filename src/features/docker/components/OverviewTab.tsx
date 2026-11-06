@@ -3,13 +3,15 @@ import {
   CheckCircle, AlertTriangle, ChevronRight, ChevronDown, RefreshCw, Trash2,
 } from 'lucide-react'
 import LiveMetricsCharts from '../../../components/LiveMetricsCharts'
+import DriveBar from '../../../components/DriveBar'
+import { toggled } from '../../../utils/toggled'
 import clsx from 'clsx'
 import { useAppStore } from '../../../store/appStore'
 import type {
   DockerStatus, DiskStats, DockerSystemDf, DockerContainer, DockerImage,
   DockerVolume, DiskUsageRow, ComposeProject, ContainerStats,
 } from '../types'
-import { bytesToHuman, composeStatusLabel } from '../../../utils/format'
+import { bytesToHuman, composeStatusLabel, hostPorts, parseSizeBytes } from '../../../utils/format'
 import {
   SectionHead, Panel, StatCard, StatRow, Button, Segmented, SegmentedItem, EmptyState, ConfirmDestructive, ErrorBanner,
 } from '../../../components/ui'
@@ -20,14 +22,6 @@ const STALE_DAYS = 7
 
 function parseReclaimSize(reclaimable: string): string {
   return reclaimable.split(' (')[0].trim()
-}
-
-function parseSizeBytes(s: string): number {
-  const n = parseFloat(s)
-  if (s.endsWith('GB')) return n * 1e9
-  if (s.endsWith('MB')) return n * 1e6
-  if (s.endsWith('kB')) return n * 1e3
-  return n
 }
 
 function buildContainersRow(dfRow: DiskUsageRow, containers: DockerContainer[]): DiskUsageRow {
@@ -61,15 +55,6 @@ function projectContainerNames(projectName: string, containers: DockerContainer[
 
 function sumProjectStat(names: string[], stats: ContainerStats[], get: (s: ContainerStats) => number): number {
   return stats.filter(s => names.includes(s.name)).reduce((sum, s) => sum + get(s), 0)
-}
-
-function extractHostPort(mapping: string): string {
-  // Published port: "0.0.0.0:8080->80/tcp" | "[::]:8080->80/tcp" → "8080"
-  const published = mapping.match(/:(\d+)->/)
-  if (published) return published[1]
-  // Exposed-only port: "80/tcp" → "80"
-  const exposed = mapping.match(/^(\d+)\//)
-  return exposed ? exposed[1] : ''
 }
 
 function HeroSkeleton() {
@@ -124,7 +109,7 @@ function CleanupRow({
   }
 
   function toggleItem(id: string) {
-    setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+    setSelected(prev => toggled(prev, id))
   }
 
   function toggleAll() {
@@ -224,7 +209,7 @@ function ProjectCard({
   const ports = [...new Set(
     containers
       .filter(c => names.includes(c.name) && c.ports)
-      .flatMap(c => c.ports.split(',').map(p => extractHostPort(p.trim())).filter(Boolean))
+      .flatMap(c => hostPorts(c.ports))
   )].slice(0, 5)
 
   const statusColor =
@@ -620,9 +605,6 @@ export default function OverviewTab({
           ? buildBar(backupDiskStats, [], backupBytes)
           : null
 
-        const segPct = (bytes: number, driveTotal: number) =>
-          driveTotal > 0 ? Math.max(bytes / driveTotal * 100, bytes > 0 ? 0.3 : 0) : 0
-
         const legendRows: { key: string; label: string; bytes: number; color: string; freeBytes: number; driveNote?: string }[] = [
           { key: 'images',     label: 'Images',      bytes: imgBytes,    color: 'images',     freeBytes: imgFree },
           { key: 'containers', label: 'Containers',  bytes: ctrBytes,    color: 'containers', freeBytes: ctrFree },
@@ -642,48 +624,18 @@ export default function OverviewTab({
             <div className="disk-body">
               <div className="drive-bars-grid">
 
-                <div className="drive-bar-group">
-                  <div className="drive-bar-header">
-                    <span className="drive-bar-title">
-                      {dockerDiskStats ? dockerDiskStats.drive_label : 'Docker'}
-                    </span>
-                    {dockerDiskStats && (
-                      <span className="drive-bar-meta">
-                        {bytesToHuman(dockerDiskStats.total_bytes)} disk size · {bytesToHuman(dockerDiskStats.free_bytes)} free
-                      </span>
-                    )}
-                  </div>
-                  <div className="disk-stacked-bar">
-                    {dockerBarSegs.map(s => (
-                      <div
-                        key={s.key}
-                        className={`disk-seg disk-seg--${s.color}`}
-                        style={{ width: dockerDiskStats ? `${segPct(s.bytes, dockerDiskStats.total_bytes)}%` : 'auto', flex: dockerDiskStats ? undefined : s.bytes }}
-                        title={`${s.label}: ${bytesToHuman(s.bytes)}`}
-                      />
-                    ))}
-                  </div>
-                </div>
+                <DriveBar
+                  title={dockerDiskStats ? dockerDiskStats.drive_label : 'Docker'}
+                  stats={dockerDiskStats}
+                  segments={dockerBarSegs.map(s => ({ ...s, color: undefined, className: `disk-seg--${s.color}` }))}
+                />
 
                 {backupBarSegs && backupDiskStats && (
-                  <div className="drive-bar-group">
-                    <div className="drive-bar-header">
-                      <span className="drive-bar-title">{backupDiskStats.drive_label}</span>
-                      <span className="drive-bar-meta">
-                        {bytesToHuman(backupDiskStats.total_bytes)} disk size · {bytesToHuman(backupDiskStats.free_bytes)} free
-                      </span>
-                    </div>
-                    <div className="disk-stacked-bar">
-                      {backupBarSegs.map(s => (
-                        <div
-                          key={s.key}
-                          className={`disk-seg disk-seg--${s.color}`}
-                          style={{ width: `${segPct(s.bytes, backupDiskStats.total_bytes)}%` }}
-                          title={`${s.label}: ${bytesToHuman(s.bytes)}`}
-                        />
-                      ))}
-                    </div>
-                  </div>
+                  <DriveBar
+                    title={backupDiskStats.drive_label}
+                    stats={backupDiskStats}
+                    segments={backupBarSegs.map(s => ({ ...s, color: undefined, className: `disk-seg--${s.color}` }))}
+                  />
                 )}
 
               </div>

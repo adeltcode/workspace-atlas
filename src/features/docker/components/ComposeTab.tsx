@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState, useMemo, useRef } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { revealItemInDir, openUrl } from '@tauri-apps/plugin-opener'
 import {
@@ -15,270 +15,36 @@ import { emptyMeta, type ComposeProject, type ComposeBackupEntry, type DockerCon
 import { bytesToHuman, formatDate, hostPorts } from '../../../utils/format'
 import ComposePage from './ComposePage'
 import ComposeEnvTab from './ComposeEnvTab'
-import ComposeDockerfileViewer, { DockerfileLine } from './ComposeDockerfileViewer'
+import { DockerfileLine } from './ComposeDockerfileViewer'
+import YamlLine from './YamlLine'
+import { buildFileNav, dirNameOf, dirOf, dockerfileMatchesRefs, EMPTY_FILES, parseDockerfileRefs, refRelFrom, relLabel } from './composeFiles'
+import CodeViewer from './CodeViewer'
 import CodeOverlayEditor from './CodeOverlayEditor'
 import { ErrorBanner } from '../../../components/ui'
 
-// Matches: optional-ip:hostPort:containerPort[/proto]
-const PORT_RE = /^(?:[\d.]+:)?(\d+):\d+(?:\/(?:tcp|udp))?$/
-
-// Relative to the compose project dir, so ./nginx/Dockerfile and ./php/Dockerfile stay distinguishable.
-function relLabel(path: string, baseDir: string): string {
-  const np = path.replace(/\\/g, '/')
-  const nb = baseDir.replace(/\\/g, '/').replace(/\/$/, '')
-  if (nb && np.toLowerCase().startsWith(nb.toLowerCase() + '/')) return np.slice(nb.length + 1)
-  return np.split('/').pop() ?? path
+/** Runs a Compose command with its output in the terminal, and says whether it worked. */
+async function runStreamed(title: string, run: () => Promise<unknown>): Promise<boolean> {
+  const { addTerminalLine, setTerminalOpen } = useAppStore.getState()
+  setTerminalOpen(true)
+  addTerminalLine(`─── ${title} ───`, 'info')
+  const unlisten = await listen<string>('docker-log', e => {
+    const type = e.payload.startsWith('$') ? 'cmd' : e.payload.startsWith('[err]') ? 'stderr' : 'stdout'
+    addTerminalLine(e.payload, type)
+  })
+  try {
+    await run()
+    addTerminalLine('─── Done ───', 'success')
+    return true
+  } catch (e) {
+    addTerminalLine(`  ✗ ${String(e)}`, 'error')
+    return false
+  } finally {
+    unlisten()
+  }
 }
-
-function dirOf(p: string): string {
-  const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'))
-  return i >= 0 ? p.slice(0, i) : ''
-}
-function dirNameOf(p: string): string {
-  return dirOf(p).replace(/\\/g, '/').replace(/\/+$/, '').split('/').pop()?.toLowerCase() ?? ''
-}
-
-// Compose config files first, then the detected extras, which must already be filtered.
-type FileNav = { path: string; label: string; kind: 'compose' | 'dockerfile' | 'env' }
-function buildFileNav(project: ComposeProject, extras: DetectedFile[]): FileNav[] {
-  const baseDir = dirOf(project.config_files[0] ?? '')
-  return [
-    ...project.config_files.map(f => ({ path: f, label: relLabel(f, baseDir), kind: 'compose' as const })),
-    ...extras.map(pf => ({
-      path:  pf.path,
-      label: relLabel(pf.path, baseDir),
-      kind:  (pf.kind === 'env' ? 'env' : 'dockerfile') as 'dockerfile' | 'env',
-    })),
-  ]
-}
-
-const EMPTY_FILES: DetectedFile[] = []
 
 function runningHostPorts(containers: DockerContainer[]): string[] {
   return [...new Set(containers.filter(c => c.state === 'running' && c.ports).flatMap(c => hostPorts(c.ports)))]
-}
-
-function renderYamlValue(
-  raw: string,
-  onOpenPort?: (port: string) => void,
-  onRevealPath?: (path: string) => void,
-): React.ReactNode {
-  if (!raw) return null
-  const val     = raw.trimEnd()
-  const trimmed = val.trimStart()
-  if (!trimmed) return <span>{val}</span>
-
-  const ci = trimmed.search(/ #/)
-  if (ci > -1) {
-    const v = val.slice(0, val.length - trimmed.length + ci)
-    const c = val.slice(val.length - trimmed.length + ci)
-    return <><span className="yaml-value">{v}</span><span className="yaml-comment">{c}</span></>
-  }
-
-  const stripped = trimmed.replace(/^['"]|['"]$/g, '')
-
-  // Clickable port mapping: "3000:3000", "127.0.0.1:8080:80/tcp"
-  if (onOpenPort) {
-    const pm = stripped.match(PORT_RE)
-    if (pm) {
-      return (
-        <button className="yaml-port-link" onClick={() => onOpenPort(pm[1])}>
-          <span className="yaml-string">{val}</span>
-          <ExternalLink size={9} className="yaml-port-icon" />
-        </button>
-      )
-    }
-  }
-
-  // Clickable relative volume path: ./app, ./app:/container
-  if (onRevealPath && (stripped.startsWith('./') || stripped.startsWith('../'))) {
-    const source = stripped.split(':')[0]
-    return (
-      <button className="yaml-path-link" onClick={() => onRevealPath(source)}>
-        <span className="yaml-value">{val}</span>
-        <FolderOpen size={9} className="yaml-path-icon" />
-      </button>
-    )
-  }
-
-  if (trimmed.startsWith('"') || trimmed.startsWith("'"))
-    return <span className="yaml-string">{val}</span>
-  if (/^(true|false|null|yes|no|on|off)$/i.test(trimmed))
-    return <span className="yaml-bool">{val}</span>
-  if (/^-?\d+(\.\d+)?$/.test(trimmed))
-    return <span className="yaml-number">{val}</span>
-  if (trimmed.includes('$')) {
-    const parts = val.split(/(\$\{[^}]+\}|\$[A-Z_a-z][A-Z0-9_a-z]*)/g)
-    return <>{parts.map((p, i) => p.startsWith('$')
-      ? <span key={i} className="yaml-env">{p}</span>
-      : <span key={i}>{p}</span>)}</>
-  }
-  return <span className="yaml-value">{val}</span>
-}
-
-function YamlLine({
-  line, onOpenPort, onRevealPath, onOpenDockerfile,
-}: {
-  line:             string
-  onOpenPort?:      (port: string) => void
-  onRevealPath?:    (path: string) => void
-  onOpenDockerfile?:(value: string) => void
-}) {
-  const trimmed = line.trimStart()
-  const indent  = line.length - trimmed.length
-  if (!trimmed) return <div className="yaml-line">&nbsp;</div>
-  if (trimmed.startsWith('#'))
-    return <div className="yaml-line"><span className="yaml-comment">{line}</span></div>
-  const km = line.match(/^(\s*)([\w.\-/]+)(\s*:)(.*)$/)
-  if (km) {
-    const [, pre, key, colon, rest] = km
-    const depth = Math.floor(indent / 2)
-    const isDockerfileRef = key === 'dockerfile' && !!onOpenDockerfile && rest.trim() !== ''
-    return (
-      <div className="yaml-line">
-        <span>{pre}</span>
-        <span className={depth === 0 ? 'yaml-key-root' : 'yaml-key'}>{key}</span>
-        <span className="yaml-colon">{colon}</span>
-        {rest
-          ? (isDockerfileRef
-              ? <> <button className="yaml-path-link" onClick={() => onOpenDockerfile!(rest)} title="Open this Dockerfile">
-                  <span className="yaml-value">{rest.trim()}</span>
-                  <FileCode2 size={9} className="yaml-path-icon" />
-                </button></>
-              : <> {renderYamlValue(rest, onOpenPort, onRevealPath)}</>)
-          : null}
-      </div>
-    )
-  }
-  const lm = line.match(/^(\s*)(-)(\s+)(.*)$/)
-  if (lm) {
-    const [, pre, dash, sp, rest] = lm
-    return (
-      <div className="yaml-line">
-        <span>{pre}</span><span className="yaml-dash">{dash}</span>
-        <span>{sp}</span>{renderYamlValue(rest, onOpenPort, onRevealPath)}
-      </div>
-    )
-  }
-  return <div className="yaml-line">{line}</div>
-}
-
-function YamlViewer({
-  content, onOpenPort, onRevealPath, onOpenDockerfile, initialScrollTop = 0, onScrollTop,
-}: {
-  content:           string
-  onOpenPort?:       (port: string) => void
-  onRevealPath?:     (path: string) => void
-  onOpenDockerfile?: (value: string) => void
-  initialScrollTop?: number
-  onScrollTop?:      (top: number) => void
-}) {
-  const numsRef = useRef<HTMLDivElement>(null)
-  const areaRef = useRef<HTMLDivElement>(null)
-  const lines = content.split('\n')
-  if (lines[lines.length - 1] === '') lines.pop()
-
-  const syncScroll = () => {
-    const area = areaRef.current
-    if (!area) return
-    if (numsRef.current) numsRef.current.scrollTop = area.scrollTop
-    onScrollTop?.(area.scrollTop)
-  }
-
-  // Restore the scroll position from the previous mode before paint.
-  useLayoutEffect(() => {
-    const area = areaRef.current
-    if (!area) return
-    area.scrollTop = initialScrollTop
-    if (numsRef.current) numsRef.current.scrollTop = area.scrollTop
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  return (
-    <div className="compose-code-wrap">
-      <div className="compose-line-nums" aria-hidden ref={numsRef}>
-        {lines.map((_, i) => <span key={i}>{i + 1}</span>)}
-      </div>
-      <div className="compose-code-area" ref={areaRef} onScroll={syncScroll}>
-        <div className="compose-code-body">
-          {lines.map((line, i) => (
-            <YamlLine key={i} line={line} onOpenPort={onOpenPort} onRevealPath={onRevealPath} onOpenDockerfile={onOpenDockerfile} />
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// Resolve a build context + dockerfile into a normalized project-relative path,
-// e.g. context "." + dockerfile "./nginx/Dockerfile" → "nginx/dockerfile".
-function refRelFrom(context: string, dockerfile: string): string {
-  const parts: string[] = []
-  const push = (seg: string) => {
-    for (const s of seg.replace(/\\/g, '/').split('/')) {
-      if (!s || s === '.') continue
-      if (s === '..') { parts.pop(); continue }
-      parts.push(s)
-    }
-  }
-  push(context); push(dockerfile)
-  return parts.join('/').toLowerCase()
-}
-
-function parseDockerfileRefs(yaml: string): string[] {
-  const lines = yaml.split('\n')
-  const clean = (s: string) => s.replace(/\s+#.*$/, '').trim().replace(/^['"]|['"]$/g, '')
-  const refs: string[] = []
-  let i = 0
-  while (i < lines.length) {
-    const m = lines[i].match(/^(\s*)build\s*:(.*)$/)
-    if (!m) { i++; continue }
-    const indent = m[1].length
-    const inline = clean(m[2])
-    if (inline) { refs.push(refRelFrom(inline, 'Dockerfile')); i++; continue }
-    // Block form - scan deeper-indented context/dockerfile keys
-    let context = '.', dockerfile = 'Dockerfile'
-    i++
-    while (i < lines.length) {
-      const l = lines[i]
-      if (l.trim() === '') { i++; continue }
-      const childIndent = l.length - l.trimStart().length
-      if (childIndent <= indent) break
-      const cm = l.match(/^\s*context\s*:\s*(.+)$/)
-      const dm = l.match(/^\s*dockerfile\s*:\s*(.+)$/)
-      if (cm) context = clean(cm[1])
-      if (dm) dockerfile = clean(dm[1])
-      i++
-    }
-    refs.push(refRelFrom(context, dockerfile))
-  }
-  return refs
-}
-
-// Anchors on the project dir name, so a bare "Dockerfile" ref matches the root one rather than
-// a nested nginx/Dockerfile.
-function dockerfileMatchesRefs(path: string, refRels: string[], dirName: string): boolean {
-  const np = path.replace(/\\/g, '/').toLowerCase()
-  return refRels.some(rel => {
-    if (!rel) return false
-    if (dirName && np.endsWith(`/${dirName}/${rel}`)) return true
-    return rel.includes('/') && np.endsWith(`/${rel}`)
-  })
-}
-
-function YamlEditor({ value, onChange, initialScrollTop, onScrollTop }: {
-  value: string; onChange: (v: string) => void
-  initialScrollTop?: number; onScrollTop?: (top: number) => void
-}) {
-  return (
-    <CodeOverlayEditor
-      label="Compose file contents"
-      value={value}
-      onChange={onChange}
-      renderLine={(line, i) => <YamlLine key={i} line={line} />}
-      initialScrollTop={initialScrollTop}
-      onScrollTop={onScrollTop}
-    />
-  )
 }
 
 type PathOrigin = 'windows' | 'wsl-mount' | 'wsl'
@@ -823,24 +589,10 @@ export default function ComposeTab({
   const handleServiceAction = async (service: string, action: 'up' | 'stop' | 'restart') => {
     if (!activeFile || serviceAction) return
     setServiceAction({ service, action })
-    const { addTerminalLine, setTerminalOpen } = useAppStore.getState()
-    setTerminalOpen(true)
-    addTerminalLine(`─── docker compose ${action} ${service} ───`, 'info')
-    const unlistenLog = await listen<string>('docker-log', e => {
-      const type = e.payload.startsWith('$') ? 'cmd' : e.payload.startsWith('[err]') ? 'stderr' : 'stdout'
-      useAppStore.getState().addTerminalLine(e.payload, type)
-    })
-    try {
-      await api.dockerComposeServiceAction(activeFile, action, service)
-      useAppStore.getState().addTerminalLine('─── Done ───', 'success')
-    } catch (e) {
-      useAppStore.getState().addTerminalLine(`  ✗ ${String(e)}`, 'error')
-    } finally {
-      unlistenLog()
-      setServiceAction(null)
-      loadProjects()
-      onRefresh?.()
-    }
+    await runStreamed(`docker compose ${action} ${service}`, () => api.dockerComposeServiceAction(activeFile, action, service))
+    setServiceAction(null)
+    loadProjects()
+    onRefresh?.()
   }
 
   const handleShell = async (containerName: string) => {
@@ -854,24 +606,10 @@ export default function ComposeTab({
   const handleWipeDown = async () => {
     if (!activeFile || wipeRunning) return
     setWipeRunning(true)
-    const { addTerminalLine, setTerminalOpen } = useAppStore.getState()
-    setTerminalOpen(true)
-    addTerminalLine('─── docker compose down -v ───', 'info')
-    const unlistenLog = await listen<string>('docker-log', e => {
-      const type = e.payload.startsWith('$') ? 'cmd' : e.payload.startsWith('[err]') ? 'stderr' : 'stdout'
-      useAppStore.getState().addTerminalLine(e.payload, type)
-    })
-    try {
-      await api.dockerComposeAction(activeFile, 'down-volumes')
-      useAppStore.getState().addTerminalLine('─── Done ───', 'success')
-    } catch (e) {
-      useAppStore.getState().addTerminalLine(`  ✗ ${String(e)}`, 'error')
-    } finally {
-      unlistenLog()
-      setWipeRunning(false)
-      setWipeConfirmOpen(false)
-      loadProjects()
-    }
+    await runStreamed('docker compose down -v', () => api.dockerComposeAction(activeFile, 'down-volumes'))
+    setWipeRunning(false)
+    setWipeConfirmOpen(false)
+    loadProjects()
   }
 
   const loadFile = async (path: string) => {
@@ -902,41 +640,21 @@ export default function ComposeTab({
   const runComposeAction = async (action: LifecycleAction) => {
     if (!activeFile || lifecycleRunning) return
     setLifecycleRunning(action)
-    const { addTerminalLine, setTerminalOpen } = useAppStore.getState()
-    setTerminalOpen(true)
     const actionDef = LIFECYCLE_ACTIONS.find(a => a.id === action)!
-    addTerminalLine(`─── ${actionDef.title} ───`, 'info')
-
-    const unlistenLog = await listen<string>('docker-log', e => {
-      const type = e.payload.startsWith('$') ? 'cmd'
-        : e.payload.startsWith('[err]') ? 'stderr'
-        : 'stdout'
-      useAppStore.getState().addTerminalLine(e.payload, type)
-    })
-
     const startMs = Date.now()
-    try {
-      await api.dockerComposeAction(activeFile, action)
-      useAppStore.getState().addTerminalLine('─── Done ───', 'success')
-      if ((action === 'up' || action === 'rebuild') && selected) {
-        recordStartupTime(selected.name, startMs)
+    const ok = await runStreamed(actionDef.title, () => api.dockerComposeAction(activeFile, action))
+    if (ok && (action === 'up' || action === 'rebuild') && selected) recordStartupTime(selected.name, startMs)
+    setLifecycleRunning(null)
+    onRefresh?.()
+    loadProjects().then(() => {
+      if (selected) {
+        setProjects(prev => {
+          const updated = prev.find(p => p.name === selected.name)
+          if (updated) setSelected(updated)
+          return prev
+        })
       }
-    } catch (e) {
-      useAppStore.getState().addTerminalLine(`  ✗ ${String(e)}`, 'error')
-    } finally {
-      unlistenLog()
-      setLifecycleRunning(null)
-      onRefresh?.()
-      loadProjects().then(() => {
-        if (selected) {
-          setProjects(prev => {
-            const updated = prev.find(p => p.name === selected.name)
-            if (updated) setSelected(updated)
-            return prev
-          })
-        }
-      })
-    }
+    })
   }
 
   const loadComposeBackups = async (projectName: string) => {
@@ -982,29 +700,11 @@ export default function ComposeTab({
   const runCardLifecycle = async (project: ComposeProject, action: 'up' | 'down' | 'restart') => {
     if (cardLifecycle) return
     setCardLifecycle({ project: project.name, action })
-    const { addTerminalLine, setTerminalOpen } = useAppStore.getState()
-    setTerminalOpen(true)
     const actionMap = { up: 'docker compose up -d', down: 'docker compose down', restart: 'docker compose restart' }
-    addTerminalLine(`─── ${actionMap[action]} (${project.name}) ───`, 'info')
     const configFile = project.config_files[0] ?? ''
-
-    const unlistenLog = await listen<string>('docker-log', e => {
-      const type = e.payload.startsWith('$') ? 'cmd'
-        : e.payload.startsWith('[err]') ? 'stderr'
-        : 'stdout'
-      useAppStore.getState().addTerminalLine(e.payload, type)
-    })
-
-    try {
-      await api.dockerComposeAction(configFile, action)
-      useAppStore.getState().addTerminalLine('─── Done ───', 'success')
-    } catch (e) {
-      useAppStore.getState().addTerminalLine(`  ✗ ${String(e)}`, 'error')
-    } finally {
-      unlistenLog()
-      setCardLifecycle(null)
-      loadProjects()
-    }
+    await runStreamed(`${actionMap[action]} (${project.name})`, () => api.dockerComposeAction(configFile, action))
+    setCardLifecycle(null)
+    loadProjects()
   }
 
   return (
@@ -1181,12 +881,13 @@ export default function ComposeTab({
                 {fileLoading && <div className="compose-viewer-state">Loading file…</div>}
                 {fileError && <div className="compose-viewer-state compose-viewer-error"><AlertCircle size={14} />{fileError}</div>}
                 {!fileLoading && fileType === 'compose' && fileContent !== null && !editMode && (
-                  <YamlViewer key={activeFile} content={fileContent} onOpenPort={handleOpenPort} onRevealPath={handleRevealPath}
-                    onOpenDockerfile={handleOpenDockerfileRef}
+                  <CodeViewer key={activeFile} content={fileContent}
+                    renderLine={(line, i) => <YamlLine key={i} line={line} onOpenPort={handleOpenPort} onRevealPath={handleRevealPath} onOpenDockerfile={handleOpenDockerfileRef} />}
                     initialScrollTop={scrollByFile.current[activeFile] ?? 0} onScrollTop={rememberScroll} />
                 )}
                 {!fileLoading && fileType === 'compose' && editMode && (
-                  <YamlEditor key={activeFile} value={editDraft} onChange={setEditDraft}
+                  <CodeOverlayEditor key={activeFile} label="Compose file contents" value={editDraft} onChange={setEditDraft}
+                    renderLine={(line, i) => <YamlLine key={i} line={line} />}
                     initialScrollTop={scrollByFile.current[activeFile] ?? 0} onScrollTop={rememberScroll} />
                 )}
                 {fileType === 'env' && activeFile && !fileError && (
@@ -1202,7 +903,8 @@ export default function ComposeTab({
                       ? <CodeOverlayEditor key={activeFile} label="Dockerfile contents" value={editDraft} onChange={setEditDraft}
                           renderLine={(l, i) => <DockerfileLine key={i} line={l} />}
                           initialScrollTop={scrollByFile.current[activeFile] ?? 0} onScrollTop={rememberScroll} />
-                      : <ComposeDockerfileViewer key={activeFile} content={fileContents[activeFile]}
+                      : <CodeViewer key={activeFile} content={fileContents[activeFile]}
+                          renderLine={(l, i) => <DockerfileLine key={i} line={l} />}
                           initialScrollTop={scrollByFile.current[activeFile] ?? 0} onScrollTop={rememberScroll} />
                 )}
               </div>

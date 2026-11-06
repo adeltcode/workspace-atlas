@@ -1,16 +1,17 @@
 import { Fragment, useState, useMemo, useRef, useEffect } from 'react'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { Play, Square, Trash2, ChevronDown, FileText, RefreshCw, X, Box } from 'lucide-react'
+import { toggled } from '../../../utils/toggled'
 import clsx from 'clsx'
 import * as api from '../api'
 import type { DockerContainer } from '../types'
 import { useAppStore } from '../../../store/appStore'
 import { ConfirmRemoveButton, StatusCell, useDockerJump, useDockerTable } from './TableBits'
-import { Button, CellLink, SearchField, Segmented, SegmentedItem, EmptyState, ErrorBanner, ConfirmDestructive, Toolbar } from '../../../components/ui'
-import { TableHead } from '../../../components/TableColumns'
+import { Button, CellLink, SearchField, EmptyState, ErrorBanner, ConfirmDestructive, Toolbar, FilterSegments, NoMatches, Dash } from '../../../components/ui'
+import { TableHead, useTableSort } from '../../../components/TableColumns'
 import {
   containerDot, filterContainers, firstPort, matchesContainerFilter, parsePorts, portLabel, sortContainers,
-  type ContainerFilter, type ContainerSortKey, type SortDir,
+  type ContainerFilter, type ContainerSortKey,
 } from '../rules'
 
 const FILTERS: { key: ContainerFilter; label: string }[] = [
@@ -18,8 +19,6 @@ const FILTERS: { key: ContainerFilter; label: string }[] = [
   { key: 'running', label: 'Running' },
   { key: 'stopped', label: 'Stopped' },
 ]
-
-const Dash = () => <span className="pkg-dash">-</span>
 
 function PortLinks({ container }: { container: DockerContainer }) {
   const ports = parsePorts(container.ports)
@@ -130,8 +129,7 @@ export default function ContainersTab({
   loading:    boolean
   onRefresh:  () => void
 }) {
-  const [sortKey, setSortKey]         = useState<ContainerSortKey>('name')
-  const [sortDir, setSortDir]         = useState<SortDir>('asc')
+  const { sortKey, sortDir, handleSort } = useTableSort<ContainerSortKey>('name', 'asc', ['created'])
   const [search, setSearch]           = useState('')
   const [stateFilter, setStateFilter] = useState<ContainerFilter>('all')
   const [busy, setBusy]               = useState<string | null>(null)
@@ -152,17 +150,12 @@ export default function ContainersTab({
   const [bulkBusy, setBulkBusy]       = useState(false)
   const [confirmRemove, setConfirmRemove] = useState(false)
 
-  const handleSort = (key: ContainerSortKey) => {
-    if (key === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-    else { setSortKey(key); setSortDir(key === 'created' ? 'desc' : 'asc') }
-  }
-
   const filtered = useMemo(
     () => sortContainers(filterContainers(containers, search, stateFilter), sortKey, sortDir),
     [containers, sortKey, sortDir, search, stateFilter],
   )
 
-  const toggleSelect    = (id: string) => setSelectedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
+  const toggleSelect    = (id: string) => setSelectedIds(prev => toggled(prev, id))
   const allSelected     = selectedIds.size > 0 && selectedIds.size === filtered.length
   const someSelected    = selectedIds.size > 0 && selectedIds.size < filtered.length
   const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(filtered.map(c => c.id)))
@@ -170,54 +163,25 @@ export default function ContainersTab({
   const selectedRunning = filtered.filter(c => selectedIds.has(c.id) && c.state === 'running')
   const selectedStopped = filtered.filter(c => selectedIds.has(c.id) && c.state !== 'running')
 
-  const bulkStart = async () => {
-    if (!selectedStopped.length || bulkBusy) return
+  const runBulk = async (targets: DockerContainer[], command: string, action: 'start' | 'stop' | 'remove', done: string) => {
+    if (!targets.length || bulkBusy) return
     setBulkBusy(true)
-    const { addTerminalLine } = useAppStore.getState()
-    for (const c of selectedStopped) {
-      addTerminalLine(`$ docker start ${c.id.slice(0, 12)}`, 'cmd')
-      try {
-        await api.dockerContainerAction(c.id, 'start')
-        addTerminalLine(`  ✓ ${c.name || c.id.slice(0, 12)} started`, 'success')
-      } catch (e) {
-        addTerminalLine(`  ✗ ${String(e)}`, 'error')
-      }
-    }
-    setSelectedIds(new Set()); onRefresh(); setBulkBusy(false)
-  }
-
-  const bulkStop = async () => {
-    if (!selectedRunning.length || bulkBusy) return
-    setBulkBusy(true)
-    const { addTerminalLine } = useAppStore.getState()
-    for (const c of selectedRunning) {
-      addTerminalLine(`$ docker stop ${c.id.slice(0, 12)}`, 'cmd')
-      try {
-        await api.dockerContainerAction(c.id, 'stop')
-        addTerminalLine(`  ✓ ${c.name || c.id.slice(0, 12)} stopped`, 'success')
-      } catch (e) {
-        addTerminalLine(`  ✗ ${String(e)}`, 'error')
-      }
-    }
-    setSelectedIds(new Set()); onRefresh(); setBulkBusy(false)
-  }
-
-  const bulkRemove = async () => {
-    if (!selectedStopped.length || bulkBusy) return
-    setBulkBusy(true)
-    const { addTerminalLine } = useAppStore.getState()
     setConfirmRemove(false)
-    for (const c of selectedStopped) {
-      addTerminalLine(`$ docker rm ${c.id.slice(0, 12)}`, 'cmd')
+    const { addTerminalLine } = useAppStore.getState()
+    for (const c of targets) {
+      addTerminalLine(`$ docker ${command} ${c.id.slice(0, 12)}`, 'cmd')
       try {
-        await api.dockerContainerAction(c.id, 'remove')
-        addTerminalLine(`  ✓ ${c.name || c.id.slice(0, 12)} removed`, 'success')
+        await api.dockerContainerAction(c.id, action)
+        addTerminalLine(`  ✓ ${c.name || c.id.slice(0, 12)} ${done}`, 'success')
       } catch (e) {
         addTerminalLine(`  ✗ ${String(e)}`, 'error')
       }
     }
     setSelectedIds(new Set()); onRefresh(); setBulkBusy(false)
   }
+  const bulkStart  = () => runBulk(selectedStopped, 'start', 'start', 'started')
+  const bulkStop   = () => runBulk(selectedRunning, 'stop', 'stop', 'stopped')
+  const bulkRemove = () => runBulk(selectedStopped, 'rm', 'remove', 'removed')
 
   const doAction = async (id: string, action: 'start' | 'stop' | 'remove') => {
     setBusy(id); setActionError(null)
@@ -343,18 +307,7 @@ export default function ContainersTab({
           placeholder="Search containers"
           label="Search containers by name, image, ID, project, or port"
         />
-        <Segmented label="Filter by state">
-          {FILTERS.map(({ key, label }) => (
-            <SegmentedItem
-              key={key}
-              active={stateFilter === key}
-              count={containers.filter(c => matchesContainerFilter(c, key)).length}
-              onClick={() => setStateFilter(key)}
-            >
-              {label}
-            </SegmentedItem>
-          ))}
-        </Segmented>
+        <FilterSegments label="Filter by state" options={FILTERS} value={stateFilter} onChange={setStateFilter} count={key => containers.filter(c => matchesContainerFilter(c, key)).length} />
 
         {selectedIds.size > 0 && (
           <>
@@ -390,11 +343,7 @@ export default function ContainersTab({
       {actionError != null && <ErrorBanner className="error-banner--flush" error={actionError} />}
 
       {filtered.length === 0 && (
-        <EmptyState
-          title="No containers match"
-          description="Adjust the search or filters."
-          actions={<Button onClick={() => { setSearch(''); setStateFilter('all') }}>Clear filters</Button>}
-        />
+        <NoMatches noun="containers" onClear={() => { setSearch(''); setStateFilter('all') }} />
       )}
 
       {filtered.length > 0 && (

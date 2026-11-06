@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { toggled } from '../utils/toggled'
 import clsx from 'clsx'
 import { useAppStore } from '../store/appStore'
 import { bytesToHuman } from '../utils/format'
@@ -256,11 +257,7 @@ export default function LiveMetricsCharts({ items, stepSecs = 5 }: {
   }, [series, hidden])
 
   function toggleHide(name: string) {
-    setHidden(prev => {
-      const next = new Set(prev)
-      next.has(name) ? next.delete(name) : next.add(name)
-      return next
-    })
+    setHidden(prev => toggled(prev, name))
   }
 
   const shared = { series, numPoints, realDataStart, hidden, hoverIdx, maxCpu, maxMem, stepSecs,

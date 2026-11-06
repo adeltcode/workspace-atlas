@@ -42,6 +42,7 @@ export function fmtBytes(b: number): string {
 export function parseSizeBytes(s: string): number {
   const n = parseFloat(s)
   if (Number.isNaN(n)) return 0
+  if (s.endsWith('TB')) return n * 1e12
   if (s.endsWith('GB')) return n * 1e9
   if (s.endsWith('MB')) return n * 1e6
   if (s.endsWith('kB')) return n * 1e3

@@ -113,7 +113,14 @@ export function Prerequisite({ title, description, steps, command, actions }: {
 
 export interface Crumb { label: string; onClick?: () => void }
 
-export function SheetHead({ crumbs, title, subtitle, status, actions }: {
+export function SheetHead({
+  title,
+  crumbs = [{ label: 'Overview', onClick: () => useAppStore.getState().setActiveView('dashboard') }, { label: title }],
+  subtitle,
+  status,
+  actions,
+}: {
+  /** Defaults to the trail from Overview to this page. */
   crumbs?: Crumb[]
   title: string
   subtitle?: React.ReactNode
@@ -121,9 +128,9 @@ export function SheetHead({ crumbs, title, subtitle, status, actions }: {
   actions?: React.ReactNode
 }) {
   return (
-    <header className="sheet-head">
-      <div className="sheet-head-main">
-        {crumbs && crumbs.length > 0 && (
+    <div className="page-head">
+      <header className="sheet-head">
+        <div className="sheet-head-main">
           <nav className="crumbs" aria-label="Breadcrumb">
             {crumbs.map((c, i) => (
               <span key={`${c.label}-${i}`} style={{ display: 'contents' }}>
@@ -134,15 +141,37 @@ export function SheetHead({ crumbs, title, subtitle, status, actions }: {
               </span>
             ))}
           </nav>
-        )}
-        <div className="sheet-title-row">
-          <h1 className="sheet-title">{title}</h1>
-          {status}
-          {actions && <div className="sheet-actions">{actions}</div>}
+          <div className="sheet-title-row">
+            <h1 className="sheet-title">{title}</h1>
+            {status}
+            {actions && <div className="sheet-actions">{actions}</div>}
+          </div>
+          {subtitle && <p className="sheet-sub">{subtitle}</p>}
         </div>
-        {subtitle && <p className="sheet-sub">{subtitle}</p>}
-      </div>
-    </header>
+      </header>
+    </div>
+  )
+}
+
+/** A dot and a short state, shown beside a page's title. */
+export function StatusPill({ on, children }: { on: boolean; children: React.ReactNode }) {
+  return (
+    <span className="pill">
+      <span className={clsx('rail-dot', on ? 'running' : 'stopped')} />
+      {children}
+    </span>
+  )
+}
+
+export const Dash = () => <span className="pkg-dash">-</span>
+
+export function NoMatches({ noun, onClear }: { noun: string; onClear: () => void }) {
+  return (
+    <EmptyState
+      title={`No ${noun} match`}
+      description="Adjust the search or filters."
+      actions={<Button onClick={onClear}>Clear filters</Button>}
+    />
   )
 }
 
@@ -266,37 +295,20 @@ export function StatRow({ children }: { children: React.ReactNode }) {
   return <div className="stat-row">{children}</div>
 }
 
-export function Panel({ title, meta, actions, onOpen, children, className }: {
+export function Panel({ title, actions, children, className }: {
   /** Omit for a plain bordered group with no head. */
   title?: string
-  meta?: React.ReactNode
   actions?: React.ReactNode
-  /** Makes the whole head a link into the section it summarises. */
-  onOpen?: () => void
   children: React.ReactNode
   className?: string
 }) {
-  const head = title && (
-    <>
-      <span className="panel-title">{title}</span>
-      {meta && <span className="panel-meta">{meta}</span>}
-    </>
-  )
   return (
     <section className={clsx('panel', className)}>
-      {title && (onOpen
-        ? (
-          <button className="panel-head panel-head--link" onClick={onOpen}>
-            {head}
-            <ChevronRight size={13} className="panel-head-arrow" aria-hidden="true" />
-          </button>
-        )
-        : (
-          <div className="panel-head">
-            {head}
-            {actions && <div className="panel-actions">{actions}</div>}
-          </div>
-        )
+      {title && (
+        <div className="panel-head">
+          <span className="panel-title">{title}</span>
+          {actions && <div className="panel-actions">{actions}</div>}
+        </div>
       )}
       {children}
     </section>
@@ -444,6 +456,30 @@ export function ConfirmDestructive({
 
 export function Toolbar({ children, className }: { children: React.ReactNode; className?: string }) {
   return <div className={clsx('toolbar', className)}>{children}</div>
+}
+
+export function FilterSegments<K extends string>({ label, options, value, onChange, count }: {
+  label: string
+  options: readonly { key: K; label: string; title?: string }[]
+  value: K
+  onChange: (key: K) => void
+  count?: (key: K) => number
+}) {
+  return (
+    <Segmented label={label}>
+      {options.map(option => (
+        <SegmentedItem
+          key={option.key}
+          active={value === option.key}
+          count={count?.(option.key)}
+          title={option.title}
+          onClick={() => onChange(option.key)}
+        >
+          {option.label}
+        </SegmentedItem>
+      ))}
+    </Segmented>
+  )
 }
 
 export function Segmented({ label, children }: { label: string; children: React.ReactNode }) {

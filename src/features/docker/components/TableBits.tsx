@@ -1,41 +1,10 @@
 import { useEffect, useState } from 'react'
-import { ChevronUp, ChevronDown, Trash2 } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 import clsx from 'clsx'
 import { Button } from '../../../components/ui'
 import { ColumnsMenu, useTableColumns, type TableColumn } from '../../../components/TableColumns'
 import { useAppStore, type DockerJump, type DockerTab, type DockerTableTab } from '../../../store/appStore'
 import { DOCKER_COLUMNS } from '../rules'
-
-export function SortHeader<K extends string>({ label, col, sortKey, sortDir, onSort, children }: {
-  label: string; col: K; sortKey: K; sortDir: 'asc' | 'desc'
-  onSort: (k: K) => void
-  /** Extra header content, such as a column resize handle. */
-  children?: React.ReactNode
-}) {
-  const active = col === sortKey
-  return (
-    <th
-      className={clsx('img-th img-th-sort sortable', active && 'active')}
-      onClick={() => onSort(col)}
-      aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
-    >
-      {/* The header cell cannot take focus, so the control inside it does. */}
-      <div
-        className="th-sort-inner"
-        role="button"
-        tabIndex={0}
-        aria-label={`Sort by ${label}`}
-        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort(col) } }}
-      >
-        {label}
-        {active
-          ? sortDir === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />
-          : <ChevronDown size={12} className="sort-idle" />}
-      </div>
-      {children}
-    </th>
-  )
-}
 
 /** Two-click remove: first click arms (shows "?"), second confirms. Disarms on blur. */
 export function ConfirmRemoveButton({ onConfirm, onArm, disabled, title }: {
@@ -82,29 +51,16 @@ export function StatusCell({ dot, children }: { dot: 'running' | 'partial' | 'st
 }
 
 export function useDockerTable<K extends string>(tab: DockerTableTab) {
-  const prefs = useAppStore(s => s.dockerColumns[tab])
-  const setDockerColumns = useAppStore(s => s.setDockerColumns)
   return useTableColumns<K>({
     columns: DOCKER_COLUMNS[tab] as TableColumn<K>[],
     fill: 'name',
-    prefs,
-    read: () => useAppStore.getState().dockerColumns[tab],
-    save: next => setDockerColumns(tab, next),
+    select: s => s.dockerColumns[tab],
+    save: next => useAppStore.getState().setDockerColumns(tab, next),
   })
 }
 
 export function DockerColumnsMenu({ tab }: { tab: DockerTableTab }) {
-  const table = useDockerTable(tab)
-  const prefs = useAppStore(s => s.dockerColumns[tab])
-  const setDockerColumns = useAppStore(s => s.setDockerColumns)
-  return (
-    <ColumnsMenu
-      columns={DOCKER_COLUMNS[tab]}
-      hidden={prefs.hidden}
-      onToggle={table.toggle}
-      onReset={() => setDockerColumns(tab, useAppStore.getInitialState().dockerColumns[tab])}
-    />
-  )
+  return <ColumnsMenu table={useDockerTable(tab)} />
 }
 
 /** Runs once when another page sends the user to this tab. */

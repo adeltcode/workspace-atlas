@@ -5,7 +5,7 @@ import { useAppStore } from '../../../store/appStore'
 import * as api from '../api'
 import type { WslDistro, ServiceList, Service, ServiceDetail } from '../types'
 import { Modal } from './Dialog'
-import { Button, ErrorBanner, SearchField, Segmented, SegmentedItem, Toolbar } from '../../../components/ui'
+import { Button, ErrorBanner, SearchField, Toolbar, FilterSegments } from '../../../components/ui'
 
 type Filter = 'all' | 'enabled' | 'disabled' | 'running' | 'failed'
 
@@ -231,10 +231,6 @@ export default function WslStartupTab({ distros, onReload, onGoToConf }: {
     )
   }, [data, query, filter])
 
-  if (distros.length === 0) {
-    return <p className="empty-state" style={{ marginTop: 24 }}>No distros found.</p>
-  }
-
   return (
     <div className="wsl-startup">
       {!running && (
@@ -266,13 +262,7 @@ export default function WslStartupTab({ distros, onReload, onGoToConf }: {
         <>
           <Toolbar className="wsl-svc-toolbar">
             <SearchField value={query} onChange={setQuery} placeholder="Search services" />
-            <Segmented label="Filter services">
-              {FILTERS.map(f => (
-                <SegmentedItem key={f.key} active={filter === f.key} onClick={() => setFilter(f.key)}>
-                  {f.label}
-                </SegmentedItem>
-              ))}
-            </Segmented>
+            <FilterSegments label="Filter services" options={FILTERS} value={filter} onChange={setFilter} />
             <span className="img-count">{filtered.length} of {data.services.length} services</span>
             <Button variant="ghost" icon onClick={load} disabled={loading} title="Refresh" aria-label="Refresh services">
               <RefreshCw size={13} className={loading ? 'spin' : ''} />

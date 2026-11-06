@@ -1,3 +1,4 @@
+import { sortRows, type SortDir } from '../../utils/sortRows'
 import type { HoldReason, LockReport, PortEntry, ProcessInfo, ProcessOwner } from './api'
 
 export type PortFilter = 'programs' | 'all'
@@ -161,15 +162,7 @@ function sortValue(e: PortEntry, key: PortSortKey): string | number | null {
   }
 }
 
-/** Unknown values sort last in both directions, and ties fall back to the port. */
-export function sortPorts(entries: PortEntry[], key: PortSortKey, dir: 'asc' | 'desc'): PortEntry[] {
-  return [...entries].sort((a, b) => {
-    const va = sortValue(a, key), vb = sortValue(b, key)
-    const byPort = a.port - b.port || a.process.pid - b.process.pid
-    if (va === null || vb === null) return va === vb ? byPort : va === null ? 1 : -1
-    const cmp = typeof va === 'number' && typeof vb === 'number'
-      ? va - vb
-      : String(va).localeCompare(String(vb), undefined, { sensitivity: 'base', numeric: true })
-    return (dir === 'asc' ? cmp : -cmp) || byPort
-  })
+/** Ties fall back to the port. */
+export function sortPorts(entries: PortEntry[], key: PortSortKey, dir: SortDir): PortEntry[] {
+  return sortRows(entries, e => sortValue(e, key), (a, b) => a.port - b.port || a.process.pid - b.process.pid, dir)
 }

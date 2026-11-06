@@ -23,7 +23,6 @@ interface HealthResult {
   score:    number
   running:  number
   total:    number
-  checks:   { ok: boolean; label: string }[]
 }
 
 function calcHealth(projectName: string, containers: DockerContainer[]): HealthResult {
@@ -33,34 +32,14 @@ function calcHealth(projectName: string, containers: DockerContainer[]): HealthR
   const restarting = projectContainers.filter(c => c.state === 'restarting').length
   const unhealthy  = projectContainers.filter(c => c.state === 'dead').length
 
-  if (total === 0) return { score: 0, running: 0, total: 0, checks: [{ ok: false, label: 'No containers found' }] }
+  if (total === 0) return { score: 0, running: 0, total: 0 }
 
   let score = 100
-  const checks: { ok: boolean; label: string }[] = []
+  if (running !== total) score -= Math.round(((total - running) / total) * 60)
+  if (restarting > 0) score -= 20
+  if (unhealthy > 0) score -= 15
 
-  if (running === total) {
-    checks.push({ ok: true, label: 'All services running' })
-  } else {
-    const deduction = Math.round(((total - running) / total) * 60)
-    score -= deduction
-    checks.push({ ok: false, label: `${total - running} service${total - running !== 1 ? 's' : ''} stopped` })
-  }
-
-  if (restarting > 0) {
-    score -= 20
-    checks.push({ ok: false, label: `${restarting} container${restarting !== 1 ? 's' : ''} restarting` })
-  }
-
-  if (unhealthy > 0) {
-    score -= 15
-    checks.push({ ok: false, label: `${unhealthy} container${unhealthy !== 1 ? 's' : ''} unhealthy` })
-  }
-
-  if (restarting === 0 && unhealthy === 0 && running === total) {
-    checks.push({ ok: true, label: 'No warnings' })
-  }
-
-  return { score: Math.max(0, score), running, total, checks }
+  return { score: Math.max(0, score), running, total }
 }
 
 function healthColor(score: number) {
