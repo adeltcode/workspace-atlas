@@ -7342,6 +7342,15 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .holder-summary { font-size: var(--text-xs); color: var(--color-text-secondary); overflow-wrap: anywhere; user-select: text; }
 .toolbar > .holder-target { flex: 1 1 320px; max-width: none; }
 
+.cache-toolbar { flex: none; margin-bottom: 0; }
+.img-tab > .file-drop-prompt--row { flex: none; }
+.cache-progress { flex: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cache-note { display: inline-flex; margin-left: var(--space-2); color: var(--color-text-tertiary); vertical-align: -2px; }
+.cache-dialog-note { display: block; margin-top: var(--space-2); }
+.cache-folders-button { anchor-name: --cache-folders; }
+.cache-folders { position: fixed; position-anchor: --cache-folders; inset: auto; top: calc(anchor(bottom) + 6px); left: anchor(left); width: 400px; max-width: calc(100vw - var(--space-6)); margin: 0; color: var(--color-text-primary); }
+.cache-folder { display: flex; align-items: center; gap: var(--space-2); padding: 2px var(--space-1) 2px var(--space-2); }
+.cache-folder-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .clipboard-tab { position: relative; }
 .clipboard-tab .toast-region { bottom: 48px; }
 .clipboard-notices { flex: none; max-height: 24vh; margin: 0; padding: 0; overflow-y: auto; list-style: none; background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: var(--radius-lg); }

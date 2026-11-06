@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { File, FolderOpen, Search } from 'lucide-react'
 import { useAppStore } from '../../store/appStore'
 import { Button, EmptyState, ErrorBanner, SheetHead, Tag, Toolbar } from '../../components/ui'
@@ -39,6 +39,13 @@ export default function LocksView() {
     setResult(null)
     scan(targets)
   }
+
+  const locksJump = useAppStore(s => s.locksJump)
+  useEffect(() => {
+    if (locksJump === null) return
+    useAppStore.getState().clearLocksJump()
+    check([locksJump])
+  }, [locksJump]) // eslint-disable-line
 
   const pick = async (choose: () => Promise<string | null>) => {
     const picked = await choose()

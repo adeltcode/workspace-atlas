@@ -1,5 +1,7 @@
 #[cfg(windows)]
 mod clipboard;
+#[cfg(windows)]
+mod caches;
 mod config;
 mod error;
 mod docker;
@@ -38,6 +40,7 @@ pub fn run() {
         .manage(docker::ComposeLogState(std::sync::Arc::new(std::sync::Mutex::new(None))))
         .manage(system::SysState(std::sync::Mutex::new(sysinfo::System::new())))
         .manage(wsl_migration::MigrationState::default())
+        .manage(caches::CacheScanState::default())
         .invoke_handler(tauri::generate_handler![
             docker::docker_check,
             docker::launch_docker_desktop,
@@ -86,6 +89,12 @@ pub fn run() {
             holders::locks_find,
             holders::process_close,
             holders::pick_any_file,
+            #[cfg(windows)]
+            caches::caches_scan,
+            #[cfg(windows)]
+            caches::caches_scan_stop,
+            #[cfg(windows)]
+            caches::caches_clear,
             #[cfg(windows)]
             clipboard::clipboard_status,
             #[cfg(windows)]

@@ -66,6 +66,30 @@ test('a jump opens the right place, unless WSL work is keeping the user where th
   s.setWslBusyDistro(null)
 })
 
+test('a dev cache scan is not saved, and its folders and columns are', () => {
+  const s = store.getState()
+  s.setCacheRoots(['F:\\Scripts'])
+  s.setCacheColumns({ widths: {}, hidden: ['type'] })
+  s.setCacheScan({ items: [], skipped_roots: [], stopped: false })
+  s.setCacheScanProgress({ folder: 'F:\\Scripts', found: 1 })
+  const state = JSON.parse(persisted).state
+  assert.deepEqual(state.cacheRoots, ['F:\\Scripts'])
+  assert.deepEqual(state.cacheColumns.hidden, ['type'])
+  assert.equal(state.cacheScan, undefined)
+  assert.equal(state.cacheScanProgress, undefined)
+  s.setCacheScan(null)
+  s.setCacheScanProgress(null)
+})
+
+test('a failed clear can send the user to File locks already checking the folder', () => {
+  const s = store.getState()
+  s.jumpToLocks('F:\\Scripts\\app\\node_modules')
+  assert.equal(store.getState().activeView, 'locks')
+  assert.equal(store.getState().locksJump, 'F:\\Scripts\\app\\node_modules')
+  s.clearLocksJump()
+  assert.equal(store.getState().locksJump, null)
+})
+
 test('column choices are saved for each Docker table, and a jump is not', () => {
   const s = store.getState()
   s.setDockerColumns('images', { widths: { name: 300 }, hidden: ['id'] })

@@ -181,6 +181,9 @@ test('a file-in-use error offers the File locks page, and other errors do not', 
   assert.doesNotMatch(render('permission'), /Open File locks/)
   assert.match(render('unknown', 'Bind for 0.0.0.0:8000 failed: port is already allocated'), /See what is using port 8000/)
   assert.doesNotMatch(render('unknown'), /See what is using/)
+  const named = renderToStaticMarkup(createElement(ui.ErrorBanner, { error: { kind: 'busy', message: 'Failed' }, lockedPath: 'C:\\x' }))
+  assert.match(named, /See what is using it/)
+  assert.doesNotMatch(named, /Open File locks/, 'one way out, not two')
 })
 
 test('an error about a taken port names the port, however it is worded', () => {
