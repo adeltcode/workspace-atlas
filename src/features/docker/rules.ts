@@ -176,6 +176,9 @@ export function matchesImageFilter(image: DockerImage, filter: ImageFilter, pinn
   }
 }
 
+export const removableImages = (images: DockerImage[], pinned: string[]) =>
+  images.filter(image => !image.in_use && !pinned.includes(image.id))
+
 export function filterImages(images: DockerImage[], query: string, filter: ImageFilter, pinned: string[]): DockerImage[] {
   const q = query.trim().toLowerCase()
   return images.filter(image => matchesImageFilter(image, filter, pinned)

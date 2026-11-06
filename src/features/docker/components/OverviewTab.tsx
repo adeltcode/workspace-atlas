@@ -11,9 +11,10 @@ import type {
 } from '../types'
 import { bytesToHuman, composeStatusLabel } from '../../../utils/format'
 import {
-  SectionHead, Panel, StatCard, StatRow, Button, Segmented, SegmentedItem, EmptyState,
+  SectionHead, Panel, StatCard, StatRow, Button, Segmented, SegmentedItem, EmptyState, ConfirmDestructive, ErrorBanner,
 } from '../../../components/ui'
 import * as api from '../api'
+import { removableImages } from '../rules'
 
 const STALE_DAYS = 7
 
@@ -87,27 +88,36 @@ function HeroSkeleton() {
 
 type CleanupItem = { id: string; label: string; sublabel?: string; size?: string | null }
 
-function CleanupRow({
-  color, label, count, size, sizeEst, onNavigate, items, onRemoveSelected,
-}: {
-  color:             string
-  label:             string
-  count?:            number
-  size:              string | null
-  sizeEst?:          boolean
-  onNavigate:        () => void
-  items?:            CleanupItem[]
-  onRemoveSelected?: (ids: string[]) => Promise<void>
-}) {
-  const [expanded,  setExpanded]  = useState(false)
-  const [selected,  setSelected]  = useState<Set<string>>(new Set())
-  const [removing,  setRemoving]  = useState(false)
-  const [removeErr, setRemoveErr] = useState<string | null>(null)
+type CleanupRemoval = {
+  noun:        string
+  consequence: string
+  command:     (ids: string[]) => string
+  run:         (ids: string[]) => Promise<void>
+}
 
-  const expandable = items != null && onRemoveSelected != null
+const shortImageId = (id: string) => id.replace('sha256:', '').slice(0, 12)
+
+function CleanupRow({
+  color, label, count, size, sizeEst, onNavigate, items, removal,
+}: {
+  color:      string
+  label:      string
+  count?:     number
+  size:       string | null
+  sizeEst?:   boolean
+  onNavigate: () => void
+  items?:     CleanupItem[]
+  removal?:   CleanupRemoval
+}) {
+  const [expanded,   setExpanded]   = useState(false)
+  const [selected,   setSelected]   = useState<Set<string>>(new Set())
+  const [confirming, setConfirming] = useState(false)
+  const [removing,   setRemoving]   = useState(false)
+
+  const expandable = items != null && removal != null
 
   function handleHeaderClick() {
-    if (expandable) { setExpanded(e => !e); setRemoveErr(null) }
+    if (expandable) setExpanded(e => !e)
     else onNavigate()
   }
 
@@ -120,15 +130,14 @@ function CleanupRow({
   }
 
   async function handleRemove() {
-    if (!onRemoveSelected || selected.size === 0) return
-    setRemoving(true); setRemoveErr(null)
+    if (!removal || selected.size === 0) return
+    setRemoving(true)
     try {
-      await onRemoveSelected([...selected])
+      await removal.run([...selected])
       setExpanded(false); setSelected(new Set())
-    } catch (e) {
-      setRemoveErr(String(e))
     } finally {
       setRemoving(false)
+      setConfirming(false)
     }
   }
 
@@ -167,12 +176,11 @@ function CleanupRow({
               </label>
             ))}
           </div>
-          {removeErr && <div className="cleanup-expand-error">{removeErr}</div>}
           <div className="cleanup-expand-actions">
             <button
               className="btn-filled btn-filled--danger btn-sm"
               disabled={selected.size === 0 || removing}
-              onClick={handleRemove}
+              onClick={() => setConfirming(true)}
             >
               <Trash2 size={11} />
               {removing ? 'Removing…' : `Remove${selected.size > 0 ? ` ${selected.size}` : ''}`}
@@ -180,6 +188,20 @@ function CleanupRow({
             <button className="btn-ghost btn-sm" onClick={onNavigate}>Open page</button>
           </div>
         </div>
+      )}
+
+      {confirming && removal && items && (
+        <ConfirmDestructive
+          title={`Remove ${selected.size} ${removal.noun}${selected.size === 1 ? '' : 's'}?`}
+          consequence={removal.consequence}
+          command={removal.command([...selected])}
+          summary={`${selected.size} selected`}
+          items={items.filter(i => selected.has(i.id)).map(i => ({ name: i.label, meta: i.size ?? undefined }))}
+          confirmLabel="Remove"
+          busy={removing}
+          onConfirm={handleRemove}
+          onCancel={() => setConfirming(false)}
+        />
       )}
     </div>
   )
@@ -267,7 +289,7 @@ export default function OverviewTab({
   statHistory: Map<string, { cpu: number[]; mem: number[] }>
   onPollStats: () => void
 }) {
-  const { setDockerTab, setImagesFilter, setVolumesFilter, setComposePreselect, backupDir } = useAppStore()
+  const { setDockerTab, setImagesFilter, setVolumesFilter, setComposePreselect, backupDir, dockerKeepList } = useAppStore()
 
   const [composeProjects, setComposeProjects] = useState<ComposeProject[]>([])
   const [composeLoading,  setComposeLoading]  = useState(true)
@@ -282,6 +304,15 @@ export default function OverviewTab({
   }, [refreshTick, status?.available]) // eslint-disable-line
 
   const [resourceView, setResourceView] = useState<'top' | 'all'>('all')
+
+  // Kept here because the refresh after a removal unmounts the cleanup rows.
+  const [cleanupError, setCleanupError] = useState<unknown>(null)
+  const removeThenRefresh = (remove: (ids: string[]) => Promise<unknown>) => async (ids: string[]) => {
+    setCleanupError(null)
+    try { await remove(ids) }
+    catch (e) { setCleanupError(e) }
+    finally { onRefresh?.() }
+  }
 
   const [dockerDiskStats, setDockerDiskStats] = useState<DiskStats | null>(null)
   const [backupDiskStats, setBackupDiskStats] = useState<DiskStats | null>(null)
@@ -339,8 +370,9 @@ export default function OverviewTab({
   const totalFree = totalRow ? parseReclaimSize(totalRow.reclaimable) : null
   const hasFree   = totalFree != null && parseSizeBytes(totalFree) > 0
 
-  const trueDangling  = images.filter(i => !i.in_use && i.repository === '<none>')
-  const unusedTagged  = images.filter(i => !i.in_use && i.repository !== '<none>')
+  const removable     = removableImages(images, dockerKeepList)
+  const trueDangling  = removable.filter(i => i.repository === '<none>')
+  const unusedTagged  = removable.filter(i => i.repository !== '<none>')
   const stale         = containers.filter(c => c.stopped_days >= STALE_DAYS)
   const unusedVols    = volumes.filter(v => !v.in_use)
 
@@ -691,6 +723,7 @@ export default function OverviewTab({
           </Button>
         )}
       />
+      {cleanupError != null && <ErrorBanner title="Could not remove the selected items" error={cleanupError} />}
       <Panel>
         {loading ? (
           <div className="cleanup-rows">
@@ -720,11 +753,16 @@ export default function OverviewTab({
                 onNavigate={() => { setImagesFilter('dangling'); setDockerTab('images') }}
                 items={trueDangling.map(i => ({
                   id:       i.id,
-                  label:    i.id.replace('sha256:', '').slice(0, 12),
+                  label:    shortImageId(i.id),
                   sublabel: i.created_since,
                   size:     i.size,
                 }))}
-                onRemoveSelected={async ids => { await api.dockerPruneRun(2, ids); onRefresh?.() }}
+                removal={{
+                  noun: 'dangling image',
+                  consequence: 'Deletes the selected images. They have no tag, so they cannot be pulled again by name.',
+                  command: ids => `docker rmi ${ids.map(shortImageId).join(' ')}`,
+                  run: removeThenRefresh(ids => api.dockerPruneRun(2, ids)),
+                }}
               />
             )}
             {unusedTagged.length > 0 && (
@@ -740,7 +778,12 @@ export default function OverviewTab({
                   sublabel: i.created_since,
                   size:     i.size,
                 }))}
-                onRemoveSelected={async ids => { await api.dockerPruneRun(2, ids); onRefresh?.() }}
+                removal={{
+                  noun: 'unused image',
+                  consequence: 'Deletes the selected images. Images from a registry can be pulled again. Locally built images must be rebuilt.',
+                  command: ids => `docker rmi ${ids.map(shortImageId).join(' ')}`,
+                  run: removeThenRefresh(ids => api.dockerPruneRun(2, ids)),
+                }}
               />
             )}
             {stale.length > 0 && (
@@ -756,9 +799,11 @@ export default function OverviewTab({
                   label:    c.name,
                   sublabel: c.status,
                 }))}
-                onRemoveSelected={async ids => {
-                  try { await Promise.all(ids.map(id => api.dockerContainerAction(id, 'remove'))) }
-                  finally { onRefresh?.() }
+                removal={{
+                  noun: 'stopped container',
+                  consequence: 'Deletes the containers, their logs, and any data not stored on a volume. Images and volumes are not affected. Compose projects can recreate their containers. Manually created containers cannot be recreated.',
+                  command: ids => `docker rm ${ids.map(id => id.slice(0, 12)).join(' ')}`,
+                  run: removeThenRefresh(ids => Promise.all(ids.map(id => api.dockerContainerAction(id, 'remove')))),
                 }}
               />
             )}
@@ -775,9 +820,11 @@ export default function OverviewTab({
                   sublabel: v.compose_project ?? undefined,
                   size:     v.size_bytes > 0 ? bytesToHuman(v.size_bytes) : null,
                 }))}
-                onRemoveSelected={async ids => {
-                  try { await Promise.all(ids.map(id => api.dockerVolumeRemove(id))) }
-                  finally { onRefresh?.() }
+                removal={{
+                  noun: 'unused volume',
+                  consequence: 'Volumes persist container data such as databases, uploads, and caches. Removing them permanently deletes that data.',
+                  command: ids => `docker volume rm ${ids.join(' ')}`,
+                  run: removeThenRefresh(ids => Promise.all(ids.map(id => api.dockerVolumeRemove(id)))),
                 }}
               />
             )}
