@@ -4,8 +4,9 @@ import type { LogEntry, DockerStatus, DockerSystemDf, DockerImage, DockerContain
 import type { DistroMetrics } from '../features/wsl/types'
 import type { SandboxDetails, SandboxSharedItem } from '../features/sandbox/api'
 import type { TerminalLine } from '../types/terminal'
+import type { CacheScan } from '../features/caches/api'
 
-export type View      = 'dashboard' | 'docker' | 'wsl' | 'sandbox' | 'packages' | 'ports' | 'locks' | 'clipboard' | 'settings'
+export type View      = 'dashboard' | 'docker' | 'wsl' | 'sandbox' | 'packages' | 'ports' | 'locks' | 'clipboard' | 'caches' | 'settings'
 export type Theme     = 'dark' | 'light'
 export type DockerTab = 'overview' | 'images' | 'containers' | 'volumes' | 'networks' | 'compose' | 'prune' | 'log'
 export type DockerTableTab = 'containers' | 'images' | 'volumes' | 'networks'
@@ -122,6 +123,21 @@ interface AppState {
   portsJump: string | null
   jumpToPorts: (query: string) => void
   clearPortsJump: () => void
+  locksJump: string | null
+  jumpToLocks: (path: string) => void
+  clearLocksJump: () => void
+
+  cacheColumns: { widths: Record<string, number>; hidden: string[] }
+  setCacheColumns: (c: { widths: Record<string, number>; hidden: string[] }) => void
+  cacheRoots: string[]
+  setCacheRoots: (roots: string[]) => void
+  cacheScan: CacheScan | null
+  setCacheScan: (scan: CacheScan | null) => void
+  /** Set while a scan runs. */
+  cacheScanProgress: { folder: string; found: number } | null
+  setCacheScanProgress: (progress: { folder: string; found: number } | null) => void
+  cacheScanError: unknown
+  setCacheScanError: (error: unknown) => void
 
   backupDir: string
   setBackupDir: (dir: string) => void
@@ -280,6 +296,21 @@ export const useAppStore = create<AppState>()(
         if (!get().wslBusyDistro) set({ activeView: 'ports', portsJump })
       },
       clearPortsJump: () => set({ portsJump: null }),
+      locksJump: null,
+      jumpToLocks: (locksJump) => {
+        if (!get().wslBusyDistro) set({ activeView: 'locks', locksJump })
+      },
+      clearLocksJump: () => set({ locksJump: null }),
+      cacheColumns: { widths: {}, hidden: ['files'] },
+      setCacheColumns: (cacheColumns) => set({ cacheColumns }),
+      cacheRoots: [],
+      setCacheRoots: (cacheRoots) => set({ cacheRoots }),
+      cacheScan: null,
+      setCacheScan: (cacheScan) => set({ cacheScan }),
+      cacheScanProgress: null,
+      setCacheScanProgress: (cacheScanProgress) => set({ cacheScanProgress }),
+      cacheScanError: null,
+      setCacheScanError: (cacheScanError) => set({ cacheScanError }),
 
       backupDir: '',
       setBackupDir: (backupDir) => set({ backupDir }),
@@ -420,6 +451,8 @@ export const useAppStore = create<AppState>()(
         portColumns:     s.portColumns,
         clipboardColumns: s.clipboardColumns,
         dockerColumns:   s.dockerColumns,
+        cacheColumns:    s.cacheColumns,
+        cacheRoots:      s.cacheRoots,
         backupDir:       s.backupDir,
         dockerKeepList:  s.dockerKeepList,
         dockerLogs:      s.dockerLogs,
@@ -433,7 +466,7 @@ export const useAppStore = create<AppState>()(
           // Guard against a malformed/partial imported config missing theme.
           if (state.theme === 'dark' || state.theme === 'light') applyTheme(state.theme)
           // Migrate persisted values whose views/tabs no longer exist.
-          if (!['dashboard', 'docker', 'wsl', 'sandbox', 'packages', 'ports', 'locks', 'clipboard', 'settings'].includes(state.activeView)) {
+          if (!['dashboard', 'docker', 'wsl', 'sandbox', 'packages', 'ports', 'locks', 'clipboard', 'caches', 'settings'].includes(state.activeView)) {
             state.activeView = 'dashboard'
           }
           if (['backup', 'backup-volumes', 'backup-compose'].includes(state.dockerTab as string)) {

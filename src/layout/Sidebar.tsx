@@ -1,4 +1,4 @@
-import { LayoutDashboard, Box, ClipboardList, HardDrive, FlaskConical, Package, Plug, Lock, Settings, Keyboard } from 'lucide-react'
+import { LayoutDashboard, Box, ClipboardList, Eraser, HardDrive, FlaskConical, Package, Plug, Lock, Settings, Keyboard } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore, type DockerTab, type WslView } from '../store/appStore'
 import { composeStatusLabel } from '../utils/format'
@@ -196,6 +196,14 @@ export default function Sidebar() {
         >
           <span className="rail-icon"><ClipboardList size={15} /></span>
           <span className="rail-label">Clipboard</span>
+        </button>
+        <button
+          className={clsx('rail-item', activeView === 'caches' && 'active')}
+          onClick={() => setActiveView('caches')}
+          aria-current={activeView === 'caches' ? 'page' : undefined}
+        >
+          <span className="rail-icon"><Eraser size={15} /></span>
+          <span className="rail-label">Dev caches</span>
         </button>
       </div>
 
