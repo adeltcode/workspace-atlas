@@ -50,15 +50,15 @@ export default function ComposeLogPanel({ project, containers, configFile, initi
   }, [enabled]) // eslint-disable-line
 
   useEffect(() => {
-    let unlisten: (() => void) | undefined
-    listen<string[]>('compose-log-batch', e => {
+    const listening = listen<string[]>('compose-log-batch', e => {
       if (pausedRef.current) {
         bufferRef.current.push(...e.payload)
         return
       }
       setLines(prev => [...prev, ...e.payload].slice(-5000))
-    }).then(fn => { unlisten = fn })
-    return () => { unlisten?.() }
+    })
+    // Waits for the listener, because the panel can close before it has started.
+    return () => { listening.then(stop => stop()).catch(() => {}) }
   }, [])
 
   // Sets scrollTop directly, so opening the panel lands on the latest line with no scroll animation,

@@ -6,12 +6,8 @@ use windows_sys::Win32::System::Registry::HKEY_CURRENT_USER;
 
 use crate::docker::bytes_to_human;
 use crate::registry::{read_dword, read_text_value, subkeys};
-use crate::shell::{hidden, ShellOut};
+use crate::shell::{emit_line, hidden, in_background, logged, now_seconds, powershell};
 use crate::error::{AtlasError, ErrorKind, RecoveryAction};
-
-pub(crate) fn emit_line(app: &tauri::AppHandle, text: impl Into<String>, stderr: bool) {
-    app.emit("shell-out", ShellOut { text: text.into(), stderr }).ok();
-}
 
 /// Emit a copy-pasteable file write as a here-string block, line by line:
 ///   $ <head>
@@ -113,17 +109,9 @@ pub async fn write_wslconfig(
         let path = wslconfig_path()?;
         let win = path.replace('/', "\\");
         emit_write_block(&app, format!("Set-Content -Path \"{}\" -Value @'", win), &content, "'@".to_string());
-        match std::fs::write(&path, &content) {
-            Ok(_) => {
-                emit_line(&app, format!("  ✓ saved {}", win), false);
-                Ok(())
-            }
-            Err(e) => {
-                let msg = format!("Cannot write .wslconfig: {}", e);
-                emit_line(&app, format!("  ✗ {}", msg), true);
-                Err(msg.into())
-            }
-        }
+        logged(&app, std::fs::write(&path, &content).map_err(|e| format!("Cannot write .wslconfig: {}", e)))?;
+        emit_line(&app, format!("  ✓ saved {}", win), false);
+        Ok(())
     }).await
 }
 
@@ -171,9 +159,41 @@ fn list_wslconfig_backups_sync(root: &str) -> Vec<WslConfigBackup> {
     list_conf_backups(&wslconfig_backup_dir(root), "wslconfig_")
 }
 
+/// Save `content` as `{dir}/{prefix}{ts}.conf`, unless the newest backup already matches.
+/// Keeps the 20 most recent. `shown_command` gets the destination, for the terminal panel.
+fn save_conf_backup(
+    app: &tauri::AppHandle,
+    dir: &str,
+    prefix: &str,
+    what: &str,
+    content: &str,
+    shown_command: impl FnOnce(&str) -> String,
+) -> Result<WslConfigBackup, AtlasError> {
+    if let Some(latest) = list_conf_backups(dir, prefix).first() {
+        if std::fs::read_to_string(&latest.path).ok().as_deref() == Some(content) {
+            emit_line(app, format!("# {} has not changed since backup {}", what, latest.filename), false);
+            return Ok(latest.clone());
+        }
+    }
+
+    std::fs::create_dir_all(dir).map_err(|e| format!("Could not create the backup folder: {}", e))?;
+    let ts = now_seconds();
+    let filename = format!("{}{}.conf", prefix, ts);
+    let path = format!("{}/{}", dir, filename);
+
+    emit_line(app, shown_command(&path.replace('/', "\\")), false);
+    std::fs::write(&path, content).map_err(|e| format!("Cannot write backup: {}", e))?;
+    emit_line(app, format!("  ✓ backed up {}", filename), false);
+
+    for stale in list_conf_backups(dir, prefix).into_iter().skip(20) {
+        std::fs::remove_file(&stale.path).ok();
+    }
+
+    Ok(WslConfigBackup { filename, path, size_bytes: content.len() as u64, created_at: ts as i64 })
+}
+
 /// Snapshot the current `.wslconfig` to `{root}/wsl/wslconfig/wslconfig_{ts}.conf`.
-/// Skips writing a duplicate if the newest backup is byte-identical. Keeps the 20
-/// most recent. Errors if `.wslconfig` does not exist yet.
+/// Errors if `.wslconfig` does not exist yet.
 #[tauri::command]
 pub async fn wslconfig_backup(
     migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
@@ -181,42 +201,11 @@ pub async fn wslconfig_backup(
     backup_dir: String,
 ) -> Result<WslConfigBackup, AtlasError> {
     migration.inner().clone().run_operation(move || {
-        use std::time::{SystemTime, UNIX_EPOCH};
-
         let src = wslconfig_path()?;
         let content = std::fs::read_to_string(&src)
             .map_err(|e| format!("Cannot read .wslconfig: {}", e))?;
-
-        // De-dup against the most recent backup.
-        let existing = list_wslconfig_backups_sync(&backup_dir);
-        if let Some(latest) = existing.first() {
-            if std::fs::read_to_string(&latest.path).ok().as_deref() == Some(content.as_str()) {
-                emit_line(&app, format!("# .wslconfig has not changed since backup {}", latest.filename), false);
-                return Ok(latest.clone());
-            }
-        }
-
-        let dir = wslconfig_backup_dir(&backup_dir);
-        std::fs::create_dir_all(&dir).map_err(|e| format!("Could not create the backup folder: {}", e))?;
-
-        let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
-        let filename = format!("wslconfig_{}.conf", ts);
-        let path = format!("{}/{}", dir, filename);
-
-        emit_line(&app, format!("$ Copy-Item -Path \"{}\" -Destination \"{}\"", src.replace('/', "\\"), path.replace('/', "\\")), false);
-        std::fs::write(&path, &content).map_err(|e| format!("Cannot write backup: {}", e))?;
-        emit_line(&app, format!("  ✓ backed up {}", filename), false);
-
-        // Prune to the 20 most recent.
-        for stale in list_wslconfig_backups_sync(&backup_dir).into_iter().skip(20) {
-            std::fs::remove_file(&stale.path).ok();
-        }
-
-        Ok(WslConfigBackup {
-            filename,
-            path,
-            size_bytes: content.len() as u64,
-            created_at: ts as i64,
+        save_conf_backup(&app, &wslconfig_backup_dir(&backup_dir), "wslconfig_", ".wslconfig", &content, |dest| {
+            format!("$ Copy-Item -Path \"{}\" -Destination \"{}\"", src.replace('/', "\\"), dest)
         })
     }).await
 }
@@ -321,16 +310,9 @@ pub async fn write_wsl_conf(
 ) -> Result<(), AtlasError> {
     migration.inner().clone().run_operation(move || {
         emit_write_block(&app, "@'".to_string(), &content, format!("'@ | wsl -d {} -u root tee /etc/wsl.conf", distro));
-        match tee_wsl_conf(&distro, &content) {
-            Ok(()) => {
-                emit_line(&app, format!("  ✓ saved \\\\wsl.localhost\\{}\\etc\\wsl.conf", distro), false);
-                Ok(())
-            }
-            Err(e) => {
-                emit_line(&app, format!("  ✗ {}", e), true);
-                Err(e)
-            }
-        }
+        logged(&app, tee_wsl_conf(&distro, &content))?;
+        emit_line(&app, format!("  ✓ saved \\\\wsl.localhost\\{}\\etc\\wsl.conf", distro), false);
+        Ok(())
     }).await
 }
 
@@ -350,7 +332,6 @@ fn list_wslconf_backups_sync(root: &str, distro: &str) -> Vec<WslConfigBackup> {
 }
 
 /// Snapshot a distro's `/etc/wsl.conf` to `{root}/wsl/wslconf/{distro}_{ts}.conf`.
-/// De-dups against the newest backup; keeps the 20 most recent per distro.
 #[tauri::command]
 pub async fn wsl_conf_backup(
     migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
@@ -359,36 +340,13 @@ pub async fn wsl_conf_backup(
     backup_dir: String,
 ) -> Result<WslConfigBackup, AtlasError> {
     migration.inner().clone().run_operation(move || {
-        use std::time::{SystemTime, UNIX_EPOCH};
-
         let (content, exists) = cat_wsl_conf(&distro);
         if !exists {
             return Err("No wsl.conf to back up yet.".to_string().into());
         }
-
-        let existing = list_wslconf_backups_sync(&backup_dir, &distro);
-        if let Some(latest) = existing.first() {
-            if std::fs::read_to_string(&latest.path).ok().as_deref() == Some(content.as_str()) {
-                emit_line(&app, format!("# wsl.conf has not changed since backup {}", latest.filename), false);
-                return Ok(latest.clone());
-            }
-        }
-
-        let dir = wslconf_backup_dir(&backup_dir);
-        std::fs::create_dir_all(&dir).map_err(|e| format!("Could not create the backup folder: {}", e))?;
-        let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
-        let filename = format!("{}_{}.conf", safe_name(&distro), ts);
-        let path = format!("{}/{}", dir, filename);
-
-        emit_line(&app, format!("$ wsl -d {} -u root cat /etc/wsl.conf | Out-File -Encoding utf8 \"{}\"", distro, path.replace('/', "\\")), false);
-        std::fs::write(&path, &content).map_err(|e| format!("Cannot write backup: {}", e))?;
-        emit_line(&app, format!("  ✓ backed up {}", filename), false);
-
-        for stale in list_wslconf_backups_sync(&backup_dir, &distro).into_iter().skip(20) {
-            std::fs::remove_file(&stale.path).ok();
-        }
-
-        Ok(WslConfigBackup { filename, path, size_bytes: content.len() as u64, created_at: ts as i64 })
+        save_conf_backup(&app, &wslconf_backup_dir(&backup_dir), &format!("{}_", safe_name(&distro)), "wsl.conf", &content, |dest| {
+            format!("$ wsl -d {} -u root cat /etc/wsl.conf | Out-File -Encoding utf8 \"{}\"", distro, dest)
+        })
     }).await
 }
 
@@ -415,22 +373,19 @@ pub async fn wsl_conf_restore(
     migration.inner().clone().run_operation(move || {
         let content = std::fs::read_to_string(&backup_path)
             .map_err(|e| format!("Cannot read backup: {}", e))?;
-        let returned = content.clone();
-        {
-            emit_line(&app, format!("$ Get-Content \"{}\" | wsl -d {} -u root tee /etc/wsl.conf", backup_path.replace('/', "\\"), distro), false);
-            match tee_wsl_conf(&distro, &content) {
-                Ok(()) => {
-                    emit_line(&app, format!("  ✓ restored \\\\wsl.localhost\\{}\\etc\\wsl.conf", distro), false);
-                    Ok(())
-                }
-                Err(e) => {
-                    emit_line(&app, format!("  ✗ {}", e), true);
-                    Err(e)
-                }
-            }
-        }?;
-        Ok(returned)
+        emit_line(&app, format!("$ Get-Content \"{}\" | wsl -d {} -u root tee /etc/wsl.conf", backup_path.replace('/', "\\"), distro), false);
+        logged(&app, tee_wsl_conf(&distro, &content))?;
+        emit_line(&app, format!("  ✓ restored \\\\wsl.localhost\\{}\\etc\\wsl.conf", distro), false);
+        Ok(content)
     }).await
+}
+
+/// True for `{root}/wsl/wslconfig/*.conf` and `{root}/wsl/wslconf/*.conf`, where this app saves them.
+fn is_conf_backup(path: &str) -> bool {
+    let path = path.replace('\\', "/");
+    let parts: Vec<&str> = path.split('/').collect();
+    matches!(parts.as_slice(), [.., "wsl", "wslconfig" | "wslconf", file] if file.ends_with(".conf"))
+        && !parts.contains(&"..")
 }
 
 /// Delete a single config backup file (used for both .wslconfig and wsl.conf backups).
@@ -440,6 +395,9 @@ pub async fn wsl_conf_delete_backup(
     app: tauri::AppHandle,
     backup_path: String,
 ) -> Result<(), AtlasError> {
+    if !is_conf_backup(&backup_path) {
+        return Err(AtlasError::invalid("This file is not a config backup, so it was not deleted."));
+    }
     migration.inner().clone().run_operation(move || {
         emit_line(&app, format!("$ Remove-Item \"{}\"", backup_path.replace('/', "\\")), false);
         if std::path::Path::new(&backup_path).exists() {
@@ -477,8 +435,7 @@ fn ps_single_quote(s: &str) -> String {
 }
 
 fn has_optimize_vhd() -> bool {
-    hidden("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", "[bool](Get-Command Optimize-VHD -ErrorAction SilentlyContinue)"])
+    powershell("[bool](Get-Command Optimize-VHD -ErrorAction SilentlyContinue)")
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "True")
         .unwrap_or(false)
@@ -530,7 +487,7 @@ pub async fn wsl_optimize_vhd(
     vhd_path: String,
 ) -> Result<OptimizeResult, AtlasError> {
     let gate = migration.0.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    in_background(move || {
         let _guard = acquire_migration_lock(&gate)?;
         let before = std::fs::metadata(&vhd_path)
             .map(|m| m.len())
@@ -550,8 +507,7 @@ pub async fn wsl_optimize_vhd(
             format!("$ 'select vdisk file=\"{}\"', 'compact vdisk' | diskpart", vhd_path)
         }, false);
 
-        let output = hidden("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-Command", &elevation_command(&script)])
+        let output = powershell(&elevation_command(&script))
             .output()
             .map_err(|e| format!("Could not ask Windows for administrator approval: {}", e))?;
 
@@ -589,9 +545,7 @@ pub async fn wsl_optimize_vhd(
 
         let method = if uses_optimize_vhd { "Optimize-VHD" } else { "diskpart" }.to_string();
         Ok(OptimizeResult { before_bytes: before, after_bytes: after, reclaimed_bytes: reclaimed, method })
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -647,18 +601,7 @@ pub async fn wsl_export_distro(
 
         emit_line(&app, format!("$ wsl --export {} \"{}\"", name, dest_str), false);
 
-        let out = hidden("wsl")
-            .env("WSL_UTF8", "1")
-            .args(["--export", &name, &dest_str])
-            .output()
-            .map_err(|e| format!("Failed to run wsl --export: {}", e))?;
-
-        if !out.status.success() {
-            let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
-            let err = if err.is_empty() { "Export failed".to_string() } else { err };
-            emit_line(&app, format!("  ✗ {}", err), true);
-            return Err(err.into());
-        }
+        logged(&app, wsl_result(&["--export", &name, &dest_str]))?;
 
         let size = std::fs::metadata(&dest).map(|m| m.len()).unwrap_or(0);
         emit_line(&app, format!("  ✓ exported {} ({})", name, bytes_to_human(size)), false);
@@ -683,18 +626,7 @@ pub async fn wsl_import_distro(
 
         emit_line(&app, format!("$ wsl --import {} \"{}\" \"{}\"", name, install_dir, tar_path), false);
 
-        let out = hidden("wsl")
-            .env("WSL_UTF8", "1")
-            .args(["--import", &name, &install_dir, &tar_path])
-            .output()
-            .map_err(|e| format!("Failed to run wsl --import: {}", e))?;
-
-        if !out.status.success() {
-            let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
-            let err = if err.is_empty() { "Import failed".to_string() } else { err };
-            emit_line(&app, format!("  ✗ {}", err), true);
-            return Err(err.into());
-        }
+        logged(&app, wsl_result(&["--import", &name, &install_dir, &tar_path]))?;
 
         emit_line(&app, format!("  ✓ imported {}", name), false);
         Ok(())
@@ -772,7 +704,7 @@ fn parse_manifest(json: &str, amd64: bool) -> Vec<CatalogDistro> {
 /// Fetch and parse the install catalog for this host's architecture.
 #[tauri::command]
 pub async fn wsl_install_catalog(app: tauri::AppHandle) -> Result<Vec<CatalogDistro>, AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<CatalogDistro>, AtlasError> {
+    in_background(move || {
         emit_line(&app, format!("$ GET {}", MANIFEST_URL), false);
         let body = http_agent()
             .get(MANIFEST_URL)
@@ -786,9 +718,7 @@ pub async fn wsl_install_catalog(app: tauri::AppHandle) -> Result<Vec<CatalogDis
         }
         emit_line(&app, format!("  ✓ {} distro{} in catalog", list.len(), if list.len() == 1 { "" } else { "s" }), false);
         Ok(list)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 /// Default install location for a downloaded distro: %LOCALAPPDATA%\WSL\<name>.
@@ -833,8 +763,7 @@ fn http_agent() -> ureq::Agent {
 /// in a hashing crate just for one verification step.
 fn sha256_of(path: &str) -> Result<String, AtlasError> {
     let cmd = format!("(Get-FileHash -Algorithm SHA256 -LiteralPath '{}').Hash", ps_single_quote(path));
-    let out = hidden("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", &cmd])
+    let out = powershell(&cmd)
         .output()
         .map_err(|e| format!("Get-FileHash failed: {}", e))?;
     if !out.status.success() {
@@ -864,8 +793,7 @@ fn first_run_pending(name: &str) -> bool {
         "[bool](Get-ChildItem 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Lxss' | Get-ItemProperty | Where-Object {{ $_.DistributionName -eq '{}' -and $_.RunOOBE -eq 1 }})",
         ps_single_quote(name)
     );
-    hidden("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+    powershell(&script)
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "True")
         .unwrap_or(false)
@@ -906,14 +834,7 @@ pub async fn wsl_install_download(
 
         // ── Download ──────────────────────────────────────────────────────────
         emit_line(&app, format!("$ GET {}", url), false);
-        let resp = http_agent()
-            .get(&url)
-            .call()
-            .map_err(|e| {
-                let msg = format!("Download failed: {}", e);
-                emit_line(&app, format!("  ✗ {}", msg), true);
-                msg
-            })?;
+        let resp = logged(&app, http_agent().get(&url).call().map_err(|e| format!("Download failed: {}", e)))?;
         let total: u64 = resp.header("Content-Length").and_then(|s| s.parse().ok()).unwrap_or(0);
 
         let mut reader = resp.into_reader();
@@ -930,9 +851,7 @@ pub async fn wsl_install_download(
                 Ok(n) => n,
                 Err(e) => {
                     std::fs::remove_file(&tmp).ok();
-                    let msg = format!("Download interrupted: {}", e);
-                    emit_line(&app, format!("  ✗ {}", msg), true);
-                    return Err(msg.into());
+                    return logged(&app, Err(format!("Download interrupted: {}", e)));
                 }
             };
             if let Err(e) = file.write_all(&buf[..n]) {
@@ -962,9 +881,7 @@ pub async fn wsl_install_download(
             let actual = sha256_of(&tmp_str)?;
             if !actual.eq_ignore_ascii_case(&sha256) {
                 std::fs::remove_file(&tmp).ok();
-                let msg = "The checksum does not match, so the download may be corrupted. Nothing was installed.".to_string();
-                emit_line(&app, format!("  ✗ {}", msg), true);
-                return Err(msg.into());
+                return logged(&app, Err("The checksum does not match, so the download may be corrupted. Nothing was installed.".to_string()));
             }
             emit_line(&app, "  ✓ checksum verified (SHA-256)", false);
         }
@@ -985,10 +902,7 @@ pub async fn wsl_install_download(
             import_distro(&name, &dir, &tmp_str, 2)
         };
         std::fs::remove_file(&tmp).ok();
-        installed.map_err(|e| {
-            emit_line(&app, format!("  ✗ {}", e), true);
-            e
-        })?;
+        logged(&app, installed)?;
 
         emit_progress(&app, InstallProgress { phase: "done".into(), downloaded, total: downloaded, bytes_per_sec: 0, percent: 100.0 });
         emit_line(&app, format!("  ✓ installed {}", name), false);
@@ -1312,7 +1226,7 @@ pub async fn wsl_distro_metrics(
 
 /// Run `wsl <args>` with UTF-8 output, mapping a non-zero exit to an error.
 /// wsl.exe sometimes writes its error text to stdout, so both streams are checked.
-fn run_wsl(args: &[&str]) -> Result<(), AtlasError> {
+fn wsl_result(args: &[&str]) -> Result<(), String> {
     let out = hidden("wsl")
         .env("WSL_UTF8", "1")
         .args(args)
@@ -1327,19 +1241,17 @@ fn run_wsl(args: &[&str]) -> Result<(), AtlasError> {
     } else {
         err
     };
-    Err(if err.is_empty() { "The wsl command failed without reporting a reason.".to_string().into() } else { err.into() })
+    Err(if err.is_empty() { "The wsl command failed without reporting a reason.".to_string() } else { err })
+}
+
+fn run_wsl(args: &[&str]) -> Result<(), AtlasError> {
+    Ok(wsl_result(args)?)
 }
 
 /// Whether `wsl -l --running -q` currently lists the distro. Used to confirm a
 /// lifecycle change has actually taken effect before the UI re-reads the list.
 fn distro_is_running(distro: &str) -> bool {
-    hidden("wsl")
-        .env("WSL_UTF8", "1")
-        .args(["-l", "--running", "-q"])
-        .output()
-        .ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).lines().any(|l| l.trim() == distro))
-        .unwrap_or(false)
+    running_names().is_ok_and(|names| names.iter().any(|name| name == distro))
 }
 
 /// Poll until the distro's running state matches `want` (or ~3s elapses). WSL's
@@ -1361,9 +1273,16 @@ fn wait_for_running_state(distro: &str, want: bool) {
 /// registry + per-VHD list scan. No terminal emission (it would flood the panel).
 #[tauri::command]
 pub async fn wsl_running_names() -> Result<Vec<String>, AtlasError> {
-    tauri::async_runtime::spawn_blocking(running_names)
-        .await
-        .map_err(|e| e.to_string())?
+    in_background(running_names).await
+}
+
+/// The names in `wsl -l` output, one per line.
+pub(crate) fn distro_names(output: &[u8]) -> Vec<String> {
+    String::from_utf8_lossy(output)
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect()
 }
 
 fn running_names() -> Result<Vec<String>, AtlasError> {
@@ -1375,11 +1294,7 @@ fn running_names() -> Result<Vec<String>, AtlasError> {
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).trim().to_string().into());
     }
-    Ok(String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty())
-        .collect())
+    Ok(distro_names(&out.stdout))
 }
 
 /// Capture a distro's default login user (the user `wsl -d <distro>` logs in as).
@@ -1527,6 +1442,19 @@ pub async fn wsl_distro_extras(
     }).await
 }
 
+fn terminate_logged(app: &tauri::AppHandle, distro: &str) -> Result<(), AtlasError> {
+    emit_line(app, format!("$ wsl --terminate {}", distro), false);
+    logged(app, run_wsl(&["--terminate", distro]))
+}
+
+/// A no-op command brings the VM up. `why` is the note at the end of the shown command.
+fn boot_logged(app: &tauri::AppHandle, distro: &str, why: &str) -> Result<(), AtlasError> {
+    emit_line(app, format!("$ wsl -d {} -u root true   # {}", distro, why), false);
+    logged(app, run_wsl(&["-d", distro, "-u", "root", "true"]))?;
+    wait_for_running_state(distro, true);
+    Ok(())
+}
+
 /// Stop a distro: `wsl --terminate <distro>`. It stays stopped until next access.
 #[tauri::command]
 pub async fn wsl_terminate_distro(
@@ -1535,11 +1463,7 @@ pub async fn wsl_terminate_distro(
     distro: String,
 ) -> Result<(), AtlasError> {
     migration.inner().clone().run_operation(move || {
-        emit_line(&app, format!("$ wsl --terminate {}", distro), false);
-        run_wsl(&["--terminate", &distro]).map_err(|e| {
-            emit_line(&app, format!("  ✗ {}", e), true);
-            e
-        })?;
+        terminate_logged(&app, &distro)?;
         wait_for_running_state(&distro, false);
         emit_line(&app, format!("  ✓ stopped {}", distro), false);
         Ok(())
@@ -1553,26 +1477,16 @@ pub async fn wsl_restart_distro(
     app: tauri::AppHandle,
     distro: String,
 ) -> Result<(), AtlasError> {
-    use std::time::Duration;
     migration.inner().clone().run_operation(move || {
-        emit_line(&app, format!("$ wsl --terminate {}", distro), false);
-        run_wsl(&["--terminate", &distro]).map_err(|e| {
-            emit_line(&app, format!("  ✗ {}", e), true);
-            e
-        })?;
-        std::thread::sleep(Duration::from_millis(800));
-        emit_line(&app, format!("$ wsl -d {} -u root true   # boot", distro), false);
-        run_wsl(&["-d", &distro, "-u", "root", "true"]).map_err(|e| {
-            emit_line(&app, format!("  ✗ {}", e), true);
-            e
-        })?;
-        wait_for_running_state(&distro, true);
+        terminate_logged(&app, &distro)?;
+        std::thread::sleep(std::time::Duration::from_millis(800));
+        boot_logged(&app, &distro, "boot")?;
         emit_line(&app, format!("  ✓ restarted {}", distro), false);
         Ok(())
     }).await
 }
 
-/// Boot a stopped distro (a no-op command brings the VM up).
+/// Boot a stopped distro.
 #[tauri::command]
 pub async fn wsl_start_distro(
     migration: tauri::State<'_, crate::wsl_migration::MigrationState>,
@@ -1580,12 +1494,7 @@ pub async fn wsl_start_distro(
     distro: String,
 ) -> Result<(), AtlasError> {
     migration.inner().clone().run_operation(move || {
-        emit_line(&app, format!("$ wsl -d {} -u root true   # start", distro), false);
-        run_wsl(&["-d", &distro, "-u", "root", "true"]).map_err(|e| {
-            emit_line(&app, format!("  ✗ {}", e), true);
-            e
-        })?;
-        wait_for_running_state(&distro, true);
+        boot_logged(&app, &distro, "start")?;
         emit_line(&app, format!("  ✓ started {}", distro), false);
         Ok(())
     }).await
@@ -1617,18 +1526,12 @@ pub async fn wsl_clone_distro(
         run_wsl(&["--terminate", &source]).ok();
 
         emit_line(&app, format!("$ wsl --export {} \"{}\"", source, tmp_str), false);
-        run_wsl(&["--export", &source, &tmp_str]).map_err(|e| {
-            emit_line(&app, format!("  ✗ {}", e), true);
-            e
-        })?;
+        logged(&app, run_wsl(&["--export", &source, &tmp_str]))?;
 
         emit_line(&app, format!("$ wsl --import {} \"{}\" \"{}\"{}", new_name, install_dir, tmp_str, version_flag(version)), false);
         let imported = import_distro(&new_name, &install_dir, &tmp_str, version);
         std::fs::remove_file(&tmp).ok();
-        imported.map_err(|e| {
-            emit_line(&app, format!("  ✗ {}", e), true);
-            e
-        })?;
+        logged(&app, imported)?;
 
         restore_default_user(&app, &new_name, &default_user);
 
@@ -1637,15 +1540,19 @@ pub async fn wsl_clone_distro(
     }).await
 }
 
+// Async because a command that is not runs on the window's thread, and checking a folder on a
+// sleeping disk would freeze the window until the disk wakes up.
 #[tauri::command]
-pub fn wsl_suggest_migration_dir(distro: String, new_dir: String) -> Result<String, AtlasError> {
-    crate::wsl_migration::suggest_folder(std::path::Path::new(new_dir.trim()), &distro).map_err(|mut error| {
-        error.action = Some(RecoveryAction::ChooseFolder);
-        if matches!(error.kind, ErrorKind::Permission | ErrorKind::Elevation) {
-            error.hint = Some("Choose a local folder you own. No folder has been created.".to_string());
-        }
-        error
-    })
+pub async fn wsl_suggest_migration_dir(distro: String, new_dir: String) -> Result<String, AtlasError> {
+    in_background(move || {
+        crate::wsl_migration::suggest_folder(std::path::Path::new(new_dir.trim()), &distro).map_err(|mut error| {
+            error.action = Some(RecoveryAction::ChooseFolder);
+            if matches!(error.kind, ErrorKind::Permission | ErrorKind::Elevation) {
+                error.hint = Some("Choose a local folder you own. No folder has been created.".to_string());
+            }
+            error
+        })
+    }).await
 }
 
 fn decode_wsl_output(bytes: &[u8]) -> String {
@@ -1759,7 +1666,7 @@ fn acquire_migration_lock(gate: &std::sync::RwLock<()>) -> Result<std::sync::RwL
 #[tauri::command]
 pub async fn wsl_repair_migration(app: tauri::AppHandle, state: tauri::State<'_, crate::wsl_migration::MigrationState>, distro: String, action: MigrationRepair) -> Result<String, AtlasError> {
     let gate = state.0.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    in_background(move || {
         let _guard = acquire_migration_lock(&gate)?;
         let (program, args) = repair_command(&action);
         let output = capture_migration_command(&app, &distro, program, args).map_err(|error| {
@@ -1776,7 +1683,7 @@ pub async fn wsl_repair_migration(app: tauri::AppHandle, state: tauri::State<'_,
         }
         if matches!(action, MigrationRepair::StopDocker) { crate::wsl_migration::require_docker_stopped().map_err(|error| error.action(RecoveryAction::OpenDocker).detail(&report))?; }
         Ok(report)
-    }).await.map_err(|e| e.to_string())?
+    }).await
 }
 
 #[tauri::command]
@@ -1791,7 +1698,7 @@ pub async fn wsl_plan_migration(
     let gate = state.0.clone();
     let shell = shell.0.clone();
     let compose = compose.0.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    in_background(move || {
         let _guard = gate.try_read().map_err(|_| AtlasError::new(ErrorKind::Busy, "Wait for the current WSL disk operation to finish.")
             .hint("Another disk operation is already running in Atlas.").action(RecoveryAction::ShowTerminal))?;
         let mut result = crate::wsl_migration::MigrationPreflight { plan: None, blockers: Vec::new(), command_output: String::new() };
@@ -1824,7 +1731,7 @@ pub async fn wsl_plan_migration(
             }
         }
         Ok(result)
-    }).await.map_err(|e| e.to_string())?
+    }).await
 }
 
 #[tauri::command]
@@ -1835,7 +1742,7 @@ pub async fn wsl_migrate_distro(
     new_dir: String,
 ) -> Result<crate::wsl_migration::MigrateResult, AtlasError> {
     let gate = state.0.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    in_background(move || {
         let _guard = acquire_migration_lock(&gate)?;
         check_migration_support(&app, &distro)?;
         crate::wsl_migration::require_docker_stopped()?;
@@ -1854,9 +1761,7 @@ pub async fn wsl_migrate_distro(
             |phase| { app.emit("wsl-migration-progress", crate::wsl_migration::MigrationProgress {
                 distro: distro.clone(), phase: phase.to_string(),
             }).ok(); })
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 /// Names of every registered distro (`wsl -l -q`). Used to check that a name the
@@ -1866,14 +1771,7 @@ fn registered_distro_names() -> Vec<String> {
         .env("WSL_UTF8", "1")
         .args(["-l", "-q"])
         .output()
-        .ok()
-        .map(|o| {
-            String::from_utf8_lossy(&o.stdout)
-                .lines()
-                .map(|l| l.trim().to_string())
-                .filter(|l| !l.is_empty())
-                .collect()
-        })
+        .map(|o| distro_names(&o.stdout))
         .unwrap_or_default()
 }
 
@@ -1913,10 +1811,7 @@ pub async fn wsl_unregister_distro(
         run_wsl(&["--terminate", &distro]).ok(); // already stopped is fine
 
         emit_line(&app, format!("$ wsl --unregister {}", distro), false);
-        run_wsl(&["--unregister", &distro]).map_err(|e| {
-            emit_line(&app, format!("  ✗ {}", e), true);
-            e
-        })?;
+        logged(&app, run_wsl(&["--unregister", &distro]))?;
 
         emit_line(&app, format!("  ✓ deleted {}", distro), false);
         Ok(())
@@ -2106,16 +2001,9 @@ pub async fn wsl_service_set(
         // No `2>&1`: systemctl writes its symlink notice to stderr even on success,
         // which run_in_distro discards; on failure it surfaces stderr as the error.
         let script = format!("systemctl {} {}", verb, shell_quote(&service));
-        match run_in_distro(&distro, &script) {
-            Ok(_) => {
-                emit_line(&app, format!("  ✓ {}d {}", verb, service), false);
-                Ok(())
-            }
-            Err(e) => {
-                emit_line(&app, format!("  ✗ {}", e), true);
-                Err(e)
-            }
-        }
+        logged(&app, run_in_distro(&distro, &script))?;
+        emit_line(&app, format!("  ✓ {}d {}", verb, service), false);
+        Ok(())
     }).await
 }
 
@@ -2148,10 +2036,7 @@ pub async fn wsl_benchmark_boot(
 
         emit_line(&app, format!("$ wsl -d {} -u root true   # timing cold boot", distro), false);
         let start = Instant::now();
-        run_wsl(&["-d", &distro, "-u", "root", "true"]).map_err(|e| {
-            emit_line(&app, format!("  ✗ {}", e), true);
-            e
-        })?;
+        logged(&app, run_wsl(&["-d", &distro, "-u", "root", "true"]))?;
         let boot_ms = start.elapsed().as_millis() as u64;
         emit_line(&app, format!("  ✓ cold boot: {} ms", boot_ms), false);
         Ok(BenchmarkResult { boot_ms })
@@ -2312,7 +2197,7 @@ pub async fn wsl_check() -> WslStatus {
 /// terminal panel with a list command every few seconds.
 #[tauri::command]
 pub async fn wsl_list_distros(app: tauri::AppHandle, silent: bool) -> Result<Vec<WslDistro>, AtlasError> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<WslDistro>, AtlasError> {
+    in_background(move || {
         if !silent {
             emit_line(&app, format!("# Reading HKCU\\{LXSS_KEY}"), false);
             emit_line(&app, "$ wsl -l --running", false);
@@ -2320,9 +2205,7 @@ pub async fn wsl_list_distros(app: tauri::AppHandle, silent: bool) -> Result<Vec
         let distros = read_distros()?;
         if !silent { emit_line(&app, format!("  ✓ {} distro{}", distros.len(), if distros.len() == 1 { "" } else { "s" }), false); }
         Ok(distros)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }).await
 }
 
 const LXSS_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Lxss";
@@ -2416,13 +2299,11 @@ mod tests {
         }
     }
 
-    #[cfg(windows)]
     fn migration_output(stdout: &str, stderr: &str, exit_code: u32) -> std::process::Output {
         use std::os::windows::process::ExitStatusExt;
         std::process::Output { status: std::process::ExitStatus::from_raw(exit_code), stdout: stdout.as_bytes().to_vec(), stderr: stderr.as_bytes().to_vec() }
     }
 
-    #[cfg(windows)]
     #[test]
     fn migration_accepts_nonzero_help_exit_when_required_commands_are_advertised() {
         for export in ["--export <Distro> <File> --format <Format> tar, vhd", "--export <Distro> <File> --vhd"] {
@@ -2432,7 +2313,6 @@ mod tests {
         }
     }
 
-    #[cfg(windows)]
     #[test]
     fn migration_update_blocker_explains_the_missing_feature() {
         let output = migration_output("--install\n--export <Distro> <File> --vhd\n--import", "", u32::MAX);
@@ -2445,7 +2325,6 @@ mod tests {
         assert!(matches!(broken.action, Some(RecoveryAction::WslHelp)));
     }
 
-    #[cfg(windows)]
     #[test]
     fn migration_reports_both_windows_streams_and_the_exit_code() {
         let output = migration_output("Windows reported a failure on stdout.", "Additional stderr detail.", 5);
@@ -2455,7 +2334,6 @@ mod tests {
         assert!(report.contains("Additional stderr detail."));
     }
 
-    #[cfg(windows)]
     #[test]
     fn migration_failed_repairs_have_specific_safe_fallback_actions() {
         let store = migration_repair_error(&MigrationRepair::UpdateWsl, &migration_output("Microsoft Store is unavailable.", "", 1));
@@ -2506,7 +2384,6 @@ mod tests {
         assert!(gate.try_write().is_ok());
     }
 
-    #[cfg(windows)]
     #[test]
     fn migration_installed_help_accepts_advertised_features_without_starting_wsl() {
         let Ok(output) = Command::new("wsl").env("WSL_UTF8", "1").arg("--help").output() else { return; };
@@ -2527,7 +2404,6 @@ mod tests {
         assert!(error.detail.unwrap().contains("Windows error 0x1234"));
     }
 
-    #[cfg(windows)]
     #[test]
     fn optimize_script_shuts_down_first_and_reports_both_backends() {
         for (case, hyper_v, compact_code) in [
@@ -2578,7 +2454,6 @@ function diskpart {{
         }
     }
 
-    #[cfg(windows)]
     #[test]
     fn output_within_keeps_large_output_and_stops_at_the_limit() {
         use std::time::{Duration, Instant};
@@ -2615,7 +2490,6 @@ function diskpart {{
         }
     }
 
-    #[cfg(windows)]
     #[test]
     fn optimize_elevation_survives_quoting_and_recognises_a_refusal() {
         let mock = |body: &str| format!(r#"
@@ -2638,6 +2512,21 @@ function Start-Process {{
         let refusal = |code: u32| format!("throw [InvalidOperationException]::new('This command cannot be run due to the error: ' + (New-Object ComponentModel.Win32Exception {code}).Message)");
         assert_eq!(run(&refusal(1223), "Write-Output 'x'").status.code(), Some(1223));
         assert_eq!(run(&refusal(5), "Write-Output 'x'").status.code(), Some(1));
+    }
+
+    #[test]
+    fn only_a_saved_config_backup_can_be_deleted() {
+        assert!(is_conf_backup("C:/b/wsl/wslconfig/wslconfig_1700000000.conf"));
+        assert!(is_conf_backup(r"C:/b/wsl/wslconf\ubuntu_1700000000.conf"));
+        assert!(is_conf_backup(r"C:\b\wsl\wslconf\ubuntu_1700000000.conf"));
+
+        assert!(!is_conf_backup(r"C:\Users\me\.wslconfig"));
+        assert!(!is_conf_backup(r"C:\Users\me\Documents\report.docx"));
+        assert!(!is_conf_backup("C:/b/wsl/wslconf/report.docx"));
+        assert!(!is_conf_backup("C:/b/other/wslconf/ubuntu_1.conf"));
+        assert!(!is_conf_backup("C:/wsl/wslconf/../../Windows/app.conf"));
+        assert!(!is_conf_backup("C:/b/../wsl/wslconf/ubuntu_1.conf"));
+        assert!(!is_conf_backup(""));
     }
 
     #[test]

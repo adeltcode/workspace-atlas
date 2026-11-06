@@ -8,9 +8,10 @@ use crate::error::AtlasError;
 pub struct SysState(pub Mutex<System>);
 
 /// Free and total bytes on the drive holding `path`, as the current user can use them.
-pub(crate) fn disk_space(path: &str) -> Option<(u64, u64)> {
+pub(crate) fn disk_space(path: impl AsRef<std::ffi::OsStr>) -> Option<(u64, u64)> {
+    use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
-    let wide: Vec<u16> = path.encode_utf16().chain(Some(0)).collect();
+    let wide: Vec<u16> = path.as_ref().encode_wide().chain(Some(0)).collect();
     let (mut free, mut total) = (0u64, 0u64);
     // SAFETY: `wide` is NUL-terminated and outlives the call, the first two outputs are valid
     // pointers, and the last one is documented as optional.
