@@ -340,6 +340,14 @@ A small inline label: 20px tall, 8px side padding, 4px radius, 11px text at weig
 | `danger` | `--color-danger-subtle` | `--color-danger` | `--color-danger-border` |
 | `accent` | `--color-accent-subtle` | `--color-accent` | `--color-accent-border` |
 
+### Switch
+
+A labeled on and off control for a page's main setting, with `role="switch"`. Its text reads "History on" or "History off", so it also shows the state, and it can replace a status tag. Put it in the `status` slot of `SheetHead`.
+
+### Toast
+
+Says that something worked, then goes away after 4 seconds. It floats over the page, so nothing moves when it comes and goes. Put it inside a parent with `position: relative`, and keep it mounted, because it holds the `role="status"` region. Use `ErrorBanner` for failures, because they must not go away by themselves.
+
 ### Status pill
 
 The `.pill` class shows a status dot and a short fact: 20px tall, fully rounded, 11px `--color-text-secondary` text on `--color-bg-secondary`, with a 1px border. It has no React component.

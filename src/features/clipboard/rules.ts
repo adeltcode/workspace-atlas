@@ -195,19 +195,71 @@ const OTHER_PROGRAM_NOTE: Record<OtherProgramKind, (historyOn: boolean) => strin
   'clears-clipboard': () => 'It may empty the clipboard after you copy a password, and may keep passwords out of history.',
 }
 
-export type NoticeAction = 'remove-block' | 'restart-service' | 'enable-service' | 'open-settings'
+export type ClipboardAction = 'turn-on' | 'try-again' | 'remove-block' | 'restart-service' | 'enable-service' | 'open-settings'
+
+export interface HistoryProblem {
+  title: string
+  detail: string
+  /** The best fix first. */
+  actions: ClipboardAction[]
+}
+
+/** Why history is not running, and what can fix it. */
+export function problemFor(status: ClipboardStatus): HistoryProblem | null {
+  switch (historyState(status)) {
+    case 'on':
+      return null
+    case 'off':
+      return {
+        title: 'Clipboard history is off',
+        detail: 'Windows only keeps the last thing you copied. Turn history on to keep the 25 newest items.',
+        actions: ['turn-on'],
+      }
+    case 'blocked':
+      return status.block_is_managed
+        ? {
+          title: 'Your organization blocks clipboard history on this PC',
+          detail: 'A device management service set this policy, so it would come back if it were removed. Ask whoever manages this PC.',
+          actions: ['open-settings'],
+        }
+        : {
+          title: 'A policy on this PC blocks clipboard history',
+          detail: 'Windows is not saving what you copy, and it ignores the on and off setting until the policy is gone. A cleanup tool, or whoever manages this PC, may have set it.',
+          actions: ['remove-block', 'open-settings'],
+        }
+    case 'not-applied':
+      return {
+        title: 'Clipboard history is not working',
+        detail: 'The setting is on, but the clipboard service is not using it. Try turning it on again. If that does not work, restart the service.',
+        actions: ['try-again', 'restart-service'],
+      }
+    case 'service-off':
+      return status.service_disabled
+        ? {
+          title: 'The clipboard service is disabled',
+          detail: 'Windows cannot keep history without it, but the last thing you copied still works. A cleanup tool may have turned it off. After you turn it back on, sign out of Windows and back in.',
+          actions: ['enable-service'],
+        }
+        : {
+          title: 'Sign out of Windows and back in to start the clipboard service',
+          detail: 'The service is set to start again, but Windows only starts it when you sign in. The last thing you copied still works.',
+          actions: [],
+        }
+  }
+}
 
 export interface ClipboardNotice {
   key: string
+  /** `warn` needs attention, so it stays on the page. `info` is only worth knowing, so it waits behind a button. */
   tone: 'warn' | 'info'
   title: string
   detail: string
-  action?: NoticeAction
+  action?: ClipboardAction
   /** A program the user can close from this notice. */
   program?: ProcessInfo
 }
 
-/** What is getting in the way of clipboard history, most urgent first. */
+/** Everything else worth saying once problemFor has said why history is not running, most urgent first. */
 export function noticesFor(status: ClipboardStatus): ClipboardNotice[] {
   const notices: ClipboardNotice[] = []
   const state = historyState(status)
@@ -221,54 +273,21 @@ export function noticesFor(status: ClipboardStatus): ClipboardNotice[] {
       program: status.held_by,
     })
   }
-  if (state === 'blocked') {
-    notices.push(status.block_is_managed
-      ? {
-        key: 'blocked',
-        tone: 'warn',
-        title: 'Your organization blocks clipboard history on this PC',
-        detail: 'A device management service set this policy, so it would come back if it were removed. Ask whoever manages this PC.',
-      }
-      : {
-        key: 'blocked',
-        tone: 'warn',
-        title: 'A policy on this PC blocks clipboard history',
-        detail: 'Windows ignores the on and off setting until the policy is removed. A cleanup tool, or whoever manages this PC, may have set it.',
-        action: 'remove-block',
-      })
-  } else if (status.blocked_by_policy) {
+  if (state === 'on' && status.blocked_by_policy) {
     notices.push({
       key: 'blocked-later',
       tone: 'warn',
       title: 'A policy on this PC blocks clipboard history',
-      detail: 'History is still on because the clipboard service has not looked at the policy yet. It stops working the next time the setting changes.',
+      detail: 'History is on for now, but it stops the next time the setting changes.',
     })
   }
-  if (state === 'not-applied') {
-    notices.push({
-      key: 'not-applied',
-      tone: 'warn',
-      title: 'Windows has not applied this setting',
-      detail: 'History is set to on, but the clipboard service is not using it. Try turning it on again. If that does not work, restart the service.',
-      action: 'restart-service',
-    })
-  }
-  if (status.service_disabled) {
+  if (status.service_disabled && !status.service_stopped) {
     notices.push({
       key: 'service',
       tone: 'warn',
       title: 'The clipboard service is disabled',
-      detail: status.service_stopped
-        ? 'Windows cannot keep history without it. A cleanup tool may have turned it off. After you turn it back on, sign out of Windows and back in.'
-        : 'It is still running, but history stops working the next time you sign in. A cleanup tool may have turned it off.',
+      detail: 'It is still running, but history stops the next time you sign in.',
       action: 'enable-service',
-    })
-  } else if (status.service_stopped) {
-    notices.push({
-      key: 'service',
-      tone: 'warn',
-      title: 'Sign out of Windows and back in to start the clipboard service',
-      detail: 'The service is set to start again, but Windows only starts it when you sign in.',
     })
   }
   if (status.sync_on) {
@@ -283,7 +302,7 @@ export function noticesFor(status: ClipboardStatus): ClipboardNotice[] {
   for (const { label, kind, process } of status.other_programs) {
     notices.push({
       key: `program-${process.pid}`,
-      tone: kind === 'keeps-history' ? 'warn' : 'info',
+      tone: 'info',
       title: `${label} is running`,
       detail: OTHER_PROGRAM_NOTE[kind](status.history_on),
       program: kind === 'keeps-history' ? process : undefined,

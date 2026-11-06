@@ -7267,6 +7267,15 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
   font-family: inherit;
 }
 
+.switch { display: inline-flex; align-items: center; gap: var(--space-2); height: 28px; padding: 0; background: none; border: none; border-radius: var(--radius-sm); font-size: var(--text-xs); font-weight: 500; color: var(--color-text-secondary); cursor: pointer; }
+.switch[aria-checked="true"] { color: var(--color-text-primary); }
+.switch:disabled { opacity: 0.45; cursor: not-allowed; }
+.switch:disabled .wsl-toggle { cursor: inherit; }
+
+.toast-region { position: absolute; left: 50%; bottom: var(--space-4); transform: translateX(-50%); z-index: var(--z-dropdown); pointer-events: none; }
+.toast { display: flex; align-items: center; gap: var(--space-2); padding: 6px var(--space-3); background: var(--color-bg-secondary); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); box-shadow: var(--shadow-md); font-size: var(--text-xs); color: var(--color-text-primary); white-space: nowrap; animation: wsl-switcher-in 0.12s ease; }
+.toast > svg { flex: none; color: var(--color-success); }
+
 /* 28px floor, so the title holds its line with or without a control. */
 .section-head { display: flex; align-items: center; gap: var(--space-3); min-height: 28px; margin-bottom: var(--space-3); }
 .section-title { font-size: var(--text-2xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-tertiary); white-space: nowrap; }
@@ -7492,18 +7501,27 @@ button.health-item--info:hover     { background: var(--color-bg-hover); }
 .holder-summary { font-size: var(--text-xs); color: var(--color-text-secondary); overflow-wrap: anywhere; user-select: text; }
 .toolbar > .holder-target { flex: 1 1 320px; max-width: none; }
 
-.clipboard-notices { flex: none; display: grid; gap: var(--space-2); max-height: 34vh; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
-.clipboard-notice { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: var(--radius-lg); font-size: var(--text-xs); line-height: 1.5; }
-.clipboard-notice > svg { flex: none; color: var(--color-text-tertiary); }
-.clipboard-notice--warn > svg { color: var(--color-warning); }
+.clipboard-tab { position: relative; }
+.clipboard-tab .toast-region { bottom: 48px; }
+.clipboard-notices { flex: none; max-height: 24vh; margin: 0; padding: 0; overflow-y: auto; list-style: none; background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: var(--radius-lg); }
+.clipboard-notice { display: flex; align-items: center; gap: var(--space-2); min-height: 36px; padding: var(--space-1) var(--space-3); font-size: var(--text-xs); line-height: 1.5; }
+.clipboard-notice + .clipboard-notice { border-top: 1px solid var(--color-border-light); }
+.clipboard-notice > svg { flex: none; color: var(--color-warning); }
 .clipboard-notice > .btn, .clipboard-notice > .holder-note { flex: none; }
-.clipboard-notice-text { flex: 1; min-width: 0; color: var(--color-text-secondary); }
-.clipboard-notice-text strong { display: block; font-weight: 600; color: var(--color-text-primary); }
-.clipboard-now { flex: none; display: flex; align-items: center; gap: var(--space-2); min-height: 40px; padding: var(--space-1) var(--space-3); background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: var(--radius-lg); font-size: var(--text-xs); }
-.clipboard-now .clipboard-preview { flex: 0 1 auto; }
+.clipboard-notice-text { flex: 1; min-width: 0; margin: 0; color: var(--color-text-secondary); }
+.clipboard-notice-text strong { margin-right: var(--space-1); font-weight: 600; color: var(--color-text-primary); }
+.clipboard-notes-button { anchor-name: --clipboard-notes; }
+.clipboard-notes { position: fixed; position-anchor: --clipboard-notes; inset: auto; top: calc(anchor(bottom) + 6px); right: anchor(right); width: 400px; max-width: calc(100vw - var(--space-6)); max-height: 60vh; margin: 0; padding: 0; overflow-y: auto; list-style: none; color: var(--color-text-primary); }
+.clipboard-notes .clipboard-notice { padding: var(--space-2) var(--space-3); }
+.clipboard-notes .clipboard-notice-text strong { display: block; margin: 0; }
+.clipboard-secret { flex: none; display: inline-flex; color: var(--color-warning); }
+.clipboard-now { flex: none; display: flex; align-items: center; gap: var(--space-2); min-height: 36px; margin-top: auto; padding: var(--space-1) var(--space-3); background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: var(--radius-lg); font-size: var(--text-xs); }
+.clipboard-now .clipboard-preview { flex: 0 1 auto; max-width: 50%; }
+.clipboard-now-facts { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-tertiary); }
 .clipboard-now-label { flex: none; font-size: var(--text-2xs); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-tertiary); }
 .clipboard-muted { flex: none; color: var(--color-text-tertiary); }
 .clipboard-toolbar { flex: none; margin-bottom: 0; }
+.clipboard-toolbar > .field { flex-basis: 130px; min-width: 130px; }
 .clipboard-content { max-width: 0; }
 .clipboard-preview { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .clipboard-preview-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: var(--text-xs); user-select: text; }
