@@ -17,6 +17,12 @@ edition = "2021"
 name = "workspace_atlas_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "s"
+strip = true
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
