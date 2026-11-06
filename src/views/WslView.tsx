@@ -9,6 +9,7 @@ import WslDistroPage from '../features/wsl/components/WslDistroPage'
 import WslConfigTab from '../features/wsl/components/WslConfigTab'
 import WslInstallWizard from '../features/wsl/components/WslInstallWizard'
 import { SheetHead, Prerequisite, Button, ErrorBanner } from '../components/ui'
+import KeepAlive from '../components/KeepAlive'
 
 const DISTRO_TAB_SUBTITLES: Record<WslDistroTab, string> = {
   overview:    'Live CPU, memory, disk, network, and process metrics inside this distro',
@@ -23,7 +24,7 @@ export default function WslView() {
   const selected     = useAppStore(s => s.wslSelectedDistro)
   const setSelected  = useAppStore(s => s.setWslSelectedDistro)
 
-  const { status, distros, loading, error, reload, refresh, refreshRunning } = useWslData()
+  const { status, distros, loading, reloading, runningChecked, error, reload, refresh, refreshRunning } = useWslData()
   const available  = status?.available ?? false
   const runningCnt = distros.filter(d => d.running).length
   const selectedDistro = distros.find(d => d.name === selected)
@@ -113,8 +114,8 @@ export default function WslView() {
                 <Upload size={13} /> Import distro
               </Button>
             )}
-            <Button onClick={reload} disabled={loading}>
-              <RefreshCw size={13} className={loading ? 'spin' : ''} />
+            <Button onClick={reload} disabled={reloading}>
+              <RefreshCw size={13} className={reloading ? 'spin' : ''} />
               Refresh
             </Button>
           </>
@@ -137,23 +138,26 @@ export default function WslView() {
           ]}
           command="wsl --install"
           actions={
-            <Button onClick={reload} disabled={loading}>
-              <RefreshCw size={13} className={loading ? 'spin' : ''} />
+            <Button onClick={reload} disabled={reloading}>
+              <RefreshCw size={13} className={reloading ? 'spin' : ''} />
               Refresh
             </Button>
           }
         />
       )}
 
-      {available && (
-        <>
-          {wslView === 'dashboard' && <WslHome distros={distros} loading={loading} onReload={reload} />}
+      {available && loading && <div className="img-loading">Loading distros…</div>}
+
+      {/* A probe boots a stopped distro, so these stay paused until the running flags are current. */}
+      {available && !loading && (
+        <KeepAlive active={runningChecked}>
+          {wslView === 'dashboard' && <WslHome distros={distros} onReload={reload} />}
           {wslView === 'distro'    && <WslDistroPage distros={distros} onReload={reload} />}
           {wslView === 'install'   && <WslInstallWizard distros={distros} onReload={reload} />}
           {wslView === 'wslconfig' && (
             <WslConfigTab runningNames={distros.filter(d => d.running).map(d => d.name)} onAfterShutdown={reload} />
           )}
-        </>
+        </KeepAlive>
       )}
       </div>
     </div>

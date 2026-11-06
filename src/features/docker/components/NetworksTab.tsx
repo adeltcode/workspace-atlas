@@ -54,7 +54,7 @@ export default function NetworksTab({ refreshTick }: { refreshTick: number }) {
 
   useEffect(() => {
     let current = true
-    setLoading(true)
+    setLoading(networks.length === 0)
     setError(null)
     api.dockerNetworks()
       .then(next => { if (current) setNetworks(next) })

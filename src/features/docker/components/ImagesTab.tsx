@@ -1,4 +1,4 @@
-import { Fragment, useState, useMemo } from 'react'
+import { Fragment, useEffect, useState, useMemo } from 'react'
 import { Pin, PinOff, Layers } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../../../store/appStore'
@@ -25,13 +25,15 @@ export default function ImagesTab({ images, containers, loading }: { images: Doc
   const { dockerKeepList, addToKeepList, removeFromKeepList } = useAppStore()
   const table = useDockerTable<ImageSortKey>('images')
 
+  const [filter, setFilter] = useState<ImageFilter>('all')
+
   // Consumes a one-shot pre-filter set by the Overview cleanup panel.
-  const [filter, setFilter] = useState<ImageFilter>(() => {
-    const s = useAppStore.getState()
-    const f = s.imagesFilter
-    if (f) s.setImagesFilter(null)
-    return f === 'dangling' ? 'dangling' : f === 'unused-tagged' ? 'unused' : 'all'
-  })
+  const filterSignal = useAppStore(s => s.imagesFilter)
+  useEffect(() => {
+    if (!filterSignal) return
+    useAppStore.getState().setImagesFilter(null)
+    setFilter(filterSignal === 'dangling' ? 'dangling' : 'unused')
+  }, [filterSignal])
 
   const [sortKey, setSortKey] = useState<ImageSortKey>('size')
   const [sortDir, setSortDir] = useState<SortDir>('desc')

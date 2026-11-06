@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RefreshCw, Download, CircleArrowUp, Filter, Trash2 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../../store/appStore'
@@ -7,7 +7,9 @@ import {
   SheetHead, Prerequisite, Button, SearchField, ErrorBanner, Toolbar, EmptyState, Tag,
 } from '../../components/ui'
 import { CheckMenu, ColumnsMenu, TableHead, useTableColumns, type TableColumn } from '../../components/TableColumns'
+import { useAsyncAction } from '../../hooks/useAsyncAction'
 import * as api from './api'
+import { isFresh, loadScan, saveScan } from './savedScan'
 import type { Package, PackageUpdate, SourceResult, SourceUpdates, UninstallCheck } from './types'
 
 type SortKey = 'name' | 'version' | 'updated' | 'publisher' | 'source'
@@ -51,8 +53,11 @@ const nameWithVersion = (p: Package) => (p.name.includes(p.version) ? p.name : `
 export default function PackagesView() {
   const addActivity = useAppStore(s => s.addActivity)
 
-  const [results, setResults] = useState<SourceResult[] | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [saved] = useState(loadScan)
+  const [results, setResults] = useState<SourceResult[] | null>(saved?.results ?? null)
+  const scannedAt = useRef(saved?.scannedAt ?? 0)
+  const scanner = useAsyncAction()
+  const scanning = scanner.pending
   const [error, setError]     = useState<string | null>(null)
   const [query, setQuery]     = useState('')
   // Picked source ids. Empty means all.
@@ -92,19 +97,28 @@ export default function PackagesView() {
   })
   const { shows } = table
 
-  const scan = useCallback(async () => {
-    setLoading(true)
+  const scan = useCallback(() => scanner.run(async () => {
     setError(null)
     try {
-      setResults(await api.pkgScan())
+      const next = await api.pkgScan()
+      scannedAt.current = Date.now()
+      setResults(next)
     } catch (e) {
       setError(String(e))
-    } finally {
-      setLoading(false)
     }
-  }, [])
+  }), [scanner.run]) // eslint-disable-line
 
-  useEffect(() => { scan() }, [scan])
+  useEffect(() => {
+    if (!isFresh(scannedAt.current)) scan()
+  }, [scan])
+
+  // A targeted rescan changes the list too. It keeps `scannedAt`, because the other sources are no newer.
+  const savedResults = useRef(results)
+  useEffect(() => {
+    if (!results || results === savedResults.current) return
+    savedResults.current = results
+    saveScan({ results, scannedAt: scannedAt.current })
+  }, [results])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -377,7 +391,7 @@ export default function PackagesView() {
             {found.length > 0 && (
               <Button
                 onClick={checkUpdates}
-                disabled={checking || loading}
+                disabled={checking || scanning}
                 title="Ask npm, pip and Chocolatey for newer versions. Needs the internet."
               >
                 <CircleArrowUp size={13} /> {checking ? 'Checking…' : 'Check for updates'}
@@ -385,12 +399,12 @@ export default function PackagesView() {
             )}
             <Button
               onClick={exportCsv}
-              disabled={exporting || loading || rows.length === 0}
+              disabled={exporting || scanning || rows.length === 0}
             >
               <Download size={13} /> {exporting ? 'Saving…' : 'Export CSV'}
             </Button>
-            <Button onClick={scan} disabled={loading}>
-              <RefreshCw size={13} className={loading ? 'spin' : ''} />
+            <Button onClick={scan} disabled={scanning}>
+              <RefreshCw size={13} className={scanning ? 'spin' : ''} />
               Rescan
             </Button>
           </>
@@ -415,14 +429,14 @@ export default function PackagesView() {
         <ErrorBanner key={c.source} title={`Could not check ${c.label} for updates`}>{c.error}</ErrorBanner>
       ))}
 
-      {loading && !results && <div className="img-loading">Scanning package managers…</div>}
+      {!results && !error && <div className="img-loading">Scanning package managers…</div>}
 
-      {results && found.length === 0 && !loading && (
+      {results && found.length === 0 && !scanning && (
         <Prerequisite
           title="No package managers found"
           description="None of the supported package managers are on PATH. winget ships with Windows 11; if it is missing, install App Installer from the Microsoft Store. Verify with the command below, then rescan."
           command="winget list"
-          actions={<Button onClick={scan} disabled={loading}><RefreshCw size={13} /> Rescan</Button>}
+          actions={<Button onClick={scan} disabled={scanning}><RefreshCw size={13} /> Rescan</Button>}
         />
       )}
 
@@ -456,6 +470,7 @@ export default function PackagesView() {
             </button>
 
             <span role="status">
+              {scanning && <Tag tone="accent">Rescanning (see terminal)</Tag>}
               {checking && <Tag tone="accent">Checking for updates (see terminal)</Tag>}
               {job && (
                 <Tag tone="accent">

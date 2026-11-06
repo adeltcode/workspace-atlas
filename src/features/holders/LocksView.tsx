@@ -47,6 +47,11 @@ export default function LocksView() {
     check([locksJump])
   }, [locksJump]) // eslint-disable-line
 
+  // Locks change while this page is hidden, so coming back checks the same items again.
+  useEffect(() => {
+    if (reports) scan(reports.map(r => r.path))
+  }, []) // eslint-disable-line
+
   const pick = async (choose: () => Promise<string | null>) => {
     const picked = await choose()
     if (picked) check([picked])
