@@ -1,10 +1,9 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import clsx from 'clsx'
-import { AlertTriangle, ClipboardList, Copy, Eye, EyeOff, Info, Maximize2, Power, RefreshCw, Settings, Trash2 } from 'lucide-react'
+import { AlertTriangle, ClipboardList, Copy, Eye, EyeOff, Info, KeyRound, Maximize2, Power, RefreshCw, Settings, Trash2 } from 'lucide-react'
 import { useAppStore } from '../../store/appStore'
 import { useVisiblePoll } from '../../hooks/useVisiblePoll'
 import { timeAgo } from '../../utils/format'
-import { Button, ConfirmDestructive, EmptyState, ErrorBanner, SearchField, Segmented, SegmentedItem, SheetHead, Tag, Toolbar } from '../../components/ui'
+import { Button, ConfirmDestructive, EmptyState, ErrorBanner, SearchField, Segmented, SegmentedItem, SheetHead, Switch, Toast, Toolbar } from '../../components/ui'
 import { ColumnsMenu, TableHead, useTableColumns, type TableColumn } from '../../components/TableColumns'
 import { CloseProgramDialog, HolderAction } from '../holders/HolderBits'
 import type { ProcessInfo } from '../holders/api'
@@ -12,9 +11,9 @@ import * as api from './api'
 import type { ClipboardItem, ClipboardStatus, CurrentClipboard } from './api'
 import { ClipboardItemDialog } from './ClipboardItemDialog'
 import {
-  CLEAR_HISTORY_COMMAND, ENABLE_SERVICE_COMMAND, filterItems, historyCommand, historyState, KIND_LABEL, kindOf, looksSecret, mergeEntries, noticesFor,
-  previewLine, REMOVE_BLOCK_COMMAND, RESTART_SERVICE_COMMAND, sizeLabel, sortItems,
-  type ClipboardFilter, type ClipboardNotice, type ClipboardSortKey, type HistoryState,
+  CLEAR_HISTORY_COMMAND, countLabel, ENABLE_SERVICE_COMMAND, filterItems, historyCommand, historyState, KIND_LABEL, kindOf, looksSecret, mergeEntries, noticesFor,
+  previewLine, problemFor, REMOVE_BLOCK_COMMAND, RESTART_SERVICE_COMMAND, sizeLabel, sortItems,
+  type ClipboardAction, type ClipboardFilter, type ClipboardNotice, type ClipboardSortKey,
 } from './rules'
 
 const READ_MS = 2_000
@@ -38,12 +37,13 @@ const COLUMNS: TableColumn<ClipboardSortKey>[] = [
   { key: 'actions', label: 'Actions', width: 150 },
 ]
 
-const STATE_TAG: Record<HistoryState, { tone: 'ok' | 'warn' | 'neutral'; text: string }> = {
-  on: { tone: 'ok', text: 'History on' },
-  off: { tone: 'neutral', text: 'History off' },
-  blocked: { tone: 'warn', text: 'History blocked' },
-  'not-applied': { tone: 'warn', text: 'History not applied' },
-  'service-off': { tone: 'warn', text: 'Service off' },
+const ACTIONS: Record<ClipboardAction, { label: string; icon: React.ElementType }> = {
+  'turn-on': { label: 'Turn on history', icon: Power },
+  'try-again': { label: 'Try turning on again', icon: Power },
+  'remove-block': { label: 'Remove block and turn on…', icon: Power },
+  'restart-service': { label: 'Restart service…', icon: RefreshCw },
+  'enable-service': { label: 'Turn service back on…', icon: Power },
+  'open-settings': { label: 'Open Windows Settings', icon: Settings },
 }
 
 type DialogName = 'turn-off' | 'clear' | 'remove-block' | 'restart-service' | 'enable-service'
@@ -59,30 +59,34 @@ function ContentPreview({ text, kind, visible, secret }: { text: string; kind: s
           </>
         )
         : <span className="clipboard-hidden" role="img" aria-label="Hidden">{HIDDEN_TEXT}</span>}
-      {secret && <Tag tone="warn">May be secret</Tag>}
+      {secret && <span className="clipboard-secret" title="May be secret"><KeyRound size={13} role="img" aria-label="May be secret" /></span>}
     </span>
   )
+}
+
+function ActionButton({ action, size, variant, disabled, onRun }: {
+  action: ClipboardAction
+  size?: 'sm'
+  variant?: 'primary'
+  disabled: boolean
+  onRun: (action: ClipboardAction) => void
+}) {
+  const { label, icon: Icon } = ACTIONS[action]
+  return <Button size={size} variant={variant} disabled={disabled} onClick={() => onRun(action)}><Icon size={12} /> {label}</Button>
 }
 
 function NoticeRow({ notice, canAct, onAction, onCloseProgram }: {
   notice: ClipboardNotice
   canAct: boolean
-  onAction: (action: NonNullable<ClipboardNotice['action']>) => void
+  onAction: (action: ClipboardAction) => void
   onCloseProgram: (program: ProcessInfo) => void
 }) {
-  const Icon = notice.tone === 'warn' ? AlertTriangle : Info
   const { action, program } = notice
   return (
-    <li className={clsx('clipboard-notice', notice.tone === 'warn' && 'clipboard-notice--warn')}>
-      <Icon size={14} aria-hidden="true" />
-      <div className="clipboard-notice-text">
-        <strong>{notice.title}</strong>
-        {notice.detail}
-      </div>
-      {action === 'remove-block' && <Button size="sm" disabled={!canAct} onClick={() => onAction(action)}>Remove block and turn on…</Button>}
-      {action === 'restart-service' && <Button size="sm" disabled={!canAct} onClick={() => onAction(action)}>Restart service…</Button>}
-      {action === 'enable-service' && <Button size="sm" disabled={!canAct} onClick={() => onAction(action)}>Turn service back on…</Button>}
-      {action === 'open-settings' && <Button size="sm" onClick={() => onAction(action)}><Settings size={12} /> Open Windows Settings</Button>}
+    <li className="clipboard-notice">
+      {notice.tone === 'warn' && <AlertTriangle size={14} aria-hidden="true" />}
+      <p className="clipboard-notice-text"><strong>{notice.title}</strong> {notice.detail}</p>
+      {action && <ActionButton action={action} size="sm" disabled={!canAct} onRun={onAction} />}
       {program && <HolderAction process={program} holds="using the clipboard" onClose={() => onCloseProgram(program)} />}
     </li>
   )
@@ -93,6 +97,7 @@ function CurrentRow({ current, disabled, onClear }: { current: CurrentClipboard;
   const empty = current.formats.length === 0
   const kind = kindOf(current)
   const owner = current.owner && current.owner.owner !== 'windows' ? current.owner.name : null
+  const facts = [sizeLabel(current), owner && `from ${owner}`, current.kept_out_of_history && 'Kept out of history'].filter(Boolean).join(' · ')
   return (
     <section className="clipboard-now" aria-label="On the clipboard now">
       <span className="clipboard-now-label">On the clipboard now</span>
@@ -100,17 +105,22 @@ function CurrentRow({ current, disabled, onClear }: { current: CurrentClipboard;
         ? <span className="clipboard-muted">Nothing</span>
         : (
           <>
-            <Tag>{KIND_LABEL[kind]}</Tag>
+            <span className="clipboard-muted">{KIND_LABEL[kind]}</span>
             {current.text !== null && (
               <ContentPreview text={current.text} kind={kind} visible={visible} secret={looksSecret(current)} />
             )}
-            {sizeLabel(current) && <span className="clipboard-muted num">{sizeLabel(current)}</span>}
-            {owner && <span className="clipboard-muted" title={current.owner?.path ?? owner}>from {owner}</span>}
-            {current.kept_out_of_history && <Tag tone="accent">Kept out of history</Tag>}
+            {facts && <span className="clipboard-now-facts" title={[facts, current.owner?.path].filter(Boolean).join('\n')}>{facts}</span>}
             <span className="toolbar-spacer" />
             {current.text !== null && (
-              <Button size="sm" variant="ghost" onClick={() => setVisible(v => !v)}>
-                {visible ? <EyeOff size={12} /> : <Eye size={12} />} {visible ? 'Hide' : 'Show'}
+              <Button
+                size="sm"
+                icon
+                variant="ghost"
+                aria-label={`${visible ? 'Hide' : 'Show'} what is on the clipboard`}
+                title={visible ? 'Hide' : 'Show'}
+                onClick={() => setVisible(v => !v)}
+              >
+                {visible ? <EyeOff size={13} /> : <Eye size={13} />}
               </Button>
             )}
             <Button size="sm" disabled={disabled} onClick={onClear}>Clear clipboard</Button>
@@ -288,9 +298,10 @@ export default function ClipboardView() {
     setDialog(null)
   }
 
-  const onNoticeAction = (action: NonNullable<ClipboardNotice['action']>) => {
+  const runAction = (action: ClipboardAction) => {
     setActionError(null)
-    if (action === 'open-settings') api.clipboardOpenSettings().catch(setActionError)
+    if (action === 'turn-on' || action === 'try-again') turnOn()
+    else if (action === 'open-settings') api.clipboardOpenSettings().catch(setActionError)
     else setDialog(action)
   }
 
@@ -323,9 +334,10 @@ export default function ClipboardView() {
 
   const rows = useMemo(() => sortItems(filterItems(items, query, filter), sortKey, sortDir), [items, query, filter, sortKey, sortDir])
   const notices = useMemo(() => (status ? noticesFor(status) : []), [status])
+  const warnings = notices.filter(notice => notice.tone === 'warn')
+  const notes = notices.filter(notice => notice.tone === 'info')
   const state = status && historyState(status)
-  const tag = state && STATE_TAG[state]
-  const canRemoveBlock = status?.block_is_managed === false
+  const problem = status && problemFor(status)
 
   const cell = (column: string, item: ClipboardItem) => {
     const kind = kindOf(item)
@@ -385,27 +397,48 @@ export default function ClipboardView() {
             { label: 'Clipboard' },
           ]}
           title="Clipboard"
-          status={tag && <Tag tone={tag.tone}>{tag.text}</Tag>}
-          subtitle="See what Windows has saved from your clipboard, and turn clipboard history on or off."
+          status={status && (
+            <Switch
+              label="History"
+              on={state === 'on'}
+              disabled={busy || (state !== 'on' && state !== 'off')}
+              title={state === 'on' || state === 'off' ? undefined : problem?.title}
+              onChange={on => (on ? turnOn() : setDialog('turn-off'))}
+            />
+          )}
+          subtitle="Windows keeps the 25 newest items, and a restart clears them. It does not save files, or items a program asks it to keep out, as password managers do."
           actions={
             <>
+              {notes.length > 0 && (
+                <>
+                  <Button className="clipboard-notes-button" popoverTarget="clipboard-notes">
+                    <Info size={13} /> {countLabel(notes.length, 'note')}
+                  </Button>
+                  <ul id="clipboard-notes" className="menu-panel clipboard-notes" popover="auto" aria-label="Notes">
+                    {notes.map(notice => (
+                      <NoticeRow
+                        key={notice.key}
+                        notice={notice}
+                        canAct={!busy}
+                        onAction={runAction}
+                        onCloseProgram={program => { setActionError(null); setClosing(program) }}
+                      />
+                    ))}
+                  </ul>
+                </>
+              )}
               {state === 'on' && (
-                <ColumnsMenu
-                  columns={COLUMNS}
-                  hidden={clipboardColumns.hidden}
-                  onToggle={table.toggle}
-                  onReset={() => setClipboardColumns(useAppStore.getInitialState().clipboardColumns)}
-                />
-              )}
-              <Button onClick={() => { setResult(null); refresh() }}><RefreshCw size={12} /> Refresh</Button>
-              {state === 'on' && <Button disabled={busy} onClick={() => setDialog('turn-off')}><Power size={12} /> Turn off history</Button>}
-              {state === 'off' && <Button variant="primary" disabled={busy} onClick={turnOn}><Power size={12} /> Turn on history</Button>}
-              {state === 'blocked' && canRemoveBlock && (
-                <Button variant="primary" disabled={busy} onClick={() => setDialog('remove-block')}><Power size={12} /> Remove block and turn on…</Button>
-              )}
-              {state === 'not-applied' && <Button variant="primary" disabled={busy} onClick={turnOn}><Power size={12} /> Try turning on again</Button>}
-              {status?.service_disabled && (
-                <Button variant="primary" disabled={busy} onClick={() => setDialog('enable-service')}><Power size={12} /> Turn service back on…</Button>
+                <>
+                  <ColumnsMenu
+                    columns={COLUMNS}
+                    hidden={clipboardColumns.hidden}
+                    onToggle={table.toggle}
+                    onReset={() => setClipboardColumns(useAppStore.getInitialState().clipboardColumns)}
+                  />
+                  <Button variant="danger-outline" disabled={busy || items.length === 0} onClick={() => setDialog('clear')}>
+                    <Trash2 size={12} /> Clear history…
+                  </Button>
+                </>
               )}
             </>
           }
@@ -413,66 +446,43 @@ export default function ClipboardView() {
       </div>
 
       <div className="page-fill">
-        <div className="img-tab">
+        <div className="img-tab clipboard-tab">
           {statusError != null && <ErrorBanner className="error-banner--flush" title="Could not check clipboard settings" error={statusError} />}
           {readError != null && <ErrorBanner className="error-banner--flush" title="Could not read clipboard history" error={readError} />}
           {actionError != null && <ErrorBanner className="error-banner--flush" title="That did not work" error={actionError} />}
-          {state !== 'on' && result && <span role="status"><Tag tone="ok">{result}</Tag></span>}
 
-          {notices.length > 0 && (
+          {warnings.length > 0 && (
             <ul className="clipboard-notices">
-              {notices.map(notice => (
+              {warnings.map(notice => (
                 <NoticeRow
                   key={notice.key}
                   notice={notice}
                   canAct={!busy}
-                  onAction={onNoticeAction}
+                  onAction={runAction}
                   onCloseProgram={program => { setActionError(null); setClosing(program) }}
                 />
               ))}
             </ul>
           )}
 
-          {current && (
-            <CurrentRow
-              current={current}
-              disabled={busy}
-              onClear={() => act({ label: 'Clear clipboard', done: 'Clipboard cleared', work: api.clipboardClearCurrent })}
-            />
-          )}
-
           {state === null && statusError == null && <div className="img-loading">Reading clipboard settings…</div>}
 
-          {state === 'off' && (
+          {problem && (
             <EmptyState
               icon={ClipboardList}
-              title="Clipboard history is off"
-              description="Windows only keeps the last thing you copied. Turn history on to keep the 25 newest items."
-              actions={<Button variant="primary" disabled={busy} onClick={turnOn}><Power size={12} /> Turn on history</Button>}
-            />
-          )}
-          {state === 'blocked' && (
-            <EmptyState
-              icon={ClipboardList}
-              title="Clipboard history is blocked"
-              description="Windows is not saving what you copy, and it will not let this setting change until the policy is gone."
-              actions={<Button onClick={() => onNoticeAction('open-settings')}><Settings size={12} /> Open Windows Settings</Button>}
-            />
-          )}
-          {state === 'not-applied' && (
-            <EmptyState
-              icon={ClipboardList}
-              title="Clipboard history is not working"
-              description="The setting is on, but Windows is not saving what you copy."
-              actions={<Button onClick={() => onNoticeAction('open-settings')}><Settings size={12} /> Open Windows Settings</Button>}
-            />
-          )}
-
-          {state === 'service-off' && (
-            <EmptyState
-              icon={ClipboardList}
-              title="The clipboard service is not running"
-              description="Windows cannot keep clipboard history without it. The last thing you copied still works as normal."
+              title={problem.title}
+              description={problem.detail}
+              actions={problem.actions.length > 0
+                ? problem.actions.map((action, i) => (
+                  <ActionButton
+                    key={action}
+                    action={action}
+                    variant={i === 0 && action !== 'open-settings' ? 'primary' : undefined}
+                    disabled={busy}
+                    onRun={runAction}
+                  />
+                ))
+                : undefined}
             />
           )}
 
@@ -492,24 +502,14 @@ export default function ClipboardView() {
                     </SegmentedItem>
                   ))}
                 </Segmented>
+                <span className="toolbar-spacer" />
                 <Button
-                  className={clsx(showAll && 'btn--on')}
-                  aria-pressed={showAll}
                   title="Anything that looks like a secret stays hidden until you show it by itself."
                   onClick={() => setShowAll(on => !on)}
                 >
-                  {showAll ? <EyeOff size={12} /> : <Eye size={12} />} Show text
-                </Button>
-                <span role="status">{result && <Tag tone="ok">{result}</Tag>}</span>
-                <span className="toolbar-spacer" />
-                <Button variant="danger-outline" disabled={busy || items.length === 0} onClick={() => setDialog('clear')}>
-                  <Trash2 size={12} /> Clear history…
+                  {showAll ? <EyeOff size={12} /> : <Eye size={12} />} {showAll ? 'Hide text' : 'Show text'}
                 </Button>
               </Toolbar>
-
-              <p className="holder-summary">
-                Windows keeps the 25 newest items, and a restart clears them. It does not save files, or items a program asks it to keep out, as password managers do.
-              </p>
 
               {rows.length === 0 && (
                 <EmptyState
@@ -540,6 +540,16 @@ export default function ClipboardView() {
               )}
             </>
           )}
+
+          {current && (
+            <CurrentRow
+              current={current}
+              disabled={busy}
+              onClear={() => act({ label: 'Clear clipboard', done: 'Clipboard cleared', work: api.clipboardClearCurrent })}
+            />
+          )}
+
+          <Toast message={result} onDone={() => setResult(null)} />
         </div>
       </div>
 

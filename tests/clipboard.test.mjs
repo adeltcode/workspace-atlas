@@ -160,33 +160,39 @@ test('the history state follows the service first, then history, then the policy
   assert.equal(rules.historyState(status({ blocked_by_policy: true })), 'on')
 })
 
-test('notices say what is in the way, and only offer a fix that can work', () => {
+test('a problem says why history is not running, and only offers a fix that can work', () => {
+  const problem = more => rules.problemFor(status({ history_on: false, ...more }))
+  const actions = more => problem(more).actions
+
+  assert.equal(rules.problemFor(status()), null)
+  assert.deepEqual(actions({ user_setting: false }), ['turn-on'])
+  assert.deepEqual(actions({ blocked_by_policy: true }), ['remove-block', 'open-settings'])
+  assert.deepEqual(actions({ blocked_by_policy: true, block_is_managed: true }), ['open-settings'])
+  assert.match(problem({ blocked_by_policy: true, block_is_managed: true }).title, /organization/)
+  assert.deepEqual(actions({ user_setting: true }), ['try-again', 'restart-service'])
+  assert.deepEqual(actions({ service_disabled: true, service_stopped: true }), ['enable-service'])
+  assert.deepEqual(actions({ service_stopped: true }), [])
+  assert.match(problem({ service_stopped: true }).title, /Sign out/)
+})
+
+test('notices do not repeat the problem, and only warnings stay on the page', () => {
   const keys = more => rules.noticesFor(status(more)).map(n => n.key)
   const only = more => rules.noticesFor(status(more))[0]
 
   assert.deepEqual(keys({}), [])
+  assert.deepEqual(keys({ history_on: false, blocked_by_policy: true }), [])
+  assert.deepEqual(keys({ history_on: false, user_setting: true }), [])
+  assert.deepEqual(keys({ history_on: false, service_disabled: true, service_stopped: true }), [])
+  assert.deepEqual(keys({ history_on: false, service_stopped: true }), [])
 
-  const blocked = only({ history_on: false, blocked_by_policy: true })
-  assert.equal(blocked.action, 'remove-block')
-  const managed = only({ history_on: false, blocked_by_policy: true, block_is_managed: true })
-  assert.equal(managed.action, undefined)
-  assert.match(managed.title, /organization/)
   assert.equal(only({ blocked_by_policy: true }).key, 'blocked-later')
-
-  assert.equal(only({ history_on: false, user_setting: true }).action, 'restart-service')
-
-  const disabled = only({ history_on: false, service_disabled: true, service_stopped: true })
-  assert.equal(disabled.action, 'enable-service')
   assert.equal(only({ service_disabled: true }).action, 'enable-service')
-  const signOut = only({ history_on: false, service_stopped: true })
-  assert.equal(signOut.action, undefined)
-  assert.match(signOut.title, /Sign out/)
-
   assert.equal(only({ sync_on: true }).action, 'open-settings')
   assert.equal(only({ win_v_disabled: true }).tone, 'info')
 
   const held = only({ held_by: program('stuck.exe') })
   assert.match(held.title, /stuck\.exe/)
+  assert.equal(held.tone, 'warn')
   assert.equal(held.program.pid, 40)
 })
 
@@ -198,7 +204,7 @@ test('another clipboard program is explained for the state history is in', () =>
 
   const on = rules.noticesFor(status({ other_programs: [ditto, paste, rdp, vault] }))
   assert.match(on[0].detail, /saved twice/)
-  assert.equal(on[0].tone, 'warn')
+  assert.equal(on[0].tone, 'info')
   assert.equal(on[0].program.pid, 40, 'a program with its own history can be closed from here')
   assert.equal(on[1].tone, 'info')
   assert.equal(on[1].program, undefined)

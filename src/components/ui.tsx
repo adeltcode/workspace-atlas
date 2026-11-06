@@ -1,5 +1,6 @@
 /* If a module needs something this file does not have, it belongs here, not in that module. */
-import { Search, X, ChevronRight, AlertTriangle } from 'lucide-react'
+import { useEffect, useRef } from 'react'
+import { Search, X, ChevronRight, AlertTriangle, Check } from 'lucide-react'
 import clsx from 'clsx'
 import CommandOutput from './CommandOutput'
 import { toAppError } from '../utils/errors'
@@ -141,6 +142,41 @@ export function SheetHead({ crumbs, title, subtitle, status, actions }: {
         {subtitle && <p className="sheet-sub">{subtitle}</p>}
       </div>
     </header>
+  )
+}
+
+export function Switch({ label, on, disabled, title, onChange }: {
+  /** Names what it turns on, such as "History". The text then reads "History on" or "History off". */
+  label: string
+  on: boolean
+  disabled?: boolean
+  title?: string
+  onChange: (on: boolean) => void
+}) {
+  return (
+    <button className="switch" role="switch" aria-checked={on} aria-label={label} disabled={disabled} title={title} onClick={() => onChange(!on)}>
+      <span className={clsx('wsl-toggle', on && 'wsl-toggle--on')} aria-hidden="true"><span className="wsl-toggle-knob" /></span>
+      {label} {on ? 'on' : 'off'}
+    </button>
+  )
+}
+
+const TOAST_MS = 4_000
+
+/** Says that something worked, then goes away. Put it inside a positioned parent. */
+export function Toast({ message, onDone }: { message: string | null; onDone: () => void }) {
+  const done = useRef(onDone)
+  done.current = onDone
+  useEffect(() => {
+    if (!message) return
+    const timer = setTimeout(() => done.current(), TOAST_MS)
+    return () => clearTimeout(timer)
+  }, [message])
+  // The region stays mounted, because a screen reader only announces changes inside one it already knows.
+  return (
+    <div className="toast-region" role="status">
+      {message && <div className="toast"><Check size={13} aria-hidden="true" /> {message}</div>}
+    </div>
   )
 }
 
