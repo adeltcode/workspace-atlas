@@ -183,7 +183,7 @@ pub fn classify(raw: &str) -> AtlasError {
             .detail(raw);
     }
 
-    if has(&["wsl is not installed", "has no installed distributions", "no installed distributions", "wsl/service/", "the wsl optional component is not enabled", "wsl2 is not supported"]) {
+    if has(&["wsl is not installed", "has no installed distributions", "no installed distributions", "the wsl optional component is not enabled", "wsl2 is not supported"]) {
         return AtlasError::new(ErrorKind::WslDown, "WSL is not available right now.")
             .hint("Check that WSL is installed and running. `wsl --status` reports what is missing.")
             .detail(raw);
@@ -233,6 +233,18 @@ mod tests {
             "Error response from daemon: remove traefik_certificates: volume is in use - [3fa9]",
             "Error response from daemon: remove mtls: volume is in use - [3fa9]",
             "Error response from daemon: network mtls_net id 8c1f has active endpoints",
+        ] {
+            assert_eq!(classify(raw).kind, ErrorKind::Unknown, "{raw}");
+            assert_eq!(classify(raw).message, raw, "the raw text says what happened");
+        }
+    }
+
+    #[test]
+    fn a_wsl_error_code_alone_does_not_mean_wsl_is_down() {
+        // wsl.exe ends almost every error with a code like this, even one about a single distro.
+        for raw in [
+            "A distribution with the supplied name already exists.\r\nError code: Wsl/Service/RegisterDistro/ERROR_ALREADY_EXISTS",
+            "There is no distribution with the supplied name.\r\nError code: Wsl/Service/WSL_E_DISTRO_NOT_FOUND",
         ] {
             assert_eq!(classify(raw).kind, ErrorKind::Unknown, "{raw}");
             assert_eq!(classify(raw).message, raw, "the raw text says what happened");
