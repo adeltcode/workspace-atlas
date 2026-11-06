@@ -5,7 +5,7 @@ import type { DistroMetrics } from '../features/wsl/types'
 import type { SandboxDetails, SandboxSharedItem } from '../features/sandbox/api'
 import type { TerminalLine } from '../types/terminal'
 
-export type View      = 'dashboard' | 'docker' | 'wsl' | 'sandbox' | 'packages' | 'ports' | 'locks' | 'settings'
+export type View      = 'dashboard' | 'docker' | 'wsl' | 'sandbox' | 'packages' | 'ports' | 'locks' | 'clipboard' | 'settings'
 export type Theme     = 'dark' | 'light'
 export type DockerTab = 'overview' | 'images' | 'containers' | 'volumes' | 'networks' | 'compose' | 'prune' | 'log'
 export type WslView      = 'dashboard' | 'distro' | 'wslconfig' | 'install'
@@ -107,6 +107,9 @@ interface AppState {
   /** Ports table: column widths in px by column key, and hidden column keys. */
   portColumns: { widths: Record<string, number>; hidden: string[] }
   setPortColumns: (c: { widths: Record<string, number>; hidden: string[] }) => void
+  /** Clipboard table: column widths in px by column key, and hidden column keys. */
+  clipboardColumns: { widths: Record<string, number>; hidden: string[] }
+  setClipboardColumns: (c: { widths: Record<string, number>; hidden: string[] }) => void
 
   backupDir: string
   setBackupDir: (dir: string) => void
@@ -246,6 +249,8 @@ export const useAppStore = create<AppState>()(
       setPkgColumns: (pkgColumns) => set({ pkgColumns }),
       portColumns: { widths: {}, hidden: ['command', 'folder', 'memory', 'parent', 'address', 'path'] },
       setPortColumns: (portColumns) => set({ portColumns }),
+      clipboardColumns: { widths: {}, hidden: ['formats'] },
+      setClipboardColumns: (clipboardColumns) => set({ clipboardColumns }),
 
       backupDir: '',
       setBackupDir: (backupDir) => set({ backupDir }),
@@ -384,6 +389,7 @@ export const useAppStore = create<AppState>()(
         terminalOpen:    s.terminalOpen,
         pkgColumns:      s.pkgColumns,
         portColumns:     s.portColumns,
+        clipboardColumns: s.clipboardColumns,
         backupDir:       s.backupDir,
         dockerKeepList:  s.dockerKeepList,
         dockerLogs:      s.dockerLogs,
@@ -397,7 +403,7 @@ export const useAppStore = create<AppState>()(
           // Guard against a malformed/partial imported config missing theme.
           if (state.theme === 'dark' || state.theme === 'light') applyTheme(state.theme)
           // Migrate persisted values whose views/tabs no longer exist.
-          if (!['dashboard', 'docker', 'wsl', 'sandbox', 'packages', 'ports', 'locks', 'settings'].includes(state.activeView)) {
+          if (!['dashboard', 'docker', 'wsl', 'sandbox', 'packages', 'ports', 'locks', 'clipboard', 'settings'].includes(state.activeView)) {
             state.activeView = 'dashboard'
           }
           if (['backup', 'backup-volumes', 'backup-compose'].includes(state.dockerTab as string)) {

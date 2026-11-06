@@ -475,7 +475,7 @@ The optional `escape` prop adds a safer option at the left of the buttons, such 
 
 ### Dialogs
 
-`ModalShell` wraps the native `<dialog>` element and opens it with `showModal()`. Render it conditionally: it opens when mounted and closes when unmounted.
+`ModalShell` wraps the native `<dialog>` element and opens it with `showModal()`. Render it conditionally: it opens when mounted and closes when unmounted. Focus starts on the first control, or on the one marked data-autofocus. Mark a safe control when the first one deletes something. ConfirmDestructive starts on Cancel.
 
 The `.modal` class sets a `--color-bg-secondary` background, a 1px border, an 8px radius, 28px of padding, and a width of 440px, or 520px with `.modal--wide`.
 

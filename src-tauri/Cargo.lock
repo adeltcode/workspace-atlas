@@ -5317,6 +5317,8 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-opener",
  "ureq",
+ "windows 0.61.3",
+ "windows-future",
  "windows-sys 0.61.2",
 ]
 

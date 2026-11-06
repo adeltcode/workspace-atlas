@@ -17,6 +17,7 @@ export default function ModalShell({ className, label, onClose, closeOnBackdrop 
     const el = ref.current
     const opener = returnFocusRef?.current ?? document.activeElement
     if (el && !el.open) el.showModal()
+    el?.querySelector<HTMLElement>('[data-autofocus]')?.focus()
     return () => {
       el?.close()
       if (opener instanceof HTMLElement && opener.isConnected) opener.focus({ preventScroll: true })

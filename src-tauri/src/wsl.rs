@@ -495,7 +495,7 @@ fn optimize_script(uses_optimize_vhd: bool, vhd: &str, log: &str) -> String {
 
 /// The unprivileged PowerShell that asks Windows to run `script` elevated. A `"` has to
 /// survive the command line Start-Process builds for the elevated PowerShell.
-fn elevation_command(script: &str) -> String {
+pub(crate) fn elevation_command(script: &str) -> String {
     OUTER_OPTIMIZE_PS.replace("__SCRIPT__", &ps_single_quote(&script.replace('"', "\\\"")))
 }
 

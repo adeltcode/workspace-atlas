@@ -6,6 +6,7 @@ import SandboxView    from '../features/sandbox/SandboxView'
 import PackagesView   from '../features/packages/PackagesView'
 import PortsView      from '../features/holders/PortsView'
 import LocksView      from '../features/holders/LocksView'
+import ClipboardView  from '../features/clipboard/ClipboardView'
 import SettingsView   from '../views/SettingsView'
 
 export default function MainPanel() {
@@ -20,6 +21,7 @@ export default function MainPanel() {
       {activeView === 'packages'   && <PackagesView />}
       {activeView === 'ports'      && <PortsView />}
       {activeView === 'locks'      && <LocksView />}
+      {activeView === 'clipboard'  && <ClipboardView />}
       {activeView === 'settings'   && <SettingsView />}
     </main>
   )

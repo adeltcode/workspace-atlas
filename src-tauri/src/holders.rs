@@ -159,7 +159,7 @@ fn distro_owner(pid: u32, name: Option<&str>) -> ProcessOwner {
     }
 }
 
-fn process_snapshot() -> System {
+pub(crate) fn process_snapshot() -> System {
     let mut system = System::new();
     system.refresh_processes_specifics(
         ProcessesToUpdate::All,
@@ -169,7 +169,7 @@ fn process_snapshot() -> System {
     system
 }
 
-fn describe(system: &System, pid: u32) -> ProcessInfo {
+pub(crate) fn describe(system: &System, pid: u32) -> ProcessInfo {
     match system.process(Pid::from_u32(pid)) {
         Some(process) => {
             let name = process.name().to_string_lossy().to_string();
