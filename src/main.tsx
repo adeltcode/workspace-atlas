@@ -1,5 +1,6 @@
 import ReactDOM from 'react-dom/client'
 import App from './App'
+import ErrorBoundary from './components/ErrorBoundary'
 import './index.css'
 import { savedState } from './store/appStore'
 
@@ -8,5 +9,7 @@ window.addEventListener('pagehide', savedState.flush)
 document.addEventListener('visibilitychange', () => { if (document.hidden) savedState.flush() })
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
-  <App />
+  <ErrorBoundary title="Workspace Atlas failed to render" wholeApp>
+    <App />
+  </ErrorBoundary>
 )
