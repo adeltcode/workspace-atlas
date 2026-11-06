@@ -10,15 +10,22 @@ let persisted = ''
 globalThis.localStorage = { getItem: () => null, setItem(_key, value) { persisted = value }, removeItem() {} }
 globalThis.window.localStorage = globalThis.localStorage
 
-const sourceUrl = new URL('../src/store/appStore.ts', import.meta.url)
-const compiled = ts.transpileModule(readFileSync(sourceUrl, 'utf8'), {
+const compile = url => ts.transpileModule(readFileSync(url, 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText
+const sourceUrl = new URL('../src/store/appStore.ts', import.meta.url)
+const nodeRequire = createRequire(sourceUrl)
+const savedStateModule = {}
+new Function('require', 'exports', compile(new URL('../src/store/savedState.ts', import.meta.url)))(nodeRequire, savedStateModule)
 const module = { exports: {} }
-new Function('require', 'exports', 'module', compiled)(
-  createRequire(sourceUrl), module.exports, module,
+new Function('require', 'exports', 'module', compile(sourceUrl))(
+  id => (id === './savedState' ? savedStateModule : nodeRequire(id)), module.exports, module,
 )
 const store = module.exports.useAppStore
+const savedNow = () => {
+  module.exports.savedState.flush()
+  return persisted
+}
 
 test('active WSL work keeps its page and distribution selected', () => {
   store.getState().setActiveView('wsl')
@@ -72,7 +79,7 @@ test('a dev cache scan is not saved, and its folders and columns are', () => {
   s.setCacheColumns({ widths: {}, hidden: ['type'] })
   s.setCacheScan({ items: [], skipped_roots: [], stopped: false })
   s.setCacheScanProgress({ folder: 'F:\\Scripts', found: 1 })
-  const state = JSON.parse(persisted).state
+  const state = JSON.parse(savedNow()).state
   assert.deepEqual(state.cacheRoots, ['F:\\Scripts'])
   assert.deepEqual(state.cacheColumns.hidden, ['type'])
   assert.equal(state.cacheScan, undefined)
@@ -96,7 +103,7 @@ test('column choices are saved for each Docker table, and a jump is not', () => 
   assert.deepEqual(store.getState().dockerColumns.images, { widths: { name: 300 }, hidden: ['id'] })
   assert.deepEqual(store.getState().dockerColumns.volumes.hidden, ['project'], 'other tables keep theirs')
   s.jumpToDocker('images', 'nginx')
-  const state = JSON.parse(persisted).state
+  const state = JSON.parse(savedNow()).state
   assert.deepEqual(state.dockerColumns.images.hidden, ['id'])
   assert.equal(state.dockerJump, undefined)
   s.clearDockerJump()
@@ -127,7 +134,8 @@ test('finishing a save preserves newer edits and clears the saved draft', () => 
 
 test('environment drafts never enter persisted settings', () => {
   store.getState().setEditorDraft('.env', 'TOKEN=example-secret')
-  const state = JSON.parse(persisted).state
+  store.getState().setActiveView('settings')
+  const state = JSON.parse(savedNow()).state
   assert.equal(state.editorDrafts, undefined)
   assert.equal(persisted.includes('example-secret'), false)
 })

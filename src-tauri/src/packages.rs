@@ -36,8 +36,8 @@ struct SourceSpec {
     id: &'static str,
     label: &'static str,
     /// The exact command run, already split for `cmd /C`. `argv[0]` doubles as
-    /// the executable probed with `where.exe` to decide whether the source
-    /// exists on this machine.
+    /// the executable looked up on PATH to decide whether the source exists on
+    /// this machine.
     argv: &'static [&'static str],
 }
 
@@ -1784,6 +1784,15 @@ fn borrow_from_installed_apps(winget: &mut [Package], apps: &[Package]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "runs where.exe for every source"]
+    fn path_lookup_agrees_with_where_exe_on_this_pc() {
+        for spec in SOURCES {
+            let by_where = hidden("where.exe").arg(spec.argv[0]).output().unwrap().status.success();
+            assert_eq!(is_in_path(spec.argv[0]), by_where, "{}", spec.argv[0]);
+        }
+    }
 
     // Real `winget list` output, trimmed. Note the blank Available cells and the
     // ARP entries whose Source column is empty.

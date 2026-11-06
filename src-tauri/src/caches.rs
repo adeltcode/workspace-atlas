@@ -7,7 +7,6 @@ use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
-use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
 
 use crate::error::{classify, AtlasError, ErrorKind};
 use crate::wsl::emit_line;
@@ -506,12 +505,7 @@ fn drive_of(path: &str) -> String {
 }
 
 fn free_bytes_on(drive: &str) -> Option<u64> {
-    let wide: Vec<u16> = format!("{drive}\\").encode_utf16().chain(std::iter::once(0)).collect();
-    let mut free = 0u64;
-    // SAFETY: `wide` is NUL-terminated and outlives the call, `free` is a valid out pointer, and the
-    // other two outputs are documented as optional.
-    let ok = unsafe { GetDiskFreeSpaceExW(wide.as_ptr(), &mut free, std::ptr::null_mut(), std::ptr::null_mut()) };
-    (ok != 0).then_some(free)
+    crate::system::disk_space(&format!("{drive}\\")).map(|(free, _)| free)
 }
 
 fn clear(paths: &[String], env: &dyn Fn(&str) -> Option<String>, on_step: &mut dyn FnMut(&str, usize, Option<&AtlasError>)) -> ClearResult {

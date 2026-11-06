@@ -45,7 +45,8 @@ function LogCard({ entry }: { entry: LogEntry }) {
 }
 
 export default function LogTab() {
-  const { dockerLogs, clearDockerLogs } = useAppStore()
+  const dockerLogs      = useAppStore(s => s.dockerLogs)
+  const clearDockerLogs = useAppStore(s => s.clearDockerLogs)
 
   if (!dockerLogs.length) {
     return (

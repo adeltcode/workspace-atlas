@@ -2,7 +2,10 @@ use std::process::{Command, Stdio};
 
 use tauri::Emitter;
 
+use windows_sys::Win32::System::Registry::HKEY_CURRENT_USER;
+
 use crate::docker::bytes_to_human;
+use crate::registry::{read_dword, read_text_value, subkeys};
 use crate::shell::{hidden, ShellOut};
 use crate::error::{AtlasError, ErrorKind, RecoveryAction};
 
@@ -1358,23 +1361,25 @@ fn wait_for_running_state(distro: &str, want: bool) {
 /// registry + per-VHD list scan. No terminal emission (it would flood the panel).
 #[tauri::command]
 pub async fn wsl_running_names() -> Result<Vec<String>, AtlasError> {
-    tauri::async_runtime::spawn_blocking(|| -> Result<Vec<String>, AtlasError> {
-        let out = hidden("wsl")
-            .env("WSL_UTF8", "1")
-            .args(["-l", "--running", "-q"])
-            .output()
-            .map_err(|e| format!("Failed to list running distros: {}", e))?;
-        if !out.status.success() {
-            return Err(String::from_utf8_lossy(&out.stderr).trim().to_string().into());
-        }
-        Ok(String::from_utf8_lossy(&out.stdout)
-            .lines()
-            .map(|l| l.trim().to_string())
-            .filter(|l| !l.is_empty())
-            .collect())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(running_names)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn running_names() -> Result<Vec<String>, AtlasError> {
+    let out = hidden("wsl")
+        .env("WSL_UTF8", "1")
+        .args(["-l", "--running", "-q"])
+        .output()
+        .map_err(|e| format!("Failed to list running distros: {}", e))?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string().into());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect())
 }
 
 /// Capture a distro's default login user (the user `wsl -d <distro>` logs in as).
@@ -2287,13 +2292,7 @@ try {
 /// Report whether WSL is installed (is `wsl.exe` resolvable on PATH).
 #[tauri::command]
 pub async fn wsl_check() -> WslStatus {
-    let found = hidden("where.exe")
-        .arg("wsl.exe")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-
-    if found {
+    if crate::docker::is_in_path("wsl") {
         WslStatus { available: true, error: None }
     } else {
         WslStatus {
@@ -2315,7 +2314,7 @@ pub async fn wsl_check() -> WslStatus {
 pub async fn wsl_list_distros(app: tauri::AppHandle, silent: bool) -> Result<Vec<WslDistro>, AtlasError> {
     tauri::async_runtime::spawn_blocking(move || -> Result<Vec<WslDistro>, AtlasError> {
         if !silent {
-            emit_line(&app, "$ Get-ChildItem 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Lxss'", false);
+            emit_line(&app, format!("# Reading HKCU\\{LXSS_KEY}"), false);
             emit_line(&app, "$ wsl -l --running", false);
         }
         let distros = read_distros()?;
@@ -2326,92 +2325,86 @@ pub async fn wsl_list_distros(app: tauri::AppHandle, silent: bool) -> Result<Vec
     .map_err(|e| e.to_string())?
 }
 
+const LXSS_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Lxss";
+
 pub(crate) fn read_distros() -> Result<Vec<WslDistro>, AtlasError> {
-    // WSL_UTF8=1 makes `wsl.exe` emit UTF-8 instead of UTF-16, so the
-    // running-distro list reads cleanly.
-    let script = r#"
-$ErrorActionPreference='Stop'
-[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
-$env:WSL_UTF8=1
-$lxss='HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss'
-if(-not (Test-Path -LiteralPath $lxss)){'[]';exit 0}
-$keys=@(Get-ChildItem -LiteralPath $lxss)
-if($keys.Count -eq 0){'[]';exit 0}
-$default=(Get-ItemProperty -LiteralPath $lxss).DefaultDistribution
-$running=@(wsl.exe -l --running -q | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-if($LASTEXITCODE -ne 0){throw 'WSL could not report which distros are running.'}
-$list=@()
-foreach($k in $keys){
-  $p=Get-ItemProperty -LiteralPath $k.PSPath
-  if(-not $p.DistributionName){continue}
-  $base=[string]$p.BasePath
-  if($base.StartsWith('\\?\')){$base=$base.Substring(4)}
-  $diskName=if($p.VhdFileName){[string]$p.VhdFileName}else{'ext4.vhdx'}
-  $vhd=Join-Path $base $diskName
-  $size=0
-  $vhdOut=''
-  if(Test-Path -LiteralPath $vhd){$size=(Get-Item -LiteralPath $vhd).Length; $vhdOut=$vhd}
-  $list+=[pscustomobject]@{
-    name=$p.DistributionName
-    registrationId=$k.PSChildName
-    defaultUid=$p.DefaultUid
-    version=[int]$p.Version
-    isDefault=($k.PSChildName -eq $default)
-    running=($running -contains $p.DistributionName)
-    basePath=$base
-    vhdPath=$vhdOut
-    vhdSize=[int64]$size
-  }
-}
-$list | ConvertTo-Json -Compress -Depth 3
-"#;
-
-    let out = hidden("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", script])
-        .output()
-        .map_err(|e| format!("Could not run PowerShell to list distros: {}", e))?;
-
-    if !out.status.success() {
-        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string().into());
-    }
-
-    let text = String::from_utf8_lossy(&out.stdout);
-    let trimmed = text.trim();
-    if trimmed.is_empty() || trimmed == "null" {
+    let ids = subkeys(HKEY_CURRENT_USER, LXSS_KEY).unwrap_or_default();
+    if ids.is_empty() {
         return Ok(Vec::new());
     }
+    let default = read_text_value(HKEY_CURRENT_USER, LXSS_KEY, "DefaultDistribution").unwrap_or_default();
+    let running = running_names()?;
 
-    let val: serde_json::Value = serde_json::from_str(trimmed)
-        .map_err(|e| format!("Failed to parse distro list: {}", e))?;
-
-    // ConvertTo-Json yields a bare object for a single distro, an array for many.
-    let items = match val {
-        serde_json::Value::Array(a) => a,
-        other => vec![other],
-    };
-
-    let distros = items
-        .iter()
-        .map(|v| WslDistro {
-            name: v["name"].as_str().unwrap_or("").to_string(),
-            registration_id: v["registrationId"].as_str().unwrap_or("").to_string(),
-            default_uid: v["defaultUid"].as_u64().map(|uid| uid as u32),
-            version: v["version"].as_u64().unwrap_or(0) as u32,
-            running: v["running"].as_bool().unwrap_or(false),
-            is_default: v["isDefault"].as_bool().unwrap_or(false),
-            base_path: v["basePath"].as_str().unwrap_or("").to_string(),
-            vhd_path: v["vhdPath"].as_str().unwrap_or("").to_string(),
-            vhd_size_bytes: v["vhdSize"].as_u64().unwrap_or(0),
+    Ok(ids
+        .into_iter()
+        .filter_map(|id| {
+            let key = format!(r"{LXSS_KEY}\{id}");
+            let text = |value: &str| read_text_value(HKEY_CURRENT_USER, &key, value).unwrap_or_default();
+            let name = text("DistributionName");
+            if name.is_empty() {
+                return None;
+            }
+            let base_path = plain_path(&text("BasePath"));
+            let (vhd_path, vhd_size_bytes) = vhd_of(&base_path, &text("VhdFileName"));
+            Some(WslDistro {
+                running: running.iter().any(|r| r.eq_ignore_ascii_case(&name)),
+                is_default: id.eq_ignore_ascii_case(&default),
+                default_uid: read_dword(HKEY_CURRENT_USER, &key, "DefaultUid"),
+                version: read_dword(HKEY_CURRENT_USER, &key, "Version").unwrap_or(0),
+                registration_id: id,
+                name,
+                base_path,
+                vhd_path,
+                vhd_size_bytes,
+            })
         })
-        .filter(|d| !d.name.is_empty())
-        .collect::<Vec<WslDistro>>();
+        .collect())
+}
 
-    Ok(distros)
+fn plain_path(path: &str) -> String {
+    path.strip_prefix(r"\\?\").unwrap_or(path).to_string()
+}
+
+/// The disk's path and size, or nothing when the file is missing.
+fn vhd_of(base_path: &str, file_name: &str) -> (String, u64) {
+    let file_name = if file_name.is_empty() { "ext4.vhdx" } else { file_name };
+    let vhd = std::path::Path::new(base_path).join(file_name);
+    match std::fs::metadata(&vhd) {
+        Ok(file) => (vhd.to_string_lossy().to_string(), file.len()),
+        Err(_) => (String::new(), 0),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_distro_folder_loses_its_long_path_prefix() {
+        assert_eq!(plain_path(r"\\?\C:\wsl\ubuntu"), r"C:\wsl\ubuntu");
+        assert_eq!(plain_path(r"C:\wsl\ubuntu"), r"C:\wsl\ubuntu");
+    }
+
+    #[test]
+    fn a_missing_disk_has_no_path_or_size() {
+        assert_eq!(vhd_of(r"C:\atlas-no-such-folder", ""), (String::new(), 0));
+        let folder = std::env::temp_dir().join(format!("atlas-vhd-test-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("ext4.vhdx"), "disk").unwrap();
+        std::fs::write(folder.join("other.vhdx"), "second").unwrap();
+        let base = folder.to_string_lossy().to_string();
+        assert_eq!(vhd_of(&base, ""), (folder.join("ext4.vhdx").to_string_lossy().to_string(), 4));
+        assert_eq!(vhd_of(&base, "other.vhdx"), (folder.join("other.vhdx").to_string_lossy().to_string(), 6));
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    #[ignore = "reads this PC's WSL list"]
+    fn prints_the_distro_list_on_this_pc() {
+        for d in read_distros().unwrap() {
+            println!("DISTRO {}|{}|{:?}|{}|{}|{}|{}|{}|{}", d.name, d.registration_id, d.default_uid, d.version, d.is_default, d.running, d.base_path, d.vhd_path, d.vhd_size_bytes);
+        }
+    }
 
     #[test]
     fn install_names_must_be_plain_catalog_identifiers() {

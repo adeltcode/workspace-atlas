@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
+use std::thread;
 use std::time::Duration;
 
 use serde::Serialize;
@@ -513,6 +514,31 @@ fn merge_ports(docker: Vec<PortEntry>, distros: Vec<PortEntry>, windows: Vec<Por
     merged
 }
 
+/// The listeners found, and the names of whatever could not be checked.
+fn ports_in_distros() -> (Vec<Listener>, Vec<String>) {
+    let Ok(running) = running_distros() else {
+        return (Vec::new(), vec!["WSL".to_string()]);
+    };
+    let results: Vec<_> = thread::scope(|scope| {
+        let probes: Vec<_> = running
+            .iter()
+            // Docker Desktop's own distros hold its internal ports, which are not the user's.
+            .filter(|d| !d.starts_with("docker-desktop"))
+            .map(|d| (d, scope.spawn(move || distro_listeners(d))))
+            .collect();
+        probes.into_iter().map(|(d, probe)| (d, probe.join())).collect()
+    });
+    let mut listeners = Vec::new();
+    let mut missed = Vec::new();
+    for (distro, result) in results {
+        match result {
+            Ok(Ok(found)) => listeners.extend(found),
+            _ => missed.push(distro.clone()),
+        }
+    }
+    (listeners, missed)
+}
+
 fn list_ports() -> Result<PortList, AtlasError> {
     let found = tcp_listeners()?;
     let mut system = process_snapshot();
@@ -543,23 +569,19 @@ fn list_ports() -> Result<PortList, AtlasError> {
             .collect(),
     );
 
+    // Docker and each distro can take seconds, so they run together and only the slowest is waited for.
+    let (docker, wsl) = thread::scope(|scope| {
+        let docker = scope.spawn(docker_listeners);
+        let wsl = scope.spawn(ports_in_distros);
+        (docker.join(), wsl.join())
+    });
     let mut unchecked = Vec::new();
-    let docker = docker_listeners().unwrap_or_else(|_| {
+    let docker = docker.unwrap_or(Err(())).unwrap_or_else(|_| {
         unchecked.push("Docker".to_string());
         Vec::new()
     });
-    let running = running_distros().unwrap_or_else(|_| {
-        unchecked.push("WSL".to_string());
-        Vec::new()
-    });
-    let mut in_distros = Vec::new();
-    // Docker Desktop's own distros hold its internal ports, which are not the user's.
-    for distro in running.iter().filter(|d| !d.starts_with("docker-desktop")) {
-        match distro_listeners(distro) {
-            Ok(listeners) => in_distros.extend(listeners),
-            Err(_) => unchecked.push(distro.clone()),
-        }
-    }
+    let (in_distros, missed) = wsl.unwrap_or_else(|_| (Vec::new(), vec!["WSL".to_string()]));
+    unchecked.extend(missed);
 
     Ok(PortList {
         entries: merge_ports(to_entries(docker), to_entries(in_distros), windows),

@@ -26,8 +26,8 @@ export default function Dashboard() {
   const [metrics, setMetrics] = useState<SystemMetrics | null>(null)
   const [activityDetail, setActivityDetail] = useState<ActivityEntry | null>(null)
 
-  const poll = () => { getSystemMetrics().then(setMetrics).catch(() => {}) }
-  useEffect(poll, [])
+  const poll = () => getSystemMetrics().then(setMetrics).catch(() => {})
+  useEffect(() => { poll() }, []) // eslint-disable-line
   useVisiblePoll(poll, 2000)
 
   const memPct = metrics && metrics.mem_total_bytes > 0

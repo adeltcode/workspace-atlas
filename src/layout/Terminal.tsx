@@ -14,9 +14,11 @@ type ShellDone = { exit_code: number }
 const MAX_HISTORY = 100
 
 export default function Terminal() {
-  const { terminalLines, terminalOpen, clearTerminal, toggleTerminal, setTerminalOpen } =
-    useAppStore()
-
+  const terminalLines     = useAppStore(s => s.terminalLines)
+  const terminalOpen      = useAppStore(s => s.terminalOpen)
+  const clearTerminal     = useAppStore(s => s.clearTerminal)
+  const toggleTerminal    = useAppStore(s => s.toggleTerminal)
+  const setTerminalOpen   = useAppStore(s => s.setTerminalOpen)
   const terminalTab       = useAppStore(s => s.terminalTab)
   const setTerminalTab    = useAppStore(s => s.setTerminalTab)
   const composeLogContext = useAppStore(s => s.composeLogContext)

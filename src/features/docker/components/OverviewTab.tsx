@@ -291,7 +291,12 @@ export default function OverviewTab({
   statHistory: Map<string, { cpu: number[]; mem: number[] }>
   onPollStats: () => void
 }) {
-  const { setDockerTab, setImagesFilter, setVolumesFilter, setComposePreselect, backupDir, dockerKeepList } = useAppStore()
+  const setDockerTab        = useAppStore(s => s.setDockerTab)
+  const setImagesFilter     = useAppStore(s => s.setImagesFilter)
+  const setVolumesFilter    = useAppStore(s => s.setVolumesFilter)
+  const setComposePreselect = useAppStore(s => s.setComposePreselect)
+  const backupDir           = useAppStore(s => s.backupDir)
+  const dockerKeepList      = useAppStore(s => s.dockerKeepList)
 
   const [composeProjects, setComposeProjects] = useState<ComposeProject[]>([])
   const [composeLoading,  setComposeLoading]  = useState(true)
