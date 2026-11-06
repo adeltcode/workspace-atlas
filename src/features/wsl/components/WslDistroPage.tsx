@@ -253,10 +253,9 @@ export default function WslDistroPage({ distros, onReload }: {
       <div id="wsl-distro-panel" role="tabpanel" aria-label={TABS.find(t => t.id === tab)?.label}>
         {tab === 'overview'    && <WslDashboardTab distros={distros} onReload={onReload} />}
         {tab === 'startup'     && <WslStartupTab distros={distros} onReload={onReload} onGoToConf={() => setTab('config')} />}
-        {tab === 'performance' && <WslPerformanceTab distros={distros} onReload={onReload} />}
+        {tab === 'performance' && <WslPerformanceTab onReload={onReload} />}
         {tab === 'config'      && (
           <WslConfTab
-            distros={distros}
             runningNames={distros.filter(x => x.running).map(x => x.name)}
             onAfterShutdown={onReload}
           />

@@ -14,7 +14,10 @@ const compile = (path, shims = {}) => {
   return exports
 }
 
-const rules = compile('../src/features/caches/rules.ts', { '../../utils/format': compile('../src/utils/format.ts') })
+const rules = compile('../src/features/caches/rules.ts', {
+  '../../utils/format': compile('../src/utils/format.ts'),
+  '../../utils/sortRows': compile('../src/utils/sortRows.ts'),
+})
 
 const NOW = 1_800_000_000
 const DAY = 86_400

@@ -4,6 +4,7 @@ import {
   Star, Terminal, ChevronRight, HardDrive,
   RotateCw, Square, Play, Upload, Settings2, History, Activity,
 } from 'lucide-react'
+import DriveBar from '../../../components/DriveBar'
 import { useAppStore, type ActivityEntry } from '../../../store/appStore'
 import * as api from '../api'
 import { readWslConfig } from '../api'
@@ -12,7 +13,7 @@ import type { DiskStats } from '../../docker/types'
 import { getIniValue } from '../ini'
 import type { WslDistro, DistroExtras } from '../types'
 import { bytesToHuman, formatDuration, timeAgo } from '../../../utils/format'
-import { Toolbar, SearchField, Segmented, SegmentedItem, EmptyState, Button } from '../../../components/ui'
+import { Toolbar, SearchField, EmptyState, Button, FilterSegments } from '../../../components/ui'
 import { Modal, Field } from './Dialog'
 import { DistroLogo } from '../DistroLogo'
 import { useAsyncAction } from '../../../hooks/useAsyncAction'
@@ -21,6 +22,11 @@ import LiveMetricsCharts, { getChartColors } from '../../../components/LiveMetri
 import { OutputDialog, OutputText } from '../../../components/CommandOutput'
 
 type StateFilter = 'all' | 'running' | 'stopped'
+const STATE_FILTERS: { key: StateFilter; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'running', label: 'Running' },
+  { key: 'stopped', label: 'Stopped' },
+]
 type Lifecycle = { d: WslDistro; action: 'stop' | 'restart' }
 
 export default function WslHome({ distros, onReload }: {
@@ -234,9 +240,6 @@ export default function WslHome({ distros, onReload }: {
   }, [distros])
   const multiDrive = driveGroups.length > 1
 
-  const segPct = (bytes: number, total: number) =>
-    total > 0 ? Math.max((bytes / total) * 100, bytes > 0 ? 0.3 : 0) : 0
-
   const filtered = distros.filter(d => {
     if (filter === 'running' && !d.running) return false
     if (filter === 'stopped' && d.running) return false
@@ -264,13 +267,7 @@ export default function WslHome({ distros, onReload }: {
           placeholder="Search distros"
           label="Search distros by name"
         />
-        <Segmented label="Filter by state">
-          {(['all', 'running', 'stopped'] as StateFilter[]).map(f => (
-            <SegmentedItem key={f} active={filter === f} onClick={() => setFilter(f)}>
-              {f === 'all' ? 'All' : f === 'running' ? 'Running' : 'Stopped'}
-            </SegmentedItem>
-          ))}
-        </Segmented>
+        <FilterSegments label="Filter by state" options={STATE_FILTERS} value={filter} onChange={setFilter} />
       </Toolbar>
 
       {filtered.length === 0 ? (
@@ -339,38 +336,16 @@ export default function WslHome({ distros, onReload }: {
               const vhdSum = ds.reduce((s, d) => s + d.vhd_size_bytes, 0)
               const other = stats ? Math.max(0, used - vhdSum) : 0
               return (
-                <div key={letter} className="drive-bar-group">
-                  <div className="drive-bar-header">
-                    <span className="drive-bar-title">{stats ? stats.drive_label : `${letter}:`}</span>
-                    {stats && (
-                      <span className="drive-bar-meta">
-                        {bytesToHuman(stats.total_bytes)} disk size · {bytesToHuman(stats.free_bytes)} free
-                      </span>
-                    )}
-                  </div>
-                  <div className="disk-stacked-bar">
-                    {ds.map(d => (
-                      <div
-                        key={d.name}
-                        className="disk-seg"
-                        style={{
-                          width: stats ? `${segPct(d.vhd_size_bytes, stats.total_bytes)}%` : undefined,
-                          flex: stats ? undefined : d.vhd_size_bytes,
-                          background: colorOf(d.name),
-                        }}
-                        title={`${d.name}: ${bytesToHuman(d.vhd_size_bytes)}`}
-                      />
-                    ))}
-                    {other > 0 && stats && (
-                      <div className="disk-seg disk-seg--other" style={{ width: `${segPct(other, stats.total_bytes)}%` }}
-                        title={`Other apps: ${bytesToHuman(other)}`} />
-                    )}
-                    {stats && (
-                      <div className="disk-seg disk-seg--free" style={{ width: `${segPct(stats.free_bytes, stats.total_bytes)}%` }}
-                        title={`Free: ${bytesToHuman(stats.free_bytes)}`} />
-                    )}
-                  </div>
-                </div>
+                <DriveBar
+                  key={letter}
+                  title={stats ? stats.drive_label : `${letter}:`}
+                  stats={stats}
+                  segments={[
+                    ...ds.map(d => ({ key: d.name, label: d.name, bytes: d.vhd_size_bytes, color: colorOf(d.name) })),
+                    ...(other > 0 && stats ? [{ key: 'other', label: 'Other apps', bytes: other, className: 'disk-seg--other' }] : []),
+                    ...(stats ? [{ key: 'free', label: 'Free', bytes: stats.free_bytes, className: 'disk-seg--free' }] : []),
+                  ]}
+                />
               )
             })}
           </div>

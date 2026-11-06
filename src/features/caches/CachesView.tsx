@@ -1,10 +1,11 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { Eraser, Filter, FolderOpen, Info, Plus, RefreshCw, Square, Trash2, X } from 'lucide-react'
+import { toggled } from '../../utils/toggled'
 import { useAppStore } from '../../store/appStore'
 import { bytesToHuman, timeAgo } from '../../utils/format'
-import { Button, ConfirmDestructive, EmptyState, ErrorBanner, SearchField, Segmented, SegmentedItem, SheetHead, Toast, Toolbar } from '../../components/ui'
-import { CheckMenu, ColumnsMenu, TableHead, useTableColumns, type TableColumn } from '../../components/TableColumns'
+import { Button, ConfirmDestructive, EmptyState, ErrorBanner, SearchField, Segmented, SegmentedItem, SheetHead, Toast, Toolbar, NoMatches } from '../../components/ui'
+import { CheckMenu, ColumnsMenu, TableHead, useTableColumns, type TableColumn, useTableSort } from '../../components/TableColumns'
 import { FileDropPrompt, FileDropZone } from '../../components/FileDropZone'
 import { revealPath } from '../docker/api'
 import { pickDirectory } from '../wsl/api'
@@ -37,21 +38,17 @@ export default function CachesView() {
   const scanError = useAppStore(s => s.cacheScanError)
   const roots = useAppStore(s => s.cacheRoots)
   const setRoots = useAppStore(s => s.setCacheRoots)
-  const cacheColumns = useAppStore(s => s.cacheColumns)
-  const setCacheColumns = useAppStore(s => s.setCacheColumns)
   const table = useTableColumns<CacheSortKey>({
     columns: COLUMNS,
     fill: 'location',
-    prefs: cacheColumns,
-    read: () => useAppStore.getState().cacheColumns,
-    save: setCacheColumns,
+    select: s => s.cacheColumns,
+    save: prefs => useAppStore.getState().setCacheColumns(prefs),
   })
 
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<CacheFilter>('all')
   const [kinds, setKinds] = useState<string[]>([])
-  const [sortKey, setSortKey] = useState<CacheSortKey>('size')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const { sortKey, sortDir, handleSort } = useTableSort<CacheSortKey>('size', 'desc', ['size', 'files', 'used'])
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const [confirming, setConfirming] = useState<CacheItem[] | null>(null)
   const [clearing, setClearing] = useState<{ done: number; total: number } | null>(null)
@@ -76,17 +73,7 @@ export default function CachesView() {
   const allShownSelected = rows.length > 0 && rows.every(item => selected.has(itemKey(item)))
   const someShownSelected = !allShownSelected && rows.some(item => selected.has(itemKey(item)))
 
-  const handleSort = (key: CacheSortKey) => {
-    if (key === sortKey) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
-    else { setSortKey(key); setSortDir(key === 'size' || key === 'files' || key === 'used' ? 'desc' : 'asc') }
-  }
-
-  const toggle = (item: CacheItem) => setSelected(previous => {
-    const next = new Set(previous)
-    if (next.has(itemKey(item))) next.delete(itemKey(item))
-    else next.add(itemKey(item))
-    return next
-  })
+  const toggle = (item: CacheItem) => setSelected(previous => toggled(previous, itemKey(item)))
 
   const toggleShown = () => setSelected(allShownSelected ? new Set() : new Set(rows.map(itemKey)))
 
@@ -207,37 +194,26 @@ export default function CachesView() {
 
   return (
     <div className="view-container">
-      <div className="page-head">
-        <SheetHead
-          crumbs={[
-            { label: 'Overview', onClick: () => useAppStore.getState().setActiveView('dashboard') },
-            { label: 'Dev caches' },
-          ]}
-          title="Dev caches"
-          status={(scan || scanning) && (
-            <span className="pill">
-              {scanning ? 'Scanning…' : `${bytesToHuman(totalBytes(items))} total`}
-            </span>
-          )}
-          subtitle="Reclaim disk space from dependency directories, build artifacts, and package manager caches."
-          actions={
-            <>
-              <ColumnsMenu
-                columns={COLUMNS}
-                hidden={cacheColumns.hidden}
-                onToggle={table.toggle}
-                onReset={() => setCacheColumns(useAppStore.getInitialState().cacheColumns)}
-              />
-              {scanning
-                ? <Button onClick={() => { api.cachesScanStop().catch(setActionError) }}><Square size={12} /> Stop</Button>
-                : <Button disabled={busy} onClick={runCacheScan}><RefreshCw size={12} /> Rescan</Button>}
-              <Button variant="danger-outline" disabled={busy || chosen.length === 0} onClick={() => setConfirming(chosen)}>
-                <Trash2 size={12} /> {chosen.length === 0 ? 'Clear selected' : `Clear ${cacheCount(chosen.length)} (${bytesToHuman(totalBytes(chosen))})`}…
-              </Button>
-            </>
-          }
-        />
-      </div>
+      <SheetHead
+        title="Dev caches"
+        status={(scan || scanning) && (
+          <span className="pill">
+            {scanning ? 'Scanning…' : `${bytesToHuman(totalBytes(items))} total`}
+          </span>
+        )}
+        subtitle="Reclaim disk space from dependency directories, build artifacts, and package manager caches."
+        actions={
+          <>
+            <ColumnsMenu table={table} />
+            {scanning
+              ? <Button onClick={() => { api.cachesScanStop().catch(setActionError) }}><Square size={12} /> Stop</Button>
+              : <Button disabled={busy} onClick={runCacheScan}><RefreshCw size={12} /> Rescan</Button>}
+            <Button variant="danger-outline" disabled={busy || chosen.length === 0} onClick={() => setConfirming(chosen)}>
+              <Trash2 size={12} /> {chosen.length === 0 ? 'Clear selected' : `Clear ${cacheCount(chosen.length)} (${bytesToHuman(totalBytes(chosen))})`}…
+            </Button>
+          </>
+        }
+      />
 
       <div className="page-fill">
         <FileDropZone className="img-tab" label="Drop to add this folder" disabled={busy || confirming !== null} onDrop={addRoots}>
@@ -331,11 +307,7 @@ export default function CachesView() {
           )}
 
           {items.length > 0 && rows.length === 0 && (
-            <EmptyState
-              title="No caches match"
-              description="Adjust the search or filters."
-              actions={<Button onClick={() => { setQuery(''); setFilter('all'); setKinds([]) }}>Clear filters</Button>}
-            />
+            <NoMatches noun="caches" onClear={() => { setQuery(''); setFilter('all'); setKinds([]) }} />
           )}
 
           {rows.length > 0 && (

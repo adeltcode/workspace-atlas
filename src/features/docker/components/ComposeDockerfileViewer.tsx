@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
 const INSTRUCTIONS = new Set([
   'FROM','RUN','COPY','ADD','WORKDIR','EXPOSE','ENV','ARG','LABEL',
@@ -26,7 +26,7 @@ export function DockerfileLine({ line }: { line: string }) {
           <span>{pre}</span>
           <span className="dockerfile-instr">{instr}</span>
           <span>{sp}</span>
-          <span className="dockerfile-arg">{renderDockerArg(rest)}</span>
+          <span className="dockerfile-arg">{renderEnvRefs(rest)}</span>
         </div>
       )
     }
@@ -35,7 +35,7 @@ export function DockerfileLine({ line }: { line: string }) {
   return <div className="yaml-line">{line}</div>
 }
 
-function renderDockerArg(text: string): ReactNode {
+export function renderEnvRefs(text: string): ReactNode {
   if (!text.includes('$')) return <span>{text}</span>
   const parts = text.split(/(\$\{[^}]+\}|\$[A-Z_a-z][A-Z0-9_a-z]*)/g)
   return (
@@ -46,48 +46,5 @@ function renderDockerArg(text: string): ReactNode {
           : <span key={i}>{p}</span>
       )}
     </>
-  )
-}
-
-// View only. ComposeTab owns editing, so Edit and Save live in its shared toolbar.
-
-interface Props {
-  content:           string
-  initialScrollTop?: number
-  onScrollTop?:      (top: number) => void
-}
-
-export default function ComposeDockerfileViewer({ content, initialScrollTop = 0, onScrollTop }: Props) {
-  const numsRef = useRef<HTMLDivElement>(null)
-  const areaRef = useRef<HTMLDivElement>(null)
-  const lines = content.split('\n')
-  if (lines[lines.length - 1] === '') lines.pop()
-
-  const syncScroll = () => {
-    const area = areaRef.current
-    if (!area) return
-    if (numsRef.current) numsRef.current.scrollTop = area.scrollTop
-    onScrollTop?.(area.scrollTop)
-  }
-
-  // Restore the scroll position from the previous mode before paint.
-  useLayoutEffect(() => {
-    const area = areaRef.current
-    if (!area) return
-    area.scrollTop = initialScrollTop
-    if (numsRef.current) numsRef.current.scrollTop = area.scrollTop
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  return (
-    <div className="compose-code-wrap">
-      <div className="compose-line-nums" aria-hidden ref={numsRef}>
-        {lines.map((_, i) => <span key={i}>{i + 1}</span>)}
-      </div>
-      <div className="compose-code-area" ref={areaRef} onScroll={syncScroll}>
-        <div className="compose-code-body">
-          {lines.map((line, i) => <DockerfileLine key={i} line={line} />)}
-        </div>
-      </div>
-    </div>
   )
 }

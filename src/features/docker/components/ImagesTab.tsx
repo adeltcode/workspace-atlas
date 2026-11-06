@@ -4,11 +4,11 @@ import clsx from 'clsx'
 import { useAppStore } from '../../../store/appStore'
 import type { DockerContainer, DockerImage } from '../types'
 import { StatusCell, useDockerJump, useDockerTable } from './TableBits'
-import { Button, CellLink, EmptyState, SearchField, Segmented, SegmentedItem, Toolbar } from '../../../components/ui'
-import { TableHead } from '../../../components/TableColumns'
+import { Button, CellLink, EmptyState, SearchField, Toolbar, FilterSegments, NoMatches, Dash } from '../../../components/ui'
+import { TableHead, useTableSort } from '../../../components/TableColumns'
 import {
   containersUsing, filterImages, imageName, matchesImageFilter, sortImages,
-  type ImageFilter, type ImageSortKey, type SortDir,
+  type ImageFilter, type ImageSortKey,
 } from '../rules'
 
 const FILTERS: { key: ImageFilter; label: string; title?: string }[] = [
@@ -18,8 +18,6 @@ const FILTERS: { key: ImageFilter; label: string; title?: string }[] = [
   { key: 'dangling', label: 'Dangling', title: 'Untagged images not used by any container' },
   { key: 'pinned', label: 'Pinned', title: 'Pinned images are never pruned' },
 ]
-
-const Dash = () => <span className="pkg-dash">-</span>
 
 export default function ImagesTab({ images, containers, loading }: { images: DockerImage[]; containers: DockerContainer[]; loading: boolean }) {
   const dockerKeepList     = useAppStore(s => s.dockerKeepList)
@@ -37,19 +35,13 @@ export default function ImagesTab({ images, containers, loading }: { images: Doc
     setFilter(filterSignal === 'dangling' ? 'dangling' : 'unused')
   }, [filterSignal])
 
-  const [sortKey, setSortKey] = useState<ImageSortKey>('size')
-  const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const { sortKey, sortDir, handleSort } = useTableSort<ImageSortKey>('size', 'desc', ['size', 'created'])
   const [search, setSearch]   = useState('')
 
   useDockerJump('images', ({ query }) => {
     setSearch(query)
     setFilter('all')
   })
-
-  const handleSort = (key: ImageSortKey) => {
-    if (key === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-    else { setSortKey(key); setSortDir(key === 'size' || key === 'created' ? 'desc' : 'asc') }
-  }
 
   const rows = useMemo(() => {
     const sorted = sortImages(filterImages(images, search, filter, dockerKeepList), sortKey, sortDir)
@@ -126,28 +118,12 @@ export default function ImagesTab({ images, containers, loading }: { images: Doc
           placeholder="Search images"
           label="Search images by name, tag, or ID"
         />
-        <Segmented label="Filter images">
-          {FILTERS.map(({ key, label, title }) => (
-            <SegmentedItem
-              key={key}
-              active={filter === key}
-              count={images.filter(image => matchesImageFilter(image, key, dockerKeepList)).length}
-              title={title}
-              onClick={() => setFilter(key)}
-            >
-              {label}
-            </SegmentedItem>
-          ))}
-        </Segmented>
+        <FilterSegments label="Filter images" options={FILTERS} value={filter} onChange={setFilter} count={key => images.filter(image => matchesImageFilter(image, key, dockerKeepList)).length} />
         <span className="img-count">{rows.length} shown</span>
       </Toolbar>
 
       {rows.length === 0 && (
-        <EmptyState
-          title="No images match"
-          description="Adjust the search or filters."
-          actions={<Button onClick={() => { setSearch(''); setFilter('all') }}>Clear filters</Button>}
-        />
+        <NoMatches noun="images" onClear={() => { setSearch(''); setFilter('all') }} />
       )}
 
       {rows.length > 0 && (

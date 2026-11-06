@@ -5,7 +5,7 @@ import { useAppStore, type ActivityEntry, type ActivityModule, type DockerTab } 
 import { useVisiblePoll } from '../hooks/useVisiblePoll'
 import { getSystemMetrics, type SystemMetrics } from '../features/system/api'
 import { bytesToHuman, timeAgo } from '../utils/format'
-import { SheetHead, SectionHead, EmptyState, Button, StatCard, StatRow } from '../components/ui'
+import { SheetHead, SectionHead, EmptyState, Button, StatCard, StatRow, StatusPill } from '../components/ui'
 import { OutputDialog, OutputText } from '../components/CommandOutput'
 
 const MODULE_ICON: Record<ActivityModule, typeof Box> = { docker: Box, wsl: HardDrive, packages: Package, system: Wrench }
@@ -51,29 +51,25 @@ export default function Dashboard() {
 
   return (
     <div className="view-container">
-      <div className="page-head">
-        <SheetHead
-          crumbs={[{ label: 'Workspace Atlas' }, { label: 'Overview' }]}
-          title="Overview"
-          status={
-            <>
-              {dockerCache?.status && (
-                <span className="pill">
-                  <span className={clsx('rail-dot', dockerCache.status.state === 'running' ? 'running' : 'stopped')} />
-                  Docker {dockerCache.status.version ?? 'unknown'}
-                </span>
-              )}
-              {distros.length > 0 && (
-                <span className="pill">
-                  <span className={clsx('rail-dot', running ? 'running' : 'stopped')} />
-                  {distros.length} distro{distros.length === 1 ? '' : 's'}{running ? `, ${running} running` : ''}
-                </span>
-              )}
-            </>
-          }
-          actions={<Button onClick={poll}><RefreshCw size={13} /> Refresh</Button>}
-        />
-      </div>
+      <SheetHead
+        crumbs={[{ label: 'Workspace Atlas' }, { label: 'Overview' }]}
+        title="Overview"
+        status={
+          <>
+            {dockerCache?.status && (
+              <StatusPill on={dockerCache.status.state === 'running'}>
+                Docker {dockerCache.status.version ?? 'unknown'}
+              </StatusPill>
+            )}
+            {distros.length > 0 && (
+              <StatusPill on={running > 0}>
+                {distros.length} distro{distros.length === 1 ? '' : 's'}{running ? `, ${running} running` : ''}
+              </StatusPill>
+            )}
+          </>
+        }
+        actions={<Button onClick={poll}><RefreshCw size={13} /> Refresh</Button>}
+      />
 
       <div className="page-scroll">
         <StatRow>

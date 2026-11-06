@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { RefreshCw, Play, ExternalLink } from 'lucide-react'
+import { useRefreshKey } from '../../hooks/useRefreshKey'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import clsx from 'clsx'
 import { useAppStore, type DockerTab, type DockerTableTab } from '../../store/appStore'
@@ -16,7 +17,7 @@ import ComposeTab     from './components/ComposeTab'
 import PruneTab       from './components/PruneTab'
 import LogTab         from './components/LogTab'
 import { DockerColumnsMenu } from './components/TableBits'
-import { SheetHead, Prerequisite, Button, ErrorBanner } from '../../components/ui'
+import { SheetHead, Prerequisite, Button, ErrorBanner, StatusPill } from '../../components/ui'
 import KeepAlive from '../../components/KeepAlive'
 
 const TAB_SUBTITLES: Partial<Record<DockerTab, string>> = {
@@ -35,7 +36,6 @@ const TABLE_TABS: DockerTab[] = ['containers', 'images', 'volumes', 'networks']
 
 export default function DockerView() {
   const dockerTab     = useAppStore(s => s.dockerTab)
-  const setActiveView = useAppStore(s => s.setActiveView)
   const { status, df, images, containers, volumes, loading, refreshing, waiting, error, refresh, refreshContainers, refreshVolumes } = useDockerData()
   const [composeTick, setComposeTick] = useState(0)
   const [starting, setStarting]       = useState(false)
@@ -105,15 +105,7 @@ export default function DockerView() {
     }
   }, [refresh])
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'r' && !e.shiftKey) {
-        e.preventDefault(); handleRefresh()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [handleRefresh])
+  useRefreshKey(handleRefresh)
 
   useEffect(() => {
     const running = containers.filter(c => c.state === 'running').length
@@ -136,22 +128,16 @@ export default function DockerView() {
   return (
     <div className="view-container docker-view">
 
-      <div className="page-head">
       <SheetHead
-        crumbs={[
-          { label: 'Overview', onClick: () => setActiveView('dashboard') },
-          { label: 'Docker' },
-        ]}
         title="Docker"
         subtitle={subtitle}
         status={
           loading && !status
             ? <span className="pill">Connecting…</span>
             : status && (
-              <span className="pill">
-                <span className={clsx('rail-dot', online ? 'running' : 'stopped')} />
+              <StatusPill on={online}>
                 {online ? `v${status.version ?? 'unknown'}` : 'not running'}
-              </span>
+              </StatusPill>
             )
         }
         actions={
@@ -164,7 +150,6 @@ export default function DockerView() {
           </>
         }
       />
-      </div>
 
       <div className={clsx(fills ? 'page-fill' : 'page-scroll', 'docker-tab-content')}>
       {error && <ErrorBanner>{error}</ErrorBanner>}

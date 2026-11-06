@@ -16,7 +16,7 @@ const compile = (path, shims = {}) => {
   return exports
 }
 
-const rules = compile('../src/features/holders/rules.ts')
+const rules = compile('../src/features/holders/rules.ts', { '../../utils/sortRows': compile('../src/utils/sortRows.ts') })
 const format = compile('../src/utils/format.ts')
 
 const proc = (name, pid, owner = 'app', distro = null, path = null) => ({ pid, name, path, started_at: 1, owner, distro })

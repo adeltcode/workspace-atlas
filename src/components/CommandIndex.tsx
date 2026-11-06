@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Box, ClipboardList, Eraser, HardDrive, Package, LayoutDashboard, Settings, Layers, Database, Network, Trash2, ScrollText, CornerDownLeft, Plug, Lock, FlaskConical } from 'lucide-react'
+import { Box, ClipboardList, Eraser, HardDrive, Package, LayoutDashboard, Settings, Layers, Database, CornerDownLeft, Plug, Lock, FlaskConical } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore, type View, type DockerTab, type WslView, type DockerCache, type WslDistroNav } from '../store/appStore'
+import { DOCKER_TABS } from '../features/docker/tabs'
 import * as dockerApi from '../features/docker/api'
 import { wslListDistros } from '../features/wsl/api'
 import type { ComposeProject } from '../features/docker/types'
@@ -100,13 +101,7 @@ export default function CommandIndex() {
       { id: 'v:clip', label: 'Clipboard',  where: 'Tools',  section: 'Places', icon: ClipboardList,   run: go('clipboard') },
       { id: 'v:cache', label: 'Dev caches', where: 'Tools',  section: 'Places', icon: Eraser,          run: go('caches') },
     )
-    const dockerTabs: Array<[DockerTab, string, React.ElementType]> = [
-      ['overview', 'Overview', Box], ['images', 'Images', Layers],
-      ['containers', 'Containers', Box], ['volumes', 'Volumes', Database],
-      ['networks', 'Networks', Network], ['compose', 'Compose', Layers],
-      ['prune', 'Prune', Trash2], ['log', 'Run log', ScrollText],
-    ]
-    for (const [id, label, icon] of dockerTabs) {
+    for (const { id, label, icon } of DOCKER_TABS) {
       out.push({ id: `d:${id}`, label, where: 'Docker', section: 'Places', icon, run: goDocker(id) })
     }
     out.push(

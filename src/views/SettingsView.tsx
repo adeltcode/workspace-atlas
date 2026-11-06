@@ -164,16 +164,10 @@ export default function SettingsView() {
 
   return (
     <div className="view-container">
-      <div className="page-head">
-        <SheetHead
-          crumbs={[
-            { label: 'Overview', onClick: () => useAppStore.getState().setActiveView('dashboard') },
-            { label: 'Settings' },
-          ]}
-          title="Settings"
-          subtitle="Preferences, backup location, and configuration transfer."
-        />
-      </div>
+      <SheetHead
+        title="Settings"
+        subtitle="Preferences, backup location, and configuration transfer."
+      />
 
       <div className="page-scroll settings-body">
 

@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { Eye, EyeOff, Save, Pencil, X, Lock } from 'lucide-react'
+import { toggled } from '../../../utils/toggled'
 import clsx from 'clsx'
 import * as api from '../api'
 import { useAppStore } from '../../../store/appStore'
@@ -49,11 +50,7 @@ export default function ComposeEnvTab({ filePath, content, yamlContent, onSaved 
   const [saving,   setSaving]   = useState(false)
 
   const toggleMaskAll = () => setMasked(m => { if (!m) setRevealed(new Set()); return !m })
-  const toggleReveal  = (k: string) => setRevealed(prev => {
-    const next = new Set(prev)
-    if (next.has(k)) next.delete(k); else next.add(k)
-    return next
-  })
+  const toggleReveal  = (k: string) => setRevealed(prev => toggled(prev, k))
 
   const pairs    = useMemo(() => parseEnv(content), [content])
   const yamlRefs = useMemo(() => extractYamlVarRefs(yamlContent), [yamlContent])

@@ -3,11 +3,15 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import ts from 'typescript'
 
-const source = readFileSync(new URL('../src/features/docker/rules.ts', import.meta.url), 'utf8')
-const rules = {}
-new Function('exports', ts.transpileModule(source, {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-}).outputText)(rules)
+const compile = (url, require) => {
+  const exports = {}
+  new Function('require', 'exports', ts.transpileModule(readFileSync(url, 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText)(require, exports)
+  return exports
+}
+const sortRows = compile(new URL('../src/utils/sortRows.ts', import.meta.url))
+const rules = compile(new URL('../src/features/docker/rules.ts', import.meta.url), () => sortRows)
 
 const container = (name, more = {}) => ({
   id: `${name}-id`, name, image: 'nginx:alpine', state: 'running', status: 'Up 2 days', ports: '',

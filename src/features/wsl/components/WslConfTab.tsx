@@ -4,7 +4,6 @@ import * as api from '../api'
 import { getDefaultBackupDir } from '../../docker/api'
 import { WSLCONF_SECTIONS } from '../ini'
 import IniConfigEditor, { type IniBackend } from './IniConfigEditor'
-import type { WslDistro } from '../types'
 
 const TEMPLATE = `# Per-distro settings for /etc/wsl.conf.
 # Changes take effect after a WSL restart (wsl --shutdown).
@@ -13,8 +12,7 @@ const TEMPLATE = `# Per-distro settings for /etc/wsl.conf.
 systemd=true
 `
 
-export default function WslConfTab({ distros, runningNames, onAfterShutdown }: {
-  distros: WslDistro[]
+export default function WslConfTab({ runningNames, onAfterShutdown }: {
   runningNames: string[]
   onAfterShutdown: () => void
 }) {
@@ -37,10 +35,6 @@ export default function WslConfTab({ distros, runningNames, onAfterShutdown }: {
     restoreBackup: (path) => api.wslConfRestore(distro, path),
     deleteBackup:  (path) => api.wslConfDeleteBackup(path),
   }), [distro, backupDir])
-
-  if (distros.length === 0) {
-    return <p className="empty-state" style={{ marginTop: 24 }}>No distros found.</p>
-  }
 
   return (
     <div className="wslconf">

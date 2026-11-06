@@ -1,8 +1,9 @@
 import type { TableColumn } from '../../components/TableColumns'
 import type { DockerTableTab } from '../../store/appStore'
 import type { DockerContainer, DockerImage, DockerNetwork, DockerVolume } from './types'
+import { compareText, sortRows, type SortDir } from '../../utils/sortRows'
 
-export type SortDir = 'asc' | 'desc'
+export type { SortDir }
 export type ContainerSortKey = 'name' | 'image' | 'status' | 'ports' | 'project' | 'service' | 'created' | 'id'
 export type ImageSortKey = 'name' | 'id' | 'size' | 'created' | 'status'
 export type VolumeSortKey = 'name' | 'driver' | 'project' | 'size' | 'status'
@@ -67,17 +68,7 @@ export const DOCKER_COLUMNS: Record<DockerTableTab, TableColumn<string>[]> = {
 
 type SortValue = string | number | null
 
-/** Unknown values sort last in both directions, and ties fall back to the name. */
-function sortRows<T>(rows: T[], valueOf: (row: T) => SortValue, nameOf: (row: T) => string, dir: SortDir): T[] {
-  const text = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true })
-  return [...rows].sort((a, b) => {
-    const va = valueOf(a), vb = valueOf(b)
-    const byName = text(nameOf(a), nameOf(b))
-    if (va === null || vb === null) return va === vb ? byName : va === null ? 1 : -1
-    const cmp = typeof va === 'number' && typeof vb === 'number' ? va - vb : text(String(va), String(vb))
-    return (dir === 'asc' ? cmp : -cmp) || byName
-  })
-}
+const byName = <T,>(nameOf: (row: T) => string) => (a: T, b: T) => compareText(nameOf(a), nameOf(b))
 
 const SECONDS: Record<string, number> = { second: 1, minute: 60, hour: 3_600, day: 86_400, week: 604_800, month: 2_592_000, year: 31_536_000 }
 
@@ -153,7 +144,7 @@ export function sortContainers(containers: DockerContainer[], key: ContainerSort
       case 'id':      return c.id
     }
   }
-  return sortRows(containers, valueOf, c => c.name, dir)
+  return sortRows(containers, valueOf, byName(c => c.name), dir)
 }
 
 export const imageName = (image: DockerImage) =>
@@ -195,7 +186,7 @@ export function sortImages(images: DockerImage[], key: ImageSortKey, dir: SortDi
       case 'status':  return image.in_use ? 'In use' : 'Unused'
     }
   }
-  return sortRows(images, valueOf, imageName, dir)
+  return sortRows(images, valueOf, byName(imageName), dir)
 }
 
 export function matchesVolumeFilter(volume: DockerVolume, filter: VolumeFilter): boolean {
@@ -219,7 +210,7 @@ export function sortVolumes(volumes: DockerVolume[], key: VolumeSortKey, dir: So
       case 'status':  return v.in_use ? 'In use' : 'Unused'
     }
   }
-  return sortRows(volumes, valueOf, v => v.name, dir)
+  return sortRows(volumes, valueOf, byName(v => v.name), dir)
 }
 
 const BUILT_IN_NETWORKS = new Set(['bridge', 'host', 'none'])
@@ -251,5 +242,5 @@ export function sortNetworks(networks: DockerNetwork[], key: NetworkSortKey, dir
       case 'created': return n.created || null
     }
   }
-  return sortRows(networks, valueOf, n => n.name, dir)
+  return sortRows(networks, valueOf, byName(n => n.name), dir)
 }

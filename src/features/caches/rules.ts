@@ -1,3 +1,4 @@
+import { sortRows, type SortDir } from '../../utils/sortRows'
 import { bytesToHuman } from '../../utils/format'
 import type { CacheItem, CacheKind, CacheScan, ClearResult } from './api'
 
@@ -34,8 +35,8 @@ export function filterItems(items: CacheItem[], query: string, filter: CacheFilt
   })
 }
 
-/** Unknown values sort last in both directions, and ties fall back to the biggest. */
-export function sortItems(items: CacheItem[], key: CacheSortKey, dir: 'asc' | 'desc'): CacheItem[] {
+/** Ties fall back to the biggest. */
+export function sortItems(items: CacheItem[], key: CacheSortKey, dir: SortDir): CacheItem[] {
   const valueOf = (item: CacheItem): string | number | null => {
     switch (key) {
       case 'name':     return item.name
@@ -47,15 +48,7 @@ export function sortItems(items: CacheItem[], key: CacheSortKey, dir: 'asc' | 'd
       case 'location': return item.paths[0]
     }
   }
-  return [...items].sort((a, b) => {
-    const va = valueOf(a), vb = valueOf(b)
-    const biggest = b.size_bytes - a.size_bytes
-    if (va === null || vb === null) return va === vb ? biggest : va === null ? 1 : -1
-    const cmp = typeof va === 'number' && typeof vb === 'number'
-      ? va - vb
-      : String(va).localeCompare(String(vb), undefined, { sensitivity: 'base', numeric: true })
-    return (dir === 'asc' ? cmp : -cmp) || biggest
-  })
+  return sortRows(items, valueOf, (a, b) => b.size_bytes - a.size_bytes, dir)
 }
 
 export const totalBytes = (items: CacheItem[]) => items.reduce((sum, item) => sum + item.size_bytes, 0)

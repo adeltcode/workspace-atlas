@@ -2,15 +2,16 @@ import { useState, useMemo, useEffect, Fragment } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { Trash2, HardDriveDownload, ChevronRight, ChevronDown, RotateCcw, FolderOpen, X, Database } from 'lucide-react'
+import { toggled } from '../../../utils/toggled'
 import clsx from 'clsx'
 import * as api from '../api'
 import { useAppStore } from '../../../store/appStore'
 import type { DockerVolume, VolumeBackupEntry, BackupProgress } from '../types'
 import { fmtBytes, formatDate } from '../../../utils/format'
 import { ConfirmRemoveButton, StatusCell, useDockerJump, useDockerTable } from './TableBits'
-import { CellLink, SearchField, Segmented, SegmentedItem, EmptyState, ErrorBanner, ConfirmDestructive, Button, Toolbar } from '../../../components/ui'
-import { TableHead } from '../../../components/TableColumns'
-import { filterVolumes, matchesVolumeFilter, sortVolumes, type SortDir, type VolumeFilter, type VolumeSortKey } from '../rules'
+import { CellLink, SearchField, EmptyState, ErrorBanner, ConfirmDestructive, Button, Toolbar, FilterSegments, NoMatches, Dash } from '../../../components/ui'
+import { TableHead, useTableSort } from '../../../components/TableColumns'
+import { filterVolumes, matchesVolumeFilter, sortVolumes, type VolumeFilter, type VolumeSortKey } from '../rules'
 
 type VolStatus   = 'running' | 'done' | 'error'
 
@@ -19,8 +20,6 @@ const FILTERS: { key: VolumeFilter; label: string }[] = [
   { key: 'in-use', label: 'In use' },
   { key: 'unused', label: 'Unused' },
 ]
-
-const Dash = () => <span className="pkg-dash">-</span>
 
 interface VolumeProgress {
   status:    VolStatus
@@ -84,19 +83,13 @@ export default function VolumesTab({
 }) {
   const [search, setSearch]           = useState('')
   const [usageFilter, setUsageFilter] = useState<VolumeFilter>('all')
-  const [sortKey, setSortKey]         = useState<VolumeSortKey>('name')
-  const [sortDir, setSortDir]         = useState<SortDir>('asc')
+  const { sortKey, sortDir, handleSort } = useTableSort<VolumeSortKey>('name', 'asc', ['size'])
   const table = useDockerTable<VolumeSortKey>('volumes')
 
   useDockerJump('volumes', ({ query }) => {
     setSearch(query)
     setUsageFilter('all')
   })
-
-  const handleSort = (key: VolumeSortKey) => {
-    if (key === sortKey) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
-    else { setSortKey(key); setSortDir(key === 'size' ? 'desc' : 'asc') }
-  }
 
   // VolumesTab stays permanently mounted (tab-hidden pattern in DockerView).
   // React to volumesFilter store updates even while the tab is not visible.
@@ -237,7 +230,7 @@ export default function VolumesTab({
   const unusedCount = unusedVols.length
   const unusedBytes = useMemo(() => unusedVols.reduce((n, v) => n + v.size_bytes, 0), [unusedVols])
 
-  const toggleVolSelect    = (name: string) => setSelectedVols(prev => { const s = new Set(prev); s.has(name) ? s.delete(name) : s.add(name); return s })
+  const toggleVolSelect    = (name: string) => setSelectedVols(prev => toggled(prev, name))
   const allVolSelected     = selectedVols.size > 0 && selectedVols.size === filtered.length
   const someVolSelected    = selectedVols.size > 0 && selectedVols.size < filtered.length
   const toggleSelectAllVol = () => setSelectedVols(allVolSelected ? new Set() : new Set(filtered.map(v => v.name)))
@@ -396,18 +389,7 @@ export default function VolumesTab({
           placeholder="Search volumes"
           label="Search volumes by name, driver, project, or container"
         />
-        <Segmented label="Filter by usage">
-          {FILTERS.map(({ key, label }) => (
-            <SegmentedItem
-              key={key}
-              active={usageFilter === key}
-              count={volumes.filter(v => matchesVolumeFilter(v, key)).length}
-              onClick={() => setUsageFilter(key)}
-            >
-              {label}
-            </SegmentedItem>
-          ))}
-        </Segmented>
+        <FilterSegments label="Filter by usage" options={FILTERS} value={usageFilter} onChange={setUsageFilter} count={key => volumes.filter(v => matchesVolumeFilter(v, key)).length} />
 
         {selectedVols.size > 0 && (
           <>
@@ -451,11 +433,7 @@ export default function VolumesTab({
       )}
 
       {filtered.length === 0 && (
-        <EmptyState
-          title="No volumes match"
-          description="Adjust the search or filters."
-          actions={<Button onClick={() => { setSearch(''); setUsageFilter('all') }}>Clear filters</Button>}
-        />
+        <NoMatches noun="volumes" onClear={() => { setSearch(''); setUsageFilter('all') }} />
       )}
 
       {filtered.length > 0 && (

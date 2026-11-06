@@ -3,8 +3,8 @@ import { RefreshCw } from 'lucide-react'
 import { useAppStore } from '../../store/appStore'
 import { useVisiblePoll } from '../../hooks/useVisiblePoll'
 import { bytesToHuman, timeAgo } from '../../utils/format'
-import { Button, CellLink, EmptyState, ErrorBanner, SearchField, Segmented, SegmentedItem, SheetHead, Tag, Toolbar } from '../../components/ui'
-import { ColumnsMenu, TableHead, useTableColumns, type TableColumn } from '../../components/TableColumns'
+import { Button, CellLink, EmptyState, ErrorBanner, SearchField, Segmented, SegmentedItem, SheetHead, Tag, Toolbar, Dash } from '../../components/ui'
+import { ColumnsMenu, TableHead, useTableColumns, type TableColumn, useTableSort } from '../../components/TableColumns'
 import * as api from './api'
 import type { PortEntry, PortList } from './api'
 import { addressList, filterPorts, fixDone, reachableLabel, runsIn, sinceTitle, sortPorts, type PortFilter, type PortSortKey } from './rules'
@@ -30,8 +30,6 @@ const COLUMNS: TableColumn<PortSortKey>[] = [
   { key: 'path',      label: 'Executable path', width: 280, sort: 'path',      hideable: true },
   { key: 'actions',   label: 'Actions',         width: 160 },
 ]
-
-const Dash = () => <span className="pkg-dash">-</span>
 
 function RunsIn({ entry }: { entry: PortEntry }) {
   const { process, source } = entry
@@ -89,19 +87,15 @@ export default function PortsView() {
   const [closeError, setCloseError] = useState<unknown>(null)
   const [query, setQuery] = useState('')
   const [show, setShow] = useState<PortFilter>('programs')
-  const [sortKey, setSortKey] = useState<PortSortKey>('port')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const { sortKey, sortDir, handleSort } = useTableSort<PortSortKey>('port', 'asc')
   const [closing, setClosing] = useState<PortEntry | null>(null)
   const [result, setResult] = useState<{ tone: 'ok' | 'warn'; text: string } | null>(null)
 
-  const portColumns = useAppStore(s => s.portColumns)
-  const setPortColumns = useAppStore(s => s.setPortColumns)
   const table = useTableColumns<PortSortKey>({
     columns: COLUMNS,
     fill: 'program',
-    prefs: portColumns,
-    read: () => useAppStore.getState().portColumns,
-    save: setPortColumns,
+    select: s => s.portColumns,
+    save: prefs => useAppStore.getState().setPortColumns(prefs),
   })
 
   const load = useCallback(async () => {
@@ -126,11 +120,6 @@ export default function PortsView() {
 
   useEffect(() => { load() }, [load])
   useVisiblePoll(load, POLL_MS, !closing)
-
-  const handleSort = (key: PortSortKey) => {
-    if (key === sortKey) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
-    else { setSortKey(key); setSortDir('asc') }
-  }
 
   const all = useMemo(() => list?.entries ?? [], [list])
   const rows = useMemo(() => sortPorts(filterPorts(all, query, show), sortKey, sortDir), [all, query, show, sortKey, sortDir])
@@ -157,27 +146,16 @@ export default function PortsView() {
 
   return (
     <div className="view-container">
-      <div className="page-head">
-        <SheetHead
-          crumbs={[
-            { label: 'Overview', onClick: () => useAppStore.getState().setActiveView('dashboard') },
-            { label: 'Ports' },
-          ]}
-          title="Ports"
-          subtitle="Listening TCP ports on Windows, in Docker containers, and in running WSL distros."
-          actions={
-            <>
-              <ColumnsMenu
-                columns={COLUMNS}
-                hidden={portColumns.hidden}
-                onToggle={table.toggle}
-                onReset={() => setPortColumns(useAppStore.getInitialState().portColumns)}
-              />
-              <Button onClick={() => { setResult(null); load() }}><RefreshCw size={12} /> Refresh</Button>
-            </>
-          }
-        />
-      </div>
+      <SheetHead
+        title="Ports"
+        subtitle="Listening TCP ports on Windows, in Docker containers, and in running WSL distros."
+        actions={
+          <>
+            <ColumnsMenu table={table} />
+            <Button onClick={() => { setResult(null); load() }}><RefreshCw size={12} /> Refresh</Button>
+          </>
+        }
+      />
 
       <div className="page-fill">
         <div className="img-tab">

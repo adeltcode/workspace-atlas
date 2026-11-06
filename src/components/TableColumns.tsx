@@ -1,8 +1,40 @@
 import { useEffect, useRef, useState } from 'react'
-import { Columns3, Check, RotateCcw } from 'lucide-react'
+import { Columns3, Check, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react'
 import clsx from 'clsx'
-import { SortHeader } from '../features/docker/components/TableBits'
 import { Button } from './ui'
+import { useAppStore, type AppState } from '../store/appStore'
+import type { SortDir } from '../utils/sortRows'
+
+function SortHeader<K extends string>({ label, col, sortKey, sortDir, onSort, children }: {
+  label: string; col: K; sortKey: K; sortDir: 'asc' | 'desc'
+  onSort: (k: K) => void
+  /** Extra header content, such as a column resize handle. */
+  children?: React.ReactNode
+}) {
+  const active = col === sortKey
+  return (
+    <th
+      className={clsx('img-th img-th-sort sortable', active && 'active')}
+      onClick={() => onSort(col)}
+      aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+    >
+      {/* The header cell cannot take focus, so the control inside it does. */}
+      <div
+        className="th-sort-inner"
+        role="button"
+        tabIndex={0}
+        aria-label={`Sort by ${label}`}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort(col) } }}
+      >
+        {label}
+        {active
+          ? sortDir === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />
+          : <ChevronDown size={12} className="sort-idle" />}
+      </div>
+      {children}
+    </th>
+  )
+}
 
 const MIN_WIDTH = 60
 const MAX_WIDTH = 900
@@ -21,16 +53,29 @@ export interface ColumnPrefs {
   hidden: string[]
 }
 
+/** Clicking the sorted column flips it, and a new column starts ascending unless it is in `descFirst`. */
+export function useTableSort<K extends string>(initialKey: K, initialDir: SortDir, descFirst: readonly K[] = []) {
+  const [sortKey, setSortKey] = useState<K>(initialKey)
+  const [sortDir, setSortDir] = useState<SortDir>(initialDir)
+  const handleSort = (key: K) => {
+    if (key === sortKey) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
+    else { setSortKey(key); setSortDir(descFirst.includes(key) ? 'desc' : 'asc') }
+  }
+  return { sortKey, sortDir, handleSort }
+}
+
 /** Saved widths and hidden columns for a table. `fill` is the column that takes the spare width until
  *  it is resized, after which a filler column does. */
-export function useTableColumns<K extends string>({ columns, fill, prefs, read, save }: {
+export function useTableColumns<K extends string>({ columns, fill, select, save }: {
   columns: TableColumn<K>[]
   fill: string
-  prefs: ColumnPrefs
-  /** Reads the saved value at call time: two clicks can land before a re-render. */
-  read: () => ColumnPrefs
+  /** Where this table's choices live in the store. */
+  select: (state: AppState) => ColumnPrefs
   save: (prefs: ColumnPrefs) => void
 }) {
+  const prefs = useAppStore(select)
+  // Read at call time: two clicks can land before a re-render.
+  const read = () => select(useAppStore.getState())
   // Widths while a drag is in progress, so the saved settings are written once when it ends.
   const [dragWidths, setDragWidths] = useState<Record<string, number> | null>(null)
   const widths = dragWidths ?? prefs.widths
@@ -40,6 +85,7 @@ export function useTableColumns<K extends string>({ columns, fill, prefs, read, 
   return {
     columns,
     fill,
+    hidden: prefs.hidden,
     visible,
     widthOf,
     shows: (key: string) => visible.some(c => c.key === key),
@@ -64,6 +110,7 @@ export function useTableColumns<K extends string>({ columns, fill, prefs, read, 
         hidden: saved.hidden.includes(key) ? saved.hidden.filter(k => k !== key) : [...saved.hidden, key],
       })
     },
+    reset: () => save(select(useAppStore.getInitialState())),
   }
 }
 
@@ -166,20 +213,17 @@ function ResizeHandle({ label, width, onResize }: {
   )
 }
 
-export function ColumnsMenu({ columns, hidden, onToggle, onReset }: {
-  columns: TableColumn<string>[]
-  hidden: string[]
-  onToggle: (key: string) => void
-  onReset: () => void
+export function ColumnsMenu({ table }: {
+  table: { columns: TableColumn<string>[]; hidden: string[]; toggle: (key: string) => void; reset: () => void }
 }) {
   return (
     <CheckMenu
       label={<><Columns3 size={13} /> Columns</>}
       menuLabel="Columns"
-      items={columns.filter(c => c.hideable).map(c => ({ key: c.key, label: c.label, checked: !hidden.includes(c.key) }))}
-      onToggle={onToggle}
+      items={table.columns.filter(c => c.hideable).map(c => ({ key: c.key, label: c.label, checked: !table.hidden.includes(c.key) }))}
+      onToggle={table.toggle}
       resetLabel="Reset columns"
-      onReset={onReset}
+      onReset={table.reset}
     />
   )
 }

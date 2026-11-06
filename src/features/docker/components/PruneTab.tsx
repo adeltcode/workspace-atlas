@@ -9,7 +9,7 @@ import { ErrorBanner } from '../../../components/ui'
 import { bytesToHuman, parseSizeBytes } from '../../../utils/format'
 import type { PrunePreview, LogEntry } from '../types'
 
-const LEVELS = [
+export const LEVELS = [
   { level: 1 as const, icon: Shield, label: 'Safe',    sublabel: 'Dangling images only',  desc: 'Removes untagged images with no containers.',                                 color: 'success' },
   { level: 2 as const, icon: Layers, label: 'Deep',    sublabel: 'All unused images',      desc: 'Removes every unused image except pinned ones.',                                     color: 'warning' },
   { level: 3 as const, icon: Zap,    label: 'Nuclear', sublabel: 'Full system cleanup',    desc: 'Removes stopped containers, unused images and volumes, and build cache. Keeps pinned images.',                       color: 'danger'  },
